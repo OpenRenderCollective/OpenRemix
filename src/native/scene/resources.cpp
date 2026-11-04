@@ -46,6 +46,7 @@ namespace remix {
     m_materials.clear();
     m_modMaterials.clear();
     m_meshes.clear();
+    m_surfaceContent.clear();
     m_textures.clear();
     m_uiTextures.clear();
     m_paths.clear();

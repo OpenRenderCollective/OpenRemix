@@ -576,18 +576,20 @@ namespace remix::forward {
     vkUpdateDescriptorSets(device, 1, &probeWrite, 0, nullptr);
     prepareViewModelDescriptors();
     step(cpu.uploads);
-    std::unordered_map<const scene::Material *, VkDescriptorSet> materials;
+    std::unordered_map<const scene::Material *, std::pair<VkDescriptorSet, uint64_t>> materials;
     for (auto *commands : {&frame.commands, &frame.staticCommands, &frame.terrainCommands,
                            &frame.waterCommands, &frame.viewModelCommands, &frame.viewModelCasters})
       for (auto &draw : *commands) {
         const auto &material = draw.source.material;
         if (auto found = materials.find(material.get()); found != materials.end()) {
-          draw.material = found->second;
+          draw.material = found->second.first;
+          draw.alphaSampler = found->second.second;
           continue;
         }
         draw.material = allocate(frame, materialLayout);
-        materials[material.get()] = draw.material;
         const auto fallback = resources.sampledMaterial(material, command);
+        draw.alphaSampler = std::bit_cast<uint64_t>(fallback.sampler);
+        materials[material.get()] = {draw.material, draw.alphaSampler};
         auto sample = [&](const std::shared_ptr<scene::Texture> &texture) {
           return texture ? resources.sampledTexture(material, texture, command) : fallback;
         };

@@ -1497,6 +1497,51 @@ namespace {
                     unsigned(pixels[right]), unsigned(pixels[adjacent]));
         require(pixels[right] < lit / 3 && pixels[adjacent] > lit / 2 && pixels[left] < 3,
                 "A narrow dynamic shadow cuts its own direct light independently of the coarse lightmap");
+        const auto steadyActor = pixels;
+        pixels = render(false);
+        require(pixels == steadyActor && target.forward->statistics().movingLocalReuses ==
+                    target.forward->statistics().shadowedLights,
+                "Unchanged opaque actors reuse moving maps without changing pixels");
+        const auto cutoutMesh = quad(r, 0x87c0a001, material(r, 0x87c0a002, 0, 0, 0, 1, nullptr, 6));
+        auto alphaActor = moving;
+        alphaActor.mesh = cutoutMesh; // Fully passing alpha, but texture-dependent coverage policy.
+        r.updateRetained(actor, alphaActor);
+        pixels = render(false);
+        pixels = render(false);
+        require(pixels == steadyActor && target.forward->statistics().movingLocalReuses ==
+                    target.forward->statistics().shadowedLights,
+                "Immutable alpha-tested caster coverage reuses completed shadow maps");
+        uint32_t dynamicPixel = 0xffffffffu;
+        remixapi_TextureInfoDynamicEXT dynamic{};
+        dynamic.sType = REMIXAPI_STRUCT_TYPE_TEXTURE_DYNAMIC_EXT; dynamic.dynamic = 1;
+        remixapi_TextureInfo dynamicInfo{};
+        dynamicInfo.sType = REMIXAPI_STRUCT_TYPE_TEXTURE_INFO; dynamicInfo.pNext = &dynamic;
+        dynamicInfo.hash = 0x87c0a003; dynamicInfo.format = REMIXAPI_FORMAT_R8G8B8A8_UNORM;
+        dynamicInfo.width = dynamicInfo.height = dynamicInfo.depth = dynamicInfo.mipLevels = 1;
+        dynamicInfo.data = &dynamicPixel; dynamicInfo.dataSize = sizeof(dynamicPixel);
+        remixapi_TextureHandle dynamicTexture{};
+        r.createTexture(dynamicInfo, dynamicTexture);
+        const auto dynamicPath = std::filesystem::path("0x87c0a003");
+        alphaActor.mesh = quad(r, 0x87c0a004,
+            material(r, 0x87c0a005, 0, 0, 0, 1, dynamicPath.c_str(), 6));
+        r.updateRetained(actor, alphaActor);
+        pixels = render(false); pixels = render(false);
+        require(pixels == steadyActor && target.forward->statistics().movingLocalReuses == 0 &&
+                    target.forward->statistics().movingLocalUpdates == target.forward->statistics().shadowedLights,
+                "Updatable alpha texture coverage retains live map rendering");
+        dynamicPixel = 0x00ffffffu;
+        r.updateTexture(dynamicTexture, 0, 0, 1, 1, REMIXAPI_FORMAT_R8G8B8A8_UNORM, &dynamicPixel, 4);
+        pixels = render(false);
+        require(pixels[right] > lit * 3 / 4 && target.forward->statistics().movingLocalReuses == 0,
+                "In-place transparent texels remove the previous actor shadow immediately");
+        dynamicPixel = 0xffffffffu;
+        r.updateTexture(dynamicTexture, 0, 0, 1, 1, REMIXAPI_FORMAT_R8G8B8A8_UNORM, &dynamicPixel, 4);
+        pixels = render(false);
+        require(pixels == steadyActor, "Restored alpha texels restore live shadow coverage");
+        r.updateRetained(actor, moving);
+        pixels = render(false);
+        require(pixels == steadyActor && target.forward->statistics().movingLocalUpdates > 0,
+                "Returning from alpha-dependent coverage invalidates previous opaque cache state");
         pixels = render(true);
         require(pixels[right] < lit / 3 && pixels[right + 1] > 20 &&
                     target.forward->statistics().shadowOverflow == 1,

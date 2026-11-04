@@ -116,6 +116,8 @@ namespace remix {
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Each selected light has cached static geometry and a separate live caster map.\n"
                           "Lights beyond the budget keep illuminating the scene without local shadow maps.");
+      ImGui::Text("Moving local maps: %u updated, %u reused", statistics.movingLocalUpdates,
+                  statistics.movingLocalReuses);
       ImGui::Text("Sun static cascade updates: %u | captured casters: %u | live candidates: %u",
                   statistics.staticSunUpdates, statistics.capturedCasters, statistics.liveCasters);
       if (ImGui::IsItemHovered())

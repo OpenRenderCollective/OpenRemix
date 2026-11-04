@@ -51,6 +51,8 @@ namespace remix {
         << ", \"bakedFallbackLights\": " << state.fullyBakedLights << ", \"draws\": " << state.draws
         << ", \"clusters\": " << state.clusters << ", \"clusterCapacity\": " << state.clusterLightCapacity
         << ", \"staticShadowUpdates\": " << state.staticShadowUpdates
+        << ", \"movingLocalUpdates\": " << state.movingLocalUpdates
+        << ", \"movingLocalReuses\": " << state.movingLocalReuses
         << ", \"staticSunUpdates\": " << state.staticSunUpdates
         << ", \"movingSunUpdates\": " << state.movingSunUpdates
         << ", \"capturedCasters\": " << state.capturedCasters

@@ -1140,3 +1140,10 @@ Forward+ reuses a completed frame slot's posed vertex/index upload when its immu
 ### Moving-sun receiver coverage
 
 Sun cascades retain conservative XY unions of the submitted moving-caster bounds. A baked receiver outside the union plus the full 4x4 filter footprint returns clear moving visibility without sampling the map. Frozen-world fallback receivers keep the complete filter. The viewmodel uses its own world-moving/self-caster union and projection. Unknown bounds retain full coverage; projected float-error padding handles distant origins and narrow orthographic projections. The projection-bound helper is shared with local cube-face coverage. This changes receiver filtering only: it never removes offscreen casters, changes baked lighting, or reduces shadow resolution.
+
+
+### Reusing unchanged local shadow depth
+
+The world local-shadow maps retain completed moving-caster depth when the selected light projection and complete caster inputs are unchanged. `shadows::MovingCache` owns the bounded CPU snapshots beside those GPU targets. It compares immutable surface ownership, model/index ranges and full bone matrices; alpha-tested draws also compare immutable albedo ownership, prepared alpha/UV inputs, the bound sampler and its filter/wrap state. Updatable textures, expired sources, oversized lists and inactive/reassigned slots invalidate reuse. Viewmodel self maps remain live. This does not use main-camera visibility to discard offscreen shadow casters.
+
+Scene mesh submission weakly shares exactly equal surface payloads up to 1 MiB through a bounded 512-entry content lookup. A fingerprint only selects a candidate; full payload equality is required. Mesh lifetimes, update streams and temporal correspondence stay independent. This lets recreated transient meshes benefit from existing geometry uploads and shadow identity without comparing vertex arrays for every light. Neither cache adds a GPU image, shader permutation, quality setting or public ABI. The owner must discard cached depth state with its targets after an abandoned recording or failed submission, following the existing queue-ordered static-shadow contract.

@@ -72,7 +72,8 @@ namespace remix::forward::shadows {
     }
     m_initialized = true;
   }
-  void Maps::record(VkCommandBuffer command, const Selection &selection, const Draw &draw) {
+  void Maps::record(VkCommandBuffer command, const Selection &selection, const Draw &draw,
+                    std::span<const bool> movingDirty) {
     if (!m_initialized)
       initializeLayouts(command);
     const VkExtent2D extent{m_resolution, m_resolution};
@@ -84,6 +85,7 @@ namespace remix::forward::shadows {
         continue;
       for (bool staticCasters : {true, false}) {
         if (staticCasters && !m_static.handle) continue;
+        if (!staticCasters && slot < movingDirty.size() && !movingDirty[slot]) continue;
         if (staticCasters && !selection.dirty[slot])
           continue;
         for (uint32_t face = 0; face < faces; ++face) {

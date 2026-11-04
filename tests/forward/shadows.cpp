@@ -1,4 +1,5 @@
 #include "forward/shadows/plan.h"
+#include "forward/shadows/moving_cache.h"
 #include "scene/fixtures.h"
 #include <cmath>
 
@@ -6,6 +7,102 @@ using namespace remix;
 using namespace remix::forward;
 using namespace remix::test;
 namespace s = remix::forward::shadows;
+void movingCacheTests(const s::View &view) {
+  s::MovingCache cache;
+  auto surface = std::make_shared<scene::Surface>();
+  std::vector<s::MovingCaster> casters{{surface, {}, scene::identity(), 0, 3, 0, true}};
+  require(cache.update(view, casters) && !cache.update(view, casters),
+          "Opaque moving maps render once and reuse identical caster state");
+  auto changedView = view;
+  changedView.position[0] += 1;
+  require(cache.update(changedView, casters) && cache.update(view, casters),
+          "Light view changes invalidate moving depth independently of intensity/fades");
+  changedView = view;
+  changedView.matrices[0][0] += .125f;
+  require(cache.update(changedView, casters) && cache.update(view, casters),
+          "Projection matrices invalidate depth even when light identity/range match");
+  casters[0].model[12] += 1;
+  require(cache.update(view, casters), "Moving geometry transforms invalidate depth");
+  ++casters[0].firstIndex;
+  require(cache.update(view, casters), "Index range changes invalidate depth");
+  ++casters[0].indexCount;
+  require(cache.update(view, casters), "Index count changes invalidate depth");
+  --casters[0].vertexOffset;
+  require(cache.update(view, casters), "Base vertex changes invalidate depth");
+  std::vector<Matrix> pose{scene::identity()};
+  casters[0].bones = std::make_shared<const std::vector<Matrix>>(pose);
+  require(cache.update(view, casters), "Introducing a skin invalidates depth");
+  casters[0].bones = std::make_shared<const std::vector<Matrix>>(pose);
+  require(!cache.update(view, casters), "Equal independently submitted poses reuse depth");
+  pose[0][12] = 2;
+  casters[0].bones = std::make_shared<const std::vector<Matrix>>(pose);
+  require(cache.update(view, casters), "Changed bone matrices invalidate depth");
+  casters[0].bones.reset();
+  require(cache.update(view, casters), "Removing skinning invalidates depth");
+  auto second = std::make_shared<scene::Surface>();
+  casters.push_back({second, {}, scene::identity(), 0, 3, 0, true});
+  require(cache.update(view, casters), "Caster membership invalidates moving maps");
+  std::swap(casters[0], casters[1]);
+  require(cache.update(view, casters), "Changed source order is conservatively redrawn");
+  second.reset();
+  require(cache.update(view, casters) && cache.update(view, casters),
+          "Expired geometry never reuses a stale depth image");
+  casters.resize(1);
+  casters[0].surface = surface;
+  casters[0].opaque = false;
+  require(cache.update(view, casters) && cache.update(view, casters),
+          "Texture-dependent alpha coverage always updates");
+  scene::Material material;
+  material.texture = std::make_shared<scene::Texture>();
+  DrawData data{};
+  data.tint = {1, 1, 1, 1}; data.uv = {1, 1, 0, 0};
+  data.state[1] = 6;
+  auto prepareAlpha = [&] { casters[0].alpha = s::alphaCoverage(data, material, 17); };
+  prepareAlpha();
+  require(cache.update(view, casters) && !cache.update(view, casters),
+          "Immutable alpha texels and exact prepared state permit reuse");
+  data.uv[2] = .5f; prepareAlpha();
+  require(cache.update(view, casters), "Animated atlas coordinates invalidate alpha depth");
+  data.tint[3] = .4f; prepareAlpha();
+  require(cache.update(view, casters), "Alpha tint changes invalidate depth");
+  data.factor[3] = .3f; prepareAlpha();
+  require(cache.update(view, casters), "Texture factor changes invalidate depth");
+  data.state[2] = 1; prepareAlpha();
+  require(cache.update(view, casters), "Alpha reference changes invalidate depth");
+  data.maps[0] = 32; prepareAlpha();
+  require(cache.update(view, casters), "Colour decode policy invalidates alpha composition");
+  casters[0].alpha.sampler = 18;
+  require(cache.update(view, casters), "Sampler changes invalidate alpha coverage");
+  ++material.wrapU; prepareAlpha();
+  require(cache.update(view, casters), "Changed wrap mode invalidates a recycled sampler handle");
+  ++material.filter; prepareAlpha();
+  require(cache.update(view, casters), "Changed filter invalidates a recycled sampler handle");
+  material.texture = std::make_shared<scene::Texture>(); prepareAlpha();
+  require(cache.update(view, casters), "Replaced texels invalidate alpha depth");
+  material.texture->updates = std::make_shared<scene::TextureUpdates>(); prepareAlpha();
+  require(cache.update(view, casters) && cache.update(view, casters),
+          "In-place texel updates always retain live rendering");
+  material.texture->updates.reset(); material.texture->dynamic = true; prepareAlpha();
+  require(cache.update(view, casters) && cache.update(view, casters),
+          "Dynamic texture storage never uses CPU revisions as GPU proof");
+  material.texture->dynamic = false;
+  material.texture->encodedSource = std::make_shared<scene::Texture>();
+  material.texture->encodedSource->updates = std::make_shared<scene::TextureUpdates>(); prepareAlpha();
+  require(cache.update(view, casters) && cache.update(view, casters),
+          "Updatable encoded source views retain live rendering");
+  casters[0].opaque = true;
+  require(cache.update(view, casters) && !cache.update(view, casters),
+          "An uncacheable frame invalidates prior opaque contents");
+  cache.reset();
+  require(cache.update(view, casters), "Reactivated slots never inherit stale contents");
+  require(cache.update(view, {}) && !cache.update(view, {}),
+          "Leaving casters clear a map once before empty reuse");
+  casters.resize(s::MovingCache::maximumCasters + 1, casters[0]);
+  require(cache.update(view, casters), "Oversized caster lists retain ordinary rendering");
+  casters.resize(1);
+  casters[0].bones = std::make_shared<const std::vector<Matrix>>(s::MovingCache::maximumPoseMatrices + 1);
+  require(cache.update(view, casters), "Pose retention has a bounded matrix budget");
+}
 int main() {
   scene::SphereLight light;
   light.id = 10;
@@ -15,6 +112,7 @@ int main() {
   light.radius = .25f;
   light.radiance[0] = 1;
   const auto view = s::lightView(light, 10, 1);
+  movingCacheTests(view);
   const Vec3 directions[] = {{1, -.3f, -.7f}, {-1, -.3f, .7f}, {.7f, 1, .3f},
                              {.7f, -1, -.3f}, {.7f, -.3f, 1},  {-.7f, -.3f, -1}};
   for (uint32_t face = 0; face < s::faces; ++face) {

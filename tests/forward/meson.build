@@ -235,6 +235,7 @@ forward_mixed_test = executable('remix-forward-mixed-test', 'mixed.cpp',
 test('Mixed light channel ownership and visibility planning', forward_mixed_test)
 
 forward_shadow_test = executable('remix-forward-shadow-test', 'shadows.cpp',
+  '../../src/native/forward/shadows/moving_cache.cpp',
   '../../src/native/forward/shadows/plan.cpp', '../../src/native/forward/lighting.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Local shadow projection, selection and explicit caster membership', forward_shadow_test)

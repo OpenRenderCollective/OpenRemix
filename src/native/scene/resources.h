@@ -404,6 +404,9 @@ namespace remix {
     std::unordered_map<uint64_t, ModMerged> m_modMerged;
     std::unordered_set<uint64_t> m_modCandidates, m_modRequested;
     std::vector<uint64_t> m_modRequests;
+    // Weak content entries share immutable payloads, never mesh lifetimes.
+    std::shared_ptr<scene::Surface> shareSurface(std::shared_ptr<scene::Surface> surface);
+    std::unordered_map<uint64_t, std::weak_ptr<scene::Surface>> m_surfaceContent;
     std::unordered_map<uint64_t, std::shared_ptr<scene::Mesh>> m_meshes;
     std::unordered_map<uint64_t, std::shared_ptr<scene::Texture>> m_textures, m_uiTextures;
     std::unordered_set<uint64_t> m_hiddenTextures;

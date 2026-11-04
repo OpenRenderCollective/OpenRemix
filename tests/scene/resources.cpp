@@ -44,6 +44,24 @@ namespace {
     red = material(r, 1, 1, 0, 0);
     mesh = quad(r, 2, red);
     require(reinterpret_cast<uintptr_t>(mesh) == 2, "Hash handle identity");
+    {
+      const auto firstMesh = r.findMesh(2);
+      const auto firstSurface = firstMesh->surfaces.front();
+      r.destroyMesh(mesh);
+      const auto recreated = quad(r, 3, red);
+      const auto secondMesh = r.findMesh(3);
+      require(firstMesh != secondMesh && firstMesh->retired && !secondMesh->retired &&
+                  firstSurface == secondMesh->surfaces.front(),
+              "Identical recreated geometry did not share payload independently of mesh lifetime");
+      const auto changed = quad(r, 4, red, 0xff112233);
+      require(r.findMesh(4)->surfaces.front() != firstSurface,
+              "Changed vertex colours aliased an immutable surface");
+      const auto skinned = quad(r, 5, red, 0xffffffff, true);
+      require(r.findMesh(5)->surfaces.front() != firstSurface,
+              "Changed skinning payload aliased rigid geometry");
+      r.destroyMesh(recreated); r.destroyMesh(changed); r.destroyMesh(skinned);
+      mesh = quad(r, 2, red);
+    }
     remixapi_MeshInfo bad = {};
     bad.hash = 2;
     rejected([&] { r.createMesh(bad, mesh); });

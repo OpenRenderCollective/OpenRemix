@@ -13,7 +13,8 @@ namespace remix::forward::shadows {
     void initialize(VkPhysicalDevice physical, VkDevice device, VkRenderPass pass, uint32_t count,
                     uint32_t resolution, bool staticCache = true);
     using Draw = std::function<void(uint32_t slot, uint32_t face, bool staticCasters)>;
-    void record(VkCommandBuffer command, const Selection &selection, const Draw &draw);
+    void record(VkCommandBuffer command, const Selection &selection, const Draw &draw,
+                std::span<const bool> movingDirty = {});
     VkImageView staticView() const { return m_static.view; }
     VkImageView dynamicView() const { return m_dynamic.view; }
     uint64_t memoryBytes() const { return m_static.bytes + m_dynamic.bytes; }

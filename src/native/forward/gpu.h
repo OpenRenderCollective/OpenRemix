@@ -15,6 +15,7 @@
 #include "forward/renderer.h"
 #include "forward/resources.h"
 #include "forward/shadows/maps.h"
+#include "forward/shadows/moving_cache.h"
 #include "forward/shadows/sun_maps.h"
 #include "forward/water/pass.h"
 #include "forward/viewmodel/target.h"
@@ -105,6 +106,8 @@ namespace remix::forward {
     std::unique_ptr<shadows::Maps> localMaps;
     shadows::Planner shadowPlanner;
     shadows::Selection shadowSelection;
+    std::array<shadows::MovingCache, shadows::maximumLights> movingShadowCache;
+    std::vector<shadows::MovingCaster> movingCasterScratch;
     HighlightSelection highlightSelection;
     std::weak_ptr<const mixed::Bindings> highlightSource;
     std::weak_ptr<const scene::BakeScene> staticBoundsSource;
@@ -126,6 +129,7 @@ namespace remix::forward {
       bool opaqueDepth = false, depthBatched = false;
       scene::Draw source; // material, mesh and texture owners live through the fence
       VkDescriptorSet material = VK_NULL_HANDLE;
+      uint64_t alphaSampler = 0;
       uint32_t index = 0, count = 0;
       uint32_t waterIndex = 0;
     };

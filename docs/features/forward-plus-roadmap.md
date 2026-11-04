@@ -5213,7 +5213,7 @@ These are work-reduction paths, not quality presets. General native 1080p 300-40
 ### Moving local shadow reuse: eligibility audit
 
 - [x] Reject and remove the pointer-only whole-moving-map cache: qualified Crossfire frames reused no maps. Transient submitted surfaces can be recreated each frame even when their depth geometry might be unchanged; alpha-tested casters also prevent opaque-only whole-map reuse. No extra cache, counters, or settings retained.
-- [ ] Before another cache implementation, measure stable depth-geometry content/identity across transient submissions. Preserve animated poses, transforms, index ranges, offscreen casters and alpha coverage. Reuse must reduce total frame time, including comparison and bookkeeping costs; avoid repeated full geometry comparisons per light.
+- [x] Before another cache implementation, measure stable depth-geometry content/identity across transient submissions. Preserve animated poses, transforms, index ranges, offscreen casters and alpha coverage. Reuse must reduce total frame time, including comparison and bookkeeping costs; avoid repeated full geometry comparisons per light.
 
 
 ### Upstream integration, 2026-11-05
@@ -5222,3 +5222,15 @@ These are work-reduction paths, not quality presets. General native 1080p 300-40
 - [x] Route Forward+ instance UV transforms and scrolling through the shared scene helper, preserving sprite animation.
 - [ ] Add and qualify Forward+ shading-model support for upstream subsurface, explicit metal colour/roughness-map blur, gradient-mapped materials and wound cuts where appropriate. Path-tracer/base-raster support does not establish Forward+ parity.
 - [ ] Qualify live L4D2/bridge behaviour separately when needed; the GMod x64 and L4D2 x86 proxy compile checks do not establish gameplay compatibility.
+
+
+
+### Immutable moving-caster shadow reuse
+
+- [x] Share exact immutable small-surface content through a bounded weak scene lookup while preserving independent mesh lifetimes and motion lineage.
+- [x] Reuse world local-shadow depth for unchanged opaque or immutable alpha-tested caster inputs, including complete pose/projection/index state. Keep in-place texture updates and viewmodel self-shadow maps live.
+- [x] Validate source/texture/sampler/pose/membership invalidation, live alpha texel edits, mesh lifecycle and both Construct and Crossfire full-quality native-1080p comparisons, including reversed Crossfire run order.
+- [x] Repeat control/candidate qualification on the merged upstream pair: Crossfire improves, while Construct whole-frame gains remain small/mixed despite lower CPU recording cost. Preserve full-quality settings; do not claim the general FPS target.
+- [ ] Extend moving-scene and additional-map performance qualification. Unchanged-map reuse reduces work; it does not establish the general 300-400 FPS target, especially for Construct with a viewmodel.
+
+- [ ] Investigate the path-tracer geometry-history accumulation assertion reproduced on the committed baseline, and HDR fullscreen vertex-binding validation diagnostics observed in those controls. Keep this separate from Forward+ cache performance claims.

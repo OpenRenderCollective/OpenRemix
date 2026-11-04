@@ -267,9 +267,28 @@ namespace remix::forward {
     sunTime.close();
     gpu::GpuScope localTime(command, "Forward+ local shadow maps", options.localShadowResolution,
                             options.localShadowResolution);
+    std::array<bool, shadows::maximumLights> movingDirty{};
+    statistics.movingLocalUpdates = statistics.movingLocalReuses = 0;
+    for (uint32_t lightSlot = 0; lightSlot < shadows::maximumLights; ++lightSlot) {
+      auto &cache = movingShadowCache[lightSlot];
+      if (!shadowSelection.active[lightSlot]) { cache.reset(); continue; }
+      movingCasterScratch.clear();
+      for (const auto &draw : frame.commands) {
+        if (!castsLocalShadow(draw, lightSlot, false)) continue;
+        movingCasterScratch.push_back({draw.source.surface, draw.source.bones, draw.source.model,
+            draw.source.firstIndex, draw.count, draw.source.vertexOffset, draw.opaqueDepth,
+            draw.opaqueDepth ? shadows::AlphaCoverage{} :
+                shadows::alphaCoverage(drawScratch[draw.index], *draw.source.material, draw.alphaSampler)});
+        if ((!draw.opaqueDepth && !movingCasterScratch.back().alpha.cacheable) ||
+            movingCasterScratch.size() > shadows::MovingCache::maximumCasters) break;
+      }
+      movingDirty[lightSlot] = cache.update(shadowSelection.views[lightSlot], movingCasterScratch);
+      ++(movingDirty[lightSlot] ? statistics.movingLocalUpdates : statistics.movingLocalReuses);
+    }
+    movingCasterScratch.clear();
     localMaps->record(command, shadowSelection, [&](uint32_t lightSlot, uint32_t face, bool staticCasters) {
       drawLocalCasters(command, lightSlot, face, staticCasters);
-    });
+    }, movingDirty);
     localTime.close();
     fragmentStatistics->reset(command, extent, samples, baking->volume() ? baking->volume()->hash : 0);
     gpu::GpuScope worldTime(command, "Forward+ opaque world shading", extent);
