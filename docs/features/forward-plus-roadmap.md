@@ -5234,3 +5234,9 @@ These are work-reduction paths, not quality presets. General native 1080p 300-40
 - [ ] Extend moving-scene and additional-map performance qualification. Unchanged-map reuse reduces work; it does not establish the general 300-400 FPS target, especially for Construct with a viewmodel.
 
 - [ ] Investigate the path-tracer geometry-history accumulation assertion reproduced on the committed baseline, and HDR fullscreen vertex-binding validation diagnostics observed in those controls. Keep this separate from Forward+ cache performance claims.
+
+### Construct GPU cost follow-up
+
+- [x] Profile the accepted local-shadow cache with and without a viewmodel. Remaining costs include opaque shading, reflection resolve and viewmodel shading/shadows; baked world local shadows are effectively idle in the measured steady view.
+- [x] Reject the empty-viewmodel-cube-face clear prototype: smaller timestamp scopes did not establish a material full-frame gain with timers disabled. Remove the prototype rather than retaining an unqualified path.
+- [ ] Investigate remaining opaque receiver/shader and reflection/composition costs with full-quality, timers-off acceptance comparisons; distinguish timestamp attribution from throughput.
