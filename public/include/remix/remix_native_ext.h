@@ -1214,11 +1214,11 @@ typedef struct remixapi_InstanceInfoMaterialEXT {
 // conveyor) moves without new vertices or materials: a constant velocity
 // scrolls it with no further calls, and a host that drives the offset itself
 // replaces the description (SetSceneInstanceEXT) when it changes. Every map
-// of the material follows, its alpha coverage and its emitters with them;
-// with a velocity, the emitters are estimated where the texture rests and
-// alpha-tested texels are tested by every ray. Such an instance is drawn as
-// an animated material's are, outside the persistent static set. Absent:
-// scale 1, offset and velocity 0.
+// of the material follows. With an offset or a velocity, which a host may
+// change every frame, its emitters are estimated where the texture rests
+// (scaled, not moved) and alpha-tested texels are tested by every ray. An
+// instance with a velocity is drawn as an animated material's are, outside
+// the persistent static set. Absent: scale 1, offset and velocity 0.
 #define REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_TEXCOORD_TRANSFORM_EXT ((remixapi_StructType)0x7fff1028)
 typedef struct remixapi_InstanceInfoTexcoordTransformEXT {
   remixapi_StructType sType;

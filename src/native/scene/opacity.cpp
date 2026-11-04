@@ -140,7 +140,7 @@ namespace remix::scene {
       return false;
     // Double-sided coverage does not depend on oneSidedOpaque: those entries
     // stay shared between both settings.
-    const bool scrolling = draw.scrolling();
+    const bool scrolling = draw.texcoordMoves();
     const uint32_t flags = uint32_t(draw.doubleSided) | uint32_t(b.enabled) << 1 | uint32_t(m.transmission) << 2 |
                            uint32_t(oneSidedOpaque && !draw.doubleSided) << 3 | uint32_t(scrolling) << 4;
     const auto &texture = m.texture;
@@ -155,7 +155,7 @@ namespace remix::scene {
                         : !p.mips.empty() && p.mips[0].size() == size_t(p.width) * p.height * 4))
         dimensions = {p.width, p.height};
     }
-    // A scrolling draw's coverage does not depend on its offset (Scrolling).
+    // Coverage of a draw whose texcoords move does not depend on its offset (Scrolling).
     out = Key{dimensions,
               scrolling ? std::array<float, 4>{uv[0], uv[1], 0, 0} : uv,
               uint32_t(compare),
@@ -277,7 +277,7 @@ namespace remix::scene {
           vertex[1] = std::max(vertex[1], alpha);
         }
         auto reason = !usesTexture       ? P::Solid
-                      : draw.scrolling() ? P::Scrolling
+                      : draw.texcoordMoves() ? P::Scrolling
                                          : opaqueTexels(draw, uv, triangle, pixels, regions);
         const Range texture = usesTexture && reason == P::Solid ? Range{1, 1} : Range{0, 1};
         auto arg = [&](uint32_t index) -> Range {

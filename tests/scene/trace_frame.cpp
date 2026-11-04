@@ -195,7 +195,7 @@ int main() {
   // Cell 1 of 2 at .6 s: u x 2 x .5 + (.25 + .5 x .6) x .5 + .5.
   require(sameUv(surfaceTexcoord(scrolled, .6, cell), {1, 1, .775f, 0}) && cell == 1,
           "Texcoord transform not composed with the sprite cell");
-  require(sameUv(surfaceTexcoord(scrolled, .6, cell, false), {1, 1, .625f, 0}), "Resting texcoords scrolled");
+  require(sameUv(surfaceTexcoord(scrolled, .6, cell, false), {1, 1, .5f, 0}), "Resting texcoords moved");
   require(sameUv(surfaceTexcoord(scrolled, 1e6 + .6, cell), {1, 1, .775f, 0}),
           "A long-running scroll lost its precision");
   texcoord.offset[1] = NAN;
@@ -205,6 +205,8 @@ int main() {
   scrolled.material->fps = 0;
   auto resting = scrolled;
   resting.texcoordVelocity = {};
+  auto driven = resting; // a host that gives the offset itself
+  resting.texcoord = {2, 1, 0, 0};
   require(staticTraceEligible({resting}) && !staticTraceEligible({scrolled}),
           "A scrolling instance entered the persistent static set");
 
@@ -225,6 +227,12 @@ int main() {
           "Scrolling coverage was proven from one offset");
   require(coverage.partition(scrolled, surfaceTexcoord(scrolled, 1.6, cell)) == moving,
           "Scrolling coverage was proven again for a new offset");
+  driven.doubleSided = true;
+  driven.material = scrolled.material;
+  const auto drivenFirst = coverage.partition(driven, surfaceTexcoord(driven, 0, cell));
+  driven.texcoord[2] = .4f;
+  require(!drivenFirst->opaque(0) && coverage.partition(driven, surfaceTexcoord(driven, 0, cell)) == drivenFirst,
+          "A host-driven offset was proven, or proven again for every offset");
 
   // Its emitters: one estimate at rest, whatever the time.
   std::fill_n(scrolled.material->emission, 3, 1.f);

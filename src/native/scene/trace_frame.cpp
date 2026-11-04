@@ -96,11 +96,12 @@ TraceFrame prepareTraceFrame(const std::vector<Draw> &draws, double seconds, boo
       if (draw.viewModel || material.suppressEmissionLight || (draw.alphaOverride && draw.compare == 0) ||
           (material.emission[0] <= 0 && material.emission[1] <= 0 && material.emission[2] <= 0))
         continue;
-      // A scrolling draw's emitters are estimated at rest, once rather than a
-      // frame: along the scroll its triangles' mean emission barely changes.
+      // Emitters of a draw whose texcoords move are estimated at rest, once
+      // rather than a frame: along a scroll its triangles' mean emission
+      // barely changes.
       uint32_t restingFrame = 0;
       const auto reduction = emissionCache.reduce(
-          draw, draw.scrolling() ? surfaceTexcoord(draw, seconds, restingFrame, false) : surface.uv);
+          draw, draw.texcoordMoves() ? surfaceTexcoord(draw, seconds, restingFrame, false) : surface.uv);
       const bool animated = filterEmission && bool(material.emissionTexture);
       // An instance the host identified as dynamic: its emitters stay in the
       // light tree's dynamic part (LightBvh).

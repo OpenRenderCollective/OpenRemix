@@ -624,9 +624,10 @@ namespace remix::scene {
     const float cell[2] = {float(animationFrame % m.columns) / m.columns, float(animationFrame / m.columns) / m.rows};
     std::array<float, 4> uv;
     for (unsigned axis = 0; axis < 2; ++axis) {
-      const float moved = scroll ? float(std::fmod(double(draw.texcoordVelocity[axis]) * seconds, 2.0)) : 0.f;
+      const float moved =
+          scroll ? draw.texcoord[axis + 2] + float(std::fmod(double(draw.texcoordVelocity[axis]) * seconds, 2.0)) : 0.f;
       uv[axis] = draw.texcoord[axis] * scale[axis];
-      uv[axis + 2] = (draw.texcoord[axis + 2] + moved) * scale[axis] + cell[axis];
+      uv[axis + 2] = moved * scale[axis] + cell[axis];
     }
     return uv;
   }
