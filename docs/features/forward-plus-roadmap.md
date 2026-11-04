@@ -5136,3 +5136,12 @@ independent default scheduling is still a separate architecture decision.
 - [x] Reject selective SSR trace/filter compiler inlining after validation-clean tests but no repeatable full-frame gain. Restore the existing shader payload; retain the prior world-stage compiler optimization.
 - [ ] Isolate selected mixed-light surface-field reconstruction cost with unchanged bytecode before implementing a bounded GPU image representation. Prefer selected-field reuse over allocating every captured light, and retain existing signed coefficients, ownership, chart filtering and cancellation behavior.
 - [ ] Compare compact diffuse-field encodings with the VRF reference using actual receiving normals, colored/HDR lighting and seams. Its directional/compact SH paths are approximations, not lossless replacements for full SH9. Keep the current default until quality and frame-time qualification establish a justified alternative.
+
+
+## 2026-11-04: Reflection filtering and rejected traversal experiments
+
+- [x] Isolate selected mixed-light surface-field reconstruction with unchanged shader bytecode. The sampled Construct view did not improve; defer a new GPU field representation until another representative workload justifies its cost.
+- [x] Test conservative SSR depth bounds, including orthographic/perspective projection and existing MSAA/viewmodel coverage. Reject the larger depth hierarchy after no convincing whole-frame improvement despite a faster nested trace; retain the existing depth representation.
+- [ ] Qualify cubemap reflected-distance roughness correction separately from SSR. SSR uses hit separation and grazing-angle footprint filtering; cubemap prefiltered mip selection remains roughness-only.
+- [ ] Isolate moving-shadow lookup cost from shadow-map rendering and retained direct fields before modifying the default filter. Preserve receiver-plane correction, cube seams and close-up viewmodel quality.
+- [x] Run a CPU-payload-only mixed-shadow sampling diagnostic and a restored production control. The sampled view shows a remaining shading opportunity, but unrelated pass variation prevents treating the difference as an exact isolated cost. Keep the original filter; investigate equivalent work reduction next.

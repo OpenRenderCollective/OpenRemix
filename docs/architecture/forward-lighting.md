@@ -44,6 +44,17 @@ and aggregate-light bookkeeping.
 filtering from receiver lighting. The packed `Material` record remains an internal
 compatibility input; it is not the shader authoring contract.
 
+The standard surface decoder applies normal-derivative specular antialiasing:
+it adds bounded screen-space normal variance to squared material roughness.
+This suppresses highlights narrower than the pixel footprint; it is not a
+fixed distance fade. SSR independently selects a colour mip using squared
+roughness, receiver-to-hit pixel separation and grazing-angle stretch
+(`shaders/radiance-filter.glsl`). Parallax cubemaps use GGX-prefiltered levels
+with roughness-based trilinear selection (`shaders/probes.glsl`). Their box
+projection corrects direction, but their mip choice currently has no
+receiver-to-proxy-hit distance correction. Keep that remaining quality study
+separate from claims of exact Source 2 filtering parity.
+
 `shadeSurface(Surface, ShadingReceiver)` is the selected world/viewmodel model
 entry point. `shading-model.glsl` binds the default to `shadeStandardSurface` at
 compile time. Alternate models replace that module rather than editing the pass.
