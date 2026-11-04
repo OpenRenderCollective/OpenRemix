@@ -17,6 +17,9 @@ output = Path(sys.argv[2])
 output.mkdir(parents=True, exist_ok=True)
 with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporary:
     tree = Path(temporary) / "forward"
+    color = tree.parent / "pathtrace/shaders/color.glsl"
+    color.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(root / "src/native/pathtrace/shaders/color.glsl", color)
     for source in (root / "src/native/forward").rglob("*.glsl"):
         destination = tree / source.relative_to(root / "src/native/forward")
         destination.parent.mkdir(parents=True, exist_ok=True)

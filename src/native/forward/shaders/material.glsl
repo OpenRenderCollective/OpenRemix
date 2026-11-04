@@ -1,3 +1,4 @@
+#include "../../pathtrace/shaders/color.glsl"
 layout(set = 1, binding = 0) uniform sampler2D albedoMap;
 layout(set = 1, binding = 1) uniform sampler2D normalMap;
 layout(set = 1, binding = 2) uniform sampler2D roughnessMap;
@@ -5,7 +6,8 @@ layout(set = 1, binding = 3) uniform sampler2D metallicMap;
 layout(set = 1, binding = 4) uniform sampler2D emissionMap;
 #include "material-common.glsl"
 vec4 surfaceColor(Material m, vec2 uv, vec4 vertexColor) {
-  return surfaceColorValues(m.state, m.factor, m.tint, texture(albedoMap, uv), vertexColor);
+  return surfaceColorValues(m.state, m.factor, m.tint,
+      decodeColorTexel(texture(albedoMap, uv), (m.maps.x & 32u) != 0u), vertexColor);
 }
 void alphaTest(Material m, float alpha) {
   if (!alphaPass(m.state.y, uintBitsToFloat(m.state.z), alpha)) discard;

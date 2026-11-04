@@ -17,11 +17,9 @@ namespace remix::forward {
     std::copy(radiance.begin(), radiance.end(), data.radiance.begin());
     data.radiance[3] = dome.enabled ? 1.f : 0.f;
     data.target = {float(extent.width), float(extent.height), .002f / options.sceneScale, 0};
-    probes::dumpFrameData(".sky-frame.bin", &data, sizeof(data));
     ensure(frame.skyConstants, sizeof(data),
            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
                (ImageDump::enabled(physical) ? VK_BUFFER_USAGE_TRANSFER_SRC_BIT : 0u));
-    frame.skyConstants->write(&data, sizeof(data));
     // Upload/retain the texture through the shared resource service, while this
     // pass owns its panoramic sampler. Sky filtering needs no anisotropy feature.
     const auto material = resources.defaultMaterial();
@@ -29,6 +27,9 @@ namespace remix::forward {
                               : resources.sampledMaterial(material, command);
     image.sampler = skySampler;
     frame.skyImage = image;
+    data.target[3] = resources.textureSrgb((dome.texture ? dome.texture : material->texture).get()) ? 1.f : 0.f;
+    frame.skyConstants->write(&data, sizeof(data));
+    probes::dumpFrameData(".sky-frame.bin", &data, sizeof(data));
     const auto buffer = frame.skyConstants->descriptor();
     const VkWriteDescriptorSet writes[] = {{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                                             .dstSet = frame.composite,

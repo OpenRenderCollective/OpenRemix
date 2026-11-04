@@ -1,9 +1,10 @@
 // Shared local-to-dome sampling and visibility-filtered sky fallback.
+#include "../../pathtrace/shaders/color.glsl"
 vec3 skyRadiance(vec3 direction) {
   vec3 local = normalize(mat3(sky.viewToDome) * mat3(frame.view) * direction);
   vec2 uv = vec2(atan(local.z, local.x) / 6.28318530718 + .5,
                  acos(clamp(local.y, -1, 1)) / 3.14159265359);
-  return textureLod(skyMap, uv, 0).rgb * sky.radiance.rgb;
+  return decodeColorTexel(textureLod(skyMap, uv, 0), sky.target.w > .5).rgb * sky.radiance.rgb;
 }
 vec3 environmentReflection(vec3 position, vec3 normal, vec3 reflected, float roughness) {
   if (sky.radiance.w == 0)

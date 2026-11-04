@@ -6,7 +6,8 @@ Surface evaluateStandardSurface(Material material, vec4 color, vec2 texcoord,
                                 vec3 position, vec3 normal, vec3 geometric,
                                 vec3 viewDirection, bool useNormalMap) {
   Surface surface;
-  vec4 emissionTexel = (material.maps.x & 8u) != 0u ? texture(emissionMap, texcoord) : vec4(1);
+  vec4 emissionTexel = (material.maps.x & 8u) != 0u
+      ? decodeColorTexel(texture(emissionMap, texcoord), (material.maps.x & 64u) != 0u) : vec4(1);
   float reflected;
   emissionLobes(material.emission, material.state, color, texture(albedoMap, texcoord),
                 emissionTexel, surface.emission, reflected);

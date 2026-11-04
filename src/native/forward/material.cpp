@@ -73,6 +73,10 @@ namespace remix::forward {
                    linear[b.factor & 255], float(b.factor >> 24) / 255};
     data.maps[0] = uint32_t(bool(m.roughnessTexture)) | uint32_t(bool(m.metallicTexture)) << 1 |
                    uint32_t(bool(m.normalTexture)) << 2 | uint32_t(bool(m.emissionTexture)) << 3;
+    const auto encoded = [](const std::shared_ptr<scene::Texture> &texture) {
+      return texture && texture->pixels.srgb && texture->pixels.hdrMips.empty();
+    };
+    data.maps[0] |= uint32_t(encoded(m.texture)) << 5 | uint32_t(encoded(m.emissionTexture)) << 6;
     data.maps[1] = m.normalEncoding;
     for (uint32_t i = 0; i < 2; ++i) {
       const auto &r = m.remap[i];

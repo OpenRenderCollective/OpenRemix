@@ -326,6 +326,14 @@ otherwise ready authored set. The bake-controller adapter returns the independen
 published image owner without copying images or allocating a new GPU resource.
 Submitted capture/composition frames retain that owner through their fences.
 
+Capture radiance is traced from the immutable scene's materials, lights and sky;
+it does not sample rasterized lightmaps or wait for a displayed frame. Automatic
+captures can therefore finish before diffuse atlas encoding. Their linear color
+inputs must still match the diffuse transport: encoded color textures are decoded
+once when copied into the transport atlas, while HDR and data textures stay linear.
+The display-color helper used by material sampling shares the path tracer's
+existing gamma convention; exposure and tone mapping belong after capture.
+
 For the baked profile, placement, capture transport and combined cache publication
 still live in the bake controller. The standalone provider handles the diffuse-disabled
 case separately. Default-profile lifecycle migration remains required; the input

@@ -1,3 +1,4 @@
+#include "color.glsl"
 struct Vertex { vec4 position; vec4 uv; vec4 color; };
 vec3 vertexNormal(Vertex v) { return vec3(v.position.w,v.uv.zw); }
 vec3 shadingNormal(vec3 n,vec3 geometric,vec3 wo) {
@@ -217,8 +218,7 @@ vec2 uvGradX=vec2(0),uvGradY=vec2(0);
 // A texel of texture slot `index` as linear colour: the slot's sRGB-encoded
 // texels (frame.srgbTextures) decoded with gamma 2.2, as filtered.
 vec4 slotTexel(uint index,vec4 texel) {
-  if(((frame.srgbTextures[index>>7u][(index>>5u)&3u]>>(index&31u))&1u)!=0u)texel.rgb=pow(texel.rgb,vec3(2.2));
-  return texel;
+  return decodeColorTexel(texel,((frame.srgbTextures[index>>7u][(index>>5u)&3u]>>(index&31u))&1u)!=0u);
 }
 // A material texture at mesh UV `uv`, filtered over the footprint.
 vec4 materialTexel(Surface s,uint index,vec2 uv) {

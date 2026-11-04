@@ -43,6 +43,9 @@ namespace remix::forward::bake {
                          1, &upload, 0, nullptr, 0, nullptr);
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, atlasPipeline);
     for (uint32_t i = 0; i < atlasSets.size(); ++i) {
+      const auto &texture = world->textures[i];
+      const uint32_t encoded = texture.color && resources.textureSrgb(texture.image.get());
+      vkCmdPushConstants(command, atlasLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(encoded), &encoded);
       vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, atlasLayout, 0, 1, &atlasSets[i], 0,
                               nullptr);
       vkCmdDispatch(command, (world->resolution + 7) / 8, (world->resolution + 7) / 8, 1);

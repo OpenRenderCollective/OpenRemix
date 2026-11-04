@@ -37,6 +37,7 @@ namespace remix::forward::bake {
   struct Texture {
     std::shared_ptr<scene::Material> sampler;
     std::shared_ptr<scene::Texture> image;
+    bool color = true; // Data maps retain their values even when the image carries an sRGB tag.
   };
   struct Inputs {
     std::vector<Vertex> vertices;

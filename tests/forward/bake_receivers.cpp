@@ -48,6 +48,15 @@ int main() {
           "Receiver-only geometry contributes no ray triangles or vertices and preserves material indexing");
   require(transport.triangles[0][3] == 0 && transport.triangles[1][3] == 0,
           "Transport triangles still address their original draw material");
+  auto textured = *captured;
+  auto mapped = std::make_shared<scene::Material>(*textured.draws[0].material);
+  mapped->texture = mapped->emissionTexture = mapped->metallicTexture = std::make_shared<scene::Texture>();
+  textured.draws[0].material = mapped;
+  const auto textureInputs = forward::bake::pack(textured);
+  const auto &layers = textureInputs.materials[0].textures;
+  require(textureInputs.textures.size() == 2 && layers[0] == layers[1] && layers[0] != layers[2] &&
+              textureInputs.textures[layers[0] - 1].color && !textureInputs.textures[layers[2] - 1].color,
+          "Shared color images reuse a layer while data usage retains a separate undecoded layer");
   auto reversedRoles = *captured;
   reversedRoles.receiverDraws = {1, 0};
   const auto laterTransport = forward::bake::pack(reversedRoles);

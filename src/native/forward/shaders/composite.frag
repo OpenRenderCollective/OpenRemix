@@ -67,7 +67,7 @@ vec3 mediumColor(vec3 color, float depth) {
     vec2 uv = vec2(atan(direction.z, direction.x) / 6.28318530718 + .5,
                    acos(clamp(direction.y, -1, 1)) / 3.14159265359);
     vec3 light = waterFrame.sunFog.rgb;
-    if (sky.radiance.w > 0) light += textureLod(dome, uv, 0).rgb * sky.radiance.rgb;
+    if (sky.radiance.w > 0) light += decodeColorTexel(textureLod(dome, uv, 0), sky.target.w > .5).rgb * sky.radiance.rgb;
     else light += sky.radiance.rgb;
     color = passed * color + (1 - passed) * tint * light;
   }
@@ -81,7 +81,8 @@ void main() {
     vec3 direction = normalize(mat3(sky.viewToDome) * (view.xyz / view.w));
     vec2 uv = vec2(atan(direction.z, direction.x) / 6.28318530718 + .5,
                    acos(clamp(direction.y, -1, 1)) / 3.14159265359);
-    vec3 mapped = tonemap(mediumColor(textureLod(dome, uv, 0).rgb * sky.radiance.rgb, 1));
+    vec3 mapped = tonemap(mediumColor(
+        decodeColorTexel(textureLod(dome, uv, 0), sky.target.w > .5).rgb * sky.radiance.rgb, 1));
     result = vec4(mapped, 1);
     gl_FragDepth = 1;
     return;

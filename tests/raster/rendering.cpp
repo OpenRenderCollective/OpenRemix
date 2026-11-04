@@ -3656,6 +3656,7 @@ namespace {
 #include "sun_depth_lifecycle.h"
 #include "auto_exposure.h"
 #include "hdr_black_levels.h"
+#include "color_textures.h"
   void bakingTests() {
     Target target(64, 64, true);
     auto &r = target.raster;
@@ -5634,6 +5635,7 @@ int main(int argc, char **argv) try {
   }
   else if (argc>2 && std::strcmp(argv[2],"local-shadow-plane")==0) localShadowPlaneTests();
   else if (argc>2 && std::strcmp(argv[2],"auto-exposure")==0) autoExposureTests();
+  else if (argc>2 && std::strcmp(argv[2],"color-textures")==0) colorTextureTests();
   else if (argc>2 && std::strcmp(argv[2],"hdr-black-levels")==0) hdrBlackLevelTests();
   else if (argc>2 && std::strcmp(argv[2],"styled-mixed")==0) mixedLightingTests(true, true, true);
   else if (argc>2 && std::strcmp(argv[2],"mixed")==0) mixedLightingTests();

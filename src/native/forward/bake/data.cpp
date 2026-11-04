@@ -14,16 +14,17 @@ namespace remix::forward::bake {
     if (!scene.ready)
       throw std::invalid_argument("Baking needs a complete static scene");
     Inputs result;
-    std::unordered_map<const scene::Texture *, uint32_t> textures;
+    std::array<std::unordered_map<const scene::Texture *, uint32_t>, 2> textures;
     auto texture = [&](const std::shared_ptr<scene::Material> &material,
-                       const std::shared_ptr<scene::Texture> &image) {
+                       const std::shared_ptr<scene::Texture> &image, bool color = true) {
       if (!image)
         return 0u;
-      if (auto found = textures.find(image.get()); found != textures.end())
+      auto &layers = textures[uint32_t(color)];
+      if (auto found = layers.find(image.get()); found != layers.end())
         return found->second;
       const uint32_t layer = uint32_t(result.textures.size()) + 1;
-      textures.emplace(image.get(), layer);
-      result.textures.push_back({material, image});
+      layers.emplace(image.get(), layer);
+      result.textures.push_back({material, image, color});
       return layer;
     };
     for (size_t drawIndex = 0; drawIndex < scene.draws.size(); ++drawIndex) {
@@ -57,7 +58,7 @@ namespace remix::forward::bake {
       result.materials.push_back(
           {shading,
            {texture(draw.material, source.texture), texture(draw.material, source.emissionTexture),
-            texture(draw.material, source.metallicTexture), 0},
+            texture(draw.material, source.metallicTexture, false), 0},
            {source.wrapU, source.wrapV, source.filter,
             (source.suppressEmissionLight ? suppressEmission : 0u) |
                 (sourceOver ? sourceOverCoverageFlag : 0u) | (dielectric ? dielectricBoundaryFlag : 0u) |

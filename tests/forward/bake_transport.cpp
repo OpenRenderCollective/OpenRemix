@@ -2673,6 +2673,52 @@ namespace {
                 "CPU/GPU box projection agrees\n",
                 positiveZ[0], positiveZ[3], negativeZ[2]);
   }
+  void encodedCapture(test::Fixture &fixture, pipeline::Service &pipelines, World &world) {
+    for (bool encoded : {false, true}) {
+      world.texture(0xc041, {128, 64, 192, 128, 128, 64, 192, 128},
+          encoded ? REMIXAPI_FORMAT_R8G8B8A8_SRGB : REMIXAPI_FORMAT_R8G8B8A8_UNORM);
+      remixapi_LightInfoDomeEXT dome{};
+      dome.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DOME_EXT;
+      for (uint32_t c = 0; c < 3; ++c) dome.transform.matrix[c][c] = 1;
+#if defined(_WIN32)
+      dome.colorTexture = L"0xc041";
+#else
+      dome.colorTexture = "0xc041";
+#endif
+      remixapi_LightInfo light{};
+      light.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
+      light.pNext = &dome;
+      light.hash = ++world.hash;
+      light.radiance = {1, 1, 1};
+      remixapi_LightHandle environment;
+      world.resources.createLight(light, environment);
+      const auto source = world.scene({}, {environment});
+      bake::Transport transport;
+      bake::Options options;
+      options.batchPoints = 1;
+      auto job = pipelines.prepare("capture-color-" + std::to_string(encoded), [&] {
+        transport.initialize(fixture.physical, fixture.device, source, options);
+      });
+      const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+      while (!job->ready() && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      require(job->ready(), "Color capture preparation completed");
+      job->check();
+      fixture.begin();
+      transport.recordPrepare(fixture.command, world.resources);
+      const bake::Point ray{{0, 0, 0, 0}, {0, 0, 1, 0}};
+      transport.recordRadiance(fixture.command, 0, {&ray, 1}, 1);
+      fixture.finish();
+      bake::Result result;
+      transport.read(0, {&result, 1});
+      const float bytes[] = {128, 64, 192};
+      for (uint32_t c = 0; c < 3; ++c) {
+        const float expected = encoded ? std::pow(bytes[c] / 255, 2.2f) : bytes[c] / 255;
+        require(std::abs(result.irradiance[0][c] - expected) < .001f,
+                "Captured environment radiance decodes encoded color exactly once and retains linear color");
+      }
+    }
+  }
 } // namespace
 int main(int argc, char **argv) try {
   std::setvbuf(stdout, nullptr, _IONBF, 0);
@@ -2701,6 +2747,11 @@ int main(int argc, char **argv) try {
     vkGetPhysicalDeviceProperties(fixture.physical, &properties);
     pipeline::Service pipelines(fixture.device, properties, false);
     World world(fixture);
+    if (argc == 2 && std::strcmp(argv[1], "--color-capture-only") == 0) {
+      encodedCapture(fixture, pipelines, world);
+      require(test::validationErrors == 0, "Color capture is validation clean");
+      return 0;
+    }
     if (argc == 2 && std::strcmp(argv[1], "--irradiance-partitions-only") == 0) {
       aggregateDiffuse(fixture, pipelines, world);
       require(test::validationErrors == 0, "Irradiance partition validation stayed clean");

@@ -46,9 +46,12 @@ namespace remix::forward::bake {
                                                    .bindingCount = 2,
                                                    .pBindings = atlasBindings};
     check(pipeline::createDescriptorSetLayout(device, &atlasSet, nullptr, &atlasSetLayout));
+    const VkPushConstantRange atlasPush{VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(uint32_t)};
     const VkPipelineLayoutCreateInfo atlasInfo{.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
                                                .setLayoutCount = 1,
-                                               .pSetLayouts = &atlasSetLayout};
+                                               .pSetLayouts = &atlasSetLayout,
+                                               .pushConstantRangeCount = 1,
+                                               .pPushConstantRanges = &atlasPush};
     check(pipeline::createPipelineLayout(device, &atlasInfo, nullptr, &atlasLayout));
   }
   void Transport::Gpu::createPipelines() {

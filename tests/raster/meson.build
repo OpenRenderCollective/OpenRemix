@@ -27,6 +27,8 @@ if get_option('gpu_tests')
     args : [meson.current_build_dir() / 'lighting-view-readback', 'lighting-views'], timeout : 120)
   test('Forward+ HDR black levels and shared display transfer', raster_test,
     args : [meson.current_build_dir() / 'hdr-black-readback', 'hdr-black-levels'], timeout : 120)
+  test('Forward+ encoded, linear and HDR material color sampling', raster_test,
+    args : [meson.current_build_dir() / 'color-texture-readback', 'color-textures'], timeout : 120)
   test('Forward+ automatic exposure transitions, manual mode and MSAA state', raster_test,
       args : [meson.current_build_dir() / 'auto-exposure-readback', 'auto-exposure'], timeout : 120)
   test('Forward+ measured water HDR, MSAA and frame-slot readback', raster_test,

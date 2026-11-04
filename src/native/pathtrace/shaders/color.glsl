@@ -1,6 +1,14 @@
 #ifndef REMIX_COLOR_GLSL
 #define REMIX_COLOR_GLSL
 
+// Texture resources expose encoded UNORM values to every renderer. Decode
+// color after filtering, matching the path tracer's gamma 2.2 convention.
+// Linear HDR and data maps must pass encoded=false; alpha is always unchanged.
+vec4 decodeColorTexel(vec4 texel, bool encoded) {
+  if (encoded) texel.rgb = pow(texel.rgb, vec3(2.2));
+  return texel;
+}
+
 vec3 gammaEncodeSafe(vec3 color, float gamma){
   return sign(color) * pow(abs(color), vec3(1.0 / gamma));
 }
