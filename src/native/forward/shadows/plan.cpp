@@ -100,9 +100,9 @@ namespace remix::forward::shadows {
       m_strength.fill(0);
     }
     struct Candidate {
+      uint64_t id;
       uint32_t index;
-      View view;
-      float priority;
+      float range, priority;
       bool fallback;
     };
     std::vector<Candidate> candidates;
@@ -110,11 +110,10 @@ namespace remix::forward::shadows {
       const float range = influenceRadius(lights[i], cutoff);
       if (!std::isfinite(range) || range <= 0)
         continue;
-      auto view = lightView(lights[i], std::min(range, distance / sceneScale), sceneScale);
       Vec3 delta;
       for (uint32_t c = 0; c < 3; ++c)
-        delta[c] = eye[c] - view.position[c];
-      candidates.push_back({i, view, range * range / std::max(dot(delta, delta), 1e-6f),
+        delta[c] = eye[c] - lights[i].position[c];
+      candidates.push_back({lights[i].id, i, range, range * range / std::max(dot(delta, delta), 1e-6f),
                             !fallbackLights.empty() && fallbackLights[i] != 0});
     }
     std::stable_sort(candidates.begin(), candidates.end(), [](const Candidate &a, const Candidate &b) {
@@ -122,7 +121,7 @@ namespace remix::forward::shadows {
         return !a.fallback;
       if (a.priority != b.priority)
         return a.priority > b.priority;
-      return a.view.id < b.view.id;
+      return a.id < b.id;
     });
     Selection result;
     result.slots.resize(lights.size(), UINT32_MAX);
@@ -131,7 +130,7 @@ namespace remix::forward::shadows {
     const size_t desiredCount = std::min(size_t(budget), candidates.size());
     const auto desired = [&](uint64_t id) {
       return std::any_of(candidates.begin(), candidates.begin() + desiredCount,
-                         [&](const Candidate &candidate) { return candidate.view.id == id; });
+                         [&](const Candidate &candidate) { return candidate.id == id; });
     };
     const bool fading = std::isfinite(fadeSeconds) && fadeSeconds > 0;
     double elapsed = 0;
@@ -150,7 +149,7 @@ namespace remix::forward::shadows {
       }
       if (!m_assigned[slot]) continue;
       const auto present = std::find_if(candidates.begin(), candidates.end(),
-                                      [&](const Candidate &c) { return c.view.id == m_views[slot].id; });
+                                      [&](const Candidate &c) { return c.id == m_views[slot].id; });
       if (present == candidates.end()) {
         m_assigned[slot] = false;
         m_strength[slot] = 0;
@@ -161,7 +160,7 @@ namespace remix::forward::shadows {
       if (!wanted && m_strength[slot] == 0) m_assigned[slot] = false;
     }
     for (size_t i = 0; i < desiredCount; ++i) {
-      const auto id = candidates[i].view.id;
+      const auto id = candidates[i].id;
       bool retained = false;
       for (uint32_t slot = 0; slot < budget; ++slot)
         retained |= m_assigned[slot] && m_views[slot].id == id;
@@ -184,16 +183,19 @@ namespace remix::forward::shadows {
       auto &slot = result.slots[candidate.index];
       if (slot == UINT32_MAX)
         for (uint32_t existing = 0; existing < budget; ++existing)
-          if (m_assigned[existing] && !result.active[existing] && m_views[existing].id == candidate.view.id) {
+          if (m_assigned[existing] && !result.active[existing] && m_views[existing].id == candidate.id) {
             slot = existing;
             break;
           }
       if (slot == UINT32_MAX) continue;
+      // Projection matrices are needed only by lights that own a map. Keep
+      // the ranked candidates compact instead of sorting six matrices each.
+      const auto view = lightView(lights[candidate.index], std::min(candidate.range, distance / sceneScale), sceneScale);
       result.active[slot] = true;
       result.strength[slot] = m_strength[slot];
-      result.views[slot] = candidate.view;
-      result.dirty[slot] = !m_valid[slot] || !sameView(m_views[slot], candidate.view);
-      m_views[slot] = candidate.view;
+      result.views[slot] = view;
+      result.dirty[slot] = !m_valid[slot] || !sameView(m_views[slot], view);
+      m_views[slot] = view;
       m_valid[slot] = true;
     }
     // Inactive cached maps remain reusable until their slots are overwritten.

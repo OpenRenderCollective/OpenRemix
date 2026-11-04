@@ -5153,3 +5153,12 @@ independent default scheduling is still a separate architecture decision.
 - [x] Qualify CPU projection bounds, filtered GPU visibility, moving mixed receivers, cache/toggle behavior, viewmodels and current default material passes. Compare same-binary enabled/disabled foreground runs at native 1080p with unchanged 4x MSAA, bicubic lightmaps and full-resolution SSR.
 - [ ] Continue CPU/host and viewmodel profiling: reducing GPU shading cost does not translate proportionally to presented FPS. Crossfire is approaching the host-side frame budget; Construct remains below the requested performance target.
 - [ ] Extend coverage/performance qualification to additional actor-heavy and large maps; retain complete offscreen caster submission and avoid extra speculative culling structures.
+
+
+## 2026-11-05: CPU light selection
+
+- [x] Rank compact shadow candidates before constructing cube matrices. Build projections only for assigned maps, including outgoing fades; preserve selection/ownership behavior and keep shaders unchanged.
+- [x] Verify projection/selection, moving shadows, viewmodels and stable controllable-light composition with current default quality. Qualify native CPU cost separately from presented FPS.
+- [x] Obtain a representative CPU call-stack profile across the game adapter, engine and native worker. The current host frame gap is larger than the resource submission and native caller work alone; avoid attributing it solely to GPU or draw-call count.
+- [x] Replace the adapter texture-category reader/writer lock with a plain mutex after sampled main-thread attribution and controlled full-frame/image comparisons. Keep configuration updates synchronized without adding a lookup cache or invalidation scheme.
+- [ ] Streamline Source material parameter-name queries through the existing material lifetime/refresh rules, preserving animated values, missing parameters and reload behavior. Obtain a matching native-symbol capture before assigning detailed native hot-path costs.

@@ -1115,3 +1115,9 @@ offscreen actors, rather than from camera-visible draws.
 `REMIX_DEBUG_DISABLE_SHADOW_COVERAGE` disables the coverage decision for
 qualification with the same shaders and resource layout. It does not change
 shadow-map rendering, filtering or the saved bake.
+
+Shadow selection sorts lightweight light identity/index/range/priority records.
+It builds the six projection matrices only after a light owns a shadow slot,
+including outgoing lights during their fade. Candidate ranking, duplicate IDs,
+stable slot ownership and projection invalidation keep the same policy; no
+per-light matrix cache or camera-dependent invalidation path is needed.
