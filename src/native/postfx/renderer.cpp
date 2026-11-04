@@ -312,7 +312,7 @@ void Renderer::initialize(VkPhysicalDevice physical, VkDevice device,
   sampler.borderColor = VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK;
   check(pipeline::createSampler(device, &sampler, nullptr, &g.border));
   g.compositeSetLayout = compositeLayout(device);
-  VkDescriptorSetLayoutBinding bindings[7]{};
+  VkDescriptorSetLayoutBinding bindings[8]{};
   for (uint32_t i = 0; i < 5; ++i)
     bindings[i] = {i,
                    i < 2    ? VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER
@@ -321,9 +321,10 @@ void Renderer::initialize(VkPhysicalDevice physical, VkDevice device,
                    1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr};
   bindings[5] = {5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr};
   bindings[6] = {6, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr};
+  bindings[7] = {7, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr};
   VkDescriptorSetLayoutCreateInfo si{
       .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-      .bindingCount = 7,
+      .bindingCount = 8,
       .pBindings = bindings};
   check(pipeline::createDescriptorSetLayout(device, &si, nullptr,
                                             &g.computeSetLayout));
@@ -370,7 +371,7 @@ void Renderer::initialize(VkPhysicalDevice physical, VkDevice device,
   uint32_t sets = 2 + g.down.size() + g.up.size();
   for (auto &f : g.frames) {
     VkDescriptorPoolSize sizes[] = {
-        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, sets * 3},
+        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, sets * 4},
         {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, sets},
         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, sets * 2},
         {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, sets + 1}};
@@ -577,12 +578,17 @@ void Renderer::record(VkCommandBuffer command, upscale::Input hdr,
         : VkDescriptorImageInfo{g.edge, g.dummy->view, VK_IMAGE_LAYOUT_GENERAL};
     const VkDescriptorBufferInfo skyConstants = background ? inputs.backgroundConstants
         : VkDescriptorBufferInfo{f.emptyBackground->handle, 0, 160};
+    const bool materialScene = g.radianceMeter && inputs.material.imageView;
+    const VkDescriptorImageInfo material = materialScene ? inputs.material
+        : VkDescriptorImageInfo{g.edge, g.dummy->view, VK_IMAGE_LAYOUT_GENERAL};
     const VkWriteDescriptorSet skyWrites[] = {
         {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = f.meter, .dstBinding = 5,
          .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &sky},
         {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = f.meter, .dstBinding = 6,
-         .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .pBufferInfo = &skyConstants}};
-    vkUpdateDescriptorSets(g.device, 2, skyWrites, 0, nullptr);
+         .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .pBufferInfo = &skyConstants},
+        {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = f.meter, .dstBinding = 7,
+         .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &material}};
+    vkUpdateDescriptorSets(g.device, 3, skyWrites, 0, nullptr);
     Push p{g.display.width,
            g.display.height,
            ((g.display.width + 15) / 16) * ((g.display.height + 15) / 16),
@@ -593,7 +599,7 @@ void Renderer::record(VkCommandBuffer command, upscale::Input hdr,
            options.autoExposureMaxEv,
            0,
            uint32_t(reset),
-           uint32_t(g.radianceMeter), uint32_t(background)};
+           materialScene ? 2u : uint32_t(g.radianceMeter), uint32_t(background)};
     {
       gpu::GpuScope scope(command, "Auto exposure meter", g.display);
       g.dispatch(command, 0, f.meter, p);

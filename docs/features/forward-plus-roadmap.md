@@ -5086,3 +5086,12 @@ stable CPU regression or zero overhead. Qualify the latest frame snapshot across
 maps before promoting it. Neutral metadata retains an additional aligned header
 per nonempty image. Preserve the default shared transport/admission work reuse;
 independent default scheduling is still a separate architecture decision.
+
+
+## 2026-11-04: Color inputs and exposure parity
+
+- [x] Decode encoded albedo, emission and sky once, using the shared path-traced color convention. Keep HDR inputs linear and metallic/data atlas layers undecoded.
+- [x] Feed linear material color into the shared exposure meter so both backends normalize illumination consistently. Allocate the raster guide only with automatic exposure enabled.
+- [x] Clarify that reflection capture traces scene lighting directly; it does not depend on displayed lightmaps.
+- [ ] Reduce the MSAA material-guide bandwidth while preserving metering correctness; include its cost in the outstanding frame-performance work.
+- [ ] Continue actual-display HDR comparisons in the Construct hall and connector. Correct color inputs and shared metering do not establish exact path-traced reflection, GI or display parity.

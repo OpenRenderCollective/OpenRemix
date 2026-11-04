@@ -20,7 +20,7 @@ namespace remix::forward {
     const auto depthUsage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
     auto supported = supportedSamples(physical, colorFormat, colorUsage) &
                      supportedSamples(physical, depthFormat, depthUsage);
-    if (techniquePlan.reflectionResolve)
+    if (techniquePlan.reflectionResolve || options.autoExposure)
       supported &= supportedSamples(physical, VK_FORMAT_R8G8B8A8_UNORM, colorUsage);
     for (auto count : {VK_SAMPLE_COUNT_4_BIT, VK_SAMPLE_COUNT_2_BIT, VK_SAMPLE_COUNT_1_BIT})
       if (uint32_t(count) <= options.samples && (supported & count)) {
@@ -47,9 +47,16 @@ namespace remix::forward {
       reflectanceGuide =
           image(extent, VK_FORMAT_R8G8B8A8_UNORM, colorUsage, samples, VK_IMAGE_ASPECT_COLOR_BIT);
     }
-    const uint32_t resolveIndex = techniquePlan.reflectionResolve ? 4 : 2;
-    const uint32_t attachmentCount = resolveIndex + uint32_t(bool(resolved));
-    VkAttachmentDescription attachments[5]{};
+    const uint32_t meterIndex = techniquePlan.reflectionResolve ? 4 : 2;
+    const uint32_t resolveIndex = meterIndex + uint32_t(options.autoExposure);
+    const uint32_t attachmentCount = resolveIndex + uint32_t(bool(resolved)) * (1 + uint32_t(options.autoExposure));
+    if (options.autoExposure) {
+      meterMaterial = image(extent, VK_FORMAT_R8G8B8A8_UNORM, colorUsage, samples, VK_IMAGE_ASPECT_COLOR_BIT);
+      if (resolved)
+        resolvedMeterMaterial = image(extent, VK_FORMAT_R8G8B8A8_UNORM, colorUsage,
+            VK_SAMPLE_COUNT_1_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+    }
+    VkAttachmentDescription attachments[7]{};
     attachments[0] = {.format = colorFormat,
                       .samples = samples,
                       .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
@@ -69,26 +76,39 @@ namespace remix::forward {
     attachments[resolveIndex] = attachments[0];
     attachments[resolveIndex].samples = VK_SAMPLE_COUNT_1_BIT;
     attachments[resolveIndex].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    if (meterMaterial) {
+      attachments[meterIndex] = attachments[0];
+      attachments[meterIndex].format = VK_FORMAT_R8G8B8A8_UNORM;
+      if (resolvedMeterMaterial) {
+        attachments[resolveIndex + 1] = attachments[resolveIndex];
+        attachments[resolveIndex + 1].format = VK_FORMAT_R8G8B8A8_UNORM;
+      }
+    }
     const VkAttachmentReference colorReferences[] = {{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
-                                                     {2, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
-                                                     {3, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}};
+        {techniquePlan.reflectionResolve ? 2u : VK_ATTACHMENT_UNUSED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
+        {techniquePlan.reflectionResolve ? 3u : VK_ATTACHMENT_UNUSED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
+        {meterIndex, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}};
     const VkAttachmentReference depthReference{1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
     const VkAttachmentReference resolveReferences[] = {
         {resolveIndex, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
         {VK_ATTACHMENT_UNUSED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
-        {VK_ATTACHMENT_UNUSED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}};
+        {VK_ATTACHMENT_UNUSED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
+        {resolveIndex + 1, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}};
     const VkSubpassDescription subpass{.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                       .colorAttachmentCount = techniquePlan.reflectionResolve ? 3u : 1u,
+                                       .colorAttachmentCount = meterMaterial ? 4u : techniquePlan.reflectionResolve ? 3u : 1u,
                                        .pColorAttachments = colorReferences,
                                        .pDepthStencilAttachment = &depthReference};
     // Paint is lit in HDR after opaque receivers. Preserve their reflection
     // guides and depth, then resolve colour only after both subpasses finish.
     const uint32_t preserveGuides[] = {2, 3};
     const VkAttachmentReference readDepth{1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL};
+    const VkAttachmentReference layerColors[] = {colorReferences[0],
+        {VK_ATTACHMENT_UNUSED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
+        {VK_ATTACHMENT_UNUSED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}, colorReferences[3]};
     const VkSubpassDescription terrainSubpass{
         .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
-        .colorAttachmentCount = 1,
-        .pColorAttachments = colorReferences,
+        .colorAttachmentCount = meterMaterial ? 4u : 1u,
+        .pColorAttachments = layerColors,
         .pResolveAttachments = resolved ? resolveReferences : nullptr,
         .pDepthStencilAttachment = &readDepth,
         .preserveAttachmentCount = techniquePlan.reflectionResolve ? 2u : 0u,
@@ -138,13 +158,15 @@ namespace remix::forward {
                                       .dependencyCount = 4,
                                       .pDependencies = dependencies};
     check(pipeline::createRenderPass(device, &info, nullptr, &worldPass));
-    VkImageView views[5] = {color->view, depth->view};
+    VkImageView views[7] = {color->view, depth->view};
     if (techniquePlan.reflectionResolve) {
       views[2] = normalGuide->view;
       views[3] = reflectanceGuide->view;
     }
     if (resolved)
       views[resolveIndex] = resolved->view;
+    if (meterMaterial) views[meterIndex] = meterMaterial->view;
+    if (resolvedMeterMaterial) views[resolveIndex + 1] = resolvedMeterMaterial->view;
     const VkFramebufferCreateInfo framebuffer{.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
                                               .renderPass = worldPass,
                                               .attachmentCount = attachmentCount,

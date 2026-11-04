@@ -58,6 +58,7 @@ namespace remix::forward {
     std::unique_ptr<Image> color, depth, resolved;
     std::unique_ptr<shadows::SunMaps> sunMaps;
     std::unique_ptr<Image> normalGuide, reflectanceGuide;
+    std::unique_ptr<Image> meterMaterial, resolvedMeterMaterial;
     std::unique_ptr<Reflections> reflections;
     std::unique_ptr<water::Pass> waterPass;
     std::unique_ptr<viewmodel::Target> viewModelTarget;

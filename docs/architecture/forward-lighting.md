@@ -334,6 +334,13 @@ once when copied into the transport atlas, while HDR and data textures stay line
 The display-color helper used by material sampling shares the path tracer's
 existing gamma convention; exposure and tone mapping belong after capture.
 
+Forward automatic exposure supplies a resolved linear material-color guide to the
+shared postfx meter. Both backends normalize radiance by material color using the
+same function before reduction, adaptation and display conversion. This prevents
+dark albedo from being interpreted as weak illumination. The guide is an RGBA8
+world attachment (plus its resolve under MSAA), allocated only with automatic
+exposure enabled; its bandwidth is an explicit rendering cost to optimize.
+
 For the baked profile, placement, capture transport and combined cache publication
 still live in the bake controller. The standalone provider handles the diffuse-disabled
 case separately. Default-profile lifecycle migration remains required; the input

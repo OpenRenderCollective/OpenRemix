@@ -48,6 +48,10 @@ layout(push_constant) uniform Draw {
 draw;
 #ifndef SHADOW_PASS
 layout(location = 0) out vec4 result;
+#if !defined(VIEWMODEL_PASS) && !defined(WATER_SURFACE)
+// Pass-owned material guide for the shared automatic exposure meter.
+layout(location = 3) out vec4 outMeterMaterial;
+#endif
 #ifdef REFLECTION_GUIDES
 layout(location = 1) out vec4 outNormalRoughness;
 layout(location = 2) out vec4 outReflectance;
@@ -92,6 +96,9 @@ void main() {
 #ifndef SHADOW_PASS
   if (LightingView == 4u) {
     result = vec4(surface.rgb, m.pbr.w > .5 ? surface.a : 1);
+#if !defined(VIEWMODEL_PASS) && !defined(WATER_SURFACE)
+    outMeterMaterial = result;
+#endif
 #ifdef REFLECTION_GUIDES
     outNormalRoughness = packReflectionGuide(vec3(0, 0, 1), 1, -1);
     outReflectance = vec4(0);
@@ -116,6 +123,9 @@ void main() {
   receiver.opacity = m.pbr.w > .5 ? evaluated.color.a : 1;
   ShadingResult shaded = shadeSurface(evaluated, receiver);
   result = shaded.color;
+#if !defined(VIEWMODEL_PASS) && !defined(WATER_SURFACE)
+  outMeterMaterial = vec4(surface.rgb, receiver.opacity);
+#endif
 #ifdef REFLECTION_GUIDES
   outNormalRoughness = packReflectionGuide(shaded.normal, shaded.roughness, shaded.reflectionReference);
   // Pass-owned RGBA8 encoding: alpha retains ordinary selection or a

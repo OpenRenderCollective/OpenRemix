@@ -187,10 +187,11 @@ namespace remix::forward {
           .dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
           .alphaBlendOp = VK_BLEND_OP_ADD,
           .colorWriteMask = depthOnly ? 0u : 15u};
-      const VkPipelineColorBlendAttachmentState attachments[] = {attachment, attachment, attachment};
+      const VkPipelineColorBlendAttachmentState attachments[] = {attachment, attachment, attachment, attachment};
       const VkPipelineColorBlendStateCreateInfo blend{
           .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
           .attachmentCount = shadow                                ? 0u
+                             : !composite && !viewModel && options.autoExposure ? 4u
                              : composite || terrain || viewModel || !techniquePlan.reflectionResolve ? 1u
                                                                    : 3u,
           .pAttachments = shadow ? nullptr : attachments};

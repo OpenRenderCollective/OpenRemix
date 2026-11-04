@@ -16,6 +16,9 @@ struct MeterInputs {
   // use the compositor's inverseProjection/viewToDome/radiance/target layout.
   VkDescriptorImageInfo background{};
   VkDescriptorBufferInfo backgroundConstants{};
+  // Optional resolved linear material color for raster scene metering. Supplying
+  // this selects the same material-normalized policy as the path tracer.
+  VkDescriptorImageInfo material{};
 };
 struct Statistics {
   float exposure = 1, target = 1, limit = 0, milliseconds = 0;

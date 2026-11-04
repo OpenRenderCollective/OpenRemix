@@ -8,6 +8,7 @@ void autoExposureTests() {
     remix::forward::Options options;
     options.samples = samples;
     options.autoExposure = true;
+    options.autoExposureTarget = .18f * .18f;
     options.ambient = .018f;
     options.shadows = options.localShadows = options.ssr = options.water = false;
     options.baking.enabled = false;
@@ -50,6 +51,7 @@ void autoExposureTests() {
     remix::forward::Options options;
     options.samples = samples;
     options.autoExposure = true;
+    options.autoExposureTarget = .18f * .18f;
     options.ambient = .18f;
     options.shadows = options.localShadows = options.ssr = options.water = false;
     options.ssr = true; // Exercise the additive reflection image and its GENERAL layout.
@@ -57,7 +59,8 @@ void autoExposureTests() {
     options.baking.enabled = false;
     options.baking.reflectionProbes = 0;
     target.enableForward(options);
-    const auto mesh = quad(r, 88001, material(r, 88000, 1, 1, 1));
+    auto mesh = quad(r, 88001, material(r, 88000, 1, 1, 1));
+    const auto whiteMesh = mesh;
     auto render = [&] {
       camera(r);
       r.drawInstance(instance(mesh));
@@ -71,7 +74,17 @@ void autoExposureTests() {
     const size_t centre = (32 * 64 + 32) * 4;
     const auto neutral = settle();
     const auto neutralExposure = target.forward->statistics().postProcessing.exposure;
-    require(std::abs(neutralExposure - 1) < .01f, "Forward+ meters neutral world radiance");
+    require(std::abs(neutralExposure - 1) < .01f, "Forward+ meters neutral material-normalized lighting");
+    uint64_t colorHash = 88020;
+    for (float albedo : {.25f, .75f}) {
+      const auto surface = material(r, colorHash++, albedo, albedo, albedo);
+      mesh = quad(r, colorHash++, surface);
+      settle();
+      require(std::abs(target.forward->statistics().postProcessing.exposure - 1) < .02f,
+              "Material color changes do not masquerade as changes in illumination");
+    }
+    mesh = whiteMesh;
+    settle();
     options.ambient = 1.8f;
     target.forward->updateLighting(options);
     const auto enteringBright = render();
@@ -105,13 +118,13 @@ void autoExposureTests() {
     target.enableForward(options, true);
     options.autoExposure = false;
     options.exposure = 10;
-    target.forward->updateLighting(options);
+    target.enableForward(options, true);
     require(std::abs(int(render()[centre]) - neutral[centre]) <= 2,
             "Disabling automatic exposure restores the exact manual multiplier");
     options.autoExposure = true;
     options.exposure = 1;
     options.autoExposureMaxEv = 0;
-    target.forward->updateLighting(options);
+    target.enableForward(options, true);
     settle();
     require(std::abs(target.forward->statistics().postProcessing.exposure - 1) < .001f &&
                 target.forward->statistics().postProcessing.limit == 1,
@@ -128,7 +141,7 @@ void autoExposureTests() {
     options.autoExposure = false;
     options.ambient = .3f;
     options.prism = false;
-    target.forward->updateLighting(options);
+    target.enableForward(options, true);
     require(std::abs(int(render()[centre]) - int(std::lround(.3f * 255))) <= 1,
             "Disabling Prism passes linear scene radiance without a hidden second tone curve");
     options.prism = true;
