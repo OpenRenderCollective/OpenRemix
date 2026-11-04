@@ -127,6 +127,9 @@ namespace remix {
                   static_cast<unsigned long long>(statistics.rigidUploadCreates),
                   static_cast<unsigned long long>(statistics.rigidUploadReuses),
                   statistics.spareGeometryBytes / 1048576.0);
+      ImGui::Text("Posed uploads: %llu | unchanged poses reused: %llu",
+                  static_cast<unsigned long long>(statistics.posedUploads),
+                  static_cast<unsigned long long>(statistics.posedUploadReuses));
       ui::Checkbox("Screen-space reflections", &forward.ssr);
       ui::Checkbox("Water refraction and reflections", &forward.water);
       if (ImGui::IsItemHovered())

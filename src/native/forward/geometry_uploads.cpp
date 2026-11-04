@@ -69,6 +69,13 @@ Renderer::Gpu::geometry(const scene::Draw &draw) {
     if (frame.posedUsed == frame.posedGeometry.size())
       frame.posedGeometry.push_back(std::make_shared<Geometry>());
     result = frame.posedGeometry[frame.posedUsed++];
+    // The slot's fence has completed. Like the path tracer, retain an exact
+    // unchanged pose instead of skinning and uploading it again.
+    if (result->source.lock() == surface && result->bones == *draw.bones) {
+      ++statistics.posedUploadReuses;
+      return result;
+    }
+    ++statistics.posedUploads;
   } else {
     result = takeGeometry(surface->vertices.size() * sizeof(scene::Vertex),
                           surface->indices.size() * sizeof(uint32_t));
@@ -115,7 +122,9 @@ Renderer::Gpu::geometry(const scene::Draw &draw) {
          VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
   result->indices->write(surface->indices.data(),
                          surface->indices.size() * sizeof(uint32_t));
-  if (!skinned)
+  if (skinned)
+    result->bones = *draw.bones;
+  else
     geometries[surface.get()] = result;
   return result;
 }

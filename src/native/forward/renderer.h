@@ -70,6 +70,7 @@ namespace remix::forward {
     } probeVisibility;
     uint64_t targetBytes = 0, geometryBytes = 0, bufferBytes = 0;
     uint64_t rigidUploadCreates = 0, rigidUploadReuses = 0, spareGeometryBytes = 0;
+    uint64_t posedUploads = 0, posedUploadReuses = 0;
     uint64_t accelerationBytes = 0;
     bake::ContentHashes bakeContent;
     ray::Statistics rayReflections;

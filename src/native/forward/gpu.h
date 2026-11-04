@@ -113,6 +113,7 @@ namespace remix::forward {
 
     struct Geometry {
       std::weak_ptr<scene::Surface> source;
+      std::vector<Matrix> bones; // last uploaded pose, private to this frame slot
       std::unique_ptr<Buffer> vertices, indices;
       Bounds bounds;
     };

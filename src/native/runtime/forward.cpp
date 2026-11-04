@@ -57,6 +57,8 @@ namespace remix {
         << ", \"liveCasters\": " << state.liveCasters
         << ", \"emptyMovingShadowMaps\": " << state.emptyMovingShadowMaps
         << ", \"staticCasterPreparations\": " << state.staticCasterPreparations << '}'
+        << ",\n  \"geometryUploads\": {\"posed\": " << state.posedUploads
+        << ", \"unchangedPoses\": " << state.posedUploadReuses << '}'
         << ",\n  \"geometryDrawCalls\": {\"worldDepth\": " << state.drawCalls.worldDepth
         << ", \"worldColor\": " << state.drawCalls.worldColor
         << ", \"terrain\": " << state.drawCalls.terrain << ", \"water\": " << state.drawCalls.water

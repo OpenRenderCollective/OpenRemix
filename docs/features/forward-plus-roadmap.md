@@ -5193,3 +5193,8 @@ independent default scheduling is still a separate architecture decision.
 - Reflection quality: investigate distance-aware cubemap filtering against reference implementations; SSR already uses roughness and projected hit distance. Preserve current quality while measuring performance.
 
 - Profiling follow-up: ordinary GPU pass timers did not materially change Construct throughput in reversed armed/unarmed comparisons. Shared water-depth halo reads passed existing water checks but failed to reproduce a normal-throughput gain; trial removed. Keep whole-frame, timer-disabled confirmation before accepting small pass-level wins.
+
+
+### Unchanged skinned pose reuse
+
+Forward+ reuses a completed frame slot's posed vertex/index upload when its immutable source surface and complete bone-matrix vector still match, following the path tracer's exact-pose policy. Changed sources or poses follow the existing skinning path; unused entries retire with the existing bounded frame-slot pool. No shader, lighting technique or quality setting changes. Diagnostics expose posed conversion/reuse counters. CPU recording work is reduced in qualified map cases; the general 300-400 FPS target remains open and needs further GPU/host work.

@@ -38,16 +38,21 @@ void forwardSkinningTests() {
       remixapi_LightHandle referenceLight{};
       referenceResources.createLight(light, referenceLight);
       require(local && referenceLight, "Skinning fixture lights");
+      const auto previousPoseReuses = target.forward->statistics().posedUploadReuses;
       // Alternate actor counts and order for longer than all fenced slots.
       // Rigid transformed quads provide an independent reference for each pose.
-      for (uint32_t step = 0; step < 18; ++step) {
-        const uint32_t count = step % 4;
+      for (uint32_t step = 0; step < 36; ++step) {
+        // Hold the last poses across all fenced slots, then change actor
+        // count/material/pose again. Both reuse and invalidation must render
+        // identically to independently transformed rigid geometry.
+        const uint32_t poseStep = step < 18 ? step : 18 + (step - 18) / 6;
+        const uint32_t count = poseStep % 4;
         std::vector<remixapi_Transform> poses(count);
         for (uint32_t actor = 0; actor < count; ++actor) {
           auto &pose = poses[actor];
-          pose.matrix[0][0] = pose.matrix[1][1] = pose.matrix[2][2] = step % 2 ? .125f : .25f;
+          pose.matrix[0][0] = pose.matrix[1][1] = pose.matrix[2][2] = poseStep % 2 ? .125f : .25f;
           pose.matrix[0][3] = (float(actor) - 1) * .5f;
-          pose.matrix[1][3] = step % 3 ? -.25f : .25f;
+          pose.matrix[1][3] = poseStep % 3 ? -.25f : .25f;
           pose.matrix[2][3] = .25f;
         }
         auto render = [&](bool skin) {
@@ -59,7 +64,7 @@ void forwardSkinningTests() {
             resources.drawInstance(instance(skin ? receiver : rigid[0], .4f));
           }
           for (uint32_t actor = 0; actor < count; ++actor) {
-            const uint32_t materialIndex = (actor + step) % 2;
+            const uint32_t materialIndex = (actor + poseStep) % 2;
             auto draw = instance(skin ? skinned[materialIndex] : rigid[materialIndex]);
             auto pose = poses[actor];
             remixapi_InstanceInfoBoneTransformsEXT bones{};
@@ -78,6 +83,8 @@ void forwardSkinningTests() {
         require(actual == reference,
                 "Reused pose buffers preserve moving geometry, independent actors and current shadows");
       }
+      require(target.forward->statistics().posedUploadReuses > previousPoseReuses,
+              "Held poses actually reuse their completed frame-slot uploads");
       auto emptySlots = [&] {
         for (uint32_t frame = 0; frame < 2 * remix::gpuFrameCount; ++frame) {
           camera(r);

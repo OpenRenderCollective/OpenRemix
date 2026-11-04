@@ -1130,3 +1130,8 @@ its separate emitter query performs the original conversion. Runtime material an
 lighting queries otherwise keep their existing contracts. Identity model transforms
 reuse the geometry's current finite, ordered bounds; other models retain corner
 transformation. Neither optimisation adds a persistent cache or renderer option.
+
+
+### Unchanged skinned pose reuse
+
+Forward+ reuses a completed frame slot's posed vertex/index upload when its immutable source surface and complete bone-matrix vector still match, following the path tracer's exact-pose policy. Changed sources or poses follow the existing skinning path; unused entries retire with the existing bounded frame-slot pool. No shader, lighting technique or quality setting changes. Diagnostics expose posed conversion/reuse counters. Reuse never crosses frame-slot ownership, and source expiration or any changed bone matrix invalidates it.
