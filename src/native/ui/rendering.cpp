@@ -342,6 +342,11 @@ namespace remix {
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("How far shadow and bounce rays start off a surface, in units in the last place\n"
                           "of its coordinates. Smaller: tighter contact shadows; too small: shadow acne.");
+      ui::SliderFloat("Contact gap (m)", &options.contactGap, 0.f, .02f, "%.4f");
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Shadow and bounce rays pass surfaces within this distance of where they start.\n"
+                          "Hides the contact shadow of model parts pressed a hair apart (collars, folds)\n"
+                          "that raster lighting never shadowed. 0: off.");
       ui::Checkbox("Denoise translucent surfaces", &options.translucencyDenoiser);
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Filters single-layer surface lighting with its own motion and depth.\n"
@@ -403,6 +408,22 @@ namespace remix {
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Shares diffuse lighting across small flat water patches with TAA or FSR.\nEdges, "
                           "overlapping layers and raw reference rendering retain full sampling.");
+      ui::Checkbox("Subsurface scattering", &options.subsurface);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Light that enters skin, wax or leaves and leaves them nearby, on materials that\n"
+                          "have it. Off: those materials are lit as plain diffuse surfaces.");
+      ImGui::BeginDisabled(!options.subsurface);
+      ui::Checkbox("Diffusion profiles", &options.subsurfaceDiffusionProfile);
+      ui::Checkbox("Thin opaque surfaces", &options.subsurfaceThinOpaque);
+      ui::Checkbox("Subsurface texture maps", &options.subsurfaceTextureMaps);
+      ui::Checkbox("Light through thin parts", &options.subsurfaceTransmission);
+      ui::DragFloat("Diffusion profile scale", &options.subsurfaceProfileScale, .01f, .001f, 1000, "%.3f",
+                    ImGuiSliderFlags_Logarithmic);
+      options.subsurfaceProfileScale = std::clamp(options.subsurfaceProfileScale, .001f, 1000.f);
+      ui::DragFloat("Surface thickness scale", &options.subsurfaceThicknessScale, .01f, 0, 1000, "%.3f",
+                    ImGuiSliderFlags_Logarithmic);
+      options.subsurfaceThicknessScale = std::clamp(options.subsurfaceThicknessScale, 0.f, 1000.f);
+      ImGui::EndDisabled();
       ui::Checkbox("Iridescence", &options.iridescence);
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Thin-film interference colours on materials that have a film (soap bubbles,\n"

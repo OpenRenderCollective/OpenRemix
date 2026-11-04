@@ -106,9 +106,11 @@ namespace remix::scene {
   public:
     struct SurfaceHistory {
       SurfaceHistory() = default;
-      SurfaceHistory(Draw &&draw, uint32_t textureFrame) : draw(std::move(draw)), textureFrame(textureFrame) {}
+      SurfaceHistory(Draw &&draw, uint32_t textureFrame, const std::array<float, 4> &uv = {1, 1, 0, 0})
+          : draw(std::move(draw)), textureFrame(textureFrame), uv(uv) {}
       Draw draw;
       uint32_t textureFrame = 0;
+      std::array<float, 4> uv{1, 1, 0, 0}; // the UV transform it was traced with (surfaceTexcoord)
     };
     using Key = TemporalKey;
     void begin(TemporalEpoch epoch, uint64_t integrator, uint32_t width, uint32_t height);
@@ -122,7 +124,8 @@ namespace remix::scene {
     void stage(const Draw &draw, uint32_t textureFrame = 0) { stage(Draw(draw), textureFrame); }
     // Stores the draw under instanceId (default: its own), consuming it.
     void stage(Draw &&draw, uint32_t textureFrame = 0);
-    void stage(Draw &&draw, uint64_t instanceId, uint32_t textureFrame);
+    void stage(Draw &&draw, uint64_t instanceId, uint32_t textureFrame,
+               const std::array<float, 4> &uv = {1, 1, 0, 0});
     void commit();
     void clear();
     bool reset() const { return m_reset; }

@@ -51,9 +51,8 @@ namespace remix::forward {
     data.model = draw.model;
     data.normal = normalMatrix(draw.model);
     std::copy_n(m.tint, 4, data.tint.begin());
-    const uint32_t frame = uint32_t(std::fmod(seconds * m.fps, uint32_t(m.rows) * m.columns));
-    data.uv = {1.f / m.columns, 1.f / m.rows, float(frame % m.columns) / m.columns,
-               float(frame / m.columns) / m.rows};
+    uint32_t animationFrame = 0;
+    data.uv = scene::surfaceTexcoord(draw, seconds, animationFrame);
     data.pbr = {m.roughness, m.metallic, m.normalTexture && m.normalTexture->pixels.twoChannel ? 1.f : 0.f,
                 acceptsSurfaceLayer(draw) ? 1.f : 0.f};
     std::copy_n(m.emission, 3, data.emission.begin());

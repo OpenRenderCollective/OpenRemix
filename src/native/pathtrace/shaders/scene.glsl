@@ -9,6 +9,7 @@ vec3 shadingNormal(vec3 n,vec3 geometric,vec3 wo) {
 }
 layout(buffer_reference, std430, buffer_reference_align=16) readonly buffer Vertices { Vertex v[]; };
 layout(buffer_reference, std430, buffer_reference_align=4) readonly buffer Indices { uint i[]; };
+const uint measuredSheetMaterialFlag = 2048u;
 struct Surface {
   Vertices vertices;
   Indices indices;
@@ -16,7 +17,7 @@ struct Surface {
   vec4 uv;
   vec4 factor;
   uvec4 state; // texture operations, compare, reference bits, flags
-  uvec4 textureState; // texture index
+  uvec4 textureState; // texture index; w: texture motion (textureShift)
   uint64_t triangleMap;
   Indices traceIndices;
   uint64_t previousVertices;
@@ -33,11 +34,30 @@ struct Surface {
   // with albedo alpha as thickness in bit 31 (iridescence.glsl).
   vec4 film;
   uvec4 filmMaps;
+  // Subsurface scattering (frame_tables.h subsurfaceFields): each channel's
+  // radius in metres, the weight (0: none); transmittance, anisotropy; single
+  // scattering albedo, measurement distance (a profile's: its largest sample
+  // radius in metres); the maps + 1 (transmittance, thickness, radius or
+  // single scattering albedo), the kind (1 a profile, 2 thin opaque).
+  vec4 subsurface,subsurfaceColor,subsurfaceThin;
+  uvec4 subsurfaceMaps;
+  // A gradient map's burn (frame_tables.h gradientFields): x its slot + 1 |
+  // half strength << 16 (0 none).
+  uvec4 gradient;
 };
 // Shading reads the AS index order directly. Only debug identity needs the
 // original triangle mapping; motion still addresses the original vertex array.
 uint originalTriangle(Surface s,uint triangle) {
   return s.triangleMap==0?triangle:Indices(s.triangleMap).i[triangle];
+}
+// A scrolling texture's motion on a triangle (frame_tables.h textureMotion),
+// in the mesh's units: the point whose UVs differ by the surface's shift, from
+// the triangle's edges e1, e2 and their UV differences d1, d2.
+vec3 textureShift(Surface s,vec3 e1,vec3 e2,vec2 d1,vec2 d2) {
+  float det=d1.x*d2.y-d1.y*d2.x;
+  if(s.textureState.w==0u||abs(det)<1e-12)return vec3(0);
+  vec2 shift=unpackHalf2x16(s.textureState.w);
+  return ((e1*d2.y-e2*d1.y)*shift.x+(e2*d1.x-e1*d2.x)*shift.y)/det;
 }
 layout(set=0,binding=2,std430) readonly buffer Surfaces { Surface surfaces[]; };
 layout(set=0,binding=3,std140) uniform Frame {
@@ -73,7 +93,7 @@ layout(set=0,binding=3,std140) uniform Frame {
   vec4 visibilityProbe; // world units: x probe offset above the surface, y decal attachment distance; z texture footprint scale (render/output size); w ray offset (ULPs)
   uint64_t restirCurrent, restirHistoryRead, restirHistoryWrite, restirRemap;
   uvec4 restirConfig; // candidates, spatial samples (bits 8-15: after a disocclusion), temporal M cap, flags (1 initial visibility)
-  vec4 restirParams; // spatial radius (pixels), emitter count, boiling filter strength, reserved
+  vec4 restirParams; // spatial radius (pixels), emitter count, boiling filter strength, contact gap (world units)
   uint64_t regirRead, regirWrite, regirSlots;
   uint64_t caustics; // caustics: strength, contrast (visibility.glsl causticTint)
   uvec4 regirConfig; // cell capacity, slots per cell, cells per world unit (float bits), active
@@ -111,6 +131,7 @@ layout(set=0,binding=3,std140) uniform Frame {
   uvec4 pathDebug; // path inspector: record buffer address (x low, y high), pixel (x | y << 16; ~0 none), capacity
   vec4 screenCameras[32]; // remixapi_CameraScreensEXT, 4 per slot: position (w: 1 set, +2 moved), right and up (half extents), forward
   uint64_t sheetMaterials; // Optional measured-sheet optics, keyed by albedo descriptor.
+  uint64_t woundVertices; float subsurfaceUnits,subsurfaceThickness; // remixapi_InstanceInfoWoundCutEXT: WoundVertex per wounded vertex (vertex-wound.comp)
 } frame;
 // Instance mask bit of view models (pathtrace/tlas_policy.h).
 const uint viewModelInstanceMask=64u;
@@ -182,6 +203,10 @@ float terminatorLift(vec3 p0,vec3 p1,vec3 p2,vec3 n0,vec3 n1,vec3 n2,vec3 b,vec3
   horizon=dot(smoothNormal,smoothNormal)>1e-12?normalize(mix(ng,normalize(smoothNormal),scale)):ng;
   return scale*max(dot(lifted,ng),0.);
 }
+// Where a secondary ray (shadow, bounce, light visibility) starts looking:
+// past rtx.native.pathtrace.contactGap (frame.restirParams.w), within half
+// its length. Camera rays see everything.
+float contactGap(float maximum) { return min(frame.restirParams.w,.5*maximum); }
 // remixapi_InstanceInfoCameraCullingEXT (state.w bits 9-10: back faces,
 // visibility): what rays along the camera's lines of sight skip of a surface
 // that every other ray meets whole.
@@ -263,14 +288,105 @@ float materialMapValue(Surface s,uint map,vec4 texel) {
   float v=s.pbr[map]+uintBitsToFloat(s.material[1+map])*x;
   return (bits&8u)!=0?sqrt(sqrt(2/(max(v,0)+2))):v;
 }
+// A material's metal colour (remixapi_MaterialMetalColorEXT, unorm8 RGB in
+// pbr.w), w 1; zero without one (Hit.metal, brdf.glsl hitF0).
+vec4 materialMetal(Surface s) {
+  return (s.material.x&256u)!=0?vec4(unpackUnorm4x8(floatBitsToUint(s.pbr.w)).rgb,1):vec4(0);
+}
+// The roughness map's texel at uv: with a blur (remixapi_MaterialPbrBlurEXT,
+// 1/16 mips in pbr.w's high byte) no sharper than that mip.
+vec4 materialRoughnessTexel(Surface s,uint index,vec2 uv) {
+  if((s.material.x&512u)==0)return materialTexel(s,index,uv);
+  vec2 size=vec2(textureSize(textures[nonuniformEXT(index)],0));
+  vec2 gx=uvGradX*s.uv.xy*size,gy=uvGradY*s.uv.xy*size;
+  float lod=max(.5*log2(max(max(dot(gx,gx),dot(gy,gy)),1e-12)),float(floatBitsToUint(s.pbr.w)>>24)/16);
+  return slotTexel(index,textureLod(textures[nonuniformEXT(index)],uv*s.uv.xy+s.uv.zw,lod));
+}
 vec2 materialParameters(Surface s,vec2 uv,inout vec3 albedo) {
   float metallic=s.pbrTextures.y==0?s.pbr.y:materialMapValue(s,1,materialTexel(s,s.pbrTextures.y-1,uv));
   if(s.pbrTextures.x==0)return clamp(vec2(s.pbr.x,metallic),0,1);
-  return clamp(vec2(materialMapValue(s,0,materialTexel(s,s.pbrTextures.x-1,uv)),metallic),0,1);
+  return clamp(vec2(materialMapValue(s,0,materialRoughnessTexel(s,s.pbrTextures.x-1,uv)),metallic),0,1);
 }
 // As materialTexel, at UVs scaled by k (the footprint scales with them).
 vec4 materialTexelScaled(Surface s,uint index,vec2 uv,float k) {
   return slotTexel(index,textureGrad(textures[nonuniformEXT(index)],uv*s.uv.xy+s.uv.zw,uvGradX*s.uv.xy*k,uvGradY*s.uv.xy*k));
+}
+// remixapi_InstanceInfoWoundCutEXT: a surface with a wound has its record's
+// table index in textureState.y (frame_tables.h woundFields). Each of its
+// vertices was evaluated at its bind pose this frame (vertex-wound.comp): w,
+// h and the halves whose q is missing there (bit 0: e1's, bit 1: el's).
+// woundValue: W at an interpolated w, the halves missing at any vertex left
+// out (each a fetch of the cut texture's red at the finest mip).
+struct WoundVertex { vec4 w; float h; uint missing; vec2 unused; };
+layout(buffer_reference, std430, buffer_reference_align=16) readonly buffer WoundVertices { WoundVertex v[]; };
+float woundValue(Surface r,vec4 w,uint missing) {
+  uint t=r.textureState.x;float value=0;
+  if((missing&1u)==0u)value=textureLod(textures[nonuniformEXT(t)],clamp(w.xy,0,1)*r.previousModel[2].xy+r.previousModel[2].zw,0).r;
+  if((missing&2u)==0u)value=max(value,textureLod(textures[nonuniformEXT(t)],clamp(w.zw,0,1)*r.previousModel[3].xy+r.previousModel[3].zw,0).r);
+  return value;
+}
+bool woundCut(Surface r,float value,float h) { return value>uintBitsToFloat(r.state.z)||h<1; }
+// At barycentrics bary of triangle `triangle` (s.indices): whether the point
+// is cut away, and W.
+bool woundAt(Surface s,uint triangle,vec2 bary,out float value) {
+  Surface r=surfaces[s.textureState.y];
+  WoundVertices vertices=WoundVertices(frame.woundVertices);
+  uint base=triangle*3,first=r.textureState.w;
+  vec3 b=vec3(1-bary.x-bary.y,bary);
+  vec4 w=vec4(0);float h=0;uint missing=0u;
+  for(uint i=0u;i<3u;++i) {
+    WoundVertex v=vertices.v[first+s.indices.i[base+i]];
+    w+=b[i]*v.w;h+=b[i]*v.h;missing|=v.missing;
+  }
+  value=woundValue(r,w,missing);
+  return woundCut(r,value,h);
+}
+// The wound term W of the point being shaded (woundAt, or the G-buffer's
+// interpolated w), which deepens a gradient map's blood (gradientAlbedo).
+float woundTerm=0;
+// remixapi_MaterialGradientMapEXT (material.x bit 1024; frame_tables.h
+// gradientFields): the albedo texel composited from the albedo texture B (a
+// data texture: as stored), its quarter-size sprite, the gradient's skin and
+// cloth rows, the detail and the burn texture. Alpha 1 (the material's
+// opacity is its tint's). The header's steps, with the fetches their weights
+// leave out skipped.
+vec4 gradientAlbedo(Surface s,vec2 uv) {
+  vec4 b=materialTexel(s,s.textureState.x,uv);
+  vec4 sprite=materialTexelScaled(s,s.textureState.x,uv*.5+unpackHalf2x16(s.filmMaps.y),.5);
+  uint gradient=s.filmMaps.x&0xffffu,detail=s.filmMaps.x>>16;
+  float l=b.a*b.a;
+  // Skin (above 1/2) and cloth (below) never both: one row's texel, by
+  // |2 B.b - 1|; at 1/2 neither.
+  vec2 rows=unpackHalf2x16(floatBitsToUint(s.film.y));
+  float row=b.b>.5?rows.x:rows.y;
+  vec3 c=mix(vec3(l),slotTexel(gradient,textureLod(textures[nonuniformEXT(gradient)],
+    vec2(b.a,(row+.5)/float(textureSize(textures[nonuniformEXT(gradient)],0).y)),0)).rgb,clamp(abs(2*b.b-1),0,1));
+  [[dont_flatten]] if(detail!=0u&&sprite.r>.5) {
+    vec2 du=unpackHalf2x16(s.filmMaps.z),dv=unpackHalf2x16(s.filmMaps.w);
+    uint d=detail-1u;
+    vec3 texel=slotTexel(d,textureGrad(textures[nonuniformEXT(d)],vec2(dot(du,uv),dot(dv,uv)),
+      vec2(dot(du,uvGradX),dot(dv,uvGradX)),vec2(dot(du,uvGradY),dot(dv,uvGradY)))).rgb;
+    c=mix(c,2*l*texel,clamp(2*sprite.r-1,0,1));
+  }
+  vec2 range=unpackHalf2x16(floatBitsToUint(s.film.z));
+  float blood=smoothstep(range.x,range.y,clamp(2*sprite.g-1,0,1)+woundTerm);
+  c=min(c*mix(vec3(1),unpackUnorm4x8(floatBitsToUint(s.film.w)).rgb,blood),vec3(1));
+  // The burn (gradient.x: its slot + 1 | half strength << 16; 0 none),
+  // read at the detail coordinate swapped.
+  [[dont_flatten]] if(s.gradient.x>0xffffu) {
+    vec2 du=unpackHalf2x16(s.filmMaps.z),dv=unpackHalf2x16(s.filmMaps.w);
+    uint u=(s.gradient.x&0xffffu)-1u;
+    vec4 burn=slotTexel(u,textureGrad(textures[nonuniformEXT(u)],vec2(dot(dv,uv),dot(du,uv)),
+      vec2(dot(dv,uvGradX),dot(du,uvGradX)),vec2(dot(dv,uvGradY),dot(du,uvGradY))));
+    float strength=unpackHalf2x16(s.gradient.x).y;
+    c=mix(c,burn.rgb,clamp(strength*(2-clamp(2*b.b-1,0,1))+burn.a-1,0,1));
+  }
+  return vec4(c,1);
+}
+// The albedo texel at uv: the albedo texture's, or a gradient map's composite.
+vec4 albedoTexel(Surface s,vec2 uv) {
+  [[dont_flatten]] if((s.material.x&1024u)!=0u)return gradientAlbedo(s,uv);
+  return materialTexel(s,s.textureState.x,uv);
 }
 mat3 materialBasis(vec3 n,vec3 e1,vec3 e2,vec2 u1,vec2 u2) {
   float det=u1.x*u2.y-u1.y*u2.x;
@@ -377,7 +493,7 @@ vec2 sheetTintUv(SheetMaterial sheet, vec2 uv) {
   return uv + vec2(sheet.depth.w, sheet.parameters.w) * frame.animationTime;
 }
 vec3 sheetTransmission(Surface s, vec4 color, uint triangle, vec2 bary, float cosine, float t) {
-  if ((s.material.x & 256u) != 0u && frame.sheetMaterials != 0) {
+  if ((s.material.x & measuredSheetMaterialFlag) != 0u && frame.sheetMaterials != 0) {
     SheetMaterial sheet = SheetMaterials(frame.sheetMaterials).data[s.textureState.x];
     // Light visibility has no camera footprint. Do not inherit UV gradients
     // left by shading the receiver; coverage traversal also uses the finest mip.
@@ -429,14 +545,14 @@ vec4 materialColor(Surface s, vec4 texel, vec4 vertex) {
   return clamp(result,0,1);
 }
 vec4 materialColor(Surface s, vec2 uv, vec4 vertex) {
-  return materialColor(s, materialTexel(s, s.textureState.x, uv), vertex);
+  return materialColor(s, albedoTexel(s, uv), vertex);
 }
 // The colour a surface reflects, what it emits (when `emissive`) and `self`,
 // the part of its colour that emits instead of reflecting
 // (remixapi_MaterialInfoSelfIlluminationEXT: material.x bit 5, the mask in
 // bits 6-7, its scale in emission.w): colour = reflecting + self.
 vec4 materialSurface(Surface s, vec2 uv, vec4 vertex, bool emissive, out vec3 emission, out vec3 self) {
-  vec4 texel = materialTexel(s, s.textureState.x, uv);
+  vec4 texel = albedoTexel(s, uv);
   vec4 color = materialColor(s, texel, vertex);
   self = vec3(0);
   if ((s.material.x&32u)==0) { emission = emissive ? materialEmission(s, uv) : vec3(0); return color; }
@@ -471,3 +587,6 @@ bool visibleAlpha(Surface s,float a) {
 // Whether a surface shows its thin film: it has one, and films are on
 // (frame.pathConfig.w bit 9 clear; iridescence.glsl).
 bool filmed(Surface s) { return s.film.x>0&&(frame.pathConfig.w&0x200u)==0u; }
+// Subsurface scattering, unless the renderer turned it off (pathConfig.w 0x400,
+// its kind 0x800 a profile, 0x1000 thin opaque).
+bool subsurfaced(Surface s) { return s.subsurface.w>0&&(frame.pathConfig.w&(0x400u|(s.subsurfaceMaps.w==1u?0x800u:0x1000u)))==0u; }

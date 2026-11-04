@@ -122,6 +122,20 @@ namespace remix {
     return REMIXAPI_ERROR_CODE_SUCCESS;
   }
 
+  remixapi_ErrorCode RemixSdlWindow::adopt(SDL_Window *window) {
+    if (m_window != nullptr)
+      return REMIXAPI_ERROR_CODE_ALREADY_EXISTS;
+    if (window == nullptr || !SDL_GetWindowID(window))
+      return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
+    m_ownerThread = std::this_thread::get_id();
+    m_window = window;
+    m_embedded = m_adoptedWindow = true;
+    m_closeRequested = false;
+    m_appInBackground = false;
+    m_relativeX = m_relativeY = m_wheelX = m_wheelY = 0.0f;
+    return REMIXAPI_ERROR_CODE_SUCCESS;
+  }
+
   void RemixSdlWindow::shutdown() {
 #if REMIX_METAL
     if (m_metalView != nullptr) {

@@ -25,6 +25,21 @@ namespace {
     require(remix::forward::normalMatrix(model) == reference(model),
             "Normal matrix preserves the complete inverse transpose");
   }
+  void surfaceTexcoords() {
+    remix::scene::Draw draw;
+    draw.material = std::make_shared<remix::scene::Material>();
+    draw.material->columns = 4; draw.material->rows = 2; draw.material->fps = 2;
+    draw.texcoord = {2, 3, .25f, -.5f};
+    draw.texcoordVelocity = {.25f, -.125f};
+    const std::array<float, 4> expected{.5f, 1.5f, .90625f, -.34375f};
+    require(remix::forward::materialData(draw, 1.5).uv == expected,
+            "Forward+ combines instance UV scale, offset, scroll and sprite animation");
+    require(remix::forward::materialData(draw, 17.5).uv == expected,
+            "Forward+ keeps the shared bounded scroll period");
+    draw.texcoord = {1, 1, 0, 0}; draw.texcoordVelocity = {};
+    require(remix::forward::materialData(draw, 1.5).uv == std::array<float, 4>{.25f, .5f, .75f, 0},
+            "Untransformed Forward+ sprite sheets retain their previous coordinates");
+  }
   void colorFactors() {
     remix::scene::Draw draw;
     draw.model = remix::scene::identity();
@@ -122,6 +137,7 @@ int main(int argc, char **argv) try {
     check(model); // Scale, shear, translation and non-affine fallback.
   }
   colorFactors();
+  surfaceTexcoords();
   zeroDiffuseEligibility();
   auto rotation = remix::scene::identity();
   rotation[0] = rotation[5] = 0;

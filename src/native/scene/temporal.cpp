@@ -105,12 +105,13 @@ namespace remix::scene {
     const uint64_t instanceId = draw.instanceId;
     stage(std::move(draw), instanceId, textureFrame);
   }
-  void TemporalHistory::stage(Draw &&draw, uint64_t instanceId, uint32_t textureFrame) {
+  void TemporalHistory::stage(Draw &&draw, uint64_t instanceId, uint32_t textureFrame,
+                              const std::array<float, 4> &uv) {
     if (!instanceId)
       return;
     const TemporalKey key{instanceId, draw.instanceIndex, draw.surfaceIndex};
     draw.instanceId = instanceId;
-    m_pending.emplace(key, std::move(draw), textureFrame);
+    m_pending.emplace(key, std::move(draw), textureFrame, uv);
   }
   void TemporalHistory::commit() {
     // Keep both tables' storage: the old history is released here and the

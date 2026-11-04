@@ -11,6 +11,7 @@
 #include "scene/fixtures.h"
 #include "scene/static_scene.h"
 #include <atomic>
+#include <cmath>
 #include <cstring>
 #include <filesystem>
 #include <map>
@@ -837,11 +838,216 @@ namespace {
     material.transmittanceScroll[0] = 0;
     require(!trace::detail::hasScrollingTint(material), "Stationary optical tint preserves the fixed clock");
   }
+  // remixapi_InstanceInfoWoundCutEXT and remixapi_MaterialGradientMapEXT in
+  // the surface table: each wounded surface's record after the frame's
+  // surfaces (frame_tables.h woundFields), its instance never opaque in
+  // traversal, and the gradient's parameters in the film's fields.
+  void woundTables() {
+    NativeResources r;
+    camera(r);
+    const uint8_t texels[] = {255, 255, 255, 255, 255, 255, 255, 255};
+    texture(r, 0xc1, texels, 2);
+    texture(r, 0xc2, texels, 2);
+    texture(r, 0xc3, texels, 2);
+    texture(r, 0xc9, texels, 2);
+    const auto cutName = std::filesystem::path("0xc1"), albedoName = std::filesystem::path("0xc2"),
+               gradientName = std::filesystem::path("0xc3"), burnName = std::filesystem::path("0xc9");
+    remixapi_MaterialGradientMapEXT g{};
+    g.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_GRADIENT_MAP_EXT;
+    g.gradientTexture = gradientName.c_str();
+    g.skinRow = 3;
+    g.clothRow = 17;
+    g.spriteOffset[0] = .5f;
+    g.bloodColor = {.15f, 0, 0};
+    g.bloodRange[0] = .1f;
+    g.bloodRange[1] = .9f;
+    g.burnTexture = burnName.c_str();
+    g.burnStrength = .75f;
+    remixapi_MaterialInfoOpaqueEXT o{};
+    o.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
+    o.pNext = &g;
+    o.albedoConstant = {1, 1, 1};
+    o.opacityConstant = 1;
+    o.alphaTestType = 7;
+    remixapi_MaterialInfo m{};
+    m.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
+    m.pNext = &o;
+    m.hash = 0xc4;
+    m.albedoTexture = albedoName.c_str();
+    remixapi_MaterialHandle infected{};
+    r.createMaterial(m, infected);
+    // The same, fading out (opacity 1/2) and without a burn.
+    remixapi_MaterialHandle faded{};
+    g.burnTexture = nullptr;
+    o.opacityConstant = .5f;
+    m.hash = 0xca;
+    r.createMaterial(m, faded);
+    const auto plain = material(r, 0xc5, 1, 1, 1);
+    const auto body = quad(r, 0xc6, infected), skinned = quad(r, 0xc7, plain, 0xffffffff, true),
+               other = quad(r, 0xc8, faded);
+    remixapi_InstanceInfoWoundCutEXT w{};
+    w.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_WOUND_CUT_EXT;
+    w.cutTexture = cutName.c_str();
+    for (auto &e : w.ellipsoids) {
+      e.center = {1, 2, 3};
+      e.axisX = {.5f, 0, 0};
+      e.axisY = {0, .25f, 0};
+      e.axisZ = {0, 0, 2};
+    }
+    w.ellipsoids[1].center = {0, 0, 1};
+    w.mappingScale = 7;
+    w.secondBlend = .25f;
+    w.threshold = .95f;
+    for (int i = 0; i < 4; ++i) {
+      w.projectionScale[i] = .5f;
+      w.projectionBias[i] = .5f;
+      w.cutScaleBias[0][i] = w.cutScaleBias[1][i] = float(i);
+    }
+    remixapi_InstanceIdentityEXT identity{};
+    identity.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_IDENTITY_EXT;
+    identity.pNext = &w;
+    identity.classification = REMIXAPI_INSTANCE_STATIC_EXT;
+    identity.rasterVisible = 1;
+    remixapi_Transform bone{};
+    bone.matrix[0][0] = bone.matrix[1][1] = bone.matrix[2][2] = 1;
+    remixapi_InstanceInfoBoneTransformsEXT bones{};
+    bones.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_BONE_TRANSFORMS_EXT;
+    bones.pNext = &identity;
+    bones.boneTransforms_values = &bone;
+    bones.boneTransforms_count = 1;
+    auto wounded = placed(body, 0);
+    wounded.pNext = &identity;
+    identity.instanceId = 1;
+    r.drawInstance(wounded);
+    auto wrapped = placed(skinned, 1);
+    wrapped.pNext = &bones;
+    identity.instanceId = 2;
+    r.drawInstance(wrapped);
+    r.drawInstance(placed(other, 2));
+    Pipeline p;
+    p.prepare(r);
+    const auto &t = p.tables;
+    require(t.surfaceCount() == 5, "Wound records: two after the three surfaces");
+    size_t records = 0;
+    for (size_t i = 0; i < 3; ++i) {
+      const auto &surface = t.surface(i);
+      const uint32_t index = surface.textureState[1];
+      if (!index)
+        continue;
+      ++records;
+      require(index >= 3 && index < 5, "Wound records: a record outside the records");
+      const auto &record = t.surface(index);
+      const bool rigid = surface.material[0] & scene::MaterialDecode::gradientMap;
+      // An unskinned surface's bind pose is its vertices; a skinned one's
+      // what its view uploaded (the stand-in views have none).
+      require(record.previousVertices == (rigid ? surface.vertices : 0), "Wound records: bind pose");
+      require(record.tint[0] == .5f && record.tint[3] == -.5f && record.uv[1] == .25f && record.uv[3] == -.5f &&
+                  record.factor[2] == 2 && record.factor[3] == -6 && record.film[2] == 2 && record.film[3] == -2,
+              "Wound records: ellipsoid rows");
+      float scalars[3];
+      std::memcpy(scalars, record.state, sizeof(scalars));
+      require(scalars[0] == 7 && scalars[1] == .25f && scalars[2] == .95f, "Wound records: scalars");
+      require(record.previousModel[0] == .5f && record.previousModel[4] == .5f && record.previousModel[9] == 1 &&
+                  record.previousModel[15] == 3,
+              "Wound records: projection and cut scale-bias");
+      const auto &request = t.request(record.textureState[0]);
+      require(request.kind == trace::DescriptorRequest::Albedo && request.material->texture->hash == 0xc1 &&
+                  request.material->wrapU == 3,
+              "Wound records: cut texture slot");
+      if (rigid) {
+        require(surface.film[0] == 0, "Gradient map: a film");
+        const auto &gradient = t.request(surface.filmMaps[0] & 0xffffu);
+        require(gradient.kind == trace::DescriptorRequest::Albedo && gradient.material->texture->hash == 0xc3 &&
+                    gradient.material->wrapU == 0 && (surface.filmMaps[0] >> 16) == 0,
+                "Gradient map: gradient slot");
+        require(surface.filmMaps[1] == trace::detail::halfBits(.5f), "Gradient map: sprite offset");
+        uint32_t rows;
+        std::memcpy(&rows, &surface.film[1], 4);
+        require(rows == (trace::detail::halfBits(3) | trace::detail::halfBits(17) << 16), "Gradient map: rows");
+        // The burn: its slot + 1 and half strength in gradient[0].
+        require((surface.gradient[0] >> 16) == trace::detail::halfBits(.75f) && (surface.gradient[0] & 0xffffu),
+                "Gradient map: burn strength");
+        const auto &burn = t.request((surface.gradient[0] & 0xffffu) - 1);
+        require(burn.kind == trace::DescriptorRequest::Albedo && burn.material->texture->hash == 0xc9 &&
+                    burn.material->wrapU == 1 && burn.material->wrapV == 1,
+                "Gradient map: burn slot");
+        // Its texture alpha is luminance: alpha arguments naming the texture read 1.
+        require(((surface.state[0] >> 8) & 3u) != 1u && ((surface.state[0] >> 10) & 3u) != 1u,
+                "Gradient map: texture alpha as coverage");
+        require((surface.state[3] & 2u) == 0, "Gradient map: an opaque material blended");
+      } else
+        require(surface.gradient[0] == 0, "Wound records: a burn without a gradient map");
+    }
+    size_t fadedSurfaces = 0;
+    // The faded gradient map: blended (and translucent) as any opaque material
+    // below opacity 1, its tint's alpha the opacity, without a burn.
+    for (size_t i = 0; i < 3; ++i) {
+      const auto &surface = t.surface(i);
+      if (!(surface.material[0] & scene::MaterialDecode::gradientMap) || surface.textureState[1])
+        continue;
+      ++fadedSurfaces;
+      require(surface.tint[3] == .5f && (surface.state[3] & 2u) && (surface.state[3] & 32u) && surface.state[1] == 7,
+              "Gradient map: fading");
+      require(surface.gradient[0] == 0, "Gradient map: a burn without a burn texture");
+    }
+    require(fadedSurfaces == 1, "Gradient map: the faded surface");
+    require(records == 2, "Wound records: a wounded surface without one");
+    // Each record's vertices in the frame's wound vertices (vertex-wound.comp).
+    require(t.woundRecords().first == 3 && t.woundRecords().second == 2 && t.woundVertices() == 8,
+            "Wound records: range");
+    const auto &firstRecord = t.surface(3), &secondRecord = t.surface(4);
+    require(firstRecord.textureState[2] == 4 && secondRecord.textureState[2] == 4 &&
+                firstRecord.textureState[3] + secondRecord.textureState[3] == 4 &&
+                firstRecord.textureState[3] != secondRecord.textureState[3],
+            "Wound records: vertex ranges");
+    size_t noOpaque = 0;
+    for (const auto &input : t.dynamicInputs())
+      noOpaque += input.noOpaque;
+    require(t.staticInputs().empty() && t.dynamicInputs().size() == 3 && noOpaque == 2,
+            "Wound cut: traversal opacity or classification");
+    // The wound is in the scene signature.
+    const auto before = p.signature.bytes();
+    r.finishFrame();
+    w.threshold = .5f;
+    identity.instanceId = 1;
+    r.drawInstance(wounded);
+    identity.instanceId = 2;
+    r.drawInstance(wrapped);
+    r.drawInstance(placed(other, 2));
+    p.commit();
+    p.prepare(r);
+    require(p.signature.bytes() != before, "Wound cut: a change left the signature");
+  }
 } // namespace
+
+// remixapi_InstanceInfoTexcoordTransformEXT: the texture's motion since the
+// committed frame, in mesh UVs (motion vectors that follow the scroll).
+void textureMotion() {
+  scene::Draw draw;
+  draw.material = std::make_shared<scene::Material>();
+  draw.texcoord = {2, 1, .3f, 0};
+  scene::TemporalHistory::SurfaceHistory previous(scene::Draw(draw), 0, {2, 1, .25f, 0});
+  auto motion = [](uint32_t packed, unsigned axis) {
+    const uint32_t h = packed >> (16 * axis) & 0xffffu;
+    const float magnitude = std::ldexp(float((h & 0x3ffu) | 0x400u), int((h >> 10) & 31u) - 25);
+    return (h & 0x7fffu) == 0 ? 0.f : h & 0x8000u ? -magnitude : magnitude;
+  };
+  // .05 in the scaled UVs, .025 in the mesh's; a wrapped offset is no motion.
+  uint32_t packed = trace::detail::textureMotion(draw, {2, 1, .3f, 0}, previous);
+  require(std::abs(motion(packed, 0) - .025f) < 1e-4f && motion(packed, 1) == 0, "Texture motion not in mesh UVs");
+  packed = trace::detail::textureMotion(draw, {2, 1, .3f, 0}, scene::TemporalHistory::SurfaceHistory(
+                                                                     scene::Draw(draw), 0, {2, 1, 1.25f, 0}));
+  require(std::abs(motion(packed, 0) - .025f) < 1e-4f, "A wrapped offset moved the texture a whole repeat");
+  draw.texcoord = {2, 1, 0, 0};
+  scene::TemporalHistory::SurfaceHistory still(scene::Draw(draw), 0, {2, 1, 0, 0});
+  require(!trace::detail::textureMotion(draw, {2, 1, 0, 0}, still), "A still texture moved");
+}
 
 int main() {
   normalAnimation();
+  textureMotion();
   signatures();
+  woundTables();
   membership();
   sequence();
   published();

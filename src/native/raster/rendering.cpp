@@ -283,8 +283,12 @@ namespace remix {
       // A sprite overlay (raster/sprite.cpp): a blended draw that is not masked.
       const bool sprite = !silhouette && draw.spriteFlags && draw.blend.enabled && !draw.maskGroup && !draw.cutGroup &&
                           !draw.ui && g.sprite.layout && g.sprite.vertex && g.sprite.fragment && !g.sprite.failed;
+      // A gradient-mapped material or a wound cut (raster/infected.cpp); a
+      // masked or sprite draw is drawn plainly.
+      const bool infected = !silhouette && slot < 0 && !sprite && (draw.wound || mat.gradient) && !draw.ui &&
+                            g.infected.layout && g.infected.vertex && g.infected.fragment && !g.infected.failed;
       try {
-        out.pipeline = silhouette ? silhouette->pipelines[tested] : g.pipeline(draw, slot >= 0, sprite);
+        out.pipeline = silhouette ? silhouette->pipelines[tested] : g.pipeline(draw, slot >= 0, sprite, infected);
       } catch (VkResult result) {
         // With the path tracer no draw's variant is waited for
         // (preparePipelines): the draw is left out until it has compiled.
@@ -309,6 +313,11 @@ namespace remix {
       if (slot >= 0) {
         out.coverage = masks.targets[slot].set;
         out.area = outside ? whole : masks.area[slot];
+      }
+      if (infected) {
+        g.infectedParameters(draw, out, command);
+        out.bindBuffer = mesh.data->buffer;
+        out.bindOffset = mesh.data->offset;
       }
       const size_t firstSkinned = skinned.size();
       out.vertices = out.indices = mesh.data->buffer;
@@ -368,11 +377,9 @@ namespace remix {
         out.push.mvp[12] = out.push.mvp[13] = -1;
       }
       std::copy_n(mat.tint, 4, out.push.tint);
-      const uint32_t frame = uint32_t(std::fmod(seconds * mat.fps, uint32_t(mat.rows) * mat.columns));
-      out.push.uv[0] = 1.0f / mat.columns;
-      out.push.uv[1] = 1.0f / mat.rows;
-      out.push.uv[2] = float(frame % mat.columns) / mat.columns;
-      out.push.uv[3] = float(frame / mat.columns) / mat.rows;
+      uint32_t frame = 0;
+      const auto texcoord = scene::surfaceTexcoord(draw, seconds, frame);
+      std::copy_n(texcoord.data(), 4, out.push.uv);
       const auto &b = draw.blend;
       out.push.state[0] = (b.colorOp & 3u) | (b.colorOp & 4u) << 10 | (b.alphaOpTexture & 4u) << 11 |
                           b.color1 << 2 | b.color2 << 4 | (b.alphaOpTexture & 3u) << 6 | b.alpha1 << 8 |
@@ -652,6 +659,7 @@ namespace remix {
           }
         }
     }
+    g.finishInfected();
     m_profile.stagingAllocateMilliseconds = g.stagingAllocateMs;
     m_profile.stagingWriteMilliseconds = g.stagingWriteMs;
     m_profile.stagingBuffers = g.stagingBuffers;
@@ -709,7 +717,10 @@ namespace remix {
       previousLayer = draw.layer;
       // A masked overlay: its group's coverage as set 1, confined to the
       // pixels the coverage can be set in.
-      const auto layout = draw.coverage ? g.mask.layout : draw.sprite ? g.sprite.layout : g.layout;
+      const auto layout = draw.coverage      ? g.mask.layout
+                          : draw.sprite      ? g.sprite.layout
+                          : draw.infectedSet ? g.infected.layout
+                                             : g.layout;
       const auto &wanted = draw.coverage ? draw.area : scissor;
       if (!same(wanted, confined)) {
         vkCmdSetScissor(command, 0, 1, &wanted);
@@ -722,8 +733,10 @@ namespace remix {
       // A sprite overlay: the scene's depth as set 1 (its own texture stands in
       // while there is none), its sprite vertices as binding 1.
       const bool soft = draw.sprite && g.sprite.captured && g.sprite.set;
-      const VkDescriptorSet sets[] = {draw.set, draw.sprite ? (soft ? g.sprite.set : draw.set) : draw.coverage};
-      const uint32_t setCount = draw.coverage || draw.sprite ? 2 : 1;
+      const VkDescriptorSet sets[] = {draw.set, draw.sprite        ? (soft ? g.sprite.set : draw.set)
+                                                : draw.infectedSet ? draw.infectedSet
+                                                                   : draw.coverage};
+      const uint32_t setCount = draw.coverage || draw.sprite || draw.infectedSet ? 2 : 1;
       if (layout != bound.layout || setCount != bound.setCount || sets[0] != bound.sets[0] ||
           (setCount == 2 && sets[1] != bound.sets[1])) {
         vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, setCount, sets, 0, nullptr);
@@ -741,6 +754,12 @@ namespace remix {
         vkCmdBindVertexBuffers(command, 1, 1, &draw.spriteBuffer, &draw.spriteOffset);
         bound.sprite = draw.spriteBuffer;
         bound.spriteOffset = draw.spriteOffset;
+      }
+      // Gradient maps and wound cuts: the bind pose, binding 1 too.
+      if (draw.infectedSet && (draw.bindBuffer != bound.sprite || draw.bindOffset != bound.spriteOffset)) {
+        vkCmdBindVertexBuffers(command, 1, 1, &draw.bindBuffer, &draw.bindOffset);
+        bound.sprite = draw.bindBuffer;
+        bound.spriteOffset = draw.bindOffset;
       }
       if (draw.indices != bound.indices || draw.indexOffset != bound.indexOffset) {
         vkCmdBindIndexBuffer(command, draw.indices, draw.indexOffset, VK_INDEX_TYPE_UINT32);

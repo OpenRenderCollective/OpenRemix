@@ -5214,3 +5214,11 @@ These are work-reduction paths, not quality presets. General native 1080p 300-40
 
 - [x] Reject and remove the pointer-only whole-moving-map cache: qualified Crossfire frames reused no maps. Transient submitted surfaces can be recreated each frame even when their depth geometry might be unchanged; alpha-tested casters also prevent opaque-only whole-map reuse. No extra cache, counters, or settings retained.
 - [ ] Before another cache implementation, measure stable depth-geometry content/identity across transient submissions. Preserve animated poses, transforms, index ranges, offscreen casters and alpha coverage. Reuse must reduce total frame time, including comparison and bookkeeping costs; avoid repeated full geometry comparisons per light.
+
+
+### Upstream integration, 2026-11-05
+
+- [x] Merge upstream material/SSS/wound/gradient, texture, UI and shared-frame changes while retaining measured-sheet optics; keep private GPU flags and frame fields distinct.
+- [x] Route Forward+ instance UV transforms and scrolling through the shared scene helper, preserving sprite animation.
+- [ ] Add and qualify Forward+ shading-model support for upstream subsurface, explicit metal colour/roughness-map blur, gradient-mapped materials and wound cuts where appropriate. Path-tracer/base-raster support does not establish Forward+ parity.
+- [ ] Qualify live L4D2/bridge behaviour separately when needed; the GMod x64 and L4D2 x86 proxy compile checks do not establish gameplay compatibility.

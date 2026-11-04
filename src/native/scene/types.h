@@ -1,10 +1,13 @@
 #pragma once
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <string>
+#include <type_traits>
 #include <remix/remix_c.h>
 #include <unordered_map>
 #include <vector>
@@ -124,9 +127,41 @@ namespace remix {
     // The parts of a material a mod's partial override (an `over` of a
     // captured material, usd/loader.cpp) authors; the others keep the values
     // of the material it replaces (instances.cpp), as the game made it.
+    struct Material;
+    // remixapi_MaterialGradientMapEXT, validated: Left 4 Dead 2's Infected
+    // composite of the material's albedo texture (read as stored). The
+    // sampler materials only name how their texture is sampled (the gradient
+    // bilinear and clamped, the detail and burn with the material's filter,
+    // repeating): backends sample a texture through a material's sampler.
+    struct GradientMap {
+      // detail, burn: null skips its step.
+      std::shared_ptr<Texture> gradient, detail, burn;
+      std::shared_ptr<Material> gradientSampler, detailSampler, burnSampler;
+      float skinRow = 0, clothRow = 0, spriteOffset[2] = {}, detailU[2] = {}, detailV[2] = {};
+      float bloodColor[3] = {1, 1, 1}, bloodRange[2] = {0, 1}, burnStrength = 0;
+      bool operator==(const GradientMap &o) const {
+        return gradient == o.gradient && detail == o.detail && burn == o.burn && burnStrength == o.burnStrength &&
+               skinRow == o.skinRow && clothRow == o.clothRow &&
+               std::equal(spriteOffset, spriteOffset + 2, o.spriteOffset) &&
+               std::equal(detailU, detailU + 2, o.detailU) && std::equal(detailV, detailV + 2, o.detailV) &&
+               std::equal(bloodColor, bloodColor + 3, o.bloodColor) &&
+               std::equal(bloodRange, bloodRange + 2, o.bloodRange);
+      }
+    };
+    // remixapi_InstanceInfoWoundCutEXT, validated. A description keeps the
+    // texture's name (path); the draws built from it hold the texture and
+    // its sampler material (bilinear, clipped: black outside 0..1).
+    struct WoundCut {
+      std::basic_string<std::remove_cv_t<std::remove_pointer_t<remixapi_Path>>> path;
+      std::shared_ptr<Texture> texture;
+      std::shared_ptr<Material> sampler;
+      float ellipsoids[2][4][3] = {}; // per ellipsoid: center, axisX, axisY, axisZ
+      float mappingScale = 1, secondBlend = 0, threshold = 0;
+      float projectionScale[4] = {}, projectionBias[4] = {}, cutScaleBias[2][4] = {};
+    };
     namespace ModParts {
       constexpr uint32_t color = 1, roughness = 2, metallic = 4, normal = 8, emission = 16, transmission = 32,
-                         film = 64, alpha = 128, sampling = 256, all = ~0u;
+                         film = 64, alpha = 128, sampling = 256, subsurface = 512, all = ~0u;
     }
     struct Material {
       uint64_t sourceHash = 0;
@@ -145,6 +180,14 @@ namespace remix {
         bool identity() const { return !channel && !curve && !invert && exponent == 1 && bias == 0 && scale == 1; }
         bool operator==(const Remap &) const = default;
       } remap[2];
+      // remixapi_MaterialMetalColorEXT: the metal's colour (metalColored).
+      bool metalColored = false;
+      float metalColor[3] = {1, 1, 1};
+      // remixapi_MaterialPbrBlurEXT: the roughness map's least mip.
+      float pbrBlur = 0;
+      // remixapi_MaterialGradientMapEXT (null: none); texture is then a data
+      // texture (as stored).
+      std::shared_ptr<const GradientMap> gradient;
       // remixapi_MaterialNormalScrollEXT (normal encoding 5): layers, then the
       // base, layer 1 and layer 2 rates.
       uint32_t scrollLayers = 1;
@@ -165,6 +208,19 @@ namespace remix {
         std::shared_ptr<Texture> thicknessTexture;
         bool operator==(const Iridescence &) const = default;
       } iridescence;
+      // Subsurface scattering, RTX Remix's controls
+      // (remixapi_MaterialInfoOpaqueSubsurfaceEXT): a diffusion profile, or
+      // without one a thin opaque surface (measurementDistance > 0). Weight 0:
+      // neither (remixapi_MaterialSubsurfaceWeightEXT).
+      struct Subsurface {
+        float weight = 0;
+        bool diffusionProfile = false;
+        float radius[3] = {.5f, .5f, .5f}, radiusScale = 1, maxSampleRadius = 1;
+        float anisotropy = 0, transmittance[3] = {1, 1, 1};
+        float measurementDistance = 0, singleScatteringAlbedo[3] = {.5f, .5f, .5f};
+        std::shared_ptr<Texture> transmittanceTexture, thicknessTexture, singleScatteringAlbedoTexture, radiusTexture;
+        bool operator==(const Subsurface &) const = default;
+      } subsurface;
       float emission[3] = {};
       bool suppressEmissionLight = false;
       // remixapi_MaterialInfoSelfIlluminationEXT: 0 off, else the mask + 1
@@ -201,7 +257,14 @@ namespace remix {
       // Self-illumination: enabled, and its mask (0 none, 1 albedo alpha,
       // 2 emissive alpha) in the two bits above.
       static constexpr uint32_t selfIllumination = 32, selfIlluminationMaskShift = 6;
-      uint32_t flags = 0;
+      // A metal colour (remixapi_MaterialMetalColorEXT), as unorm8 RGB in
+      // pbrWord's low three bytes; a blur (remixapi_MaterialPbrBlurEXT) of
+      // the roughness map, in 1/16 mips in its high byte.
+      static constexpr uint32_t metalColor = 256, pbrBlur = 512;
+      // remixapi_MaterialGradientMapEXT (frame_tables.h materialFields: its
+      // parameters take the thin film's fields, which such a material lacks).
+      static constexpr uint32_t gradientMap = 1024;
+      uint32_t flags = 0, pbrWord = 0;
       float selfIlluminationScale = 0;
     };
     MaterialDecode materialDecode(const Material &material);
@@ -341,13 +404,33 @@ namespace remix {
       // remixapi_InstanceInfoCameraCullingEXT flags: what camera rays skip of
       // a traced instance (1 back faces, 2 clusters the camera cannot see).
       uint8_t cameraCull = 0;
+      // remixapi_InstanceInfoWoundCutEXT (null: none): cut away for every ray
+      // and raster pass, evaluated at the mesh's own (bind pose) positions.
+      std::shared_ptr<const WoundCut> wound;
       // remixapi_InstanceInfoRasterOrderEXT: the host's place for a blended
       // raster-only draw among its layer's (0: sorted by depth).
       uint32_t rasterOrder = 0;
       // remixapi_InstanceInfoSpriteEXT (0: none), on blended raster-only draws.
       uint32_t spriteFlags = 0;
       float spriteSoft[3] = {}; // softDistance, softFadeStart, softFadeEnd
+      // remixapi_InstanceInfoTexcoordTransformEXT: scale, offset; velocity in
+      // UV units per second (surfaceTexcoord).
+      std::array<float, 4> texcoord{1, 1, 0, 0};
+      std::array<float, 2> texcoordVelocity{};
+      bool scrolling() const { return texcoordVelocity[0] != 0 || texcoordVelocity[1] != 0; }
+      // An offset or a scroll: what the texels under a triangle are may change
+      // from frame to frame (a host may give a new offset each frame), so
+      // per-offset caches (opacity, emitters) take the draw as at rest.
+      bool texcoordMoves() const { return scrolling() || texcoord[2] != 0 || texcoord[3] != 0; }
     };
+    // The UV transform (scale, offset) a draw's maps are read through at
+    // `seconds`: the instance's texcoord transform, scrolled, and then the
+    // material's sprite sheet cell (animationFrame). The scroll is kept to
+    // less than two repeats, which neither wrapping nor mirroring shows;
+    // scroll false: at rest, without the instance's offset or scroll (the
+    // emitters of a draw whose texcoords move, SurfaceEmissionCache).
+    std::array<float, 4> surfaceTexcoord(const Draw &draw, double seconds, uint32_t &animationFrame,
+                                         bool scroll = true);
     // remixapi_InstanceInfoHaloEXT, validated and clamped. Instances whose
     // parameters compare equal share one group (one silhouette mask).
     struct Halo {

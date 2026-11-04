@@ -4,7 +4,7 @@
 void loadSheet(inout Hit hit, Surface surface, vec2 uv) {
   hit.sheetIndex = 0u;
   hit.sheetDepth = vec3(0);
-  if (!hit.blended || (surface.material.x & 256u) == 0u || frame.sheetMaterials == 0)
+  if (!hit.blended || (surface.material.x & measuredSheetMaterialFlag) == 0u || frame.sheetMaterials == 0)
     return;
   hit.sheetIndex = surface.textureState.x + 1u;
   SheetMaterial sheet = SheetMaterials(frame.sheetMaterials).data[hit.sheetIndex - 1u];

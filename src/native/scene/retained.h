@@ -9,6 +9,9 @@ namespace remix::scene {
   struct InstanceDescription {
     uint64_t mesh = 0, materialOverride = 0;
     Matrix model = identity();
+    // remixapi_InstanceInfoTexcoordTransformEXT: scale, offset; velocity.
+    std::array<float, 4> texcoord{1, 1, 0, 0};
+    std::array<float, 2> texcoordVelocity{};
     // Hidden, ignored and first-person-shadow categories: validated, never drawn.
     bool hidden = false;
     uint32_t categoryFlags = 0;
@@ -52,6 +55,9 @@ namespace remix::scene {
     // remixapi_InstanceInfoSpriteEXT (0: none).
     uint32_t spriteFlags = 0;
     float spriteSoft[3] = {};
+    // remixapi_InstanceInfoWoundCutEXT (null: none): its parameters and the
+    // cut texture's name, which buildDraws resolves.
+    std::shared_ptr<const WoundCut> wound;
   };
   // Throws the codes DrawInstance returns. Mesh-independent checks only.
   void describeInstance(const remixapi_InstanceInfo &info, InstanceDescription &out);

@@ -5,7 +5,8 @@ namespace remix {
   using namespace trace::detail;
 
   static_assert(trace::instanceFacingCullDisable == VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR &&
-                trace::instanceFrontCounterClockwise == VK_GEOMETRY_INSTANCE_TRIANGLE_FRONT_COUNTERCLOCKWISE_BIT_KHR);
+                trace::instanceFrontCounterClockwise == VK_GEOMETRY_INSTANCE_TRIANGLE_FRONT_COUNTERCLOCKWISE_BIT_KHR &&
+                trace::instanceForceNoOpaque == VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR);
 
   namespace {
     VkAccelerationStructureInstanceKHR instanceData(const trace::InstanceInput &input, bool faceCulling,

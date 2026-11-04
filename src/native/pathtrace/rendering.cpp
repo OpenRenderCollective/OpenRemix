@@ -97,6 +97,9 @@ namespace remix {
           auto animationFrame = uint64_t(prepared.seconds * draw.material->fps);
           append(&animationFrame, sizeof(animationFrame));
         }
+        append(draw.texcoord.data(), sizeof(draw.texcoord));
+        if (draw.scrolling())
+          append(&prepared.seconds, sizeof(prepared.seconds));
       }
     sceneBytes = &signature.frame;
     // Dynamic textures (remixapi_UpdateTextureEXT) keep their fingerprint:
@@ -135,7 +138,8 @@ namespace remix {
                                                              digestEnabled,
                                                              PathTracer::textureLimit,
                                                              &materialTicks,
-                                                             &temporalTicks};
+                                                             &temporalTicks,
+                                                             rrActive()};
     tables.build(views, tableInputs);
     {
       const auto &s = tables.statistics();
@@ -580,6 +584,9 @@ namespace remix {
               VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
                   VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
               VK_ACCESS_SHADER_READ_BIT);
+    // remixapi_InstanceInfoWoundCutEXT: the wounded surfaces' vertices, from
+    // their records in the table just written.
+    const VkDeviceAddress woundAddress = evaluateWounds(command);
     tableTime.close();
     Frame frame = {};
     if (!optical.empty()) {
@@ -587,6 +594,7 @@ namespace remix {
                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
       frame.sheetMaterials = sheetMaterials->address;
     }
+    frame.woundVertices = woundAddress;
     frame.localConfig[0] = options.localLights && options.localIntensity > 0 ? lightBvh.active : 0;
     localIlluminationActive = frame.localConfig[0] != 0;
     localFirstHitActive = localIlluminationActive && !hasBlendedGeometry;
@@ -603,8 +611,15 @@ namespace remix {
     frame.localScale[1] = options.localRange;
     // Private, previously unused shader word: bounded candidate count. Keep
     // the established one-/many-sphere and <=4-emitter estimators unchanged.
+    // rtx.native.pathtrace.emissiveCandidateBudget spreads a per-pixel
+    // candidate count over the requested samples.
+    const uint32_t emissiveCandidates =
+        options.emissiveCandidateBudget
+            ? std::clamp(options.emissiveCandidateBudget / std::max(options.localSamples, 1u), 1u,
+                         options.emissiveCandidates)
+            : options.emissiveCandidates;
     frame.localScale[2] = lightBvh.emitters().size() <= 4 ? 1.f
-                          : hasEmissiveLights           ? float(options.emissiveCandidates)
+                          : hasEmissiveLights           ? float(emissiveCandidates)
                                                         : float(options.sphereCandidates);
     localResamplingActive = localIlluminationActive && frame.localScale[2] > 1;
     frame.localScale[3] = options.localRange > 0 ? 1.f / (options.localRange * options.localRange) : 0;
@@ -838,6 +853,8 @@ namespace remix {
                       options.bounces > 0;
     frame.firefly[0] = options.localDirectClamp;
     frame.firefly[1] = options.indirectClamp;
+    frame.subsurfaceUnits = options.subsurfaceProfileScale / options.sceneScale;
+    frame.subsurfaceThickness = options.subsurfaceThicknessScale;
     frame.pathConfig[0] = rouletteActive;
     frame.pathConfig[1] = options.rouletteMinBounces;
     frame.pathConfig[2] = (options.translucentIndirect ? 1u : 0u) | (options.sheetLocalLights ? 2u : 0u) |
@@ -854,6 +871,16 @@ namespace remix {
       frame.pathConfig[3] |= 0x100u;
     if (!options.iridescence)
       frame.pathConfig[3] |= 0x200u;
+    if (!options.subsurface)
+      frame.pathConfig[3] |= 0x400u; // subsurface scattering off (scene.glsl subsurfaced)
+    if (!options.subsurfaceDiffusionProfile)
+      frame.pathConfig[3] |= 0x800u;
+    if (!options.subsurfaceThinOpaque)
+      frame.pathConfig[3] |= 0x1000u;
+    if (!options.subsurfaceTextureMaps)
+      frame.pathConfig[3] |= 0x2000u; // subsurface maps off (pathtrace.comp surfaceSubsurface)
+    if (!options.subsurfaceTransmission)
+      frame.pathConfig[3] |= 0x4000u; // a profile's far side off (subsurface.glsl)
     append(&frame, sizeof(frame));
     append(&options.localFireflyFilter, sizeof(options.localFireflyFilter));
     append(&options.translucencyDenoiser, sizeof(options.translucencyDenoiser));
@@ -1720,7 +1747,7 @@ namespace remix {
               count(surface);
       std::fprintf(stderr, "OPACITY mixed_surfaces=%llu", static_cast<unsigned long long>(mixed));
       const char *names[] = {"solid",   "one_sided",       "blended",          "transmission",  "alpha_test",
-                             "invalid", "missing_texture", "texture_boundary", "texture_cutout"};
+                             "invalid", "missing_texture", "texture_boundary", "texture_cutout", "scrolling"};
       for (unsigned i = 0; i < scene::OpacityPartition::Count; ++i)
         std::fprintf(stderr, " %s=%llu", names[i], static_cast<unsigned long long>(reasons[i]));
       std::fprintf(stderr, "\n");

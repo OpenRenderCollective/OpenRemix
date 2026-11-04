@@ -201,6 +201,13 @@ namespace remix {
         ImGui::SetTooltip(
             "Compares unshadowed candidates at opaque primary surfaces in larger emissive light sets.\nKeeps "
             "one shadow ray per local light sample; 1 restores basic BVH sampling.");
+      int budget = int(options.emissiveCandidateBudget);
+      if (ui::SliderInt("Emissive candidate budget", &budget, 0, 128))
+        options.emissiveCandidateBudget = uint32_t(budget);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("At most this many emissive candidates per pixel across all local light samples\n"
+                          "(0: no limit). Each candidate is a light-tree walk: at 16 samples, 32 leaves two\n"
+                          "candidates per sample, 16 one.");
       int sphereCandidates = int(options.sphereCandidates);
       if (ui::SliderInt("Light candidates (no emissives)", &sphereCandidates, 1, 8))
         options.sphereCandidates = uint32_t(sphereCandidates);

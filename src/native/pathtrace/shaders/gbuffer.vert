@@ -3,6 +3,7 @@
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
 #extension GL_EXT_nonuniform_qualifier : require
 #extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_control_flow_attributes : require
 #include "scene.glsl"
 #include "debug.glsl"
 layout(push_constant) uniform Draw {
@@ -28,6 +29,10 @@ layout(location=11) flat out vec3 corner2;
 layout(location=12) flat out vec3 cornerNormal0;
 layout(location=13) flat out vec3 cornerNormal1;
 layout(location=14) flat out vec3 cornerNormal2;
+// remixapi_InstanceInfoWoundCutEXT (scene.glsl WoundVertex): w, and h with
+// the missing halves (1 where this vertex has no q), interpolated.
+layout(location=15) out vec4 woundW;
+layout(location=16) out vec3 woundH;
 void main() {
   Surface s=surfaces[draw.surfaceIndex];
   uint index=s.indices.i[gl_VertexIndex];
@@ -52,9 +57,15 @@ void main() {
   mat3 basis=materialBasis(normalize(normal),mat3(draw.model)*(b-a),mat3(draw.model)*(c-a),ub-ua,uc-ua);
   tangent=basis[0];bitangent=basis[1];
   uv=v.uv.xy;color=v.color;previousPosition=position;
+  woundW=vec4(0);woundH=vec3(1,0,0);
+  if(s.textureState.y!=0u) {
+    WoundVertex w=WoundVertices(frame.woundVertices).v[surfaces[s.textureState.y].textureState.w+index];
+    woundW=w.w;woundH=vec3(w.h,float(w.missing&1u),float((w.missing>>1)&1u));
+  }
   if(s.previousVertices!=0) {
     Vertices previous=Vertices(s.previousVertices);
-    previousPosition=(s.previousModel*vec4(previous.v[index].position.xyz,1)).xyz;
+    previousPosition=(s.previousModel*vec4(previous.v[index].position.xyz,1)).xyz+
+                     mat3(s.previousModel)*textureShift(s,b-a,c-a,ub-ua,uc-ua);
   }
   gl_Position=frame.camera*vec4(position,1);
   gl_Position.z=dot(draw.reverseDepth,vec4(position,1));

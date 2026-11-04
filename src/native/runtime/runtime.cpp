@@ -69,12 +69,17 @@ namespace remix {
     }
 #endif
     m_headless = m_disableProfiles = m_disableMods = false;
+    SDL_Window *hostWindow = nullptr;
     struct Extension {
       remixapi_StructType type;
       const void *next;
     };
     for (auto p = static_cast<const Extension *>(info.pNext); p;
          p = static_cast<const Extension *>(p->next)) {
+      if (p->type == REMIXAPI_STRUCT_TYPE_EDITOR_HOST_WINDOW_EXT) {
+        hostWindow = static_cast<SDL_Window *>(reinterpret_cast<const remixapi_EditorHostWindowEXT *>(p)->sdlWindow);
+        continue;
+      }
       if (p->type != REMIXAPI_STRUCT_TYPE_EDITOR_STARTUP_EXT)
         continue;
       const auto &editor = *reinterpret_cast<const remixapi_EditorStartupEXT *>(p);
@@ -106,7 +111,10 @@ namespace remix {
       m_uiState = REMIXAPI_UI_STATE_NONE;
       if (!m_profiles.message().empty())
         SDL_Log("OpenRemix profiles: %s", m_profiles.message().c_str());
-      auto status = m_headless ? REMIXAPI_ERROR_CODE_SUCCESS : m_window.initialize(info);
+      // Headless with a host window: the UI runs on the host's window.
+      auto status = !m_headless ? m_window.initialize(info)
+                    : hostWindow ? m_window.adopt(hostWindow)
+                                 : REMIXAPI_ERROR_CODE_SUCCESS;
       if (status != REMIXAPI_ERROR_CODE_SUCCESS) {
         return status;
       }
@@ -140,7 +148,7 @@ namespace remix {
       if (status != REMIXAPI_ERROR_CODE_SUCCESS) {
         return finish(status);
       }
-      if (!m_headless && !initializeUi()) {
+      if ((!m_headless || hostWindow) && !initializeUi()) {
         return finish(REMIXAPI_ERROR_CODE_GENERAL_FAILURE);
       }
       status = m_headless ? REMIXAPI_ERROR_CODE_SUCCESS : recreateSwapchain();

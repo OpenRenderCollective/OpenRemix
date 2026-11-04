@@ -42,9 +42,16 @@ _Static_assert(offsetof(remixapi_EditorSharedFrame, device_uuid) == 24, "Device 
 #if defined(_WIN32)
 _Static_assert(sizeof(remixapi_EditorSharedFrame) == 64, "Shared frame version 1 ABI");
 _Static_assert(offsetof(remixapi_EditorSharedFrame, memory_handle) == 40, "Shared memory handle offset");
+_Static_assert(sizeof(remixapi_EditorSharedFrame2) == 88, "Shared frame version 2 ABI");
+_Static_assert(offsetof(remixapi_EditorSharedFrame2, depth_memory_handle) == 80, "Shared depth handle offset");
+_Static_assert(sizeof(remixapi_EditorSharedFrame3) == 112, "Shared frame version 3 ABI");
 #else
 _Static_assert(sizeof(remixapi_EditorSharedFrame) == 56, "Shared frame version 1 ABI");
 _Static_assert(offsetof(remixapi_EditorSharedFrame, memory_fd) == 40, "Shared memory FD offset");
+_Static_assert(sizeof(remixapi_EditorSharedFrame2) == 72, "Shared frame version 2 ABI");
+_Static_assert(offsetof(remixapi_EditorSharedFrame2, depth_memory_fd) == 68, "Shared depth FD offset");
+_Static_assert(sizeof(remixapi_EditorSharedFrame3) == 88, "Shared frame version 3 ABI");
+_Static_assert(sizeof(remixapi_EditorHostWindowEXT) == 24, "Editor host window ABI");
 #endif
 _Static_assert(sizeof(remixapi_EditorStartupEXT) == 32, "Editor startup extension ABI");
 _Static_assert(sizeof(remixapi_MaterialNormalEncodingEXT) == 24, "Normal encoding ABI");
@@ -52,6 +59,8 @@ _Static_assert(sizeof(remixapi_MaterialPbrChannelEXT) == 24, "PBR channel ABI");
 _Static_assert(sizeof(remixapi_MaterialPbrRemapEXT) == 64, "PBR remap ABI");
 _Static_assert(sizeof(remixapi_MaterialNormalScrollEXT) == 48, "Normal scroll ABI");
 _Static_assert(sizeof(remixapi_MaterialIridescenceEXT) == 64, "Iridescence ABI");
+_Static_assert(sizeof(remixapi_MaterialSubsurfaceWeightEXT) == 24, "Subsurface weight ABI");
+_Static_assert(offsetof(remixapi_MaterialSubsurfaceWeightEXT, weight) == 16, "Subsurface weight");
 _Static_assert(sizeof(remixapi_CameraMediumEXT) == 40, "Camera medium ABI");
 _Static_assert(sizeof(remixapi_USDLoadOptionsEXT) == 32, "USD load version 1 ABI");
 _Static_assert(sizeof(remixapi_USDDrawOptionsEXT) == 16, "USD draw version 1 ABI");

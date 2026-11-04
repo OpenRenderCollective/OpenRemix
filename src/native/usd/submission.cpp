@@ -261,6 +261,10 @@ namespace remix::usd {
       if (const auto film = def->second.find("iridescence"); film != def->second.end())
         if (auto path = film->value("texture", std::string()); !path.empty())
           paths.push_back(path);
+      if (const auto sss = def->second.find("subsurface"); sss != def->second.end())
+        for (const char *key : subsurfaceTextureKeys)
+          if (auto path = sss->value(key, std::string()); !path.empty())
+            paths.push_back(path);
     }
     return paths;
   }
@@ -343,6 +347,49 @@ namespace remix::usd {
       opaque.alphaIsThinFilmThickness = f.value("from_alpha", false);
       film.pNext = info.pNext;
       info.pNext = &film;
+    }
+    // RTX Remix's subsurface inputs (opaque materials), and OpenRemix's weight.
+    remixapi_MaterialInfoOpaqueSubsurfaceEXT subsurface{};
+    remixapi_MaterialSubsurfaceWeightEXT subsurface_weight{};
+    NativePath sss_transmittance, sss_thickness, sss_single_scattering, sss_radius;
+    if (const auto found = data.find("subsurface");
+        found != data.end() && info.pNext != nullptr && data.value("kind", std::string("opaque")) != "translucent") {
+      const auto &f = *found;
+      const auto number = [&](const char *key, float fallback) {
+        const auto v = f.value(key, Json(fallback));
+        const float x = v.is_number() ? v.get<float>() : fallback;
+        return std::isfinite(x) ? x : fallback;
+      };
+      const auto color = [&](const char *key, float fallback) {
+        const auto v = f.value(key, Json::array());
+        const auto at = [&](size_t i) {
+          const float x = v.size() == 3 && v[i].is_number() ? v[i].get<float>() : fallback;
+          return std::isfinite(x) ? x : fallback;
+        };
+        return remixapi_Float3D{at(0), at(1), at(2)};
+      };
+      subsurface.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_SUBSURFACE_EXT;
+      subsurface.subsurfaceDiffusionProfile = f.value("diffusion_profile", false);
+      subsurface.subsurfaceRadius = color("radius", .5f);
+      subsurface.subsurfaceRadiusScale = number("radius_scale", 1);
+      subsurface.subsurfaceMaxSampleRadius = number("max_sample_radius", 16);
+      subsurface.subsurfaceVolumetricAnisotropy = number("anisotropy", 0);
+      subsurface.subsurfaceTransmittanceColor = color("transmittance", 1);
+      subsurface.subsurfaceMeasurementDistance = number("measurement_distance", 0);
+      subsurface.subsurfaceSingleScatteringAlbedo = color("single_scattering_albedo", .5f);
+      sss_transmittance = native_path(f.value("transmittance_texture", std::string()));
+      sss_thickness = native_path(f.value("thickness_texture", std::string()));
+      sss_single_scattering = native_path(f.value("single_scattering_texture", std::string()));
+      sss_radius = native_path(f.value("radius_texture", std::string()));
+      subsurface.subsurfaceTransmittanceTexture = sss_transmittance.c_str();
+      subsurface.subsurfaceThicknessTexture = sss_thickness.c_str();
+      subsurface.subsurfaceSingleScatteringAlbedoTexture = sss_single_scattering.c_str();
+      subsurface.subsurfaceRadiusTexture = sss_radius.c_str();
+      subsurface.pNext = const_cast<void *>(static_cast<const void *>(info.pNext));
+      subsurface_weight.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_SUBSURFACE_WEIGHT_EXT;
+      subsurface_weight.pNext = &subsurface;
+      subsurface_weight.weight = std::clamp(number("weight", 1), 0.f, 1.f);
+      info.pNext = &subsurface_weight;
     }
     remixapi_MaterialHandle handle{};
     resources_.createMaterial(info, handle);

@@ -1,4 +1,5 @@
 #version 450
+#extension GL_GOOGLE_include_directive : require
 layout(location=0) in vec2 uv;
 layout(location=1) in vec4 vertexColor;
 layout(location=0) out vec4 result;
@@ -18,6 +19,11 @@ layout(location=5) flat in vec2 depthScale;
 // The frame's opaque depth (RasterRenderer::captureSceneDepth), or any
 // texture while SOFT_DEPTH is off.
 layout(set=1,binding=0) uniform sampler2D sceneDepth;
+#endif
+#ifdef INFECTED
+#include "infected.glsl"
+layout(location=2) in vec4 woundW;
+layout(location=3) in vec3 woundH;
 #endif
 layout(push_constant) uniform Draw {
   mat4 mvp;
@@ -56,7 +62,18 @@ vec4 combineColor(uint op, vec4 a, vec4 b) {
 const vec3 luminance = vec3(0.3, 0.59, 0.11);
 #endif
 void main() {
+#ifdef INFECTED
+  // A wound cut: a half missing at any vertex interpolates above zero there.
+  float wound = 0.0;
+  uint flags = floatBitsToUint(infected.wound.w);
+  if ((flags & 1u) != 0u) {
+    wound = woundValue(woundW, uint(woundH.y > 0.0) | uint(woundH.z > 0.0) << 1);
+    if (wound > infected.wound.z || woundH.x < 1.0) discard;
+  }
+  vec4 texel = (flags & 2u) != 0u ? gradientAlbedo(uv, draw.uvTransform, wound) : albedoTexel(uv);
+#else
   vec4 texel = albedoTexel(uv);
+#endif
 #ifdef SPRITE
   uint sprite = (draw.state.w >> 5) & 0x1ffu;
   if ((sprite & 7u) != 0u) {

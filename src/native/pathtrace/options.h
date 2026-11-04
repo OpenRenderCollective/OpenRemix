@@ -50,9 +50,16 @@ namespace remix {
     // 0.8); radiance and PDFs are unchanged, only where samples go.
     float lightPowerExponent = 1;
     // Secondary rays start this many units in the last place of each
-    // coordinate off the surface (RT Gems ch. 6): about 0.5 units at 16384
-    // from the origin. Smaller tightens contact shadows, too small shows acne.
-    float rayOffset = 256;
+    // coordinate off the surface (RT Gems ch. 6): about 0.03 units at 16384
+    // from the origin. Larger starts rays inside thin layered geometry (a
+    // collar pressed on a neck at 256) and blackens them; too small shows
+    // acne (at 4, map geometry flickered in GMod).
+    float rayOffset = 16;
+    // Secondary rays pass what lies within this many meters of where they
+    // start (0: off). Models authored for raster lighting press surfaces a
+    // hair apart (a collar's inside on a neck, folds in a face) that it never
+    // occluded; traced, those gaps shade as dark contact shadow.
+    float contactGap = 0;
     // The shadow terminator, as dxvk-remix (rtx.shadowTerminator.*): light
     // sampling's diffuse lobe softened within a few degrees of the triangle's
     // horizon (brdf.glsl terminatorSoften), and shadow rays leaving
@@ -68,6 +75,11 @@ namespace remix {
     // sampled paths instead of light sampling (brdf.glsl pathEmissiveSpecular).
     float emissiveSpecularRoughness = .3f;
     uint32_t emissiveCandidates = 1;
+    // At most this many emissive candidates per pixel across its local light
+    // samples (0: no limit): with many samples (16), each sample gets
+    // budget / samples of emissiveCandidates, at least one. Each candidate is
+    // a light-tree walk, the main cost of local light at high sample counts.
+    uint32_t emissiveCandidateBudget = 16;
     // RIS candidates in sets of more than four sphere lights without emissive
     // surfaces (1: plain BVH sampling). Candidates compare unshadowed
     // contributions, cone shaping included, before the one shadow ray.
@@ -300,6 +312,14 @@ namespace remix {
     float causticsDepth = .5f;
     // Thin-film iridescence of materials that have it (remixapi_MaterialIridescenceEXT).
     bool iridescence = true;
+    // Subsurface scattering of materials that have it (remixapi_MaterialSubsurfaceEXT).
+    bool subsurface = true;
+    // RTX Remix's rtx.subsurface.* (which are their setting names): the kinds,
+    // their maps, a profile's far side (light through thin parts), a scale of
+    // every profile's radius and of every thin surface's thickness.
+    bool subsurfaceDiffusionProfile = true, subsurfaceThinOpaque = true, subsurfaceTextureMaps = true,
+         subsurfaceTransmission = true;
+    float subsurfaceProfileScale = 1, subsurfaceThicknessScale = 1;
     bool translucencyDenoiser = true, translucencyReuse = true;
     bool pbrLocalReuse = true; // Experimental previous-frame secondary local lighting.
     bool sky = true;

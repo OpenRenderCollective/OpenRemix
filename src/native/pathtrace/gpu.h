@@ -137,7 +137,7 @@ namespace remix::trace::detail {
     float visibilityProbe[4] = {};     // world units: probe offset above the surface, decal attachment distance; texture footprint scale (render/output size); ray offset (ULPs)
     uint64_t restirCurrent = 0, restirHistoryRead = 0, restirHistoryWrite = 0, restirRemap = 0;
     uint32_t restirConfig[4] = {}; // candidates, spatial samples, temporal M cap, flags (1 initial visibility)
-    float restirParams[4] = {};    // spatial radius (pixels), emitter count, boiling filter strength, reserved
+    float restirParams[4] = {};    // spatial radius (pixels), emitter count, boiling filter strength, contact gap (world units)
     uint64_t regirRead = 0, regirWrite = 0, regirSlots = 0;
     // Caustics (visibility.glsl causticTint): strength (8 bits) and contrast
     // (8 bits, in 32nds), then the half float focus depth in world units
@@ -222,8 +222,15 @@ namespace remix::trace::detail {
     // extents, forward.
     float screenCameras[8][4][4] = {};
     uint64_t sheetMaterials = 0; // Descriptor-indexed measured-sheet optics.
+    // remixapi_InstanceInfoWoundCutEXT: the frame's wound vertices
+    // (vertex-wound.comp; 0: none); scene units per metre of a subsurface
+    // radius (rtx.subsurface.diffusionProfileScale in them) and the thickness scale.
+    uint64_t woundVertices = 0;
+    float subsurfaceUnits = 0, subsurfaceThickness = 1;
   };
-  static_assert(offsetof(Frame, sheetMaterials) == 2320 && sizeof(Frame) == 2336 && offsetof(Frame, screenCameras) == 1808 && offsetof(Frame, srgbTextures) == 1280 && offsetof(Frame, pathDebug) == 1792 &&
+  static_assert(offsetof(Frame, sheetMaterials) == 2320 && offsetof(Frame, woundVertices) == 2328 &&
+                offsetof(Frame, subsurfaceUnits) == 2336 && sizeof(Frame) == 2352 &&
+                offsetof(Frame, screenCameras) == 1808 && offsetof(Frame, srgbTextures) == 1280 && offsetof(Frame, pathDebug) == 1792 &&
                 offsetof(Frame, localProbeRead) == 1168 &&
                 offsetof(Frame, localProbeParams) == 1184 && offsetof(Frame, volumeLightScales) == 1200 &&
                 offsetof(Frame, cloudShadow) == 1216 && offsetof(Frame, cloudShadowConfig) == 1264 &&
@@ -791,6 +798,14 @@ namespace remix {
       std::vector<uint64_t> normalHashes;    // GeometryScratch::normalHashes of vertices
       uint64_t fingerprint = 0, lastUse = 0;
       uint64_t contentDigest = 0; // REMIX_FRAME_DIGEST only: hash of the uploaded data.
+      // GPU skinning (commitSkin), per surface: the bind pose as shading
+      // vertices, blend weights and indices, uploaded at a CPU conversion of
+      // skinMesh; where its positions sit in the BLAS input, and its size.
+      std::weak_ptr<scene::Mesh> skinMesh;
+      std::vector<std::shared_ptr<Buffer>> skinSource, skinWeights, skinIndices;
+      std::vector<VkDeviceSize> skinOffsets;
+      std::vector<uint32_t> skinCounts, skinBonesPerVertex;
+      VkDeviceSize skinInputBytes = 0;
     };
     // CPU half of a mesh view conversion: skinning, BLAS input assembly and
     // content hashes. Independent per view, so conversions run on workers.
@@ -833,6 +848,11 @@ namespace remix {
       const scene::OpacityPartition *const *partitions = nullptr;
       std::string opaque;
       bool skinned = false, streaming = false, deform = false;
+      // Only the bones moved and the bind pose is uploaded: skinned on the
+      // GPU (commitSkin), with no CPU geometry.
+      bool gpuSkin = false;
+      // The view's mesh, unchanged since its last conversion, with other bones.
+      bool bonesOnly = false;
       std::shared_ptr<Geometry> previousGeometry;
       GeometryScratch data;
     };
@@ -971,7 +991,7 @@ namespace remix {
       uint32_t compactionCapacity = 0;
       bool timingPending = false, sharcPending = false, guidingPending = false, reusePending = false,
            rayPending = false;
-      std::unique_ptr<Buffer> table, uniform, scratch, topScratch, sheetMaterials, instances[3];
+      std::unique_ptr<Buffer> table, uniform, scratch, topScratch, sheetMaterials, instances[3], woundVertices;
       uint64_t combinedPrefix = 0; // Tlas::prefix of the combined TLAS's instances
       std::unique_ptr<Buffer> tableUpload;
       std::vector<uint8_t> tableShadow;
@@ -1016,6 +1036,38 @@ namespace remix {
     std::vector<AssembleJob> assembleJobs;
     void createAssemblePipeline();
     void recordAssemble(VkCommandBuffer command);
+    // GPU skinning (vertex-skin.comp): a skinned view's new BLAS positions and
+    // shading vertices from its uploaded bind pose and this frame's bones.
+    struct SkinJob {
+      VkDeviceAddress source = 0, weights = 0, indices = 0, bones = 0, positions = 0, target = 0;
+      uint32_t count = 0, bonesPerVertex = 0;
+    };
+    static_assert(sizeof(SkinJob) == 56);
+    VkPipelineLayout skinLayout = VK_NULL_HANDLE;
+    VkPipeline skin = VK_NULL_HANDLE;
+    bool skinFailed = false; // Creation failed: skinned views convert on the CPU.
+    std::vector<SkinJob> skinJobs;
+    void createSkinPipeline();
+    // A skinned view's frame on the GPU (MeshConversion::gpuSkin).
+    void commitSkin(VkCommandBuffer command, MeshConversion &conversion);
+    // After a CPU conversion of a skinned view: its bind pose for commitSkin.
+    void uploadSkinSource(VkCommandBuffer command, MeshConversion &conversion);
+    // remixapi_InstanceInfoWoundCutEXT (vertex-wound.comp): each wounded
+    // surface's vertices evaluated at their bind pose into this frame slot's
+    // woundVertices, from its wound record in the surface table.
+    struct WoundJob {
+      VkDeviceAddress record = 0, target = 0;
+      uint32_t count = 0, unused = 0;
+    };
+    static_assert(sizeof(WoundJob) == 24);
+    VkPipelineLayout woundLayout = VK_NULL_HANDLE;
+    VkPipeline wound = VK_NULL_HANDLE;
+    bool woundFailed = false;
+    std::unique_ptr<Buffer> woundVertices;
+    void createWoundPipeline();
+    // After the surface table's upload: the frame's wound vertices (their
+    // address, 0 without wound records); a barrier makes them readable.
+    VkDeviceAddress evaluateWounds(VkCommandBuffer command);
     // A lighting pipeline compiled with guidance off (its variants are lazy).
     struct LightingRequest {
       trace::Stage stage;

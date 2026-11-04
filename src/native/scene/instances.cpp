@@ -447,6 +447,8 @@ namespace remix {
               }
               if (p & ModParts::film)
                 merged->iridescence = mod->iridescence;
+              if (p & ModParts::subsurface)
+                merged->subsurface = mod->subsurface;
               if (p & ModParts::alpha) {
                 merged->compare = mod->compare;
                 merged->reference = mod->reference;
@@ -462,7 +464,7 @@ namespace remix {
               // dielectric, caustics through translucent bumps.
               merged->pbr = original->pbr || merged->transmittanceDistance > 0 ||
                             (mod->pbr && (p & (ModParts::roughness | ModParts::metallic | ModParts::normal |
-                                               ModParts::film | ModParts::transmission)));
+                                               ModParts::film | ModParts::transmission | ModParts::subsurface)));
               if (merged->transmission && merged->iridescence.strength > 0 && (p & ModParts::film)) {
                 merged->roughness = .04f;
                 merged->metallic = 0;
@@ -519,6 +521,22 @@ namespace remix {
       return original;
     };
     bool complete = true;
+    // remixapi_InstanceInfoWoundCutEXT: its cut texture, named as material
+    // textures are; one that does not resolve leaves the instance uncut.
+    std::shared_ptr<const WoundCut> wound;
+    if (d.wound) {
+      try {
+        auto resolved = std::make_shared<WoundCut>(*d.wound);
+        resolved->path.clear();
+        resolved->texture = dataTexturePath(d.wound->path.c_str());
+        resolved->sampler = samplerMaterial(resolved->texture, 1, 3);
+        wound = std::move(resolved);
+      } catch (remixapi_ErrorCode) {
+        if (strict)
+          throw;
+        complete = false;
+      }
+    }
     for (uint32_t i = 0; i < count; ++i) {
       for (const auto &surface : mesh->surfaces) {
         Draw draw;
@@ -533,7 +551,10 @@ namespace remix {
         draw.maskOutside = d.maskOutside;
         draw.cutGroup = d.cutGroup;
         draw.cameraCull = d.cameraCull;
+        draw.wound = wound;
         draw.rasterOrder = d.rasterOrder;
+        draw.texcoord = d.texcoord;
+        draw.texcoordVelocity = d.texcoordVelocity;
         draw.spriteFlags = d.spriteFlags;
         std::copy_n(d.spriteSoft, 3, draw.spriteSoft);
         // Frames and sequences come from the mesh's sprite vertices.
@@ -624,6 +645,21 @@ namespace remix {
 namespace remix::scene {
   using namespace detail;
 
+  std::array<float, 4> surfaceTexcoord(const Draw &draw, double seconds, uint32_t &animationFrame, bool scroll) {
+    const auto &m = *draw.material;
+    animationFrame = uint32_t(std::fmod(seconds * m.fps, uint32_t(m.rows) * m.columns));
+    const float scale[2] = {1.f / m.columns, 1.f / m.rows};
+    const float cell[2] = {float(animationFrame % m.columns) / m.columns, float(animationFrame / m.columns) / m.rows};
+    std::array<float, 4> uv;
+    for (unsigned axis = 0; axis < 2; ++axis) {
+      const float moved =
+          scroll ? draw.texcoord[axis + 2] + float(std::fmod(double(draw.texcoordVelocity[axis]) * seconds, 2.0)) : 0.f;
+      uv[axis] = draw.texcoord[axis] * scale[axis];
+      uv[axis + 2] = moved * scale[axis] + cell[axis];
+    }
+    return uv;
+  }
+
   void describeInstance(const remixapi_InstanceInfo &info, InstanceDescription &d) {
     d.mesh = key(info.mesh);
     d.model = transform(info.transform);
@@ -637,6 +673,14 @@ namespace remix::scene {
     if (const auto *override = static_cast<const remixapi_InstanceInfoMaterialEXT *>(
             extension(info.pNext, REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_MATERIAL_EXT)))
       d.materialOverride = key(override->material);
+    if (const auto *texcoord = static_cast<const remixapi_InstanceInfoTexcoordTransformEXT *>(
+            extension(info.pNext, REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_TEXCOORD_TRANSFORM_EXT))) {
+      const float values[] = {texcoord->scale[0],  texcoord->scale[1],    texcoord->offset[0],
+                              texcoord->offset[1], texcoord->velocity[0], texcoord->velocity[1]};
+      finite(values, 6);
+      std::copy_n(values, 4, d.texcoord.begin());
+      std::copy_n(values + 4, 2, d.texcoordVelocity.begin());
+    }
     const auto *alpha =static_cast<const remixapi_InstanceInfoBlendEXT *>(
         extension(info.pNext, REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_BLEND_EXT));
     d.blend = blend(alpha);
@@ -769,6 +813,42 @@ namespace remix::scene {
         d.spriteSoft[0] = sprite->softDistance;
         d.spriteSoft[1] = sprite->softFadeStart;
         d.spriteSoft[2] = sprite->softFadeEnd;
+      }
+    }
+    if (const auto *cut = static_cast<const remixapi_InstanceInfoWoundCutEXT *>(
+            extension(info.pNext, REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_WOUND_CUT_EXT))) {
+      auto wound = std::make_shared<WoundCut>();
+      for (unsigned e = 0; e < 2; ++e) {
+        const auto &in = cut->ellipsoids[e];
+        const remixapi_Float3D *vectors[] = {&in.center, &in.axisX, &in.axisY, &in.axisZ};
+        for (unsigned v = 0; v < 4; ++v) {
+          const float value[3] = {vectors[v]->x, vectors[v]->y, vectors[v]->z};
+          finite(value, 3);
+          std::copy_n(value, 3, wound->ellipsoids[e][v]);
+        }
+      }
+      const float scalars[] = {cut->mappingScale, cut->secondBlend, cut->threshold};
+      finite(scalars, 3);
+      finite(cut->projectionScale, 4);
+      finite(cut->projectionBias, 4);
+      finite(cut->cutScaleBias[0], 4);
+      finite(cut->cutScaleBias[1], 4);
+      if (!cut->cutTexture || !*cut->cutTexture || !(cut->mappingScale > 0))
+        throw invalid;
+      wound->path = cut->cutTexture;
+      wound->mappingScale = cut->mappingScale;
+      wound->secondBlend = cut->secondBlend;
+      wound->threshold = cut->threshold;
+      std::copy_n(cut->projectionScale, 4, wound->projectionScale);
+      std::copy_n(cut->projectionBias, 4, wound->projectionBias);
+      for (unsigned h = 0; h < 2; ++h)
+        std::copy_n(cut->cutScaleBias[h], 4, wound->cutScaleBias[h]);
+      // Scene instances only (sources, overlays and lines are not cut). Its
+      // cut changes with the wounds it takes: never part of the static set.
+      if (!d.halo && !d.maskSource && !d.maskGroup && !d.wireframe) {
+        d.wound = std::move(wound);
+        if (d.classification == REMIXAPI_INSTANCE_STATIC_EXT)
+          d.classification = REMIXAPI_INSTANCE_DYNAMIC_EXT;
       }
     }
     const auto *instances = static_cast<const remixapi_InstanceInfoGpuInstancingEXT *>(

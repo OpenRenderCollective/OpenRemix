@@ -297,7 +297,9 @@ typedef struct remixapi_TextureInfoGenerateMipsEXT {
 //     dynamic textures was updated (accumulation restarts, a still frame is
 //     rendered again).
 // Requirements (INVALID_ARGUMENTS otherwise): dynamic is 0 or 1; with 1, the
-// format is R8G8B8A8 or B8G8R8A8 (UNORM or SRGB), mipLevels is 1 and
+// format is R8G8B8A8 or B8G8R8A8 (UNORM or SRGB) or a float one
+// (REMIXAPI_FORMAT_R16G16B16A16_SFLOAT_EXT, _R32G32B32A32_SFLOAT_EXT: an HDR
+// render target such as a dome's sky, updated in float), mipLevels is 1 and
 // remixapi_TextureInfoGenerateMipsEXT is absent or off: a dynamic texture has
 // one level. CreateTexture under the hash of an existing texture makes a new
 // texture, as it always does: materials created before keep the old one.
@@ -1246,6 +1248,25 @@ typedef struct remixapi_InstanceInfoMaterialEXT {
   remixapi_MaterialHandle material;
 } remixapi_InstanceInfoMaterialEXT;
 
+// Optional InstanceInfo pNext (DrawInstance, AddSceneInstancesEXT,
+// SetSceneInstanceEXT): the instance's texture coordinates become
+// uv x scale + offset + velocity x t, t the runtime's clock in seconds, before
+// a sprite sheet picks its cell. A scrolling texture (water, lava, a
+// conveyor) moves without new vertices or materials: a constant velocity
+// scrolls it with no further calls, and a host that drives the offset itself
+// replaces the description (SetSceneInstanceEXT) when it changes. Every map
+// of the material follows. With an offset or a velocity, which a host may
+// change every frame, its emitters are estimated where the texture rests
+// (scaled, not moved) and alpha-tested texels are tested by every ray. An
+// instance with a velocity is drawn as an animated material's are, outside
+// the persistent static set. Absent: scale 1, offset and velocity 0.
+#define REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_TEXCOORD_TRANSFORM_EXT ((remixapi_StructType)0x7fff1028)
+typedef struct remixapi_InstanceInfoTexcoordTransformEXT {
+  remixapi_StructType sType;
+  const void* pNext;
+  float scale[2], offset[2], velocity[2];
+} remixapi_InstanceInfoTexcoordTransformEXT;
+
 // Scene instances: instances the runtime keeps. A host describes a placement
 // once (AddSceneInstancesEXT, any number in one call) and every frame's
 // DrawSceneInstancesEXT draws all that are visible, in place of one
@@ -1373,6 +1394,125 @@ typedef struct remixapi_MaterialPbrRemapEXT {
   remixapi_MaterialPbrChannelEXT roughness, metallic;
 } remixapi_MaterialPbrRemapEXT;
 
+// Optional pNext on opaque MaterialInfo: the colour of its metal (linear, 0
+// to 1). Where the material is metallic it reflects this colour instead of
+// its albedo, which its diffuse keeps: a game's dark base texture under a
+// strong reflection (Source's envmapped metal, its $envmaptint) is chrome,
+// not dark metal, and partly metal texels keep their own diffuse colour.
+#define REMIXAPI_STRUCT_TYPE_MATERIAL_METAL_COLOR_EXT ((remixapi_StructType)0x7fff1023)
+typedef struct remixapi_MaterialMetalColorEXT {
+  remixapi_StructType sType;
+  const void *pNext;
+  remixapi_Float3D color;
+} remixapi_MaterialMetalColorEXT;
+
+// Optional pNext on opaque MaterialInfo: its roughness map is read no
+// sharper than mip level roughnessMinimumLod (0 to 15). A mask painted with
+// crisp patches (a game's reflection mask) then changes the reflection's
+// sharpness over about 2^roughnessMinimumLod texels at their edges, while
+// areas wider than that keep their values; seen from afar, where the map is
+// read blurrier anyway, nothing changes. The metallic map, which decides
+// where the albedo shows, stays as sharp as the view allows.
+#define REMIXAPI_STRUCT_TYPE_MATERIAL_PBR_BLUR_EXT ((remixapi_StructType)0x7fff1024)
+typedef struct remixapi_MaterialPbrBlurEXT {
+  remixapi_StructType sType;
+  const void *pNext;
+  float roughnessMinimumLod;
+} remixapi_MaterialPbrBlurEXT;
+
+// Optional pNext on opaque MaterialInfo: gradient-mapped albedo, as Source's
+// Infected shader (Left 4 Dead 2's common infected) composites one texture
+// set into many looks. The material's albedo texture B is then read as stored
+// (no sRGB decode): B.a is luminance, B.b masks skin (above 1/2) from cloth
+// (below), and the quarter-size sprite S = B(uv / 2 + spriteOffset) holds a
+// grime mask in S.r and a blood mask in S.g. With G the gradient texture
+// (sRGB-decoded, clamped, bilinear) and D the detail texture (as stored):
+//   L = B.a * B.a
+//   c = mix(L, G(B.a, skinRow).rgb, saturate(2 B.b - 1))
+//   c = mix(c, G(B.a, clothRow).rgb, saturate(1 - 2 B.b))
+//   c = mix(c, 2 L D(d).rgb, saturate(2 S.r - 1))      (without a detail
+//       texture this step is skipped), d = (dot(detailU, uv), dot(detailV, uv))
+//   s = smoothstep(bloodRange[0], bloodRange[1], saturate(2 S.g - 1) + W)
+//   c = min(c * mix(1, bloodColor, s), 1)
+//   albedo = mix(c, U(d.y, d.x).rgb, saturate(burnStrength * (2 -
+//       saturate(2 B.b - 1)) + U(d.y, d.x).a - 1))   (with a burn texture U)
+// W is the wound term of remixapi_InstanceInfoWoundCutEXT (0 without one). The
+// textures are named as material textures are (a CreateTexture hash "0x..." or
+// a file path; an empty detail or burn texture skips its step; the burn
+// texture is read like an albedo texture, sRGB-decoded if it is sRGB-encoded,
+// and repeats); a row selects the
+// gradient's v coordinate (row + 0.5) / rows, rows its height in texels. The
+// composite takes the albedo texel's place in the material's colour (the
+// vertex colour and albedoConstant still modulate it). B.a holds luminance,
+// not coverage: no alpha test or thin film, and opacityConstant alone gives
+// the material's opacity (below 1 it is blended like any opaque material with
+// that opacity: a model fading out). bloodColor: 0 to 1; bloodRange[0] below
+// bloodRange[1]; burnStrength: 0 to 1; the rows, spriteOffset, detailU,
+// detailV, bloodRange and burnStrength are kept as half floats (magnitudes up
+// to 65504).
+#define REMIXAPI_STRUCT_TYPE_MATERIAL_GRADIENT_MAP_EXT ((remixapi_StructType)0x7fff1027)
+typedef struct remixapi_MaterialGradientMapEXT {
+  remixapi_StructType sType;
+  const void *pNext;
+  remixapi_Path gradientTexture;
+  remixapi_Path detailTexture;
+  float skinRow;
+  float clothRow;
+  float spriteOffset[2];
+  float detailU[2];
+  float detailV[2];
+  remixapi_Float3D bloodColor;
+  float bloodRange[2];
+  remixapi_Path burnTexture;
+  float burnStrength;
+} remixapi_MaterialGradientMapEXT;
+
+// One wound ellipsoid of remixapi_InstanceInfoWoundCutEXT: a point p maps to
+// e = (dot(axisX, p - center), dot(axisY, p - center), dot(axisZ, p - center)),
+// the unit ellipsoid in e being the wound. The axes carry the ellipsoid's
+// inverse scale.
+typedef struct remixapi_WoundEllipsoidEXT {
+  remixapi_Float3D center;
+  remixapi_Float3D axisX;
+  remixapi_Float3D axisY;
+  remixapi_Float3D axisZ;
+} remixapi_WoundEllipsoidEXT;
+
+// Optional pNext on InstanceInfo: wounds cut out of the instance's surfaces,
+// as Source's Infected shader does. Each vertex is evaluated at its position
+// as submitted in the mesh (the bind pose: before the instance's bone
+// transforms), with e1, e2 of ellipsoids[0], [1] and k = secondBlend:
+//   el = mix(e1, e2, k)
+//   q(e) = (e.x, e.y) / (sqrt(1 - e.z^2) * mappingScale)  (|e.z| >= 1: none)
+//   w = (q(e1), q(el)) * projectionScale + projectionBias   (4 components)
+//   h = length(e2) + k
+// At a surface point w and h are interpolated across the triangle like
+// texture coordinates. With T the cut texture's red channel (as stored, the
+// border black), each half of w whose q exists at all three vertices gives
+//   W = max(T(saturate(w.xy) * cutScaleBias[0].xy + cutScaleBias[0].zw),
+//           T(saturate(w.zw) * cutScaleBias[1].xy + cutScaleBias[1].zw))
+// (a half without q gives 0). The point is cut away, for every ray, where
+// W > threshold or h < 1. W also deepens remixapi_MaterialGradientMapEXT's
+// blood. An instance without a skinned or plain mesh position ignores this.
+// The cut texture is named as material textures are and read bilinearly at
+// its finest mip, black outside 0..1; mappingScale above 0, every value
+// finite. A wounded instance is traced as a dynamic one (never part of the
+// persistent static set); halo, mask source and overlay, and wireframe
+// instances ignore this.
+#define REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_WOUND_CUT_EXT ((remixapi_StructType)0x7fff1026)
+typedef struct remixapi_InstanceInfoWoundCutEXT {
+  remixapi_StructType sType;
+  const void *pNext;
+  remixapi_Path cutTexture;
+  remixapi_WoundEllipsoidEXT ellipsoids[2];
+  float mappingScale;
+  float secondBlend;
+  float projectionScale[4];
+  float projectionBias[4];
+  float cutScaleBias[2][4];
+  float threshold;
+} remixapi_InstanceInfoWoundCutEXT;
+
 // Optional pNext on opaque or translucent MaterialInfo: a thin-film coating
 // whose interference colours the reflection (iridescence), evaluated
 // spectrally. On a translucent material (glass, water) the surface becomes a
@@ -1402,6 +1542,17 @@ typedef struct remixapi_MaterialIridescenceEXT {
   float flowAmplitude, flowScale, flowSpeed;
   float structural;
 } remixapi_MaterialIridescenceEXT;
+
+// Optional pNext on an opaque MaterialInfo with
+// remixapi_MaterialInfoOpaqueSubsurfaceEXT (RTX Remix's subsurface controls):
+// the share of diffuse light that scatters, 0 (none) to 1 (without this
+// extension: 1), which RTX Remix has no control for.
+#define REMIXAPI_STRUCT_TYPE_MATERIAL_SUBSURFACE_WEIGHT_EXT ((remixapi_StructType)0x7fff1021)
+typedef struct remixapi_MaterialSubsurfaceWeightEXT {
+  remixapi_StructType sType;
+  const void *pNext;
+  float weight;
+} remixapi_MaterialSubsurfaceWeightEXT;
 
 // Optional pNext on LightInfo (sphere, rect, disk and cylinder lights): an IES
 // photometric profile, the contents of an IESNA LM-63 file (not
@@ -1442,6 +1593,10 @@ typedef struct remixapi_LightInfoCookieEXT {
 // A private value avoids the retained 0.1003 BC5 value (139).
 #define REMIXAPI_FORMAT_BC4_UNORM_EXT ((remixapi_Format)147)
 #define REMIXAPI_FORMAT_BC6H_UFLOAT_EXT ((remixapi_Format)143)
+// Uncompressed linear float texels (CreateTexture; a dynamic texture's
+// pixels and its UpdateTextureEXT regions): RGBA, 8 or 16 bytes a texel.
+#define REMIXAPI_FORMAT_R16G16B16A16_SFLOAT_EXT ((remixapi_Format)97)
+#define REMIXAPI_FORMAT_R32G32B32A32_SFLOAT_EXT ((remixapi_Format)109)
 #define REMIXAPI_FORMAT_BC6H_SFLOAT_EXT ((remixapi_Format)144)
 // Immutable linear HDR uploads; values match Vulkan. Existing ABI layouts are unchanged.
 #define REMIXAPI_FORMAT_R16G16B16A16_SFLOAT_EXT ((remixapi_Format)97)

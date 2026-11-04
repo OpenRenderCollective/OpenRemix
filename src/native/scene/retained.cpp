@@ -65,7 +65,9 @@ namespace remix {
       if (e.callerIdentity)
         return;
       e.description.instanceId = retainedInstanceId(e.handle);
-      e.description.classification = e.moving ? REMIXAPI_INSTANCE_DYNAMIC_EXT : REMIXAPI_INSTANCE_STATIC_EXT;
+      // A wound cut (remixapi_InstanceInfoWoundCutEXT) keeps it dynamic.
+      e.description.classification =
+          e.moving || e.description.wound ? REMIXAPI_INSTANCE_DYNAMIC_EXT : REMIXAPI_INSTANCE_STATIC_EXT;
       e.description.rasterVisible = true;
       e.description.traceIdentity = false;
     }
@@ -76,7 +78,7 @@ namespace remix {
       return false;
     for (const auto &draw : records)
       if (draw.classification != REMIXAPI_INSTANCE_STATIC_EXT || !draw.traced() || draw.material->fps ||
-          draw.bones || draw.mesh->updateStream)
+          draw.scrolling() || draw.bones || draw.mesh->updateStream || draw.wound)
         return false;
     return true;
   }
@@ -382,7 +384,8 @@ namespace remix {
       }
       if (e.moving && m_retainedSerial - e.lastMove >= retainedSettleFrames) {
         e.moving = false;
-        classifyRetained(e, REMIXAPI_INSTANCE_STATIC_EXT);
+        if (!e.description.wound)
+          classifyRetained(e, REMIXAPI_INSTANCE_STATIC_EXT);
       }
       stats.moving += e.moving;
       if (!e.visible || !e.placed || e.records.empty())

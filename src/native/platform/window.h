@@ -50,6 +50,10 @@ namespace remix {
     RemixSdlWindow &operator=(const RemixSdlWindow &) = delete;
 
     remixapi_ErrorCode initialize(const remixapi_StartupInfo &info);
+    // A window the host made with the same SDL (remixapi_EditorHostWindowEXT):
+    // its events reach the UI through an event watch while the host pumps
+    // them; nothing is presented to it.
+    remixapi_ErrorCode adopt(SDL_Window *window);
     void shutdown();
 
     remixapi_ErrorCode pumpEvents();

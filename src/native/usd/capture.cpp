@@ -180,6 +180,17 @@ namespace remix::usd {
         out.film = m.iridescence;
         out.film.thicknessTexture.reset();
         out.filmMap = m.iridescence.strength > 0 ? texture(m.iridescence.thicknessTexture) : 0;
+        out.subsurface = m.subsurface;
+        out.subsurface.transmittanceTexture.reset();
+        out.subsurface.thicknessTexture.reset();
+        out.subsurface.singleScatteringAlbedoTexture.reset();
+        out.subsurface.radiusTexture.reset();
+        if (m.subsurface.weight > 0) {
+          out.subsurfaceTransmittance = texture(m.subsurface.transmittanceTexture);
+          out.subsurfaceThickness = texture(m.subsurface.thicknessTexture);
+          out.subsurfaceSingleScattering = texture(m.subsurface.singleScatteringAlbedoTexture);
+          out.subsurfaceRadius = texture(m.subsurface.radiusTexture);
+        }
         scene_.materials.emplace(hash, out);
         return hash;
       }

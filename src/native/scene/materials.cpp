@@ -20,6 +20,17 @@ namespace remix::scene {
                  uint32_t(m.selfIllumination - 1) << MaterialDecode::selfIlluminationMaskShift;
       d.selfIlluminationScale = m.selfIlluminationScale;
     }
+    if (m.metalColored) {
+      d.flags |= MaterialDecode::metalColor;
+      for (unsigned i = 0; i < 3; ++i)
+        d.pbrWord |= uint32_t(std::lround(std::clamp(m.metalColor[i], 0.f, 1.f) * 255)) << (8 * i);
+    }
+    if (m.pbrBlur > 0) {
+      d.flags |= MaterialDecode::pbrBlur;
+      d.pbrWord |= uint32_t(std::lround(std::clamp(m.pbrBlur, 0.f, 15.9375f) * 16)) << 24;
+    }
+    if (m.gradient)
+      d.flags |= MaterialDecode::gradientMap;
     return d;
   }
 } // namespace remix::scene
@@ -86,6 +97,24 @@ namespace remix {
           out.bias = in.bias;
           out.scale = in.scale;
         }
+      }
+      if (const auto *metal = static_cast<const remixapi_MaterialMetalColorEXT *>(
+              extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_METAL_COLOR_EXT))) {
+        finite(&metal->color.x, 3);
+        const float color[3] = {metal->color.x, metal->color.y, metal->color.z};
+        for (unsigned i = 0; i < 3; ++i) {
+          if (color[i] < 0 || color[i] > 1)
+            throw invalid;
+          material->metalColor[i] = color[i];
+        }
+        material->metalColored = true;
+      }
+      if (const auto *blur = static_cast<const remixapi_MaterialPbrBlurEXT *>(
+              extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_PBR_BLUR_EXT))) {
+        finite(&blur->roughnessMinimumLod, 1);
+        if (blur->roughnessMinimumLod < 0 || blur->roughnessMinimumLod > 15)
+          throw invalid;
+        material->pbrBlur = blur->roughnessMinimumLod;
       }
       material->tint[0] = opaque->albedoConstant.x;
       material->tint[1] = opaque->albedoConstant.y;
@@ -187,7 +216,60 @@ namespace remix {
     material->rows = std::max(uint8_t(1), info.spriteSheetRow);
     material->columns = std::max(uint8_t(1), info.spriteSheetCol);
     material->fps = info.spriteSheetFps;
-    material->texture = texturePath(texture);
+    const auto *gradient = static_cast<const remixapi_MaterialGradientMapEXT *>(
+        extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_GRADIENT_MAP_EXT));
+    // A gradient map reads the albedo texture as stored: its alpha is luminance.
+    material->texture = gradient && texture && *texture ? dataTexturePath(texture) : texturePath(texture);
+    if (gradient) {
+      // B.a is luminance, not coverage: an opaque material without alpha test
+      // or a film (the film's fields hold the gradient's parameters), whose
+      // opacityConstant alone gives its opacity.
+      if (!opaque || opaque->thinFilmThickness_hasvalue ||
+          opaque->alphaIsThinFilmThickness || extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_IRIDESCENCE_EXT) ||
+          !gradient->gradientTexture || !*gradient->gradientTexture)
+        throw invalid;
+      const float values[] = {gradient->skinRow,        gradient->clothRow,       gradient->spriteOffset[0],
+                              gradient->spriteOffset[1], gradient->detailU[0],     gradient->detailU[1],
+                              gradient->detailV[0],      gradient->detailV[1],     gradient->bloodRange[0],
+                              gradient->bloodRange[1],   gradient->bloodColor.x,   gradient->bloodColor.y,
+                              gradient->bloodColor.z,    gradient->burnStrength};
+      finite(values, 14);
+      // Packed as half floats (frame_tables.h gradientFields), the colour as unorm8;
+      // the colour and the burn strength 0 to 1.
+      for (unsigned i = 0; i < 10; ++i)
+        if (std::fabs(values[i]) > 65504)
+          throw invalid;
+      for (unsigned i = 10; i < 14; ++i)
+        if (values[i] < 0 || values[i] > 1)
+          throw invalid;
+      if (!(gradient->bloodRange[0] < gradient->bloodRange[1]))
+        throw invalid;
+      auto out = std::make_shared<GradientMap>();
+      out->gradient = texturePath(gradient->gradientTexture);
+      out->gradientSampler = samplerMaterial(out->gradient, 1, 0);
+      if (gradient->detailTexture && *gradient->detailTexture) {
+        out->detail = dataTexturePath(gradient->detailTexture);
+        out->detailSampler = samplerMaterial(out->detail, material->filter, 1);
+      }
+      // The burn texture is read as an albedo texture is (sRGB-decoded where
+      // it is sRGB-encoded), repeating.
+      if (gradient->burnTexture && *gradient->burnTexture) {
+        out->burn = texturePath(gradient->burnTexture);
+        out->burnSampler = samplerMaterial(out->burn, material->filter, 1);
+        out->burnStrength = gradient->burnStrength;
+      }
+      out->skinRow = gradient->skinRow;
+      out->clothRow = gradient->clothRow;
+      std::copy_n(gradient->spriteOffset, 2, out->spriteOffset);
+      std::copy_n(gradient->detailU, 2, out->detailU);
+      std::copy_n(gradient->detailV, 2, out->detailV);
+      std::copy_n(values + 10, 3, out->bloodColor);
+      std::copy_n(gradient->bloodRange, 2, out->bloodRange);
+      material->gradient = std::move(out);
+      // Below opacity 1 it blends as any opaque material does (translucent).
+      material->compare = 7;
+      material->drawAlpha = false;
+    }
     if (material->texture && !material->sourceHash) {
       material->sourceHash = material->texture->getHash();
     }
@@ -227,12 +309,67 @@ namespace remix {
         material->metallic = 0;
       }
     }
+    const auto *sssWeight = static_cast<const remixapi_MaterialSubsurfaceWeightEXT *>(
+        extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_SUBSURFACE_WEIGHT_EXT));
+    if (sssWeight && (!opaque || !std::isfinite(sssWeight->weight) || sssWeight->weight < 0 || sssWeight->weight > 1))
+      throw invalid;
+    if (const auto *sss = static_cast<const remixapi_MaterialInfoOpaqueSubsurfaceEXT *>(
+            extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_SUBSURFACE_EXT));
+        sss && opaque) {
+      finite(&sss->subsurfaceTransmittanceColor.x, 3);
+      finite(&sss->subsurfaceSingleScatteringAlbedo.x, 3);
+      finite(&sss->subsurfaceRadius.x, 3);
+      const float scalars[] = {sss->subsurfaceMeasurementDistance, sss->subsurfaceVolumetricAnisotropy,
+                               sss->subsurfaceRadiusScale, sss->subsurfaceMaxSampleRadius};
+      finite(scalars, 4);
+      auto &out = material->subsurface;
+      out.diffusionProfile = sss->subsurfaceDiffusionProfile != 0;
+      out.measurementDistance = out.diffusionProfile ? 0 : std::max(sss->subsurfaceMeasurementDistance, 0.f);
+      out.anisotropy = std::clamp(sss->subsurfaceVolumetricAnisotropy, -.9f, .9f);
+      const remixapi_Float3D &color = sss->subsurfaceTransmittanceColor, &single = sss->subsurfaceSingleScatteringAlbedo,
+                             &radius = sss->subsurfaceRadius;
+      out.transmittance[0] = std::clamp(color.x, 0.f, 1.f);
+      out.transmittance[1] = std::clamp(color.y, 0.f, 1.f);
+      out.transmittance[2] = std::clamp(color.z, 0.f, 1.f);
+      out.singleScatteringAlbedo[0] = std::clamp(single.x, 0.f, 1.f);
+      out.singleScatteringAlbedo[1] = std::clamp(single.y, 0.f, 1.f);
+      out.singleScatteringAlbedo[2] = std::clamp(single.z, 0.f, 1.f);
+      out.radius[0] = std::max(radius.x, 0.f);
+      out.radius[1] = std::max(radius.y, 0.f);
+      out.radius[2] = std::max(radius.z, 0.f);
+      out.radiusScale = std::max(sss->subsurfaceRadiusScale, 1e-5f);
+      // RTX Remix stores this in a unorm: at most a metre. Zero there silently
+      // turns the profile off; here, like an unauthored one, it is no limit.
+      out.maxSampleRadius = sss->subsurfaceMaxSampleRadius > 0 ? std::min(sss->subsurfaceMaxSampleRadius, 1.f) : 1;
+      out.transmittanceTexture = texturePath(sss->subsurfaceTransmittanceTexture);
+      out.thicknessTexture = dataTexturePath(sss->subsurfaceThicknessTexture);
+      out.singleScatteringAlbedoTexture = texturePath(sss->subsurfaceSingleScatteringAlbedoTexture);
+      out.radiusTexture = dataTexturePath(sss->subsurfaceRadiusTexture);
+      // Its transmittance map is the surface's colour under a profile: as the
+      // albedo map it reads no differently, tints and vertex colours included
+      // (RTX Remix's rtx.subsurface.transmittanceFollowsAlbedo).
+      if (out.transmittanceTexture == material->texture)
+        out.transmittanceTexture.reset();
+      if (out.diffusionProfile) {
+        out.thicknessTexture.reset();
+        out.singleScatteringAlbedoTexture.reset();
+        // A zero-initialized colour is no colour.
+        if (!(color.x > 0 || color.y > 0 || color.z > 0) && !out.transmittanceTexture)
+          std::fill_n(out.transmittance, 3, 1.f);
+      } else {
+        out.radiusTexture.reset();
+      }
+      const bool scatters = out.radius[0] > 0 || out.radius[1] > 0 || out.radius[2] > 0 || out.radiusTexture;
+      if ((out.diffusionProfile && scatters) || out.measurementDistance > 0)
+        out.weight = sssWeight ? sssWeight->weight : 1;
+    }
     material->pbr =
         material->transmittanceDistance > 0 ||
         (opaque && (pbr ? pbr->enabled != 0
                        : material->roughness > 0 || material->metallic > 0 || material->roughnessTexture ||
                              material->metallicTexture || material->normalTexture)) ||
-        material->iridescence.strength > 0; // a film is a reflection
+        material->iridescence.strength > 0 || // a film is a reflection
+        material->subsurface.weight > 0;
     finite(&info.emissiveColorConstant.x, 3);
     finite(&info.emissiveIntensity, 1);
     if (info.emissiveIntensity < 0 || info.emissiveColorConstant.x < 0 || info.emissiveColorConstant.y < 0 ||
@@ -310,7 +447,9 @@ namespace remix {
              a.thinWallThickness == b.thinWallThickness &&
              std::equal(a.transmittanceScroll, a.transmittanceScroll + 2, b.transmittanceScroll) &&
              a.bakeTintAxes == b.bakeTintAxes &&
-             a.iridescence == b.iridescence &&
+             a.iridescence == b.iridescence && a.subsurface == b.subsurface && a.metalColored == b.metalColored &&
+             std::equal(a.metalColor, a.metalColor + 3, b.metalColor) && a.pbrBlur == b.pbrBlur &&
+             (a.gradient == b.gradient || (a.gradient && b.gradient && *a.gradient == *b.gradient)) &&
              a.pbr == b.pbr && std::equal(a.emission, a.emission + 3, b.emission) &&
              std::equal(a.tint, a.tint + 4, b.tint) && a.compare == b.compare && a.reference == b.reference &&
              a.drawAlpha == b.drawAlpha && a.translucent == b.translucent &&
