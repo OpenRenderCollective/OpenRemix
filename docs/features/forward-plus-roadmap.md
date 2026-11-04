@@ -5162,3 +5162,10 @@ independent default scheduling is still a separate architecture decision.
 - [x] Obtain a representative CPU call-stack profile across the game adapter, engine and native worker. The current host frame gap is larger than the resource submission and native caller work alone; avoid attributing it solely to GPU or draw-call count.
 - [x] Replace the adapter texture-category reader/writer lock with a plain mutex after sampled main-thread attribution and controlled full-frame/image comparisons. Keep configuration updates synchronized without adding a lookup cache or invalidation scheme.
 - [x] Cache Source material parameter-name indices through existing layout replacement rules; retain live types/values, duplicate order, complete misses and retries for unreadable variables. Validate animated colour/alpha against the uncached runtime. Matching native-symbol CPU capture is available; broader native/GPU optimisation remains open.
+
+
+## 2026-11-05: Construct receiver profiling
+
+- [x] Separate full-default frame measurements from receiver-level instrumentation. Colour-pass fragment counts indicate low overdraw in the profiled Construct view; probe-only pixels are a small fraction. Retain full offscreen shadow caster submission.
+- [x] Trial pass-local clip-plane extraction against sampled CPU evidence. Reject it after controls failed to establish a useful frame-time saving; leave no extra optimisation path behind.
+- [ ] Prioritise lightmapped pixel shading and armed viewmodel/reflection costs. Distinguish texture bandwidth, shader work and synchronisation with targeted measurements before changing field encodings or quality defaults. Continue qualification on larger maps; one Construct view does not justify removing culling.
