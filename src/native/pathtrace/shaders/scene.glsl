@@ -39,6 +39,9 @@ struct Surface {
   // single scattering albedo), the kind (1 a profile, 2 thin opaque).
   vec4 subsurface,subsurfaceColor,subsurfaceThin;
   uvec4 subsurfaceMaps;
+  // A gradient map's burn (frame_tables.h gradientFields): x its slot + 1 |
+  // half strength << 16 (0 none).
+  uvec4 gradient;
 };
 // Shading reads the AS index order directly. Only debug identity needs the
 // original triangle mapping; motion still addresses the original vertex array.
@@ -336,8 +339,9 @@ float woundTerm=0;
 // remixapi_MaterialGradientMapEXT (material.x bit 1024; frame_tables.h
 // gradientFields): the albedo texel composited from the albedo texture B (a
 // data texture: as stored), its quarter-size sprite, the gradient's skin and
-// cloth rows and the detail texture. Opaque: alpha 1. The header's steps,
-// with the fetches their weights leave out skipped.
+// cloth rows, the detail and the burn texture. Alpha 1 (the material's
+// opacity is its tint's). The header's steps, with the fetches their weights
+// leave out skipped.
 vec4 gradientAlbedo(Surface s,vec2 uv) {
   vec4 b=materialTexel(s,s.textureState.x,uv);
   vec4 sprite=materialTexelScaled(s,s.textureState.x,uv*.5+unpackHalf2x16(s.filmMaps.y),.5);
@@ -358,7 +362,18 @@ vec4 gradientAlbedo(Surface s,vec2 uv) {
   }
   vec2 range=unpackHalf2x16(floatBitsToUint(s.film.z));
   float blood=smoothstep(range.x,range.y,clamp(2*sprite.g-1,0,1)+woundTerm);
-  return vec4(min(c*mix(vec3(1),unpackUnorm4x8(floatBitsToUint(s.film.w)).rgb,blood),vec3(1)),1);
+  c=min(c*mix(vec3(1),unpackUnorm4x8(floatBitsToUint(s.film.w)).rgb,blood),vec3(1));
+  // The burn (gradient.x: its slot + 1 | half strength << 16; 0 none),
+  // read at the detail coordinate swapped.
+  [[dont_flatten]] if(s.gradient.x>0xffffu) {
+    vec2 du=unpackHalf2x16(s.filmMaps.z),dv=unpackHalf2x16(s.filmMaps.w);
+    uint u=(s.gradient.x&0xffffu)-1u;
+    vec4 burn=slotTexel(u,textureGrad(textures[nonuniformEXT(u)],vec2(dot(dv,uv),dot(du,uv)),
+      vec2(dot(dv,uvGradX),dot(du,uvGradX)),vec2(dot(dv,uvGradY),dot(du,uvGradY))));
+    float strength=unpackHalf2x16(s.gradient.x).y;
+    c=mix(c,burn.rgb,clamp(strength*(2-clamp(2*b.b-1,0,1))+burn.a-1,0,1));
+  }
+  return vec4(c,1);
 }
 // The albedo texel at uv: the albedo texture's, or a gradient map's composite.
 vec4 albedoTexel(Surface s,vec2 uv) {

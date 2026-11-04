@@ -561,6 +561,7 @@ namespace {
     rgbaTexture(r, 0x91, REMIXAPI_FORMAT_R8G8B8A8_SRGB);
     rgbaTexture(r, 0x92, REMIXAPI_FORMAT_R8G8B8A8_SRGB);
     rgbaTexture(r, 0x93, REMIXAPI_FORMAT_R8G8B8A8_SRGB);
+    rgbaTexture(r, 0x96, REMIXAPI_FORMAT_R8G8B8A8_SRGB);
     remixapi_MaterialGradientMapEXT g{};
     g.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_GRADIENT_MAP_EXT;
     g.gradientTexture = name("0x92");
@@ -573,6 +574,8 @@ namespace {
     g.bloodColor = {.15f, 0, 0};
     g.bloodRange[0] = .1f;
     g.bloodRange[1] = .9f;
+    g.burnTexture = name("0x96");
+    g.burnStrength = .25f;
     remixapi_MaterialInfoOpaqueEXT o{};
     o.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
     o.pNext = &g;
@@ -585,6 +588,7 @@ namespace {
     m.pNext = &o;
     m.hash = 0x94;
     m.albedoTexture = name("0x91");
+    m.filterMode = 1;
     remixapi_MaterialHandle handle{};
     r.createMaterial(m, handle);
     const auto material = drawn(r, quad(r, 0x95, handle));
@@ -601,6 +605,13 @@ namespace {
             "Gradient map: gradient sampler");
     require(map.detailSampler->texture == map.detail && map.detailSampler->wrapU == 1,
             "Gradient map: detail sampler");
+    // The burn is read as an albedo texture is (sRGB-decoded), with the
+    // material's filter, repeating.
+    require(map.burn && map.burn->hash == 0x96 && map.burn->pixels.srgb && map.burnStrength == .25f,
+            "Gradient map: burn");
+    require(map.burnSampler && map.burnSampler->texture == map.burn && map.burnSampler->filter == 1 &&
+                map.burnSampler->wrapU == 1 && map.burnSampler->wrapV == 1,
+            "Gradient map: burn sampler");
     require(map.skinRow == 3 && map.clothRow == 17 && map.spriteOffset[0] == .5f && map.detailU[0] == 4 &&
                 map.detailV[1] == 4 && map.bloodColor[0] == .15f && map.bloodRange[1] == .9f,
             "Gradient map: parameters");
@@ -612,6 +623,32 @@ namespace {
     g.bloodRange[0] = .2f;
     r.createMaterial(m, handle);
     require(drawn(r, quad(r, 0x95, handle)) != material, "Gradient map: a change kept the material");
+    const auto bloodier = drawn(r, quad(r, 0x95, handle));
+    g.burnStrength = .5f;
+    r.createMaterial(m, handle);
+    const auto burning = drawn(r, quad(r, 0x95, handle));
+    require(burning != bloodier && burning->gradient->burnStrength == .5f,
+            "Gradient map: a burn change kept the material");
+    // Without a burn texture: none (its strength still validated).
+    g.burnTexture = name("");
+    r.createMaterial(m, handle);
+    require(!drawn(r, quad(r, 0x95, handle))->gradient->burn &&
+                !drawn(r, quad(r, 0x95, handle))->gradient->burnSampler,
+            "Gradient map: empty burn");
+    g.burnTexture = nullptr;
+    r.createMaterial(m, handle);
+    require(!drawn(r, quad(r, 0x95, handle))->gradient->burn, "Gradient map: no burn");
+    // Below opacity 1 it is blended as any opaque material with that opacity.
+    o.opacityConstant = .5f;
+    r.createMaterial(m, handle);
+    {
+      const auto faded = drawn(r, quad(r, 0x95, handle));
+      require(faded->gradient && faded->translucent && faded->tint[3] == .5f && faded->compare == 7 &&
+                  !faded->drawAlpha,
+              "Gradient map: a fading material");
+      require(r.draws().back().blend.enabled, "Gradient map: a fading material is not blended");
+    }
+    o.opacityConstant = 1;
     // Without a detail texture: none.
     g.detailTexture = nullptr;
     r.createMaterial(m, handle);
@@ -632,7 +669,11 @@ namespace {
     invalid([&] { g.bloodColor.y = 1.5f; });
     invalid([&] { g.skinRow = std::numeric_limits<float>::quiet_NaN(); });
     invalid([&] { g.detailU[1] = 1e6f; });
-    invalid([&] { o.opacityConstant = .5f; });
+    invalid([&] { g.burnStrength = -.25f; });
+    invalid([&] { g.burnStrength = 1.5f; });
+    invalid([&] { g.burnStrength = std::numeric_limits<float>::infinity(); });
+    invalid([&] { g.burnTexture = nullptr, g.burnStrength = std::numeric_limits<float>::quiet_NaN(); });
+    invalid([&] { o.opacityConstant = 1.5f; });
     invalid([&] { o.thinFilmThickness_hasvalue = 1; });
     remixapi_MaterialInfoTranslucentEXT t{};
     t.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_TRANSLUCENT_EXT;

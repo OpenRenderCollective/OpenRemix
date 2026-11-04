@@ -1359,17 +1359,23 @@ typedef struct remixapi_MaterialPbrBlurEXT {
 //   c = mix(c, 2 L D(d).rgb, saturate(2 S.r - 1))      (without a detail
 //       texture this step is skipped), d = (dot(detailU, uv), dot(detailV, uv))
 //   s = smoothstep(bloodRange[0], bloodRange[1], saturate(2 S.g - 1) + W)
-//   albedo = min(c * mix(1, bloodColor, s), 1)
+//   c = min(c * mix(1, bloodColor, s), 1)
+//   albedo = mix(c, U(d.y, d.x).rgb, saturate(burnStrength * (2 -
+//       saturate(2 B.b - 1)) + U(d.y, d.x).a - 1))   (with a burn texture U)
 // W is the wound term of remixapi_InstanceInfoWoundCutEXT (0 without one). The
 // textures are named as material textures are (a CreateTexture hash "0x..." or
-// a file path; an empty detail texture skips its step); a row selects the
+// a file path; an empty detail or burn texture skips its step; the burn
+// texture is read like an albedo texture, sRGB-decoded if it is sRGB-encoded,
+// and repeats); a row selects the
 // gradient's v coordinate (row + 0.5) / rows, rows its height in texels. The
 // composite takes the albedo texel's place in the material's colour (the
 // vertex colour and albedoConstant still modulate it). B.a holds luminance,
-// not coverage: such a material is opaque (no alpha test, blending or thin
-// film; opacityConstant 1). bloodColor: 0 to 1; bloodRange[0] below
-// bloodRange[1]; the rows, spriteOffset, detailU, detailV and bloodRange are
-// kept as half floats (magnitudes up to 65504).
+// not coverage: no alpha test or thin film, and opacityConstant alone gives
+// the material's opacity (below 1 it is blended like any opaque material with
+// that opacity: a model fading out). bloodColor: 0 to 1; bloodRange[0] below
+// bloodRange[1]; burnStrength: 0 to 1; the rows, spriteOffset, detailU,
+// detailV, bloodRange and burnStrength are kept as half floats (magnitudes up
+// to 65504).
 #define REMIXAPI_STRUCT_TYPE_MATERIAL_GRADIENT_MAP_EXT ((remixapi_StructType)0x7fff1027)
 typedef struct remixapi_MaterialGradientMapEXT {
   remixapi_StructType sType;
@@ -1383,6 +1389,8 @@ typedef struct remixapi_MaterialGradientMapEXT {
   float detailV[2];
   remixapi_Float3D bloodColor;
   float bloodRange[2];
+  remixapi_Path burnTexture;
+  float burnStrength;
 } remixapi_MaterialGradientMapEXT;
 
 // One wound ellipsoid of remixapi_InstanceInfoWoundCutEXT: a point p maps to

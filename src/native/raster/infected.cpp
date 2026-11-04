@@ -8,7 +8,7 @@
 // wound at the mesh's own positions (the bind pose, binding 1: the mesh's
 // vertices whether or not binding 0 holds skinned ones), the fragment stage
 // cuts the wound out and composites the gradient-mapped albedo. Set 1 holds
-// the gradient, detail and cut textures (each through its sampler material)
+// the gradient, detail, cut and burn textures (each through its sampler material)
 // and the draw's parameter block, a part of one uniform buffer per frame; the
 // sets come from a pool per frame slot. Nothing here exists until a frame
 // draws such a material or instance; the objects go with the target.
@@ -54,9 +54,10 @@ namespace remix {
           {1, image, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
           {2, image, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
           {3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-           nullptr}};
+           nullptr},
+          {4, image, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr}};
       const VkDescriptorSetLayoutCreateInfo info = {.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-                                                    .bindingCount = 4,
+                                                    .bindingCount = 5,
                                                     .pBindings = bindings};
       check(pipeline::createDescriptorSetLayout(device, &info, nullptr, &s.setLayout));
     }
@@ -98,7 +99,7 @@ namespace remix {
                                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     };
     uint32_t flags = 0;
-    std::array<VkDescriptorImageInfo, 3> images;
+    std::array<VkDescriptorImageInfo, 4> images; // bindings 0-2 and 4
     if (const auto &w = draw.wound) {
       flags |= 1;
       for (unsigned e = 0; e < 2; ++e)
@@ -135,8 +136,17 @@ namespace remix {
       std::copy_n(g->detailU, 2, block.detail);
       std::copy_n(g->detailV, 2, block.detail + 2);
       std::copy_n(g->bloodColor, 3, block.blood);
+      // The burn (skipped at strength 0, where it changes nothing).
+      if (g->burnSampler && g->burnStrength > 0) {
+        flags |= 16;
+        images[3] = sampled(g->burnSampler);
+        if (textures.at(g->burn.get()).srgb)
+          flags |= 32;
+        block.rows[2] = g->burnStrength;
+      } else
+        images[3] = sampled(nullptr);
     } else
-      images[0] = images[1] = sampled(nullptr);
+      images[0] = images[1] = images[3] = sampled(nullptr);
     std::memcpy(&block.wound[3], &flags, sizeof(flags));
     out.infected = int32_t(s.images.size());
     const size_t at = s.parameters.size();
@@ -159,7 +169,7 @@ namespace remix {
         vkDestroyDescriptorPool(device, pool, nullptr);
       pool = VK_NULL_HANDLE;
       const uint32_t capacity = std::max(64u, count + count / 2);
-      const VkDescriptorPoolSize sizes[] = {{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3 * capacity},
+      const VkDescriptorPoolSize sizes[] = {{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4 * capacity},
                                             {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, capacity}};
       const VkDescriptorPoolCreateInfo info = {.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
                                                .maxSets = capacity,
@@ -179,17 +189,17 @@ namespace remix {
     check(vkAllocateDescriptorSets(device, &allocation, sets.data()));
     std::vector<VkDescriptorBufferInfo> blocks(count);
     std::vector<VkWriteDescriptorSet> writes;
-    writes.reserve(size_t(count) * 4);
+    writes.reserve(size_t(count) * 5);
     for (uint32_t i = 0; i < count; ++i) {
       blocks[i] = {parameters->buffer, parameters->offset + VkDeviceSize(i) * Infected::blockSize,
                    Infected::blockSize};
-      for (uint32_t binding = 0; binding < 3; ++binding)
+      for (uint32_t image = 0; image < 4; ++image)
         writes.push_back({.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                           .dstSet = sets[i],
-                          .dstBinding = binding,
+                          .dstBinding = image < 3 ? image : 4,
                           .descriptorCount = 1,
                           .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                          .pImageInfo = &s.images[i][binding]});
+                          .pImageInfo = &s.images[i][image]});
       writes.push_back({.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                         .dstSet = sets[i],
                         .dstBinding = 3,

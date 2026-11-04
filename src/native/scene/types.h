@@ -131,15 +131,17 @@ namespace remix {
     // remixapi_MaterialGradientMapEXT, validated: Left 4 Dead 2's Infected
     // composite of the material's albedo texture (read as stored). The
     // sampler materials only name how their texture is sampled (the gradient
-    // bilinear and clamped, the detail with the material's filter, repeating):
-    // backends sample a texture through a material's sampler.
+    // bilinear and clamped, the detail and burn with the material's filter,
+    // repeating): backends sample a texture through a material's sampler.
     struct GradientMap {
-      std::shared_ptr<Texture> gradient, detail; // detail: null skips its step
-      std::shared_ptr<Material> gradientSampler, detailSampler;
+      // detail, burn: null skips its step.
+      std::shared_ptr<Texture> gradient, detail, burn;
+      std::shared_ptr<Material> gradientSampler, detailSampler, burnSampler;
       float skinRow = 0, clothRow = 0, spriteOffset[2] = {}, detailU[2] = {}, detailV[2] = {};
-      float bloodColor[3] = {1, 1, 1}, bloodRange[2] = {0, 1};
+      float bloodColor[3] = {1, 1, 1}, bloodRange[2] = {0, 1}, burnStrength = 0;
       bool operator==(const GradientMap &o) const {
-        return gradient == o.gradient && detail == o.detail && skinRow == o.skinRow && clothRow == o.clothRow &&
+        return gradient == o.gradient && detail == o.detail && burn == o.burn && burnStrength == o.burnStrength &&
+               skinRow == o.skinRow && clothRow == o.clothRow &&
                std::equal(spriteOffset, spriteOffset + 2, o.spriteOffset) &&
                std::equal(detailU, detailU + 2, o.detailU) && std::equal(detailV, detailV + 2, o.detailV) &&
                std::equal(bloodColor, bloodColor + 3, o.bloodColor) &&

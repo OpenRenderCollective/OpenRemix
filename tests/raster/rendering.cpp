@@ -643,6 +643,58 @@ namespace {
     info.pNext = &w;
     r.drawInstance(info);
     pixel(target.render(), 32, 32, 0, 128, 0, "Gradient map: the wound's blood");
+    // The burn: t = saturate(burnStrength (2 - skin) + U.a - 1) over the
+    // green composite, U read like an albedo (sRGB-decoded).
+    texture(0x89, {255, 0, 0, 255}, REMIXAPI_FORMAT_R8G8B8A8_SRGB);   // U: red, opaque
+    texture(0x8a, {255, 0, 0, 128}, REMIXAPI_FORMAT_R8G8B8A8_SRGB);   // U: red, alpha 1/2
+    texture(0x8b, {0, 0, 0, 128}, REMIXAPI_FORMAT_R8G8B8A8_UNORM);    // B: cloth, luminance 1/2
+    m.albedoTexture = WOUND_PATH("0x82");
+    g.burnTexture = WOUND_PATH("0x89");
+    g.burnStrength = .5f;
+    const auto burnt = [&](const char *what, int red, int green, int blue) {
+      r.createMaterial(m, infected);
+      r.drawInstance(instance(body));
+      pixel(target.render(), 32, 32, red, green, blue, what);
+    };
+    burnt("Gradient map: burnt skin", 128, 128, 0);
+    g.burnStrength = 0;
+    burnt("Gradient map: burn at strength 0", 0, 255, 0);
+    // The burn's alpha takes part: 1/4 + 1/2 - 1 is below 0.
+    g.burnTexture = WOUND_PATH("0x8a");
+    g.burnStrength = .25f;
+    burnt("Gradient map: the burn's alpha", 0, 255, 0);
+    // Cloth burns twice as fast: 2 x 1/4 + 1 - 1.
+    g.burnTexture = WOUND_PATH("0x89");
+    m.albedoTexture = WOUND_PATH("0x8b");
+    burnt("Gradient map: burnt cloth", 128, 128, 0);
+    // The burn is read at the detail coordinate swapped: (dot(detailV, uv),
+    // dot(detailU, uv)) = (3/4, 0) at the quad's centre, the second texel of
+    // a red | blue burn (the first at the unswapped (0, 3/4)).
+    {
+      const std::vector<uint8_t> data = {255, 0, 0, 255, 0, 0, 255, 255};
+      remixapi_TextureInfo tex = {};
+      tex.hash = 0x8c;
+      tex.width = 2;
+      tex.height = tex.depth = tex.mipLevels = 1;
+      tex.format = REMIXAPI_FORMAT_R8G8B8A8_UNORM;
+      tex.data = data.data();
+      tex.dataSize = data.size();
+      remixapi_TextureHandle handle;
+      r.createTexture(tex, handle);
+    }
+    m.albedoTexture = WOUND_PATH("0x82");
+    g.burnTexture = WOUND_PATH("0x8c");
+    g.burnStrength = .5f;
+    g.detailV[0] = g.detailV[1] = .75f;
+    burnt("Gradient map: the burn's coordinate", 0, 128, 128);
+    g.detailV[0] = g.detailV[1] = 0;
+    // Fading out (opacity 1/2): blended over the black target like any
+    // opaque material below opacity 1; B.a (luminance) is no coverage.
+    g.burnTexture = nullptr;
+    g.burnStrength = 0;
+    opaque.opacityConstant = .5f;
+    burnt("Gradient map: fading out", 0, 128, 0);
+    opaque.opacityConstant = 1;
   }
   void gpuTests(const std::filesystem::path &directory) {
     Target target;

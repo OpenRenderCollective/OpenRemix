@@ -795,8 +795,9 @@ namespace {
     texture(r, 0xc1, texels, 2);
     texture(r, 0xc2, texels, 2);
     texture(r, 0xc3, texels, 2);
+    texture(r, 0xc9, texels, 2);
     const auto cutName = std::filesystem::path("0xc1"), albedoName = std::filesystem::path("0xc2"),
-               gradientName = std::filesystem::path("0xc3");
+               gradientName = std::filesystem::path("0xc3"), burnName = std::filesystem::path("0xc9");
     remixapi_MaterialGradientMapEXT g{};
     g.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_GRADIENT_MAP_EXT;
     g.gradientTexture = gradientName.c_str();
@@ -806,6 +807,8 @@ namespace {
     g.bloodColor = {.15f, 0, 0};
     g.bloodRange[0] = .1f;
     g.bloodRange[1] = .9f;
+    g.burnTexture = burnName.c_str();
+    g.burnStrength = .75f;
     remixapi_MaterialInfoOpaqueEXT o{};
     o.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
     o.pNext = &g;
@@ -819,9 +822,15 @@ namespace {
     m.albedoTexture = albedoName.c_str();
     remixapi_MaterialHandle infected{};
     r.createMaterial(m, infected);
+    // The same, fading out (opacity 1/2) and without a burn.
+    remixapi_MaterialHandle faded{};
+    g.burnTexture = nullptr;
+    o.opacityConstant = .5f;
+    m.hash = 0xca;
+    r.createMaterial(m, faded);
     const auto plain = material(r, 0xc5, 1, 1, 1);
     const auto body = quad(r, 0xc6, infected), skinned = quad(r, 0xc7, plain, 0xffffffff, true),
-               other = quad(r, 0xc8, plain);
+               other = quad(r, 0xc8, faded);
     remixapi_InstanceInfoWoundCutEXT w{};
     w.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_WOUND_CUT_EXT;
     w.cutTexture = cutName.c_str();
@@ -901,8 +910,33 @@ namespace {
         uint32_t rows;
         std::memcpy(&rows, &surface.film[1], 4);
         require(rows == (trace::detail::halfBits(3) | trace::detail::halfBits(17) << 16), "Gradient map: rows");
-      }
+        // The burn: its slot + 1 and half strength in gradient[0].
+        require((surface.gradient[0] >> 16) == trace::detail::halfBits(.75f) && (surface.gradient[0] & 0xffffu),
+                "Gradient map: burn strength");
+        const auto &burn = t.request((surface.gradient[0] & 0xffffu) - 1);
+        require(burn.kind == trace::DescriptorRequest::Albedo && burn.material->texture->hash == 0xc9 &&
+                    burn.material->wrapU == 1 && burn.material->wrapV == 1,
+                "Gradient map: burn slot");
+        // Its texture alpha is luminance: alpha arguments naming the texture read 1.
+        require(((surface.state[0] >> 8) & 3u) != 1u && ((surface.state[0] >> 10) & 3u) != 1u,
+                "Gradient map: texture alpha as coverage");
+        require((surface.state[3] & 2u) == 0, "Gradient map: an opaque material blended");
+      } else
+        require(surface.gradient[0] == 0, "Wound records: a burn without a gradient map");
     }
+    size_t fadedSurfaces = 0;
+    // The faded gradient map: blended (and translucent) as any opaque material
+    // below opacity 1, its tint's alpha the opacity, without a burn.
+    for (size_t i = 0; i < 3; ++i) {
+      const auto &surface = t.surface(i);
+      if (!(surface.material[0] & scene::MaterialDecode::gradientMap) || surface.textureState[1])
+        continue;
+      ++fadedSurfaces;
+      require(surface.tint[3] == .5f && (surface.state[3] & 2u) && (surface.state[3] & 32u) && surface.state[1] == 7,
+              "Gradient map: fading");
+      require(surface.gradient[0] == 0, "Gradient map: a burn without a burn texture");
+    }
+    require(fadedSurfaces == 1, "Gradient map: the faded surface");
     require(records == 2, "Wound records: a wounded surface without one");
     // Each record's vertices in the frame's wound vertices (vertex-wound.comp).
     require(t.woundRecords().first == 3 && t.woundRecords().second == 2 && t.woundVertices() == 8,

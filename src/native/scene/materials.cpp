@@ -188,9 +188,10 @@ namespace remix {
     // A gradient map reads the albedo texture as stored: its alpha is luminance.
     material->texture = gradient && texture && *texture ? dataTexturePath(texture) : texturePath(texture);
     if (gradient) {
-      // B.a is luminance, not coverage: an opaque material without a film
-      // (the film's fields hold the gradient's parameters).
-      if (!opaque || opaque->opacityConstant != 1 || opaque->thinFilmThickness_hasvalue ||
+      // B.a is luminance, not coverage: an opaque material without alpha test
+      // or a film (the film's fields hold the gradient's parameters), whose
+      // opacityConstant alone gives its opacity.
+      if (!opaque || opaque->thinFilmThickness_hasvalue ||
           opaque->alphaIsThinFilmThickness || extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_IRIDESCENCE_EXT) ||
           !gradient->gradientTexture || !*gradient->gradientTexture)
         throw invalid;
@@ -198,13 +199,14 @@ namespace remix {
                               gradient->spriteOffset[1], gradient->detailU[0],     gradient->detailU[1],
                               gradient->detailV[0],      gradient->detailV[1],     gradient->bloodRange[0],
                               gradient->bloodRange[1],   gradient->bloodColor.x,   gradient->bloodColor.y,
-                              gradient->bloodColor.z};
-      finite(values, 13);
-      // Packed as half floats (frame_tables.h materialFields), the colour as unorm8.
+                              gradient->bloodColor.z,    gradient->burnStrength};
+      finite(values, 14);
+      // Packed as half floats (frame_tables.h gradientFields), the colour as unorm8;
+      // the colour and the burn strength 0 to 1.
       for (unsigned i = 0; i < 10; ++i)
         if (std::fabs(values[i]) > 65504)
           throw invalid;
-      for (unsigned i = 10; i < 13; ++i)
+      for (unsigned i = 10; i < 14; ++i)
         if (values[i] < 0 || values[i] > 1)
           throw invalid;
       if (!(gradient->bloodRange[0] < gradient->bloodRange[1]))
@@ -216,6 +218,13 @@ namespace remix {
         out->detail = dataTexturePath(gradient->detailTexture);
         out->detailSampler = samplerMaterial(out->detail, material->filter, 1);
       }
+      // The burn texture is read as an albedo texture is (sRGB-decoded where
+      // it is sRGB-encoded), repeating.
+      if (gradient->burnTexture && *gradient->burnTexture) {
+        out->burn = texturePath(gradient->burnTexture);
+        out->burnSampler = samplerMaterial(out->burn, material->filter, 1);
+        out->burnStrength = gradient->burnStrength;
+      }
       out->skinRow = gradient->skinRow;
       out->clothRow = gradient->clothRow;
       std::copy_n(gradient->spriteOffset, 2, out->spriteOffset);
@@ -224,8 +233,9 @@ namespace remix {
       std::copy_n(values + 10, 3, out->bloodColor);
       std::copy_n(gradient->bloodRange, 2, out->bloodRange);
       material->gradient = std::move(out);
+      // Below opacity 1 it blends as any opaque material does (translucent).
       material->compare = 7;
-      material->drawAlpha = material->translucent = false;
+      material->drawAlpha = false;
     }
     if (material->texture && !material->sourceHash) {
       material->sourceHash = material->texture->getHash();

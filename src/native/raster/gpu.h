@@ -459,7 +459,7 @@ namespace remix {
     void destroySprite();
     // remixapi_MaterialGradientMapEXT and remixapi_InstanceInfoWoundCutEXT
     // (raster/infected.cpp): the raster stages with INFECTED, whose set 1
-    // holds the gradient, detail and cut textures and the draw's parameters.
+    // holds the gradient, detail, cut and burn textures and the draw's parameters.
     struct Infected {
       VkDescriptorSetLayout setLayout = VK_NULL_HANDLE;
       VkPipelineLayout layout = VK_NULL_HANDLE; // the raster layout and, set 1, the above
@@ -468,7 +468,7 @@ namespace remix {
       // This frame's parameter blocks and the textures of each, in command order.
       static constexpr size_t blockSize = 256;
       std::vector<uint8_t> parameters;
-      std::vector<std::array<VkDescriptorImageInfo, 3>> images;
+      std::vector<std::array<VkDescriptorImageInfo, 4>> images;
       // Per frame slot: the pool its sets come from (reset when it comes round).
       VkDescriptorPool pools[gpuFrameCount] = {};
       uint32_t capacity[gpuFrameCount] = {};

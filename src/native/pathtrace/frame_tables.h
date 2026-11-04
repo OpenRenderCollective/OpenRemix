@@ -62,8 +62,10 @@ namespace remix::trace::detail {
     // (transmittance, thickness, radius or single scattering albedo), the kind.
     float subsurface[4] = {}, subsurfaceColor[4] = {}, subsurfaceThin[4] = {};
     uint32_t subsurfaceMaps[4] = {};
+    // A gradient map's burn (gradientFields; 0 none); the rest unused.
+    uint32_t gradient[4] = {};
   };
-  static_assert(sizeof(TraceSurface) == 352);
+  static_assert(sizeof(TraceSurface) == 368);
   // IEEE binary16 bits of v, rounded to nearest (subnormals kept).
   inline uint32_t halfBits(float v) {
     uint32_t bits;
@@ -146,10 +148,12 @@ namespace remix::trace::detail {
   // film's fields, which such a material lacks (film[0] stays 0): film[1]
   // half2(skin row, cloth row), film[2] half2(blood range), film[3] the blood
   // colour as unorm8 RGB; maps[0] the gradient's texture slot | (the
-  // detail's + 1) << 16, maps[1..3] half2 sprite offset, detail U, detail V
-  // (scene.glsl gradientAlbedo).
-  inline void gradientFields(const scene::GradientMap &g, uint32_t gradient, uint32_t detail, float film[4],
-                             uint32_t maps[4]) {
+  // detail's + 1) << 16, maps[1..3] half2 sprite offset, detail U, detail V;
+  // burnOut (the surface's gradient[0]) the burn texture's slot + 1 |
+  // the half burn strength << 16, 0 without a burn or at strength 0, where
+  // the burn step changes nothing (scene.glsl gradientAlbedo).
+  inline void gradientFields(const scene::GradientMap &g, uint32_t gradient, uint32_t detail, uint32_t burn,
+                             float film[4], uint32_t maps[4], uint32_t &burnOut) {
     uint32_t color = 0;
     for (unsigned i = 0; i < 3; ++i)
       color |= uint32_t(std::lround(std::clamp(g.bloodColor[i], 0.f, 1.f) * 255)) << (8 * i);
@@ -161,6 +165,8 @@ namespace remix::trace::detail {
     maps[1] = halfBits(g.spriteOffset[0]) | halfBits(g.spriteOffset[1]) << 16;
     maps[2] = halfBits(g.detailU[0]) | halfBits(g.detailU[1]) << 16;
     maps[3] = halfBits(g.detailV[0]) | halfBits(g.detailV[1]) << 16;
+    const uint32_t strength = halfBits(std::clamp(g.burnStrength, 0.f, 1.f));
+    burnOut = burn && strength ? burn | strength << 16 : 0;
   }
   // remixapi_InstanceInfoWoundCutEXT: a surface's wound record, an entry of
   // the surface table after the frame's surfaces that no instance points to
@@ -281,7 +287,7 @@ namespace remix::trace {
   };
   // Per-material surface fields; the texture slots are frame indices.
   struct MaterialSlots {
-    uint32_t albedo = 0, emissive = 0;
+    uint32_t albedo = 0, emissive = 0, burn = 0; // burn: gradient[0] (gradientFields)
     float pbr[4] = {}, emission[4] = {};
     uint32_t decode[4] = {}, maps[4] = {};
     float film[4] = {};
@@ -819,7 +825,8 @@ namespace remix::trace {
         };
         const uint32_t gradient = sampled(g.gradientSampler);
         const uint32_t detail = g.detailSampler ? sampled(g.detailSampler) + 1 : 0;
-        detail::gradientFields(g, gradient, detail, value.film, value.filmMaps);
+        const uint32_t burn = g.burnSampler && g.burnStrength > 0 ? sampled(g.burnSampler) + 1 : 0;
+        detail::gradientFields(g, gradient, detail, burn, value.film, value.filmMaps, value.gradient[0]);
       }
       std::copy_n(material.emission, 3, value.emission);
       value.emission[3] = decode.selfIlluminationScale;
@@ -835,6 +842,7 @@ namespace remix::trace {
       MaterialSlots entry;
       entry.albedo = value.textureState[0];
       entry.emissive = value.textureState[2];
+      entry.burn = value.gradient[0];
       std::copy_n(value.pbr, 4, entry.pbr);
       std::copy_n(value.material, 4, entry.decode);
       std::copy_n(value.pbrTextures, 4, entry.maps);
@@ -953,6 +961,7 @@ namespace remix::trace {
         TraceSurface value;
         value.textureState[0] = entry.albedo;
         value.textureState[2] = entry.emissive;
+        value.gradient[0] = entry.burn;
         std::copy_n(entry.pbr, 4, value.pbr);
         std::copy_n(entry.decode, 4, value.material);
         std::copy_n(entry.maps, 4, value.pbrTextures);
@@ -993,9 +1002,13 @@ namespace remix::trace {
           factor.values[3] = float(b.factor >> 24) / 255;
         }
         std::copy_n(factor.values, 4, value.factor);
+        // A gradient map's texture alpha is luminance, its composite opaque:
+        // alpha arguments naming the texture (1) read 1 instead (0), and
+        // candidate tests sample nothing for them.
+        const auto alphaArg = [&](uint32_t arg) { return material.gradient && arg == 1 ? 0u : arg; };
         value.state[0] = (b.colorOp & 3u) | (b.colorOp & 4u) << 10 | (b.alphaOpTexture & 4u) << 11 |
-                         b.color1 << 2 | b.color2 << 4 | (b.alphaOpTexture & 3u) << 6 | b.alpha1 << 8 |
-                         b.alpha2 << 10;
+                         b.color1 << 2 | b.color2 << 4 | (b.alphaOpTexture & 3u) << 6 | alphaArg(b.alpha1) << 8 |
+                         alphaArg(b.alpha2) << 10;
         value.state[1] = surface.ignoreAlpha ? 7 : surface.alphaOverride ? surface.compare : material.compare;
         const float reference = surface.alphaOverride ? surface.reference : material.reference;
         std::memcpy(&value.state[2], &reference, 4);
@@ -1302,6 +1315,7 @@ namespace remix::trace {
             const auto &entry = *slots[unit.material[s]];
             value.textureState[0] = entry.albedo;
             value.textureState[2] = entry.emissive;
+            value.gradient[0] = entry.burn;
             std::copy_n(entry.pbr, 4, value.pbr);
             std::copy_n(entry.decode, 4, value.material);
             std::copy_n(entry.maps, 4, value.pbrTextures);

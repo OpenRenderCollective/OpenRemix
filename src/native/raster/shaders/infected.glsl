@@ -6,13 +6,15 @@
 layout(set=1,binding=0) uniform sampler2D gradientMap;
 layout(set=1,binding=1) uniform sampler2D detailMap;
 layout(set=1,binding=2) uniform sampler2D cutMap;
+layout(set=1,binding=4) uniform sampler2D burnMap;
 #endif
 layout(set=1,binding=3,std140) uniform Infected {
   vec4 ellipsoid[6]; // the first ellipsoid's rows (axis, -axis . center), then the second's
   vec4 projection[2]; // scale, bias
   vec4 cut[2];        // each half's scale-bias
-  vec4 wound;         // mapping scale, second blend, threshold, flags (bits: 1 wound, 2 gradient, 4 detail, 8 sRGB gradient)
-  vec4 rows;          // skin row, cloth row
+  vec4 wound;         // mapping scale, second blend, threshold, flags (bits: 1 wound, 2 gradient, 4 detail,
+                      // 8 sRGB gradient, 16 burn, 32 sRGB burn)
+  vec4 rows;          // skin row, cloth row, burn strength
   vec4 sprite;        // sprite offset, blood range
   vec4 detail;        // detail U, detail V
   vec4 blood;         // blood colour
@@ -61,6 +63,15 @@ vec4 gradientAlbedo(vec2 uv, vec4 transform, float wound) {
     c = mix(c, 2.0 * l * d, clamp(2.0 * sprite.r - 1.0, 0.0, 1.0));
   }
   float s = smoothstep(infected.sprite.z, infected.sprite.w, clamp(2.0 * sprite.g - 1.0, 0.0, 1.0) + wound);
-  return vec4(min(c * mix(vec3(1), infected.blood.rgb, s), vec3(1)), 1.0);
+  c = min(c * mix(vec3(1), infected.blood.rgb, s), vec3(1));
+  // The burn, at the detail coordinate swapped.
+  if ((flags & 16u) != 0u) {
+    vec4 burn = texture(burnMap, vec2(dot(infected.detail.zw, mesh), dot(infected.detail.xy, mesh)));
+    if ((flags & 32u) != 0u)
+      burn.rgb = pow(max(burn.rgb, vec3(0)), vec3(2.2));
+    float t = clamp(infected.rows.z * (2.0 - clamp(2.0 * b.b - 1.0, 0.0, 1.0)) + burn.a - 1.0, 0.0, 1.0);
+    c = mix(c, burn.rgb, t);
+  }
+  return vec4(c, 1.0);
 }
 #endif

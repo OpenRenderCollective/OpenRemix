@@ -2,7 +2,8 @@
 // path tracer: a wound cut holes the surface for camera rays (traced and
 // raster primary visibility) and for shadow rays, and a gradient-mapped,
 // self-illuminated quad shows its composite (the skin row, the sprite's
-// blood, and the blood a wound's W adds).
+// blood, the blood a wound's W adds and the burn) and fades out below
+// opacity 1.
 #include "runtime/prepared.h"
 #include <chrono>
 #include <cmath>
@@ -97,14 +98,15 @@ int main(int argc, char **argv) {
   texture(0x82, {0, 0, 255, 255}, REMIXAPI_FORMAT_R8G8B8A8_UNORM);     // B: skin, luminance 1, no masks
   texture(0x83, {0, 255, 0, 255}, REMIXAPI_FORMAT_R8G8B8A8_SRGB);      // the gradient: green
   texture(0x84, {0, 255, 255, 255}, REMIXAPI_FORMAT_R8G8B8A8_UNORM);   // B: the same, all blood
+  texture(0x85, {255, 0, 0, 255}, REMIXAPI_FORMAT_R8G8B8A8_SRGB);      // the burn: red, opaque
   // emission: a constant colour (no texture); selfLit: its albedo emits.
   auto material = [&](uint64_t hash, Color albedo, Color emission, const void *next = nullptr,
-                      remixapi_Path texture = nullptr) {
+                      remixapi_Path texture = nullptr, float opacity = 1) {
     remixapi_MaterialInfoOpaqueEXT opaque{};
     opaque.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
     opaque.pNext = const_cast<void *>(next);
     opaque.albedoConstant = {albedo.r, albedo.g, albedo.b};
-    opaque.opacityConstant = 1;
+    opaque.opacityConstant = opacity;
     opaque.alphaTestType = 7;
     remixapi_MaterialInfo info{};
     info.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
@@ -163,7 +165,9 @@ int main(int argc, char **argv) {
   self.pNext = &gradient;
   self.mask = REMIXAPI_SELF_ILLUMINATION_MASK_NONE_EXT;
   self.maskScale = 1;
-  auto infected = [&](remixapi_Path albedo) { return material(15, {1, 1, 1}, {1, 1, 1}, &self, albedo); };
+  auto infected = [&](remixapi_Path albedo, float opacity = 1) {
+    return material(15, {1, 1, 1}, {1, 1, 1}, &self, albedo, opacity);
+  };
   const auto body = quad(5, infected(PATH("0x82")), -4, 4, -2, 2, 2);
   remixapi_LightInfoDistantEXT distant{};
   distant.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DISTANT_EXT;
@@ -288,6 +292,26 @@ int main(int argc, char **argv) {
     const auto bleeding = capture(mode + "-wound-blood", 128, 64);
     require(std::abs(bleeding.g - c.g) < .05f, "A wound's blood");
     wound.threshold = .95f;
+    wounded = false;
+    // The burn (red, opaque) at strength 1/2 over skin: half way from the
+    // green composite to red.
+    gradient.burnTexture = PATH("0x85");
+    gradient.burnStrength = .5f;
+    infected(PATH("0x82"));
+    c = capture(mode + "-burn", 128, 64);
+    require(c.r > c.b + .3f && std::abs(c.r - c.g) < .05f, "The burn");
+    gradient.burnStrength = 1;
+    infected(PATH("0x82"));
+    c = capture(mode + "-burnt", 128, 64);
+    require(c.r > c.g + .3f && c.r > c.b + .3f, "A full burn");
+    gradient.burnTexture = nullptr;
+    gradient.burnStrength = 0;
+    // Fading out (opacity 1/2) over the empty background: blended as any
+    // opaque material below opacity 1, dimmer than the opaque quad.
+    infected(PATH("0x82"), .5f);
+    c = capture(mode + "-faded", 128, 64);
+    require(c.g < .9f * skin.g && c.g > .2f * skin.g && c.g > c.r + .2f, "A fading gradient map");
+    infected(PATH("0x82"));
   }
   ok(api.DestroyLight(sun));
   ok(api.Shutdown());
