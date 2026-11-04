@@ -266,12 +266,67 @@ namespace remix {
         material->metallic = 0;
       }
     }
+    const auto *sssWeight = static_cast<const remixapi_MaterialSubsurfaceWeightEXT *>(
+        extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_SUBSURFACE_WEIGHT_EXT));
+    if (sssWeight && (!opaque || !std::isfinite(sssWeight->weight) || sssWeight->weight < 0 || sssWeight->weight > 1))
+      throw invalid;
+    if (const auto *sss = static_cast<const remixapi_MaterialInfoOpaqueSubsurfaceEXT *>(
+            extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_SUBSURFACE_EXT));
+        sss && opaque) {
+      finite(&sss->subsurfaceTransmittanceColor.x, 3);
+      finite(&sss->subsurfaceSingleScatteringAlbedo.x, 3);
+      finite(&sss->subsurfaceRadius.x, 3);
+      const float scalars[] = {sss->subsurfaceMeasurementDistance, sss->subsurfaceVolumetricAnisotropy,
+                               sss->subsurfaceRadiusScale, sss->subsurfaceMaxSampleRadius};
+      finite(scalars, 4);
+      auto &out = material->subsurface;
+      out.diffusionProfile = sss->subsurfaceDiffusionProfile != 0;
+      out.measurementDistance = out.diffusionProfile ? 0 : std::max(sss->subsurfaceMeasurementDistance, 0.f);
+      out.anisotropy = std::clamp(sss->subsurfaceVolumetricAnisotropy, -.9f, .9f);
+      const remixapi_Float3D &color = sss->subsurfaceTransmittanceColor, &single = sss->subsurfaceSingleScatteringAlbedo,
+                             &radius = sss->subsurfaceRadius;
+      out.transmittance[0] = std::clamp(color.x, 0.f, 1.f);
+      out.transmittance[1] = std::clamp(color.y, 0.f, 1.f);
+      out.transmittance[2] = std::clamp(color.z, 0.f, 1.f);
+      out.singleScatteringAlbedo[0] = std::clamp(single.x, 0.f, 1.f);
+      out.singleScatteringAlbedo[1] = std::clamp(single.y, 0.f, 1.f);
+      out.singleScatteringAlbedo[2] = std::clamp(single.z, 0.f, 1.f);
+      out.radius[0] = std::max(radius.x, 0.f);
+      out.radius[1] = std::max(radius.y, 0.f);
+      out.radius[2] = std::max(radius.z, 0.f);
+      out.radiusScale = std::max(sss->subsurfaceRadiusScale, 1e-5f);
+      // RTX Remix stores this in a unorm: at most a metre. Zero there silently
+      // turns the profile off; here, like an unauthored one, it is no limit.
+      out.maxSampleRadius = sss->subsurfaceMaxSampleRadius > 0 ? std::min(sss->subsurfaceMaxSampleRadius, 1.f) : 1;
+      out.transmittanceTexture = texturePath(sss->subsurfaceTransmittanceTexture);
+      out.thicknessTexture = dataTexturePath(sss->subsurfaceThicknessTexture);
+      out.singleScatteringAlbedoTexture = texturePath(sss->subsurfaceSingleScatteringAlbedoTexture);
+      out.radiusTexture = dataTexturePath(sss->subsurfaceRadiusTexture);
+      // Its transmittance map is the surface's colour under a profile: as the
+      // albedo map it reads no differently, tints and vertex colours included
+      // (RTX Remix's rtx.subsurface.transmittanceFollowsAlbedo).
+      if (out.transmittanceTexture == material->texture)
+        out.transmittanceTexture.reset();
+      if (out.diffusionProfile) {
+        out.thicknessTexture.reset();
+        out.singleScatteringAlbedoTexture.reset();
+        // A zero-initialized colour is no colour.
+        if (!(color.x > 0 || color.y > 0 || color.z > 0) && !out.transmittanceTexture)
+          std::fill_n(out.transmittance, 3, 1.f);
+      } else {
+        out.radiusTexture.reset();
+      }
+      const bool scatters = out.radius[0] > 0 || out.radius[1] > 0 || out.radius[2] > 0 || out.radiusTexture;
+      if ((out.diffusionProfile && scatters) || out.measurementDistance > 0)
+        out.weight = sssWeight ? sssWeight->weight : 1;
+    }
     material->pbr =
         material->transmittanceDistance > 0 ||
         (opaque && (pbr ? pbr->enabled != 0
                        : material->roughness > 0 || material->metallic > 0 || material->roughnessTexture ||
                              material->metallicTexture || material->normalTexture)) ||
-        material->iridescence.strength > 0; // a film is a reflection
+        material->iridescence.strength > 0 || // a film is a reflection
+        material->subsurface.weight > 0;
     finite(&info.emissiveColorConstant.x, 3);
     finite(&info.emissiveIntensity, 1);
     if (info.emissiveIntensity < 0 || info.emissiveColorConstant.x < 0 || info.emissiveColorConstant.y < 0 ||
@@ -326,7 +381,7 @@ namespace remix {
              a.remap[0] == b.remap[0] && a.remap[1] == b.remap[1] && a.scrollLayers == b.scrollLayers &&
              std::equal(a.scroll, a.scroll + 6, b.scroll) && a.refractiveIndex == b.refractiveIndex &&
              a.transmittanceDistance == b.transmittanceDistance &&
-             a.iridescence == b.iridescence && a.metalColored == b.metalColored &&
+             a.iridescence == b.iridescence && a.subsurface == b.subsurface && a.metalColored == b.metalColored &&
              std::equal(a.metalColor, a.metalColor + 3, b.metalColor) && a.pbrBlur == b.pbrBlur &&
              (a.gradient == b.gradient || (a.gradient && b.gradient && *a.gradient == *b.gradient)) &&
              a.pbr == b.pbr && std::equal(a.emission, a.emission + 3, b.emission) &&

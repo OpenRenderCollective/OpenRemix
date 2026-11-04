@@ -159,7 +159,7 @@ namespace remix {
     };
     namespace ModParts {
       constexpr uint32_t color = 1, roughness = 2, metallic = 4, normal = 8, emission = 16, transmission = 32,
-                         film = 64, alpha = 128, sampling = 256, all = ~0u;
+                         film = 64, alpha = 128, sampling = 256, subsurface = 512, all = ~0u;
     }
     struct Material {
       uint64_t sourceHash = 0;
@@ -201,6 +201,19 @@ namespace remix {
         std::shared_ptr<Texture> thicknessTexture;
         bool operator==(const Iridescence &) const = default;
       } iridescence;
+      // Subsurface scattering, RTX Remix's controls
+      // (remixapi_MaterialInfoOpaqueSubsurfaceEXT): a diffusion profile, or
+      // without one a thin opaque surface (measurementDistance > 0). Weight 0:
+      // neither (remixapi_MaterialSubsurfaceWeightEXT).
+      struct Subsurface {
+        float weight = 0;
+        bool diffusionProfile = false;
+        float radius[3] = {.5f, .5f, .5f}, radiusScale = 1, maxSampleRadius = 1;
+        float anisotropy = 0, transmittance[3] = {1, 1, 1};
+        float measurementDistance = 0, singleScatteringAlbedo[3] = {.5f, .5f, .5f};
+        std::shared_ptr<Texture> transmittanceTexture, thicknessTexture, singleScatteringAlbedoTexture, radiusTexture;
+        bool operator==(const Subsurface &) const = default;
+      } subsurface;
       float emission[3] = {};
       bool suppressEmissionLight = false;
       // remixapi_MaterialInfoSelfIlluminationEXT: 0 off, else the mask + 1

@@ -839,6 +839,8 @@ namespace remix {
                       options.bounces > 0;
     frame.firefly[0] = options.localDirectClamp;
     frame.firefly[1] = options.indirectClamp;
+    frame.subsurfaceUnits = options.subsurfaceProfileScale / options.sceneScale;
+    frame.subsurfaceThickness = options.subsurfaceThicknessScale;
     frame.pathConfig[0] = rouletteActive;
     frame.pathConfig[1] = options.rouletteMinBounces;
     frame.pathConfig[2] = (options.translucentIndirect ? 1u : 0u) | (options.sheetLocalLights ? 2u : 0u) |
@@ -855,6 +857,16 @@ namespace remix {
       frame.pathConfig[3] |= 0x100u;
     if (!options.iridescence)
       frame.pathConfig[3] |= 0x200u;
+    if (!options.subsurface)
+      frame.pathConfig[3] |= 0x400u; // subsurface scattering off (scene.glsl subsurfaced)
+    if (!options.subsurfaceDiffusionProfile)
+      frame.pathConfig[3] |= 0x800u;
+    if (!options.subsurfaceThinOpaque)
+      frame.pathConfig[3] |= 0x1000u;
+    if (!options.subsurfaceTextureMaps)
+      frame.pathConfig[3] |= 0x2000u; // subsurface maps off (pathtrace.comp surfaceSubsurface)
+    if (!options.subsurfaceTransmission)
+      frame.pathConfig[3] |= 0x4000u; // a profile's far side off (subsurface.glsl)
     append(&frame, sizeof(frame));
     append(&options.localFireflyFilter, sizeof(options.localFireflyFilter));
     append(&options.translucencyDenoiser, sizeof(options.translucencyDenoiser));

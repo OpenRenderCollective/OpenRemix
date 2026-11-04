@@ -148,6 +148,22 @@ namespace remix {
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Shares diffuse lighting across small flat water patches with TAA or FSR.\nEdges, "
                           "overlapping layers and raw reference rendering retain full sampling.");
+      ui::Checkbox("Subsurface scattering", &options.subsurface);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Light that enters skin, wax or leaves and leaves them nearby, on materials that\n"
+                          "have it. Off: those materials are lit as plain diffuse surfaces.");
+      ImGui::BeginDisabled(!options.subsurface);
+      ui::Checkbox("Diffusion profiles", &options.subsurfaceDiffusionProfile);
+      ui::Checkbox("Thin opaque surfaces", &options.subsurfaceThinOpaque);
+      ui::Checkbox("Subsurface texture maps", &options.subsurfaceTextureMaps);
+      ui::Checkbox("Light through thin parts", &options.subsurfaceTransmission);
+      ui::DragFloat("Diffusion profile scale", &options.subsurfaceProfileScale, .01f, .001f, 1000, "%.3f",
+                    ImGuiSliderFlags_Logarithmic);
+      options.subsurfaceProfileScale = std::clamp(options.subsurfaceProfileScale, .001f, 1000.f);
+      ui::DragFloat("Surface thickness scale", &options.subsurfaceThicknessScale, .01f, 0, 1000, "%.3f",
+                    ImGuiSliderFlags_Logarithmic);
+      options.subsurfaceThicknessScale = std::clamp(options.subsurfaceThicknessScale, 0.f, 1000.f);
+      ImGui::EndDisabled();
       ui::Checkbox("Iridescence", &options.iridescence);
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Thin-film interference colours on materials that have a film (soap bubbles,\n"

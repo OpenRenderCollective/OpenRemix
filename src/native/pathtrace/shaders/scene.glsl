@@ -32,6 +32,13 @@ struct Surface {
   // with albedo alpha as thickness in bit 31 (iridescence.glsl).
   vec4 film;
   uvec4 filmMaps;
+  // Subsurface scattering (frame_tables.h subsurfaceFields): each channel's
+  // radius in metres, the weight (0: none); transmittance, anisotropy; single
+  // scattering albedo, measurement distance (a profile's: its largest sample
+  // radius in metres); the maps + 1 (transmittance, thickness, radius or
+  // single scattering albedo), the kind (1 a profile, 2 thin opaque).
+  vec4 subsurface,subsurfaceColor,subsurfaceThin;
+  uvec4 subsurfaceMaps;
 };
 // Shading reads the AS index order directly. Only debug identity needs the
 // original triangle mapping; motion still addresses the original vertex array.
@@ -108,7 +115,7 @@ layout(set=0,binding=3,std140) uniform Frame {
   uvec4 srgbTextures[32]; // a bit per texture slot: sRGB-encoded texels (stored UNORM), decoded with pow 2.2
   uvec4 pathDebug; // path inspector: record buffer address (x low, y high), pixel (x | y << 16; ~0 none), capacity
   vec4 screenCameras[32]; // remixapi_CameraScreensEXT, 4 per slot: position (w: 1 set, +2 moved), right and up (half extents), forward
-  uint64_t woundVertices, frameReserved; // remixapi_InstanceInfoWoundCutEXT: WoundVertex per wounded vertex (vertex-wound.comp)
+  uint64_t woundVertices; float subsurfaceUnits,subsurfaceThickness; // remixapi_InstanceInfoWoundCutEXT: WoundVertex per wounded vertex (vertex-wound.comp)
 } frame;
 // Instance mask bit of view models (pathtrace/tlas_policy.h).
 const uint viewModelInstanceMask=64u;
@@ -532,3 +539,6 @@ bool visibleAlpha(Surface s,float a) {
 // Whether a surface shows its thin film: it has one, and films are on
 // (frame.pathConfig.w bit 9 clear; iridescence.glsl).
 bool filmed(Surface s) { return s.film.x>0&&(frame.pathConfig.w&0x200u)==0u; }
+// Subsurface scattering, unless the renderer turned it off (pathConfig.w 0x400,
+// its kind 0x800 a profile, 0x1000 thin opaque).
+bool subsurfaced(Surface s) { return s.subsurface.w>0&&(frame.pathConfig.w&(0x400u|(s.subsurfaceMaps.w==1u?0x800u:0x1000u)))==0u; }

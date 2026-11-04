@@ -56,8 +56,14 @@ namespace remix::trace::detail {
     float film[4] = {};           // iridescence (filmFields): strength (0: none), film index, thickness nm, structural
     uint32_t filmMaps[4] = {};    // half2(min, max nm), half2(flow amplitude, scale), flow speed, map + 1 | alpha << 31
                                   // (or a gradient map's: gradientFields)
+    // subsurfaceFields: scattering radius in metres per channel, weight (0:
+    // none); transmittance, anisotropy; single scattering albedo, measurement
+    // distance (a profile's: its largest sample radius in metres); the maps' + 1
+    // (transmittance, thickness, radius or single scattering albedo), the kind.
+    float subsurface[4] = {}, subsurfaceColor[4] = {}, subsurfaceThin[4] = {};
+    uint32_t subsurfaceMaps[4] = {};
   };
-  static_assert(sizeof(TraceSurface) == 288);
+  static_assert(sizeof(TraceSurface) == 352);
   // IEEE binary16 bits of v, rounded to nearest (subnormals kept).
   inline uint32_t halfBits(float v) {
     uint32_t bits;
@@ -204,6 +210,28 @@ namespace remix::trace::detail {
     }
     return 0;
   }
+  // A material's subsurface scattering (scene::Material::subsurface), but for
+  // its maps' descriptors (assign). A profile's radius is RTX Remix's (world
+  // units of 1 cm, its SSS_METERS_UNIT, whatever the scene's scale).
+  inline void subsurfaceFields(const scene::Material &material, float out[4], float color[4], float thin[4],
+                               uint32_t maps[4]) {
+    const auto &s = material.subsurface;
+    if (s.weight <= 0)
+      return;
+    std::copy_n(s.transmittance, 3, color);
+    color[3] = s.anisotropy;
+    if (s.diffusionProfile) {
+      for (unsigned c = 0; c < 3; ++c)
+        out[c] = s.radius[c] * s.radiusScale * 1e-4f;
+      thin[3] = s.maxSampleRadius;
+      maps[3] = 1;
+    } else {
+      std::copy_n(s.singleScatteringAlbedo, 3, thin);
+      thin[3] = s.measurementDistance;
+      maps[3] = 2;
+    }
+    out[3] = s.weight;
+  }
   // A display-encoded value (gamma 2.2) to linear.
   inline float linear(float c) { return std::pow(c, 2.2f); }
   // Decal paint mode (TraceSurface state bits 7-8): 0 alpha-over, 1 multiply
@@ -236,6 +264,8 @@ namespace remix::trace {
     uint32_t decode[4] = {}, maps[4] = {};
     float film[4] = {};
     uint32_t filmMaps[4] = {};
+    float subsurface[4] = {}, subsurfaceColor[4] = {}, subsurfaceThin[4] = {};
+    uint32_t subsurfaceMaps[4] = {};
   };
   // One entry of the frame's texture descriptor array, in first-use order:
   // Albedo (sampledMaterial), Map (sampledTexture of *texture) or Emission.
@@ -685,6 +715,7 @@ namespace remix::trace {
       MaterialSlots entry;
       detail::materialFields(material, entry.pbr, entry.decode, entry.maps[3]);
       detail::filmFields(material, entry.film, entry.filmMaps);
+      detail::subsurfaceFields(material, entry.subsurface, entry.subsurfaceColor, entry.subsurfaceThin, entry.subsurfaceMaps);
       const auto decode = scene::materialDecode(material);
       std::copy_n(material.emission, 3, entry.emission);
       entry.emission[3] = decode.selfIlluminationScale;
@@ -715,16 +746,21 @@ namespace remix::trace {
       append(sampler, sizeof(sampler));
       detail::materialFields(material, value.pbr, value.material, value.pbrTextures[3]);
       detail::filmFields(material, value.film, value.filmMaps);
+      detail::subsurfaceFields(material, value.subsurface, value.subsurfaceColor, value.subsurfaceThin, value.subsurfaceMaps);
       const auto decode = scene::materialDecode(material);
-      // The roughness, metallic and normal maps, then the film's thickness map.
-      const std::shared_ptr<scene::Texture> *textures[] = {&material.roughnessTexture, &material.metallicTexture,
-                                                           &material.normalTexture,
-                                                           &material.iridescence.thicknessTexture};
+      // The roughness, metallic and normal maps, the film's thickness map, then
+      // the subsurface maps.
+      const auto &sss = material.subsurface;
+      const std::shared_ptr<scene::Texture> *textures[] = {
+          &material.roughnessTexture, &material.metallicTexture, &material.normalTexture,
+          &material.iridescence.thicknessTexture, &sss.transmittanceTexture, &sss.thicknessTexture,
+          sss.diffusionProfile ? &sss.radiusTexture : &sss.singleScatteringAlbedoTexture};
       uint32_t filmMap = 0;
-      uint32_t *slotsOut[] = {&value.pbrTextures[0], &value.pbrTextures[1], &value.pbrTextures[2], &filmMap};
-      for (unsigned i = 0; i < 4; ++i) {
+      uint32_t *slotsOut[] = {&value.pbrTextures[0], &value.pbrTextures[1], &value.pbrTextures[2], &filmMap,
+                              &value.subsurfaceMaps[0], &value.subsurfaceMaps[1], &value.subsurfaceMaps[2]};
+      for (unsigned i = 0; i < 7; ++i) {
         const auto &map = *textures[i];
-        if (!map || (i == 3 && value.film[0] <= 0))
+        if (!map || (i == 3 && value.film[0] <= 0) || (i > 3 && value.subsurface[3] <= 0))
           continue;
         const MapKey key{map.get(), material.filter, material.wrapU, material.wrapV};
         if (prefixMaps)
@@ -780,6 +816,10 @@ namespace remix::trace {
       std::copy_n(value.emission, 4, entry.emission);
       std::copy_n(value.film, 4, entry.film);
       std::copy_n(value.filmMaps, 4, entry.filmMaps);
+      std::copy_n(value.subsurface, 4, entry.subsurface);
+      std::copy_n(value.subsurfaceColor, 4, entry.subsurfaceColor);
+      std::copy_n(value.subsurfaceThin, 4, entry.subsurfaceThin);
+      std::copy_n(value.subsurfaceMaps, 4, entry.subsurfaceMaps);
       return entry;
     }
 
@@ -890,6 +930,10 @@ namespace remix::trace {
         std::copy_n(entry.emission, 4, value.emission);
         std::copy_n(entry.film, 4, value.film);
         std::copy_n(entry.filmMaps, 4, value.filmMaps);
+        std::copy_n(entry.subsurface, 4, value.subsurface);
+        std::copy_n(entry.subsurfaceColor, 4, value.subsurfaceColor);
+        std::copy_n(entry.subsurfaceThin, 4, value.subsurfaceThin);
+        std::copy_n(entry.subsurfaceMaps, 4, value.subsurfaceMaps);
         value.vertices = view.vertices.at(surface.surfaceIndex)->address;
         if (wounded) {
           value.textureState[1] = uint32_t(recordIndex);
@@ -1235,6 +1279,10 @@ namespace remix::trace {
             std::copy_n(entry.emission, 4, value.emission);
             std::copy_n(entry.film, 4, value.film);
             std::copy_n(entry.filmMaps, 4, value.filmMaps);
+            std::copy_n(entry.subsurface, 4, value.subsurface);
+            std::copy_n(entry.subsurfaceColor, 4, value.subsurfaceColor);
+            std::copy_n(entry.subsurfaceThin, 4, value.subsurfaceThin);
+            std::copy_n(entry.subsurfaceMaps, 4, value.subsurfaceMaps);
             out[s] = value;
           }
           for (size_t d = 0; d < unit.primary.size(); ++d) {
