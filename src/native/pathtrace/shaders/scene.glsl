@@ -15,7 +15,7 @@ struct Surface {
   vec4 uv;
   vec4 factor;
   uvec4 state; // texture operations, compare, reference bits, flags
-  uvec4 textureState; // texture index
+  uvec4 textureState; // texture index; w: texture motion (textureShift)
   uint64_t triangleMap;
   Indices traceIndices;
   uint64_t previousVertices;
@@ -37,6 +37,15 @@ struct Surface {
 // original triangle mapping; motion still addresses the original vertex array.
 uint originalTriangle(Surface s,uint triangle) {
   return s.triangleMap==0?triangle:Indices(s.triangleMap).i[triangle];
+}
+// A scrolling texture's motion on a triangle (frame_tables.h textureMotion),
+// in the mesh's units: the point whose UVs differ by the surface's shift, from
+// the triangle's edges e1, e2 and their UV differences d1, d2.
+vec3 textureShift(Surface s,vec3 e1,vec3 e2,vec2 d1,vec2 d2) {
+  float det=d1.x*d2.y-d1.y*d2.x;
+  if(s.textureState.w==0u||abs(det)<1e-12)return vec3(0);
+  vec2 shift=unpackHalf2x16(s.textureState.w);
+  return ((e1*d2.y-e2*d1.y)*shift.x+(e2*d1.x-e1*d2.x)*shift.y)/det;
 }
 layout(set=0,binding=2,std430) readonly buffer Surfaces { Surface surfaces[]; };
 layout(set=0,binding=3,std140) uniform Frame {

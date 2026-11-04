@@ -44,7 +44,7 @@ namespace remix::trace::detail {
     uint64_t vertices = 0, indices = 0;
     float tint[4] = {}, uv[4] = {}, factor[4] = {};
     // textureState: albedo, wound record (woundFields: its surface table
-    // index; 0 none), emission + 1, unused.
+    // index; 0 none), emission + 1, texture motion (half2, textureMotion).
     uint32_t state[4] = {}, textureState[4] = {};
     uint64_t triangleMap = 0, traceIndices = 0;
     uint64_t previousVertices = 0, debugIdentity = 0;
@@ -203,6 +203,28 @@ namespace remix::trace::detail {
         return view.skinSource[draw.surfaceIndex]->address;
     }
     return 0;
+  }
+  // A surface's texture motion since the committed frame, for motion vectors
+  // that follow a scrolling texture (remixapi_InstanceInfoTexcoordTransformEXT):
+  // the mesh UVs at which last frame showed the texel now at a point are its
+  // UVs plus this (half2; scene.glsl textureShift). A still camera otherwise
+  // tells Ray Reconstruction the texture did not move, and its history blurs
+  // it along the scroll. Whole repeats (a wrapped offset) are not motion;
+  // sprite cells and scale changes are left without.
+  inline uint32_t textureMotion(const scene::Draw &draw, const std::array<float, 4> &uv,
+                                const scene::TemporalHistory::SurfaceHistory &previous) {
+    if (!draw.texcoordMoves() && !previous.draw.texcoordMoves())
+      return 0;
+    if (uint32_t(draw.material->rows) * draw.material->columns > 1 || uv[0] != previous.uv[0] ||
+        uv[1] != previous.uv[1] || uv[0] == 0 || uv[1] == 0)
+      return 0;
+    uint32_t packed = 0;
+    for (unsigned axis = 0; axis < 2; ++axis) {
+      float shift = uv[axis + 2] - previous.uv[axis + 2];
+      shift -= std::round(shift);
+      packed |= halfBits(shift / uv[axis]) << (16 * axis);
+    }
+    return packed;
   }
   // A display-encoded value (gamma 2.2) to linear.
   inline float linear(float c) { return std::pow(c, 2.2f); }
@@ -373,6 +395,9 @@ namespace remix::trace {
       bool pbrReuse = false, digest = false;
       size_t textureLimit = 4096;
       uint64_t *materialTicks = nullptr, *temporalTicks = nullptr;
+      // Texture motion in the motion vectors (Ray Reconstruction, which keeps
+      // no separate albedo: textureMotion).
+      bool textureMotion = false;
     };
     // The static prefix: every traced unit of the persistent static set, laid
     // out as the rebuild path lays out a frame's first (static) instances.
@@ -799,10 +824,14 @@ namespace remix::trace {
     // A surface's temporal fields: the committed frame's model and vertex
     // buffer when its geometry corresponds (the history tables, or the static
     // set's own history).
-    void temporal(const Inputs &in, const scene::Draw &surface, uint64_t temporalId, TraceSurface &value) const {
+    void temporal(const Inputs &in, const scene::Draw &surface, uint64_t temporalId, TraceSurface &value,
+                  const std::array<float, 4> *uv = nullptr) const {
       value.previousVertices = 0;
       value.previousModel = {};
+      value.textureState[3] = 0;
       if (const auto *previous = in.history.previousGeometry(surface, temporalId)) {
+        if (in.textureMotion && uv)
+          value.textureState[3] = detail::textureMotion(surface, *uv, *previous);
         const scene::TemporalHistory::Key key{temporalId, surface.instanceIndex, surface.surfaceIndex};
         if (const auto *old = in.previousVertices.find(key)) {
           value.previousVertices = (*old)->address;
@@ -906,7 +935,7 @@ namespace remix::trace {
         // terrain atlas) does not change vertex correspondence. Keep motion and
         // let per-pixel depth/normal rejection, lighting confidence and TAA color
         // clipping respond to the shading that actually changed on screen.
-        temporal(in, surface, temporalId, value);
+        temporal(in, surface, temporalId, value, &preparedSurface.uv);
         std::copy_n(material.tint, 4, value.tint);
         std::copy(preparedSurface.uv.begin(), preparedSurface.uv.end(), value.uv);
         const auto &b = surface.blend;

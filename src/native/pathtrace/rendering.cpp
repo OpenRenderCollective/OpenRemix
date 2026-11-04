@@ -138,7 +138,8 @@ namespace remix {
                                                              digestEnabled,
                                                              PathTracer::textureLimit,
                                                              &materialTicks,
-                                                             &temporalTicks};
+                                                             &temporalTicks,
+                                                             rrActive()};
     tables.build(views, tableInputs);
     {
       const auto &s = tables.statistics();

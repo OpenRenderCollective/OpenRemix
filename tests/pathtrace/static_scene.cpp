@@ -11,6 +11,7 @@
 #include "scene/fixtures.h"
 #include "scene/static_scene.h"
 #include <atomic>
+#include <cmath>
 #include <cstring>
 #include <filesystem>
 #include <map>
@@ -931,7 +932,31 @@ namespace {
   }
 } // namespace
 
+// remixapi_InstanceInfoTexcoordTransformEXT: the texture's motion since the
+// committed frame, in mesh UVs (motion vectors that follow the scroll).
+void textureMotion() {
+  scene::Draw draw;
+  draw.material = std::make_shared<scene::Material>();
+  draw.texcoord = {2, 1, .3f, 0};
+  scene::TemporalHistory::SurfaceHistory previous(scene::Draw(draw), 0, {2, 1, .25f, 0});
+  auto motion = [](uint32_t packed, unsigned axis) {
+    const uint32_t h = packed >> (16 * axis) & 0xffffu;
+    const float magnitude = std::ldexp(float((h & 0x3ffu) | 0x400u), int((h >> 10) & 31u) - 25);
+    return (h & 0x7fffu) == 0 ? 0.f : h & 0x8000u ? -magnitude : magnitude;
+  };
+  // .05 in the scaled UVs, .025 in the mesh's; a wrapped offset is no motion.
+  uint32_t packed = trace::detail::textureMotion(draw, {2, 1, .3f, 0}, previous);
+  require(std::abs(motion(packed, 0) - .025f) < 1e-4f && motion(packed, 1) == 0, "Texture motion not in mesh UVs");
+  packed = trace::detail::textureMotion(draw, {2, 1, .3f, 0}, scene::TemporalHistory::SurfaceHistory(
+                                                                     scene::Draw(draw), 0, {2, 1, 1.25f, 0}));
+  require(std::abs(motion(packed, 0) - .025f) < 1e-4f, "A wrapped offset moved the texture a whole repeat");
+  draw.texcoord = {2, 1, 0, 0};
+  scene::TemporalHistory::SurfaceHistory still(scene::Draw(draw), 0, {2, 1, 0, 0});
+  require(!trace::detail::textureMotion(draw, {2, 1, 0, 0}, still), "A still texture moved");
+}
+
 int main() {
+  textureMotion();
   signatures();
   woundTables();
   membership();

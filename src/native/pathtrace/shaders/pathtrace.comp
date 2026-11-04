@@ -355,6 +355,11 @@ void surfaceHit(Intersection x,vec3 direction,inout Hit hit,bool motion) {
     vec3 pb=previous.v[s.indices.i[tri+1]].position.xyz;
     vec3 pc=previous.v[s.indices.i[tri+2]].position.xyz;
     hit.previousPosition=(s.previousModel*vec4(pa+bary.x*(pb-pa)+bary.y*(pc-pa),1)).xyz;
+    if(s.textureState.w!=0u) {
+      vec2 ua=s.vertices.v[s.indices.i[tri]].uv.xy;
+      hit.previousPosition+=mat3(s.previousModel)*textureShift(s,b-a,c-a,s.vertices.v[s.indices.i[tri+1]].uv.xy-ua,
+                                                                 s.vertices.v[s.indices.i[tri+2]].uv.xy-ua);
+    }
     hit.previousNormal=carriedNormal(hit.n,model*vec4(b-a,0),model*vec4(c-a,0),(s.previousModel*vec4(pb-pa,0)).xyz,(s.previousModel*vec4(pc-pa,0)).xyz);
     hit.historyValid=true;
   }
