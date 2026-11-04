@@ -5184,3 +5184,10 @@ independent default scheduling is still a separate architecture decision.
 - [x] Prepare runtime spotlight inner cosines per light instead of evaluating angular conversions per shaded pixel. Preserve the raw authored-softness bake inputs, angular convention, focus and existing lighting interfaces.
 - [x] Reuse current world bounds for identity model transforms, retaining ordinary transforms and unknown-bound handling elsewhere. Validate culling, mixed shadows, viewmodels, controllable lighting and map images.
 - [ ] Continue profiling shader live data/register requirements and CPU draw preparation/host costs. Unarmed Crossfire GPU headroom does not imply presented-FPS improvement; Construct remains below target. Use driver executable statistics alongside whole-frame measurements, without treating implausible driver local-memory values as proven spill data.
+
+
+### Performance follow-up (2026-11-05)
+
+- Continue measured opaque-lighting and viewmodel optimisation toward native 1080p 300-400 FPS; current results do not establish that target across maps.
+- Shadow helper parameter narrowing and explicit scalar surface SH access were qualified for correctness but rejected: no useful register reduction, mixed shader code size increased in the latter trial. No extra paths retained.
+- Reflection quality: investigate distance-aware cubemap filtering against reference implementations; SSR already uses roughness and projected hit distance. Preserve current quality while measuring performance.
