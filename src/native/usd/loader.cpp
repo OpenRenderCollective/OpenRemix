@@ -67,6 +67,12 @@ namespace remix::usd {
                           "inputs:thin_walled", "inputs:thin_wall_thickness", "inputs:use_diffuse_layer"}},
           {film, {"inputs:enable_thin_film", "inputs:thin_film_thickness_constant",
                   "inputs:thin_film_thickness_from_albedo_alpha"}},
+          {subsurface, {"inputs:subsurface_diffusion_profile", "inputs:subsurface_radius",
+                        "inputs:subsurface_radius_scale", "inputs:subsurface_max_sample_radius",
+                        "inputs:subsurface_volumetric_anisotropy", "inputs:subsurface_transmittance_color",
+                        "inputs:subsurface_measurement_distance", "inputs:subsurface_single_scattering_albedo",
+                        "inputs:subsurface_transmittance_texture", "inputs:subsurface_thickness_texture",
+                        "inputs:subsurface_single_scattering_texture", "inputs:subsurface_radius_texture"}},
           {alpha, {"inputs:use_legacy_alpha_state", "inputs:blend_enabled", "inputs:blend_type",
                    "inputs:inverted_blend", "inputs:alpha_test_type", "inputs:alpha_test_reference_value"}},
           {sampling, {"inputs:filter_mode", "inputs:wrap_mode_u", "inputs:wrap_mode_v"}}};
@@ -75,10 +81,16 @@ namespace remix::usd {
         for (const char *name : names)
           if (auto attr = shader.GetAttribute(TfToken(name)); attr && attr.HasAuthoredValue())
             result |= bit;
-      // OpenRemix's own film attributes (openremix:iridescence:*).
-      for (const auto &attr : shader.GetAttributes())
-        if (attr.GetName().GetString().rfind("openremix:iridescence:", 0) == 0 && attr.HasAuthoredValue())
+      // OpenRemix's own film and subsurface attributes (openremix:*).
+      for (const auto &attr : shader.GetAttributes()) {
+        const auto name = attr.GetName().GetString();
+        if (!attr.HasAuthoredValue())
+          continue;
+        if (name.rfind("openremix:iridescence:", 0) == 0)
           result |= film;
+        else if (name.rfind("openremix:subsurface:", 0) == 0)
+          result |= subsurface;
+      }
       return result;
     }
   } // namespace
@@ -386,6 +398,9 @@ namespace remix::usd {
               want(material.value(key, std::string()));
             if (const auto film = material.find("iridescence"); film != material.end())
               want(film->value("texture", std::string()));
+            if (const auto sss = material.find("subsurface"); sss != material.end())
+              for (const char *key : subsurfaceTextureKeys)
+                want(sss->value(key, std::string()));
           }
         for (const auto &light : result.scene["lights"])
           for (const char *key : {"texture", "cookie"})

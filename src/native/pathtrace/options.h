@@ -312,6 +312,14 @@ namespace remix {
     float causticsDepth = .5f;
     // Thin-film iridescence of materials that have it (remixapi_MaterialIridescenceEXT).
     bool iridescence = true;
+    // Subsurface scattering of materials that have it (remixapi_MaterialSubsurfaceEXT).
+    bool subsurface = true;
+    // RTX Remix's rtx.subsurface.* (which are their setting names): the kinds,
+    // their maps, a profile's far side (light through thin parts), a scale of
+    // every profile's radius and of every thin surface's thickness.
+    bool subsurfaceDiffusionProfile = true, subsurfaceThinOpaque = true, subsurfaceTextureMaps = true,
+         subsurfaceTransmission = true;
+    float subsurfaceProfileScale = 1, subsurfaceThicknessScale = 1;
     bool translucencyDenoiser = true, translucencyReuse = true;
     bool pbrLocalReuse = true; // Experimental previous-frame secondary local lighting.
     bool sky = true;

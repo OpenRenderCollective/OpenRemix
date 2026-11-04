@@ -1461,6 +1461,17 @@ typedef struct remixapi_MaterialIridescenceEXT {
   float structural;
 } remixapi_MaterialIridescenceEXT;
 
+// Optional pNext on an opaque MaterialInfo with
+// remixapi_MaterialInfoOpaqueSubsurfaceEXT (RTX Remix's subsurface controls):
+// the share of diffuse light that scatters, 0 (none) to 1 (without this
+// extension: 1), which RTX Remix has no control for.
+#define REMIXAPI_STRUCT_TYPE_MATERIAL_SUBSURFACE_WEIGHT_EXT ((remixapi_StructType)0x7fff1021)
+typedef struct remixapi_MaterialSubsurfaceWeightEXT {
+  remixapi_StructType sType;
+  const void *pNext;
+  float weight;
+} remixapi_MaterialSubsurfaceWeightEXT;
+
 // Optional pNext on LightInfo (sphere, rect, disk and cylinder lights): an IES
 // photometric profile, the contents of an IESNA LM-63 file (not
 // null-terminated). The light's radiance in a direction is scaled by the

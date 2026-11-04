@@ -299,6 +299,31 @@ namespace remix::usd {
                 .CreateAttribute(TfToken("openremix:iridescence:thicknessTexture"), SdfValueTypeNames->Asset, true)
                 .Set(SdfAssetPath("../textures/" + hex(m.filmMap) + ".dds"));
         }
+        // RTX Remix's subsurface inputs, OpenRemix's weight outside them
+        // (usd/scene.cpp material_json).
+        if (const auto &s = m.subsurface; s.weight > 0) {
+          const auto color = [](const float (&v)[3]) { return VtValue(GfVec3f(v[0], v[1], v[2])); };
+          const auto map = [&](const char *name, uint64_t hash) {
+            if (hash && textures.count(hash))
+              input(name, SdfValueTypeNames->Asset, VtValue(SdfAssetPath("../textures/" + hex(hash) + ".dds")));
+          };
+          input("subsurface_diffusion_profile", SdfValueTypeNames->Bool, VtValue(s.diffusionProfile));
+          input("subsurface_transmittance_color", SdfValueTypeNames->Color3f, color(s.transmittance));
+          input("subsurface_volumetric_anisotropy", SdfValueTypeNames->Float, VtValue(s.anisotropy));
+          input("subsurface_radius", SdfValueTypeNames->Color3f, color(s.radius));
+          input("subsurface_radius_scale", SdfValueTypeNames->Float, VtValue(s.radiusScale));
+          input("subsurface_max_sample_radius", SdfValueTypeNames->Float, VtValue(s.maxSampleRadius));
+          input("subsurface_measurement_distance", SdfValueTypeNames->Float, VtValue(s.measurementDistance));
+          input("subsurface_single_scattering_albedo", SdfValueTypeNames->Color3f, color(s.singleScatteringAlbedo));
+          map("subsurface_transmittance_texture", m.subsurfaceTransmittance);
+          map("subsurface_thickness_texture", m.subsurfaceThickness);
+          map("subsurface_single_scattering_texture", m.subsurfaceSingleScattering);
+          map("subsurface_radius_texture", m.subsurfaceRadius);
+          if (s.weight < 1)
+            shader.GetPrim()
+                .CreateAttribute(TfToken("openremix:subsurface:weight"), SdfValueTypeNames->Float, true)
+                .Set(s.weight);
+        }
       }
       if (m.normal && normals.count(normalName(m.normal, m.normalEncoding))) {
         input("normalmap_texture", SdfValueTypeNames->Asset,

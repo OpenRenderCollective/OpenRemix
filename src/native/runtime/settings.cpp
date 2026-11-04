@@ -299,6 +299,13 @@ namespace remix::config {
         TRACE(causticsContrast, 0, 7.96875);
         TRACE(causticsDepth, 0, 100);
         TRACE(iridescence, 0, 1);
+        TRACE(subsurface, 0, 1);
+        result.push_back(scalar("rtx.subsurface.enableDiffusionProfile", FIELD(trace.subsurfaceDiffusionProfile), 0, 1));
+        result.push_back(scalar("rtx.subsurface.enableThinOpaque", FIELD(trace.subsurfaceThinOpaque), 0, 1));
+        result.push_back(scalar("rtx.subsurface.enableTextureMaps", FIELD(trace.subsurfaceTextureMaps), 0, 1));
+        result.push_back(scalar("rtx.subsurface.enableTransmission", FIELD(trace.subsurfaceTransmission), 0, 1));
+        result.push_back(scalar("rtx.subsurface.diffusionProfileScale", FIELD(trace.subsurfaceProfileScale), .001, 1000));
+        result.push_back(scalar("rtx.subsurface.surfaceThicknessScale", FIELD(trace.subsurfaceThicknessScale), 0, 1000));
         TRACE(translucencyDenoiser, 0, 1);
         TRACE(translucencyReuse, 0, 1);
         TRACE(pbrLocalReuse, 0, 1);
