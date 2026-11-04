@@ -495,7 +495,11 @@ Hit closest(vec3 origin,vec3 direction,float maximum,bool motion) {
       float weight=remaining*hit.color.a;
       color+=through*hit.color.a*hit.color.rgb;normal+=weight*hit.n;emission+=through*hit.color.a*hit.emission;
       self+=through*hit.color.a*hit.self;
-      parameters+=weight*vec2(hit.rm.x*hit.rm.x,hit.rm.y);
+      // A sheet without PBR is diffuse (rough, not metal): its material's
+      // roughness and metallic constants are unset (0), and a displacement's
+      // second texture (a sheet at vertex alpha) turned the rough rock under
+      // it into a mirror where it covered (GMod d2_coast_03's gravel).
+      parameters+=weight*(hit.pbr?vec2(hit.rm.x*hit.rm.x,hit.rm.y):vec2(1,0));
       remaining*=1-hit.color.a;through*=1-hit.color.a;
     }
     lastDecal=hit.t;
