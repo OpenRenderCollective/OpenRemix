@@ -30,6 +30,9 @@ _dependencies_lock = threading.Lock()
 OPTIMIZED = {'pathtrace'}
 # Offline transport benefits from inlining too, but retains its word-array ABI.
 INLINED = {'bake'}
+# Optimize the expensive depth-primed world shaders without expanding every
+# auxiliary pass. Keep their readable GLSL and the existing word-array ABI.
+INLINED_STAGES = {('forward', 'prepassedFrag'), ('forward', 'prepassedSsrFrag')}
 BACKENDS = {
     'probe_batch_test': ('forward::test::probe_batch_input', 'vulkan1.1', ('query',)),
     'probe_batch': ('forward::probe_batch', 'vulkan1.1', ('gather',)),
@@ -289,7 +292,7 @@ def compile_stage(backend, stage, temporary):
     binary = Path(temporary) / (backend + '-' + stage + '.spv')
     glslang(['--target-env', environment, *defines, '-I' + str(ROOT/'third_party/nrd/Shaders'),
              '-I' + str(ROOT/'third_party/sharc/include'), str(source)], binary)
-    if backend in OPTIMIZED or backend in INLINED:
+    if backend in OPTIMIZED or backend in INLINED or (backend, stage) in INLINED_STAGES:
 
         optimized = binary.with_suffix('.opt.spv')
         subprocess.run(['spirv-opt', '-O', '--target-env=' + environment, str(binary), '-o', str(optimized)],

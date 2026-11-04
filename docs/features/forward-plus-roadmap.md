@@ -5095,3 +5095,15 @@ independent default scheduling is still a separate architecture decision.
 - [x] Clarify that reflection capture traces scene lighting directly; it does not depend on displayed lightmaps.
 - [ ] Reduce the MSAA material-guide bandwidth while preserving metering correctness; include its cost in the outstanding frame-performance work.
 - [ ] Continue actual-display HDR comparisons in the Construct hall and connector. Correct color inputs and shared metering do not establish exact path-traced reflection, GI or display parity.
+
+
+## 2026-11-04: Readable performance work and valid controls
+
+- [x] Establish an uncapped foreground 1920x1080 baseline with the playable authored/automatic cubemap coverage, 4x MSAA, bicubic lightmaps, full-resolution SSR and automatic exposure. Keep diagnostic feature exclusions separate from acceptance.
+- [x] Include bicubic filtering and depth-prepass policy in pipeline resource compatibility; both are compiled shader/depth-state choices and must rebuild together. Their changes do not alter bake inputs.
+- [x] Rebuild configuration/coverage regressions. Request explicit baked-direct/live-incoming composition when a test needs both providers, and compare compact clear-light energy to the same isolated analytic emitter.
+- [ ] Reach the 300-400 FPS target: a complete frame budget of 3.33-2.5 ms at 1080p. Qualify image-equivalent changes and report CPU/GPU costs separately; retain readable source and avoid speculative paths.
+- [x] Qualify selective compiler optimization for the two depth-primed world fragment stages with unchanged default quality. Reject packed-address arithmetic and extra probe-sampling branches without repeatable gains; keep those experiments out of source.
+- [ ] Reduce lightmap/direct-field fetch and automatic-exposure guide bandwidth while preserving default filtering, mixed shadows and material behavior. Compact lighting representations still need their existing quality qualification.
+- [ ] Compare cubemap roughness-dependent lookup direction/LOD against s&box and VRF, including reflected-distance footprints and seams. Current cubemaps use GGX-filtered mips and box projection; mip choice is roughness-only. SSR already uses hit separation and grazing-angle footprint selection.
+- [ ] Repeat native-resolution, foreground comparisons across Construct, Crossfire, c1a0/c1a0d, gm_fork, d1_trainstation_02, bm_c1a1b and the combined Half-Life corridor maps. Confirm internal render size and comparable HDR/AA/reconstruction settings when comparing renderers.

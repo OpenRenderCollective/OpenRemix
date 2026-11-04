@@ -334,6 +334,15 @@ once when copied into the transport atlas, while HDR and data textures stay line
 The display-color helper used by material sampling shares the path tracer's
 existing gamma convention; exposure and tone mapping belong after capture.
 
+The shader build applies the existing offline SPIR-V optimization policy to the
+two depth-primed world fragment stages. Auxiliary passes retain their separate
+compilation policy; this does not change shader authoring or the lighting ABI.
+
+Pipeline compatibility includes compiled shading choices: bicubic lightmap
+filtering and depth-prepass policy require replacement pipelines, even though
+their bake inputs are unchanged. Updating only the requested options would leave
+the old shader specialization or depth-write state active.
+
 Forward automatic exposure supplies a resolved linear material-color guide to the
 shared postfx meter. Both backends normalize radiance by material color using the
 same function before reduction, adaptation and display conversion. This prevents
