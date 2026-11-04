@@ -1047,3 +1047,22 @@ the winning image prepares reference-qualified descriptors. The reflection
 provider has no diffuse-controller dependency and never eagerly evaluates the
 shared fallback for an authored or standalone replacement. The frame descriptor
 snapshot still serves world reflections, viewmodels and water.
+
+### Planned stable styled-light composition
+
+Styled light weights currently reconstruct their signed SH9 contributions during
+shading. A planned provider-owned cache will compose complete current weights
+into the existing surface atlas and probe buffer when those weights settle.
+This is derived runtime data, independent of persistent bake identity; toggling a
+light must not trigger a map rebake. The material and lighting query API stays
+unchanged.
+
+Publication must match both the immutable source and exact weights. Until a
+matching composition completes and passes finite/range checks, retain the original
+descriptors and reconstruction path. Bound GPU memory and work per frame, retain
+resources through fences, and fall back for frequent changes or unsupported data.
+Only a complete surface-and-probe publication can clear the existing styled
+payload flag. Preserve signed coefficients, sunlight metadata, visibility tables
+and chart boundaries. Compose full current contributions rather than subtracting
+a rounded reference contribution, which can leave light when a group is off.
+This cache remains an implementation and quality-qualification task.
