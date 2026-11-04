@@ -21,8 +21,9 @@ struct Parameters {
   std::array<float, 16> matrices[4];
   Vec4 splits;
   UInt4 target;
+  Vec4 movingShadowCoverage[18];
 };
-static_assert(sizeof(Parameters) == 368 && sizeof(Query) == 48);
+static_assert(sizeof(Parameters) == 656 && sizeof(Query) == 48);
 void upload(Fixture &fixture, Image &image, std::span<const float> pixels, uint32_t layers) {
   Buffer staging;
   staging.create(fixture.physical, fixture.device, pixels.size_bytes(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
@@ -118,6 +119,10 @@ int main(int argc, char **argv) try {
   parameters.settings = {float(resolution), .01f, .001f, 0};
   parameters.splits = {1, 10, 100, 1000};
   parameters.target[3] = 1;
+  for (auto &rectangle : parameters.movingShadowCoverage) rectangle = {-1, -1, 1, 1};
+  parameters.movingShadowCoverage[0] = {1, 1, -1, -1};
+  for (uint32_t face : {2u, 3u, 4u}) parameters.movingShadowCoverage[face] = {-1, -1, 0, 1};
+  parameters.movingShadowCoverage[5] = {0, -1, 1, 1};
   for (auto &matrix : parameters.matrices)
     for (uint32_t axis = 0; axis < 4; ++axis)
       matrix[axis * 4 + axis] = 1;
@@ -128,6 +133,15 @@ int main(int argc, char **argv) try {
       queries.push_back(
           {mode == 0 ? Vec4{u * 4, 0, 4, .5f} : Vec4{u, 0, .5f, .5f}, {0, 0, 1, 0}, {0, 0, mode, mode == 0 ? 1u : 0u}});
     }
+  const auto coverageFirst = queries.size();
+  for (int x = -4; x <= 4; ++x)
+    for (int y = -4; y <= 4; ++y)
+      for (int z = -4; z <= 4; ++z) {
+        if (x == 0 && y == 0 && z == 0) continue;
+        const Vec3 point{float(x), float(y), float(z)};
+        const auto normal = normalized(point);
+        queries.push_back({{point[0], point[1], point[2], 0}, {normal[0], normal[1], normal[2], 0}, {0, 0, 0, 0}});
+      }
   const auto planeFirst = queries.size();
   for (float x : {0.f, 3.9f, 4.f, 4.1f, 12.f, 30.f, 60.f})
     for (float y : {0.f, 3.9f, 4.f, 4.1f})
@@ -149,7 +163,7 @@ int main(int argc, char **argv) try {
   gpu.input.create(fixture.physical, fixture.device, queries.size() * sizeof(Query),
                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
   gpu.input.write(queries.data(), queries.size() * sizeof(Query));
-  gpu.output.create(fixture.physical, fixture.device, 6 * queries.size() * sizeof(Vec4),
+  gpu.output.create(fixture.physical, fixture.device, 7 * queries.size() * sizeof(Vec4),
                     VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
   const VkSamplerCreateInfo sampler{.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
                                     .magFilter = VK_FILTER_NEAREST,
@@ -238,8 +252,17 @@ int main(int argc, char **argv) try {
   vkCmdPipelineBarrier(fixture.command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0,
                        1, &read, 0, nullptr, 0, nullptr);
   fixture.finish();
-  std::vector<Vec4> values(6 * queries.size());
+  std::vector<Vec4> values(7 * queries.size());
   gpu.output.read(values.data(), values.size() * sizeof(Vec4));
+  uint32_t skipped = 0;
+  for (size_t i = 0; i < queries.size(); ++i) {
+    const auto &coverage = values[i + 6 * queries.size()];
+    require(std::abs(coverage[0] - coverage[1]) < 1e-5f,
+            "Conservative moving-caster coverage preserves filtered visibility at boundaries and cube seams");
+    if (i >= coverageFirst && i < planeFirst) skipped += coverage[2] == 0;
+  }
+  require(skipped > 0 && skipped < planeFirst - coverageFirst,
+          "Caster coverage skips proven clear receivers while retaining covered and seam receivers");
   float unshadowedResponses = 0;
   for (uint32_t i = 0; i < sweepSteps; ++i) {
     const auto &response = values[i + 5 * queries.size()];

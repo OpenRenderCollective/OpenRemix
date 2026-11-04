@@ -176,14 +176,20 @@ namespace remix::forward {
     if (!frame.viewModelCommands.empty()) viewModelTarget->ensure();
     const uint32_t capturedCasters = uint32_t(std::count_if(frame.commands.begin(), frame.commands.end(),
         [](const auto &draw) { return draw.captured; }));
+    static const bool disableShadowCoverage = std::getenv("REMIX_DEBUG_DISABLE_SHADOW_COVERAGE") != nullptr;
     auto emptyMovingShadows = shadowSelection.active;
+    std::array<shadows::Coverage, shadows::maximumLights> movingCoverage;
+    movingCoverage.fill(shadows::emptyCoverage());
     // The common frozen-only scene needs no additional caster traversal. With
     // actors present, use the same conservative light-volume test as drawing.
     if (capturedCasters != frame.commands.size())
       for (uint32_t lightSlot = 0; lightSlot < shadows::maximumLights; ++lightSlot)
         if (shadowSelection.active[lightSlot])
-          emptyMovingShadows[lightSlot] = std::none_of(frame.commands.begin(), frame.commands.end(),
-              [&](const Command &draw) { return castsLocalShadow(draw, lightSlot, false); });
+          for (const auto &draw : frame.commands)
+            if (castsLocalShadow(draw, lightSlot, false)) {
+              emptyMovingShadows[lightSlot] = false;
+              shadows::includeCoverage(movingCoverage[lightSlot], draw.worldBounds, shadowSelection.views[lightSlot]);
+            }
     // Complete frozen bounds still fit the cascades even when no static draw
     // descriptors or material records need preparing for this frame.
     if (options.shadows && sun.isDistant)
@@ -191,6 +197,7 @@ namespace remix::forward {
     step(cpu.draws);
     auto &data = frame.data;
     data = {};
+    data.movingShadowCoverage = movingCoverage;
     statistics.activeStyledGroups = 0;
     if (const auto &volume = baking->volume(); volume && volume->styledLighting && volume->mixedLights) {
       for (const auto &scale : liveStyles)
@@ -309,6 +316,7 @@ namespace remix::forward {
         light.corners[0][3] = float(slot + 1);
         light.corners[1][3] = 1 - shadowSelection.strength[slot];
         light.responseWeights[1] = emptyMovingShadows[slot] ? 1.f : 0.f;
+        light.responseWeights[3] = disableShadowCoverage ? 0.f : 1.f;
       }
       lights.push_back(light);
     }

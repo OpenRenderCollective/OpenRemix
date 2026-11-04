@@ -5145,3 +5145,11 @@ independent default scheduling is still a separate architecture decision.
 - [ ] Qualify cubemap reflected-distance roughness correction separately from SSR. SSR uses hit separation and grazing-angle footprint filtering; cubemap prefiltered mip selection remains roughness-only.
 - [ ] Isolate moving-shadow lookup cost from shadow-map rendering and retained direct fields before modifying the default filter. Preserve receiver-plane correction, cube seams and close-up viewmodel quality.
 - [x] Run a CPU-payload-only mixed-shadow sampling diagnostic and a restored production control. The sampled view shows a remaining shading opportunity, but unrelated pass variation prevents treating the difference as an exact isolated cost. Keep the original filter; investigate equivalent work reduction next.
+
+
+## 2026-11-05: Moving-shadow sampling coverage
+
+- [x] Add conservative per-face moving-caster coverage to avoid filtered lookup and mixed diffuse correction where no submitted caster can reach the receiver. Keep the original seam filter, unknown-bounds fallback, static visibility and viewmodel self-shadow path.
+- [x] Qualify CPU projection bounds, filtered GPU visibility, moving mixed receivers, cache/toggle behavior, viewmodels and current default material passes. Compare same-binary enabled/disabled foreground runs at native 1080p with unchanged 4x MSAA, bicubic lightmaps and full-resolution SSR.
+- [ ] Continue CPU/host and viewmodel profiling: reducing GPU shading cost does not translate proportionally to presented FPS. Crossfire is approaching the host-side frame budget; Construct remains below the requested performance target.
+- [ ] Extend coverage/performance qualification to additional actor-heavy and large maps; retain complete offscreen caster submission and avoid extra speculative culling structures.

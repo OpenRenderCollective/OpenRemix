@@ -1093,3 +1093,25 @@ provides a diagnostic control. It adds no material API, fragment shader branch
 or persistent bake format. Whole-frame performance and image comparisons must
 continue across additional maps; frequent styled animation still uses the
 original per-sample reconstruction.
+
+
+## Conservative moving-shadow coverage
+
+Local moving maps retain the existing 4x4 receiver-plane-corrected tent filter.
+`shadows::includeCoverage` unions submitted moving-caster AABBs in each cube
+face's projected domain. Unknown or near-plane-crossing bounds keep the whole
+face; transform error widens finite bounds. The frame owns these rectangles,
+and a light's internal coverage-valid bit preserves the legacy query when no
+coverage is supplied. This adds no public API fields or persistent bake data.
+
+A receiver outside the union, expanded by the complete filter footprint, needs
+no moving-shadow samples or attributed diffuse correction. Receivers near cube
+seams retain the original cross-face filtering. Static visibility is independent:
+uncovered/unbaked receivers still use their ordinary static shadow path.
+Viewmodel self casters use a separate map and bypass the world coverage rejection.
+Coverage is recomputed from complete submitted caster commands, including
+offscreen actors, rather than from camera-visible draws.
+
+`REMIX_DEBUG_DISABLE_SHADOW_COVERAGE` disables the coverage decision for
+qualification with the same shaders and resource layout. It does not change
+shadow-map rendering, filtering or the saved bake.

@@ -19,7 +19,7 @@
     LOCAL_LIGHT_MISS;
   uint directChannel = lightChannel(receiver.directLights, uint(light.shaping.w));
   bool bakedDiffuse = directChannel < 4u && directIrradiance[min(directChannel, 3u)] >= 0;
-  bool movingShadow = movingLocalShadowRequired(light);
+  bool movingShadow = movingLocalShadowRequired(light, p);
 #ifdef ZERO_DIFFUSE_MATERIAL
   // Scalar visibility and specular remain; this material has no diffuse energy.
   bool probeCorrection = false;

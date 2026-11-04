@@ -15,6 +15,11 @@ namespace remix::forward::shadows {
   View lightView(const scene::SphereLight &light, float range, float sceneScale);
   bool sameView(const View &a, const View &b);
   bool intersects(const Bounds &bounds, const View &view);
+  // Union of submitted moving-caster bounds in each face's [-1, 1] domain.
+  // An inverted rectangle is empty; unknown/near-plane bounds cover the face.
+  using Coverage = std::array<Vec4, faces>;
+  Coverage emptyCoverage();
+  void includeCoverage(Coverage &coverage, const Bounds &bounds, const View &view);
   // Selection is bounded by map memory/render cost, with stable slots for
   // retained lights. An unselected light still illuminates the scene.
   struct Selection {

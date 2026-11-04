@@ -6,12 +6,25 @@ layout(set = 0, binding = 8) uniform sampler2DArrayShadow dynamicLocalShadows;
 layout(set = 0, binding = 11) uniform sampler2DArrayShadow viewModelLocalShadows;
 #endif
 
-bool movingLocalShadowRequired(Light light) {
-  bool casters = light.responseWeights.y < .5;
+bool movingLocalShadowRequired(Light light, vec3 position) {
+  if (light.corners[0].w <= 0 || light.corners[1].w >= 1) return false;
 #ifdef VIEWMODEL_PASS
-  casters = casters || (frame.clusterInfo.w & 1u) != 0u;
+  // Viewmodel self casters have a separate map and are not in world coverage.
+  if ((frame.clusterInfo.w & 1u) != 0u) return true;
 #endif
-  return casters && light.corners[0].w > 0 && light.corners[1].w < 1;
+  if (light.responseWeights.y >= .5) return false;
+  if (light.responseWeights.w < .5) return true;
+  uint slot = uint(light.corners[0].w) - 1u;
+  vec3 ray = position - frame.localPositions[slot].xyz;
+  if (dot(ray, ray) < 1e-16) return true;
+  vec3 projected = cubeProjection(ray);
+  // A 4x4 tent reaches at most two texels from its receiver. Near cube seams,
+  // retain the original reprojected filter, which can visit adjacent faces.
+  float margin = 4 / frame.localSettings.x + 1e-4;
+  if (any(greaterThanEqual(abs(projected.xy), vec2(1 - margin)))) return true;
+  vec4 coverage = frame.movingShadowCoverage[slot * 6u + uint(projected.z)];
+  return all(greaterThanEqual(projected.xy, coverage.xy - margin)) &&
+         all(lessThanEqual(projected.xy, coverage.zw + margin));
 }
 
 float localShadowVisibility(Light light, vec3 position, vec3 receiverNormal, bool includeStatic) {

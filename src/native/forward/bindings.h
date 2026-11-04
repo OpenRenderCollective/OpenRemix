@@ -26,6 +26,7 @@ namespace remix::forward {
     // Capacity; mixed-prefix length + 1 (zero = all), high bit = clustered baked tail;
     // sparse SH word; viewmodel flags (local shadows, reflections).
     std::array<uint32_t, 4> clusterInfo{};
+    std::array<shadows::Coverage, shadows::maximumLights> movingShadowCoverage{};
   };
   struct LightData {
     Vec4 positionRadius{}, radiance{}, directionCone{}, shaping{};
@@ -34,6 +35,7 @@ namespace remix::forward {
     std::array<Vec4, 3> corners{};
     // x: selected highlight fade; y: proven empty world moving-caster map;
     // z: optional selected probe-visibility slot + 1 (zero keeps sparse lookup).
+    // w: conservative moving-caster face coverage is available in FrameData.
     // Static visibility and viewmodel self casters remain independent.
     Vec4 responseWeights{1, 0, 0, 0};
     Vec4 clusterBounds{}; // view-space centre and conservative influence radius; shading stays in world space
@@ -44,7 +46,7 @@ namespace remix::forward {
     Vec4 remap[2]{};
     std::array<uint32_t, 4> state{}, maps{};
   };
-  static_assert(sizeof(FrameData) == 4336);
+  static_assert(sizeof(FrameData) == 5104);
   static_assert(sizeof(LightData) == 144);
   static_assert(offsetof(LightData, responseWeights) == 112);
   static_assert(offsetof(LightData, clusterBounds) == 128);

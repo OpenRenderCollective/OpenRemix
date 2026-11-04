@@ -26,6 +26,13 @@ int main() {
                 projected[2] > 0 && projected[2] < 1,
             "Six perspective faces match the reflection cube convention at translated light origins");
   }
+  auto empty = s::emptyCoverage();
+  for (const auto &rectangle : empty)
+    require(rectangle[0] > rectangle[2] && rectangle[1] > rectangle[3], "Empty caster coverage is explicit");
+  auto unknown = empty;
+  s::includeCoverage(unknown, {}, view);
+  for (const auto &rectangle : unknown)
+    require(rectangle == Vec4{-1, -1, 1, 1}, "Unknown caster bounds retain every moving-shadow face");
   Bounds bounds;
   bounds.include({2, -3, 3});
   bounds.include({2, -3, 5});
@@ -53,6 +60,21 @@ int main() {
       axial.valid = true;
       require(intersectsClip(axial, view.matrices[face]) == (face == direction),
               "An axial caster is submitted only to its own translated cube face");
+      auto coverage = s::emptyCoverage();
+      s::includeCoverage(coverage, axial, view);
+      if (face != direction) {
+        require(coverage[face][0] > coverage[face][2], "An absent caster leaves face coverage empty");
+      } else {
+        for (uint32_t corner = 0; corner < 8; ++corner) {
+          Vec3 point;
+          for (uint32_t axis = 0; axis < 3; ++axis)
+            point[axis] = corner & (1u << axis) ? axial.maximum[axis] : axial.minimum[axis];
+          const auto projected = transformPoint(view.matrices[face], point);
+          for (uint32_t axis = 0; axis < 2; ++axis)
+            require(projected[axis] >= coverage[face][axis] && projected[axis] <= coverage[face][axis + 2],
+                    "Projected caster corners stay within the conservative face union");
+        }
+      }
     }
     const uint32_t axis = face / 2;
     const float sign = face % 2 ? -1.f : 1.f;
@@ -85,6 +107,8 @@ int main() {
         }
         box.valid = true;
         for (uint32_t face = 0; face < s::faces; ++face) {
+          auto coverage = s::emptyCoverage();
+          s::includeCoverage(coverage, box, view);
           bool containsProjectedPoint = false;
           for (uint32_t corner = 0; corner < 8; ++corner) {
             Vec4 projected{};
@@ -95,8 +119,15 @@ int main() {
                     (corner & (1u << c) ? box.maximum[c] : box.minimum[c]);
             }
             const float w = projected[3];
-            containsProjectedPoint |= w > 0 && std::abs(projected[0]) <= w &&
+            const bool visible = w > 0 && std::abs(projected[0]) <= w &&
                 std::abs(projected[1]) <= w && projected[2] >= 0 && projected[2] <= w;
+            containsProjectedPoint |= visible;
+            if (visible)
+              for (uint32_t axis = 0; axis < 2; ++axis) {
+                const float coordinate = projected[axis] / w;
+                require(coordinate >= coverage[face][axis] && coordinate <= coverage[face][axis + 2],
+                        "Caster coverage retains visible seam/corner points and near-plane crossing boxes");
+              }
           }
           require(!containsProjectedPoint || intersectsClip(box, view.matrices[face]),
                   "A shadow face never culls a box with a raster-visible seam or corner point");

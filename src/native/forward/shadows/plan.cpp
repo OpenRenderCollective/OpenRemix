@@ -43,6 +43,44 @@ namespace remix::forward::shadows {
     }
     return distance2 <= view.farPlane * view.farPlane;
   }
+  Coverage emptyCoverage() {
+    Coverage result;
+    result.fill({1, 1, -1, -1});
+    return result;
+  }
+  void includeCoverage(Coverage &coverage, const Bounds &bounds, const View &view) {
+    for (uint32_t face = 0; face < faces; ++face) {
+      if (!intersectsClip(bounds, view.matrices[face])) continue;
+      Vec4 rectangle{1, 1, -1, -1};
+      const auto &matrix = view.matrices[face];
+      bool full = !bounds.valid;
+      for (uint32_t corner = 0; corner < 8 && !full; ++corner) {
+        double clip[4]{}, magnitude = 1;
+        for (uint32_t row = 0; row < 4; ++row) {
+          clip[row] = matrix[12 + row];
+          for (uint32_t axis = 0; axis < 3; ++axis) {
+            const float value = corner & (1u << axis) ? bounds.maximum[axis] : bounds.minimum[axis];
+            clip[row] += double(matrix[axis * 4 + row]) * value;
+            magnitude = std::max(magnitude, double(std::abs(value)));
+          }
+        }
+        if (!std::isfinite(clip[3]) || clip[3] <= view.nearPlane) { full = true; break; }
+        // Cover float transform/subtraction error, including distant origins.
+        const double margin = 32 * std::numeric_limits<float>::epsilon() * magnitude / clip[3];
+        for (uint32_t axis = 0; axis < 2; ++axis) {
+          const double value = clip[axis] / clip[3];
+          if (!std::isfinite(value)) { full = true; break; }
+          rectangle[axis] = std::min(rectangle[axis], float(value - margin));
+          rectangle[axis + 2] = std::max(rectangle[axis + 2], float(value + margin));
+        }
+      }
+      if (full) rectangle = {-1, -1, 1, 1};
+      for (uint32_t axis = 0; axis < 2; ++axis) {
+        coverage[face][axis] = std::min(coverage[face][axis], rectangle[axis]);
+        coverage[face][axis + 2] = std::max(coverage[face][axis + 2], rectangle[axis + 2]);
+      }
+    }
+  }
   Selection Planner::update(std::span<const scene::SphereLight> lights, Vec3 eye, uint32_t budget,
                             float cutoff, float distance, float sceneScale,
                             std::shared_ptr<const scene::BakeScene> source, double seconds, float fadeSeconds,

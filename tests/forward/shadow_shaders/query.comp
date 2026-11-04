@@ -8,6 +8,7 @@ layout(set = 0, binding = 0, std140) uniform Parameters {
   mat4 shadows[4];
   vec4 splits;
   uvec4 target;
+  vec4 movingShadowCoverage[18];
 } frame;
 struct Light { vec4 corners[3]; vec4 responseWeights; vec4 positionRadius, shaping, directionCone, radiance; };
 #define SUN_SHADOW_BINDING 3
@@ -73,4 +74,8 @@ void main() {
       lightingReferenceLuminance(LightingReference(0, capture.domain), capture.domain));
   answers[index + 5u * inputData.count] = query.control.w != 0u
       ? compareLocalResponses(query.position.xyz, query.normal.xyz) : vec4(0);
+  light.responseWeights.w = 1;
+  float reference = localShadowVisibility(light, query.position.xyz, query.normal.xyz, false);
+  bool needed = movingLocalShadowRequired(light, query.position.xyz);
+  answers[index + 6u * inputData.count] = vec4(reference, needed ? reference : 1, needed ? 1 : 0, 0);
 }
