@@ -1122,6 +1122,9 @@ namespace {
           require(stats.state != REMIXAPI_BAKE_FAILED_EXT, "Mixed visibility bake succeeded");
           std::this_thread::sleep_for(std::chrono::milliseconds(1));
         } while (std::chrono::steady_clock::now() < deadline);
+        const auto &failed = target.forward->statistics().baking;
+        std::fprintf(stderr, "Requested bake phase '%s', ready=%u; state=%u, status=%s\n",
+                     phase, unsigned(ready), unsigned(failed.state), failed.status);
         require(false, "Mixed visibility bake reached the requested phase");
         return pixels;
       };
@@ -1398,16 +1401,21 @@ namespace {
         require(target.forward->statistics().baking.active && pixels[left] < 3 && pixels[right] > 80,
                 "An uncovered receiver keeps analytic light and frozen-world occlusion beside an active bake");
         if (target.forward->statistics().rayGI.available) {
+          const bool previousBaked = options.bakedLighting;
+          const bool previousComposition = options.bakedDirectWithLiveGI;
+          options.bakedLighting = options.bakedDirectWithLiveGI = true;
           options.rtGI = true;
           options.localShadows = false;
           target.enableForward(options, true);
           pixels = until("", true);
           require(target.forward->statistics().rayGI.active && pixels[left] < 3 && pixels[right] > 80 &&
                       target.forward->statistics().fullyBakedLights == 0,
-                  "Live GI restores attributed static occlusion without fallback shadow maps");
+                  "Live incoming composes baked direct occlusion without fallback shadow maps");
           require(options.baking.fullyBakedLights && options.baking.aggregateDiffuse,
                   "Live GI leaves requested raster bake preferences intact");
           options.rtGI = false;
+          options.bakedLighting = previousBaked;
+          options.bakedDirectWithLiveGI = previousComposition;
           options.localShadows = localShadows;
           target.enableForward(options, true);
           pixels = until("", true);
@@ -3157,6 +3165,13 @@ namespace {
       request.chartRevision = 1;
       request.chartCount = partialOverflow ? 1u : 2u;
       request.charts = charts;
+      std::vector<uint8_t> clearReference;
+      if (!saturated) {
+        camera(r);
+        r.drawLight(lights[35]); // The unobstructed green emitter, before any baked coverage.
+        r.drawRetained(nullptr);
+        clearReference = target.render();
+      }
       r.setBakeScene(&request.bounds.scene);
       auto render = [&](bool charted = true) {
         camera(r);
@@ -3226,8 +3241,8 @@ namespace {
                   std::strstr(target.forward->statistics().baking.status, "35 fully blocked") &&
                   std::strstr(target.forward->statistics().baking.status, "2 fully clear"),
               "Blocked overflow lights stay dark while promoted clear visibility uses compact metadata");
-      pixel(pixels, 48, 48, 0, 53, 0,
-            "Compacting a clear light preserves its original baked unit direct diffuse irradiance");
+      pixel(pixels, 48, 48, 0, clearReference[center + 1], 0,
+            "Compact clear-light energy agrees with the same isolated analytic emitter");
       require(pixels[neighbouringChart] > 30,
               "A partially lit neighbouring chart cannot inherit another chart's compact occlusion");
       light.hash = 9710;

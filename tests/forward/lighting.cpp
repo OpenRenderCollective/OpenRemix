@@ -17,6 +17,14 @@ using remix::test::require;
 int main() {
   {
     const auto defaults = config::Settings{}.forward;
+    auto specialized = defaults;
+    specialized.bicubicLightmaps = !defaults.bicubicLightmaps;
+    require(!defaults.sameTargets(specialized) && defaults.baking == specialized.baking,
+            "Lightmap filtering changes rebuild specialized pipelines without invalidating bakes");
+    specialized = defaults;
+    specialized.depthPrepass = !defaults.depthPrepass;
+    require(!defaults.sameTargets(specialized) && defaults.baking == specialized.baking,
+            "Depth-prepass changes rebuild shader and depth-write policy together");
     for (auto direct : {techniques::Direct::Analytic, techniques::Direct::AttributedBake,
                         techniques::Direct::AggregateBake})
       for (auto diffuse : {techniques::Diffuse::SurfaceAndProbes, techniques::Diffuse::RayQueries,
@@ -690,8 +698,8 @@ int main() {
               config::set(settings, "rtx.native.forward.autoExposureSpeed", "3") == config::SetResult::Success &&
               config::set(settings, "rtx.native.forward.autoExposureMinEv", "-25") == config::SetResult::Invalid &&
               config::set(settings, "rtx.native.forward.autoExposureMaxEv", "25") == config::SetResult::Invalid &&
-              beforeExposure.sameTargets(settings.forward) && beforeExposure.baking == settings.forward.baking,
-          "Exposure controls validate and update without replacing targets or invalidating map lighting");
+              !beforeExposure.sameTargets(settings.forward) && beforeExposure.baking == settings.forward.baking,
+          "Automatic exposure validates controls and replaces its guide targets without invalidating map lighting");
   require(config::set(settings, "rtx.native.backend", "forwardplus") == config::SetResult::Success &&
               settings.backend == 2,
           "Explicit forward backend value");

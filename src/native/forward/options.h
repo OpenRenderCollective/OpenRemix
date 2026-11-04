@@ -74,6 +74,7 @@ namespace remix::forward {
     bool reflections() const { return ssr || rtReflections || baking.reflectionProbes != 0; }
     bool sameTargets(const Options &other) const {
       return debugView == other.debugView && staticDepthBatch == other.staticDepthBatch &&
+             depthPrepass == other.depthPrepass && bicubicLightmaps == other.bicubicLightmaps &&
              autoExposure == other.autoExposure &&
              water == other.water && rtGI == other.rtGI && rtReflections == other.rtReflections &&
              (!rtGI || lightingPlan(true).bakedReceivers == other.lightingPlan(true).bakedReceivers) &&

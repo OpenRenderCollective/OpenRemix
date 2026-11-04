@@ -73,10 +73,10 @@ void forwardDepthPrepassTests() {
             return target.render();
           };
           options.depthPrepass = false;
-          target.forward->updateLighting(options);
+          target.enableForward(options, true);
           const auto reference = render();
           options.depthPrepass = true;
-          target.forward->updateLighting(options);
+          target.enableForward(options, true);
           const auto actual = render();
           for (size_t i = 0; i < reference.size(); ++i)
             require(std::abs(int(actual[i]) - int(reference[i])) <= 1,
