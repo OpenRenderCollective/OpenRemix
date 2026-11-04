@@ -5208,3 +5208,9 @@ Forward+ reuses a completed frame slot's posed vertex/index upload when its immu
 - [ ] Investigate repeated inverse-camera/view matrix work in SSR hit-depth checks, preserving general/oblique projections and precise hit boundaries.
 
 These are work-reduction paths, not quality presets. General native 1080p 300-400 FPS remains an open target.
+
+
+### Moving local shadow reuse: eligibility audit
+
+- [x] Reject and remove the pointer-only whole-moving-map cache: qualified Crossfire frames reused no maps. Transient submitted surfaces can be recreated each frame even when their depth geometry might be unchanged; alpha-tested casters also prevent opaque-only whole-map reuse. No extra cache, counters, or settings retained.
+- [ ] Before another cache implementation, measure stable depth-geometry content/identity across transient submissions. Preserve animated poses, transforms, index ranges, offscreen casters and alpha coverage. Reuse must reduce total frame time, including comparison and bookkeeping costs; avoid repeated full geometry comparisons per light.
