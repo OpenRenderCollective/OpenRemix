@@ -15,6 +15,15 @@ float sunShadowVisibilityLayers(vec3 p, float depth, bool includeStatic, bool vi
     return 1;
   vec2 coord = q.xy * .5 + .5;
   vec2 texel = 1.0 / vec2(textureSize(sunShadow, 0).xy);
+  if (!includeStatic && (frame.clusterInfo.w & 4u) != 0u) {
+    // The moving map is clear outside submitted caster bounds. Include the
+    // full 4x4 tent footprint; frozen fallback maps remain independent.
+    vec4 coverage = frame.movingSunCoverage[cascade];
+    vec2 margin = 4 * texel + 1e-4;
+    if (any(greaterThan(coverage.xy, coverage.zw)) ||
+        any(lessThan(q.xy, coverage.xy - margin)) || any(greaterThan(q.xy, coverage.zw + margin)))
+      return 1;
+  }
   // The caster depth span can include a distant 3D skybox. Convert the
   // world-metric bias with the projection's Z row instead of a fixed clip offset.
   mat4 projection = frame.shadows[cascade];

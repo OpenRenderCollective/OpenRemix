@@ -33,6 +33,26 @@ int main() {
   s::includeCoverage(unknown, {}, view);
   for (const auto &rectangle : unknown)
     require(rectangle == Vec4{-1, -1, 1, 1}, "Unknown caster bounds retain every moving-shadow face");
+  Vec4 projectedCoverage{1, 1, -1, -1};
+  Bounds orthographic;
+  orthographic.include({-.2f, -.4f, .3f});
+  orthographic.include({.3f, .2f, .5f});
+  s::includeCoverage(projectedCoverage, orthographic, scene::identity());
+  require(projectedCoverage[0] <= -.2f && projectedCoverage[1] <= -.4f &&
+              projectedCoverage[2] >= .3f && projectedCoverage[3] >= .2f,
+          "Orthographic caster coverage conservatively contains its projected corners");
+  s::includeCoverage(projectedCoverage, {}, scene::identity());
+  require(projectedCoverage == Vec4{-1, -1, 1, 1}, "Unknown sun casters retain full filtering");
+  auto narrow = scene::identity();
+  narrow[0] = 1024;
+  narrow[12] = -1048576;
+  Bounds distant;
+  distant.include({1024, 0, .25f});
+  distant.include({1024.0005f, .1f, .5f});
+  projectedCoverage = {1, 1, -1, -1};
+  s::includeCoverage(projectedCoverage, distant, narrow);
+  require(projectedCoverage[0] < 0 && projectedCoverage[2] > .5f,
+          "Narrow sun projections cover float transform cancellation at distant origins");
   Bounds bounds;
   bounds.include({2, -3, 3});
   bounds.include({2, -3, 5});

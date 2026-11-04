@@ -1135,3 +1135,8 @@ transformation. Neither optimisation adds a persistent cache or renderer option.
 ### Unchanged skinned pose reuse
 
 Forward+ reuses a completed frame slot's posed vertex/index upload when its immutable source surface and complete bone-matrix vector still match, following the path tracer's exact-pose policy. Changed sources or poses follow the existing skinning path; unused entries retire with the existing bounded frame-slot pool. No shader, lighting technique or quality setting changes. Diagnostics expose posed conversion/reuse counters. Reuse never crosses frame-slot ownership, and source expiration or any changed bone matrix invalidates it.
+
+
+### Moving-sun receiver coverage
+
+Sun cascades retain conservative XY unions of the submitted moving-caster bounds. A baked receiver outside the union plus the full 4x4 filter footprint returns clear moving visibility without sampling the map. Frozen-world fallback receivers keep the complete filter. The viewmodel uses its own world-moving/self-caster union and projection. Unknown bounds retain full coverage; projected float-error padding handles distant origins and narrow orthographic projections. The projection-bound helper is shared with local cube-face coverage. This changes receiver filtering only: it never removes offscreen casters, changes baked lighting, or reduces shadow resolution.

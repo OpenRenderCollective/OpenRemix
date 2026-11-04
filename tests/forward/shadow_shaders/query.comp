@@ -9,6 +9,7 @@ layout(set = 0, binding = 0, std140) uniform Parameters {
   vec4 splits;
   uvec4 target;
   vec4 movingShadowCoverage[18];
+  vec4 movingSunCoverage[4];
 } frame;
 struct Light { vec4 corners[3]; vec4 responseWeights; vec4 positionRadius, shaping, directionCone, radiance; };
 #define SUN_SHADOW_BINDING 3

@@ -19,6 +19,8 @@ namespace remix::forward::shadows {
   // An inverted rectangle is empty; unknown/near-plane bounds cover the face.
   using Coverage = std::array<Vec4, faces>;
   Coverage emptyCoverage();
+  // Shared projection bound for orthographic sun and perspective local maps.
+  void includeCoverage(Vec4 &coverage, const Bounds &bounds, const Matrix &projection, float nearPlane = 0);
   void includeCoverage(Coverage &coverage, const Bounds &bounds, const View &view);
   // Selection is bounded by map memory/render cost, with stable slots for
   // retained lights. An unselected light still illuminates the scene.

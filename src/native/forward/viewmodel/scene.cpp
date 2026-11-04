@@ -18,7 +18,16 @@ namespace remix::forward {
         viewModelLocalMaps->initialize(physical, device, shadowPass, options.localShadowLights,
                                        options.localShadowResolution, false);
       }
-      viewModelData.clusterInfo[3] = uint32_t(localShadows) | (uint32_t(techniquePlan.reflectionResolve) << 1);
+      viewModelData.clusterInfo[3] = uint32_t(localShadows) |
+          (uint32_t(techniquePlan.reflectionResolve) << 1) | (data.clusterInfo[3] & 4u);
+      if ((data.clusterInfo[3] & 4u) != 0u) {
+        Vec4 coverage{1, 1, -1, -1};
+        for (const auto &draw : frame.commands)
+          if (!draw.captured) shadows::includeCoverage(coverage, draw.worldBounds, frame.viewModelProjection);
+        for (const auto &draw : frame.viewModelCommands)
+          shadows::includeCoverage(coverage, draw.worldBounds, frame.viewModelProjection);
+        viewModelData.movingSunCoverage.fill(coverage);
+      }
       viewModelData.shadows.fill(frame.viewModelProjection);
       viewModelData.splits.fill(std::numeric_limits<float>::max());
       ensure(frame.viewModelConstants, sizeof(FrameData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);

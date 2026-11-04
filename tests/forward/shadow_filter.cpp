@@ -22,8 +22,9 @@ struct Parameters {
   Vec4 splits;
   UInt4 target;
   Vec4 movingShadowCoverage[18];
+  Vec4 movingSunCoverage[4];
 };
-static_assert(sizeof(Parameters) == 656 && sizeof(Query) == 48);
+static_assert(sizeof(Parameters) == 720 && sizeof(Query) == 48);
 void upload(Fixture &fixture, Image &image, std::span<const float> pixels, uint32_t layers) {
   Buffer staging;
   staging.create(fixture.physical, fixture.device, pixels.size_bytes(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
@@ -154,6 +155,8 @@ int main(int argc, char **argv) try {
   queries.push_back({{.75f, 0, .5f, .5f}, {0, 0, 1, 0}, {0, 0, 2, 0}});
   queries.push_back({{.75f, 0, .5f, .5f}, {0, 0, 1, 0}, {0, 1, 2, 0}});
   queries.push_back({{-.75f, 0, .5f, .5f}, {0, 0, 1, 0}, {0, 0, 2, 0}});
+  queries.push_back({{.75f, 0, .5f, 500}, {0, 0, 1, 0}, {0, 0, 1, 0}});
+  queries.push_back({{.75f, 0, .5f, 500}, {0, 0, 1, 0}, {0, 1, 1, 0}});
   const auto sunPlaneFirst = queries.size();
   for (float u : {-.99f, -.8f, -.2f, 0.f, .2f, .8f, .99f})
     queries.push_back({{u, 0, .5f + .2f * u, 50}, {-.2f, 0, 1, 0}, {0, 0, 1, 0}});
@@ -240,20 +243,35 @@ int main(int argc, char **argv) try {
                  .pImageInfo = i >= 3 ? &images[i - 3] : nullptr,
                  .pBufferInfo = i < 3 ? &buffers[i] : nullptr};
   vkUpdateDescriptorSets(fixture.device, 6, writes, 0, nullptr);
-  fixture.begin();
-  vkCmdBindPipeline(fixture.command, VK_PIPELINE_BIND_POINT_COMPUTE, gpu.pipeline);
-  vkCmdBindDescriptorSets(fixture.command, VK_PIPELINE_BIND_POINT_COMPUTE, gpu.layout, 0, 1, &set, 0,
-                          nullptr);
-  vkCmdPushConstants(fixture.command, gpu.layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(count), &count);
-  vkCmdDispatch(fixture.command, (count + 63) / 64, 1, 1);
-  const VkMemoryBarrier read{.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
-                             .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
-                             .dstAccessMask = VK_ACCESS_HOST_READ_BIT};
-  vkCmdPipelineBarrier(fixture.command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0,
-                       1, &read, 0, nullptr, 0, nullptr);
-  fixture.finish();
-  std::vector<Vec4> values(7 * queries.size());
-  gpu.output.read(values.data(), values.size() * sizeof(Vec4));
+  auto render = [&] {
+    fixture.begin();
+    vkCmdBindPipeline(fixture.command, VK_PIPELINE_BIND_POINT_COMPUTE, gpu.pipeline);
+    vkCmdBindDescriptorSets(fixture.command, VK_PIPELINE_BIND_POINT_COMPUTE, gpu.layout, 0, 1, &set, 0,
+                            nullptr);
+    vkCmdPushConstants(fixture.command, gpu.layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(count), &count);
+    vkCmdDispatch(fixture.command, (count + 63) / 64, 1, 1);
+    const VkMemoryBarrier read{.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+                               .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+                               .dstAccessMask = VK_ACCESS_HOST_READ_BIT};
+    vkCmdPipelineBarrier(fixture.command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0,
+                         1, &read, 0, nullptr, 0, nullptr);
+    fixture.finish();
+    std::vector<Vec4> values(7 * queries.size());
+    gpu.output.read(values.data(), values.size() * sizeof(Vec4));
+    return values;
+  };
+  const auto values = render();
+  parameters.cluster[3] |= 4u;
+  parameters.movingSunCoverage[0] = {-1, -1, 0, 1};
+  parameters.movingSunCoverage[1] = {1, 1, -1, -1};
+  parameters.movingSunCoverage[2] = {-1, -1, 1, 1};
+  parameters.movingSunCoverage[3] = {1, 1, -1, -1};
+  gpu.parameters.write(&parameters, sizeof(parameters));
+  const auto covered = render();
+  for (size_t i = 0; i < values.size(); ++i)
+    for (uint32_t channel = 0; channel < 4; ++channel)
+      require(std::abs(values[i][channel] - covered[i][channel]) < 1e-5f,
+              "Sun caster bounds preserve the unbounded filter, padded edges, viewmodels and frozen fallback");
   uint32_t skipped = 0;
   for (size_t i = 0; i < queries.size(); ++i) {
     const auto &coverage = values[i + 6 * queries.size()];

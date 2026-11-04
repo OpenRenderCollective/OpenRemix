@@ -24,9 +24,10 @@ namespace remix::forward {
     std::array<Vec4, 32> styleScales{}; // current/authored envelope scalar, indexed by adapter-assigned group ID
     std::array<uint32_t, 4> occlusion{}; // words per chart, chart count, texture width, indexed-mask tail
     // Capacity; mixed-prefix length + 1 (zero = all), high bit = clustered baked tail;
-    // sparse SH word; viewmodel flags (local shadows, reflections).
+    // sparse SH word; flags (viewmodel local shadows/reflections, sun caster coverage).
     std::array<uint32_t, 4> clusterInfo{};
     std::array<shadows::Coverage, shadows::maximumLights> movingShadowCoverage{};
+    std::array<Vec4, cascadeCount> movingSunCoverage{}; // XY caster bounds in each cascade's clip domain
   };
   struct LightData {
     // shaping: prepared inner-cone cosine, focus, influence radius, captured index + 1.
@@ -47,7 +48,8 @@ namespace remix::forward {
     Vec4 remap[2]{};
     std::array<uint32_t, 4> state{}, maps{};
   };
-  static_assert(sizeof(FrameData) == 5104);
+  static_assert(sizeof(FrameData) == 5168);
+  static_assert(offsetof(FrameData, movingSunCoverage) == 5104);
   static_assert(sizeof(LightData) == 144);
   static_assert(offsetof(LightData, responseWeights) == 112);
   static_assert(offsetof(LightData, clusterBounds) == 128);

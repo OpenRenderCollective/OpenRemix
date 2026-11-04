@@ -13,6 +13,7 @@ layout(set = 0, binding = 0, std140) uniform Frame {
   uvec4 occlusion;
   uvec4 clusterInfo;
   vec4 movingShadowCoverage[48];
+  vec4 movingSunCoverage[4];
 } frame;
 struct Material {
   mat4 model, normal;

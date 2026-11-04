@@ -235,6 +235,14 @@ namespace remix::forward {
                        options.shadowDistance / options.sceneScale, options.shadowResolution);
     data.shadows = cascades.matrices;
     data.splits = cascades.splits;
+    if (!disableShadowCoverage && options.shadows && sun.isDistant) {
+      data.clusterInfo[3] |= 4u;
+      data.movingSunCoverage.fill({1, 1, -1, -1});
+      for (const auto &draw : frame.commands)
+        if (!draw.captured)
+          for (uint32_t cascade = 0; cascade < cascadeCount; ++cascade)
+            shadows::includeCoverage(data.movingSunCoverage[cascade], draw.worldBounds, data.shadows[cascade]);
+    }
     std::vector<LightData> lights;
     data.localSettings = {
         float(options.localShadowResolution), options.localShadowBias / options.sceneScale,
