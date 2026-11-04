@@ -5107,3 +5107,13 @@ independent default scheduling is still a separate architecture decision.
 - [ ] Reduce lightmap/direct-field fetch and automatic-exposure guide bandwidth while preserving default filtering, mixed shadows and material behavior. Compact lighting representations still need their existing quality qualification.
 - [ ] Compare cubemap roughness-dependent lookup direction/LOD against s&box and VRF, including reflected-distance footprints and seams. Current cubemaps use GGX-filtered mips and box projection; mip choice is roughness-only. SSR already uses hit separation and grazing-angle footprint selection.
 - [ ] Repeat native-resolution, foreground comparisons across Construct, Crossfire, c1a0/c1a0d, gm_fork, d1_trainstation_02, bm_c1a1b and the combined Half-Life corridor maps. Confirm internal render size and comparable HDR/AA/reconstruction settings when comparing renderers.
+
+
+## 2026-11-04: Wider-map profiling and attachment lifetimes
+
+- [x] Profile foreground, uncapped Crossfire at native 1080p with and without the physics gun; retain normal MSAA, bicubic, exposure and SSR quality. Keep cold bake startup separate from steady frame costs.
+- [x] Reject unqualified native-reflection reconstruction, paired directional decoding and cropped viewmodel-target prototypes; preserve their private evidence while keeping production code small.
+- [x] Retire unused MSAA viewmodel color and exposure guides after resolve while retaining single-sample outputs and world color needed by late water. No repeatable frame-rate gain from an extra world-pass variant; keep that variant out of production.
+- [ ] Measure styled surface reconstruction as a larger opaque-shader cost. Investigate composing immutable base plus styled SH when weights change, with bounded GPU memory, exact toggle behavior, frame-safe publication and a fallback for frequent updates. Do not disable named/toggleable lighting for acceptance.
+- [ ] Investigate a bounded GPU image representation of indexed unit-directional fields while retaining compact persistent cache storage and black/constant blocks. Preserve signed half coefficients, sparse ownership, chart seams and custom lighting queries; qualify actual memory and hardware interpolation precision.
+- [ ] Continue viewmodel CPU/target/reflection profiling and wider map coverage. Scope timings can move between adjacent operations; accept changes on whole-frame evidence rather than one nested screenshot timing.

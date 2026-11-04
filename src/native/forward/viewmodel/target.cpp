@@ -31,6 +31,9 @@ namespace remix::forward::viewmodel {
     const VkAttachmentReference depth{1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
     const VkAttachmentReference resolve{2, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
     const bool msaa = samples != VK_SAMPLE_COUNT_1_BIT;
+    // Only the resolved image is sampled after this pass. Keep the single-
+    // sample path, but avoid preserving an unused multisample intermediate.
+    if (msaa) attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     const VkSubpassDescription subpass{.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
         .colorAttachmentCount = 1, .pColorAttachments = &color,
         .pResolveAttachments = msaa ? &resolve : nullptr, .pDepthStencilAttachment = &depth};

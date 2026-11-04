@@ -82,6 +82,8 @@ namespace remix::forward {
       if (resolvedMeterMaterial) {
         attachments[resolveIndex + 1] = attachments[resolveIndex];
         attachments[resolveIndex + 1].format = VK_FORMAT_R8G8B8A8_UNORM;
+        // Exposure consumes the resolve; no later pass reads the MSAA guide.
+        attachments[meterIndex].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
       }
     }
     const VkAttachmentReference colorReferences[] = {{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
