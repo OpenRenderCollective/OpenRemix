@@ -139,6 +139,8 @@ std::array<uint8_t, 3> styledIndirectTests(bool directGroups = false, bool inclu
     const auto volume = target.forward->bakeController()->volume();
     require(volume && volume->styledLighting && off[at] < 3,
             "Initially-off attributed map publishes style storage without residual indirect glow");
+    require(target.forward->statistics().activeStyledGroups == 0,
+            "Off groups report no active styled contributors while retaining their bake");
     if (directGroups)
       require(volume->groupedStyles == std::vector<uint32_t>{32},
               "Complete grouped direct publication retains its independent style identity");
@@ -150,6 +152,8 @@ std::array<uint8_t, 3> styledIndirectTests(bool directGroups = false, bool inclu
       require(target.forward->statistics().analyticLights == 0 && target.forward->statistics().clusteredLights == 0,
               "Covered grouped direct receivers need no analytic light without highlights or moving corrections");
     require(lit > 8 && r.bakeScene() == frozen, "Surface indirect follows live style without rebaking");
+    require(target.forward->statistics().activeStyledGroups == 1,
+            "Turning a group on immediately updates its active-contributor diagnostic");
     set(.5f);
     const auto partial = render(true);
     require(partial[at] > 3 && partial[at] < lit, "Surface indirect supports partial style values");

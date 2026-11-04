@@ -191,10 +191,13 @@ namespace remix::forward {
     step(cpu.draws);
     auto &data = frame.data;
     data = {};
+    statistics.activeStyledGroups = 0;
     if (const auto &volume = baking->volume(); volume && volume->styledLighting && volume->mixedLights) {
       for (const auto &scale : liveStyles)
-        if (scale.status == bake::StyleStatus::Ready)
+        if (scale.status == bake::StyleStatus::Ready) {
           data.styleScales[scale.style / 4][scale.style % 4] = scale.value;
+          statistics.activeStyledGroups += uint32_t(scale.value != 0);
+        }
     }
     if (baking->volume()) {
       data.occlusion = baking->volume()->occlusionParameters;

@@ -30,6 +30,7 @@ namespace remix::forward {
     uint32_t samples = 1, lights = 0, draws = 0, clusters = 0;
     uint32_t debugView = 0; // Active submitted renderer, not a pending settings request.
     bool bicubicLightmaps = false;
+    uint32_t activeStyledGroups = 0; // ready, nonzero envelope scales; separate from selected highlights
     // Recorded geometry API calls, after visibility checks and receiver-run
     // splitting. Excludes fullscreen/post-processing, raster overlays and UI.
     struct DrawCalls {
