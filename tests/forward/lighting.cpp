@@ -584,6 +584,15 @@ int main() {
   require(intersectsClip({}, identity), "Missing bounds must not remove a caster");
   Bounds enclosing{{-2, -2, -2}, {2, 2, 2}, true};
   require(intersectsClip(enclosing, identity), "A box enclosing the clip volume survives without inside corners");
+  const auto unchangedBounds = transformBounds(enclosing, identity);
+  require(unchangedBounds.valid && unchangedBounds.minimum == enclosing.minimum &&
+              unchangedBounds.maximum == enclosing.maximum && !transformBounds({}, identity).valid,
+          "Identity geometry preserves exact world bounds while unknown bounds stay unknown");
+  Matrix translated = identity;
+  translated[12] = 3;
+  const auto translatedBounds = transformBounds(enclosing, translated);
+  require(translatedBounds.minimum == Vec3{1, -2, -2} && translatedBounds.maximum == Vec3{5, 2, 2},
+          "Nonidentity geometry retains the ordinary corner transformation");
   for (uint32_t axis = 0; axis < 3; ++axis)
     for (float side : {-1.f, 1.f}) {
       Bounds outside{{-.1f, -.1f, .4f}, {.1f, .1f, .6f}, true};
@@ -612,6 +621,17 @@ int main() {
   scene::SphereLight light;
   light.radius = 1;
   light.radiance[0] = light.radiance[1] = light.radiance[2] = 1;
+  for (float outer : {-.5f, 0.f, .5f, .9999f}) {
+    require(std::abs(coneInnerCosine(outer, 0) - outer) < 2e-6f &&
+                coneInnerCosine(outer, 1) == 1,
+            "Spotlight softness endpoints preserve the outer angle and full angular transition");
+    require(std::abs(coneInnerCosine(outer, .5f) - std::sqrt((1 + outer) * .5f)) < 2e-6f,
+            "Half softness follows the half-angle identity rather than a cosine-space blend");
+    require(coneInnerCosine(outer, -1) == coneInnerCosine(outer, 0) &&
+                coneInnerCosine(outer, 2) == coneInnerCosine(outer, 1),
+            "Prepared softness retains the shader's clamping convention");
+  }
+  require(coneInnerCosine(-1, .5f) == -1, "Unrestricted point lights need no angular conversion");
   const float radius = influenceRadius(light, .01f);
   light.radiance[0] = light.radiance[1] = light.radiance[2] = 4;
   require(std::abs(influenceRadius(light, .01f) - 2 * radius) < 1e-4f,

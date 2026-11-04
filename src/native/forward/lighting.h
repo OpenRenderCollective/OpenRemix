@@ -65,5 +65,7 @@ namespace remix::forward {
   bool intersectsClip(const Bounds &bounds, const Matrix &clip);
   Cascades shadowCascades(const Matrix &camera, const Matrix &view, DepthRange range, Vec3 sunDirection,
                           const Bounds &casters, float distance, uint32_t resolution);
+  // Inner cosine for the renderer's fractional outer-angle spotlight softness.
+  float coneInnerCosine(float outerCosine, float softness);
   float influenceRadius(const scene::SphereLight &light, float cutoff);
 } // namespace remix::forward

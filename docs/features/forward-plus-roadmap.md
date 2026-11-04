@@ -5176,3 +5176,11 @@ independent default scheduling is still a separate architecture decision.
 - [x] Qualify and remove unsuccessful separable sampler, SH9 loop-hint and vertex-prepared chart-visibility trials. Keep no extra runtime settings, caches or shader paths from them.
 - [x] Measure an unchanged-binary local-highlight/mixed-role removal diagnostic separately from full-quality performance. Its image-changing result bounds opportunity; it is not a replacement preset or accepted performance result.
 - [ ] Investigate bounded compile-selected lighting-feature variants for already composed/no-active-style frames, with immediate live-state fallback. Compare GPU executable/register statistics and whole-frame performance before retaining variants. Offline SPIR-V reduction alone does not establish a gain; avoid repeating the rejected uniform style gate.
+
+
+## 2026-11-05: Light preparation and compiler evidence
+
+- [x] Qualify bounded compiled sparse-style variants for current compositions; remove them after register counts and frame measurements failed to justify the extra pipelines. Keep the existing immediate live-style reconstruction path.
+- [x] Prepare runtime spotlight inner cosines per light instead of evaluating angular conversions per shaded pixel. Preserve the raw authored-softness bake inputs, angular convention, focus and existing lighting interfaces.
+- [x] Reuse current world bounds for identity model transforms, retaining ordinary transforms and unknown-bound handling elsewhere. Validate culling, mixed shadows, viewmodels, controllable lighting and map images.
+- [ ] Continue profiling shader live data/register requirements and CPU draw preparation/host costs. Unarmed Crossfire GPU headroom does not imply presented-FPS improvement; Construct remains below target. Use driver executable statistics alongside whole-frame measurements, without treating implausible driver local-memory values as proven spill data.

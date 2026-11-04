@@ -30,7 +30,7 @@
   if (indexedSurfaceDirect() && (!aggregateDiffuse || probeCorrection))
     bakedDiffuse = surfaceDirectionalField(receiver.chart, uint(light.shaping.w), surfaceLightmap, n, receiver.bounds, attributedDiffuse);
   vec3 l = delta / distance;
-  float shape = emitterConeWeight(light.directionCone.xyz, light.directionCone.w,
+  float shape = preparedEmitterConeWeight(light.directionCone.xyz, light.directionCone.w,
                                    light.shaping.x, light.shaping.y, -l);
   // A zero analytic response needs no filtered masks or shadow filtering.
   // Retained direct SH can still contain a finite emitter crossing the cone

@@ -10,6 +10,15 @@ float emitterConeWeight(vec3 axis, float outer, float softness, float focus, vec
   float inner = cos(acos(clamp(outer, -1, 1)) * (1 - clamp(softness, 0, 1)));
   return weight * (inner > outer ? smoothstep(outer, inner, cosine) : 1);
 }
+// Runtime lights prepare the angular transition once on the CPU. Bake inputs
+// retain their authored softness and use emitterConeWeight above.
+float preparedEmitterConeWeight(vec3 axis, float outer, float inner, float focus, vec3 outgoing) {
+  float cosine = dot(axis, outgoing);
+  float weight = focus > 0 ? pow(max(cosine, 0), focus) : 1;
+  if (outer <= -1) return weight;
+  if (cosine <= outer) return 0;
+  return weight * (inner > outer ? smoothstep(outer, inner, cosine) : 1);
+}
 // 1-sqrt(1-x) loses distant emitters to float cancellation. The equivalent
 // quotient retains their radial inverse-square energy, as in the path tracer.
 float sphereOneMinusCos(float distanceSquared, float radius) {

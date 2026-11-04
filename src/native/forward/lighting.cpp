@@ -114,6 +114,10 @@ namespace remix::forward {
     }
   }
   Bounds transformBounds(const Bounds &bounds, const Matrix &model) {
+    // World-space geometry already has finite, ordered bounds. Preserve them
+    // directly when there is no model transform; no corner transforms are needed.
+    static const Matrix identity = scene::identity();
+    if (bounds.valid && model == identity) return bounds;
     Bounds result;
     if (bounds.valid)
       for (uint32_t corner = 0; corner < 8; ++corner) {
@@ -212,6 +216,11 @@ namespace remix::forward {
       previous = split;
     }
     return result;
+  }
+  float coneInnerCosine(float outerCosine, float softness) {
+    if (outerCosine <= -1.f) return outerCosine; // unrestricted point emitter
+    return std::cos(std::acos(std::clamp(outerCosine, -1.f, 1.f)) *
+                    (1.f - std::clamp(softness, 0.f, 1.f)));
   }
   float influenceRadius(const scene::SphereLight &light, float cutoff) {
     const float power = std::max({light.radiance[0], light.radiance[1], light.radiance[2], 0.f});

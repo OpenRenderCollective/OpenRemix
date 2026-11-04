@@ -1121,3 +1121,12 @@ It builds the six projection matrices only after a light owns a shadow slot,
 including outgoing lights during their fade. Candidate ranking, duplicate IDs,
 stable slot ownership and projection invalidation keep the same policy; no
 per-light matrix cache or camera-dependent invalidation path is needed.
+
+
+Runtime light preparation keeps invariant angular work outside material shaders.
+`LightData.shaping.x` holds the inner-cone cosine computed from the authored outer
+cosine and fractional-angle softness. The bake transport retains authored softness;
+its separate emitter query performs the original conversion. Runtime material and
+lighting queries otherwise keep their existing contracts. Identity model transforms
+reuse the geometry's current finite, ordered bounds; other models retain corner
+transformation. Neither optimisation adds a persistent cache or renderer option.

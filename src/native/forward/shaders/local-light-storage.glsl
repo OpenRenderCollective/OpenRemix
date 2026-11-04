@@ -3,6 +3,7 @@
 // Default local-light records and clustered enumeration. The cluster builder
 // and selected local source share this layout; material passes need not import it.
 struct Light {
+  // shaping: inner-cone cosine, focus, influence radius, captured index + 1.
   vec4 positionRadius, radiance, directionCone, shaping;
   vec4 corners[3];
   vec4 responseWeights;

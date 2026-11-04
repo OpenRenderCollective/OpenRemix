@@ -29,6 +29,7 @@ namespace remix::forward {
     std::array<shadows::Coverage, shadows::maximumLights> movingShadowCoverage{};
   };
   struct LightData {
+    // shaping: prepared inner-cone cosine, focus, influence radius, captured index + 1.
     Vec4 positionRadius{}, radiance{}, directionCone{}, shaping{};
     // xyz triangle; [0].w shadow slot + 1, [1].w unshadowed blend,
     // [2].w: LightResponse (runtime packing only; see light_response.h).

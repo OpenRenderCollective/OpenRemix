@@ -271,7 +271,7 @@ namespace remix::forward {
       light.radiance[3] = float(source.triangle);
       std::copy_n(source.direction, 3, light.directionCone.begin());
       light.directionCone[3] = source.coneCos;
-      light.shaping = {source.softness, source.focus, radius, 0};
+      light.shaping = {coneInnerCosine(source.coneCos, source.softness), source.focus, radius, 0};
       light.clusterBounds = clusterSphereBounds(data.view,
           {source.position[0], source.position[1], source.position[2]}, radius, clusterRadiusScale);
       const auto shadowSlot = shadowSelection.slots[sourceIndex];
