@@ -5128,3 +5128,11 @@ independent default scheduling is still a separate architecture decision.
 - [x] Qualify signed/HDR fields, bicubic chart boundaries, adaptive depth probes, off/on/partial weights, overflow rejection and rendered props/surfaces with moving mixed shadows.
 - [ ] Continue whole-frame profiling beyond the current Construct and Crossfire views. Investigate Construct variance and remaining reflection/opaque/host costs; the 300-400 FPS objective remains incomplete.
 - [ ] Reduce composition startup latency and resident bytes only where profiling justifies it; preserve bounded frame work, exact live-state selection and readable code.
+
+
+## 2026-11-04: Remaining Construct costs
+
+- [x] Profile cached default lighting with and without the physics gun. Opaque shading and reflection transport dominate the GPU budget; shadow-map work is a smaller contributor. Keep complete-frame controls because nested scope costs can shift between operations.
+- [x] Reject selective SSR trace/filter compiler inlining after validation-clean tests but no repeatable full-frame gain. Restore the existing shader payload; retain the prior world-stage compiler optimization.
+- [ ] Isolate selected mixed-light surface-field reconstruction cost with unchanged bytecode before implementing a bounded GPU image representation. Prefer selected-field reuse over allocating every captured light, and retain existing signed coefficients, ownership, chart filtering and cancellation behavior.
+- [ ] Compare compact diffuse-field encodings with the VRF reference using actual receiving normals, colored/HDR lighting and seams. Its directional/compact SH paths are approximations, not lossless replacements for full SH9. Keep the current default until quality and frame-time qualification establish a justified alternative.
