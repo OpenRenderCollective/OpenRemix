@@ -117,7 +117,14 @@ nearest within 3 m, else a hash of its transform (so an instance back in view is
 the one it was). What it authors therefore stays the same instances and lights
 while it moves. With the hash alone, a moving instance made new lights each
 frame, which rebuilt the light tree and lost the visibility guide (HL2 RTX's
-flashlight faded while walking).
+flashlight faded while walking). A skinned draw's instances can share a
+transform, so its last bone counts as its place.
+
+As in RTX Remix, a skinned replacement's joint indices name the bones of the
+draw it replaces, whatever skeleton it binds, and its points are the bind pose
+they apply to. Bones past those the draw names stay at identity, so a draw
+without bones leaves it in the bind pose. A replacement takes on the categories
+of the draw it replaces, the view model among them.
 
 As in RTX Remix, a light attribute with no `inputs:` opinion reads the name USD
 lights had before it (`intensity`, `color`, ...), which older mods author.

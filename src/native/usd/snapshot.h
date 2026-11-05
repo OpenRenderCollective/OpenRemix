@@ -15,6 +15,9 @@ namespace remix::usd {
   struct ComposeScope {
     std::string root;
     std::string deferMeshesUnder;
+    // Skinned meshes as authored, with their influences: the host's draw poses
+    // them with its bones (a replacement), not a USD skeleton.
+    bool hostBones = false;
   };
   Json compose_scene(const pxr::UsdStageRefPtr &, uint64_t, const ComposeScope &scope = {});
   Json compose_lights(const pxr::UsdStageRefPtr &, uint64_t);

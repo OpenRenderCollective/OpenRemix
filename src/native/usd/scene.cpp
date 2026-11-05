@@ -18,6 +18,7 @@
 #include <pxr/usd/usdGeom/metrics.h>
 #include <pxr/usd/usdGeom/primvarsAPI.h>
 #include <pxr/usd/usdGeom/subset.h>
+#include <pxr/usd/usdSkel/bindingAPI.h>
 #include <pxr/usd/usdGeom/xformCache.h>
 #include <pxr/usd/usdLux/blackbody.h>
 #include <pxr/usd/usdLux/lightAPI.h>
@@ -301,8 +302,13 @@ namespace remix::usd {
           found = true;
           break;
         }
-        if (!found)
-          throw std::runtime_error("Degenerate or self-intersecting polygon");
+        // Degenerate or self-intersecting: what is left as a fan, as RTX Remix
+        // triangulates every polygon. One such face must not lose the mesh.
+        if (!found) {
+          for (size_t i = 1; i + 2 < corners.size(); ++i)
+            triangles.push_back({start + corners[0], start + corners[i], start + corners[i + 1]});
+          corners.erase(corners.begin() + 1, corners.end() - 2);
+        }
       }
       triangles.push_back({start + corners[0], start + corners[1], start + corners[2]});
       return triangles;
@@ -424,10 +430,32 @@ namespace remix::usd {
           if (normal_primvar && normal_primvar.ComputeFlattened(&normals, time))
             normal_interpolation = normal_primvar.GetInterpolation();
           std::string skeleton;
-          try {
-            skeleton = skinning.deform(mesh, points, normals, normal_interpolation, indices, counts);
-          } catch (const std::exception &error) {
-            result["warnings"].push_back(path + ": " + error.what() + "; showing undeformed geometry");
+          // A replacement's joint indices name the bones of the draw it
+          // replaces, whatever its skeleton (dxvk-remix UsdMeshImporter).
+          VtIntArray joints;
+          VtFloatArray jointWeights;
+          int influences = 0;
+          bool everyVertex = true;
+          if (scope.hostBones) {
+            const UsdSkelBindingAPI binding(prim);
+            const auto jointPrimvar = binding.GetJointIndicesPrimvar();
+            const auto weightPrimvar = binding.GetJointWeightsPrimvar();
+            if (jointPrimvar.HasValue() && weightPrimvar.HasValue() && jointPrimvar.ComputeFlattened(&joints, time) &&
+                weightPrimvar.ComputeFlattened(&jointWeights, time)) {
+              influences = jointPrimvar.GetElementSize();
+              everyVertex = jointPrimvar.GetInterpolation() != UsdGeomTokens->constant;
+              if (influences < 1 || joints.size() != jointWeights.size() ||
+                  joints.size() != size_t(influences) * (everyVertex ? points.size() : 1)) {
+                result["warnings"].push_back(path + ": joint influences do not match its points; not skinned");
+                influences = 0;
+              }
+            }
+          } else {
+            try {
+              skeleton = skinning.deform(mesh, points, normals, normal_interpolation, indices, counts);
+            } catch (const std::exception &error) {
+              result["warnings"].push_back(path + ": " + error.what() + "; showing undeformed geometry");
+            }
           }
           VtVec2fArray uv;
           auto st = UsdGeomPrimvarsAPI(mesh).GetPrimvar(TfToken("st"));
@@ -490,6 +518,14 @@ namespace remix::usd {
                 surface["indices"].push_back(surface["vertices"].size());
                 surface["vertices"].push_back({point[0], point[1], point[2], normal[0], normal[1], normal[2],
                                                texcoord[0], texcoord[1]});
+                if (influences) {
+                  surface["influences"] = influences;
+                  const size_t first = everyVertex ? size_t(vertex) * influences : 0;
+                  for (int k = 0; k < influences; ++k) {
+                    surface["joint_indices"].push_back(std::max(joints[first + k], 0));
+                    surface["joint_weights"].push_back(jointWeights[first + k]);
+                  }
+                }
                 if (!colors.empty() || !opacities.empty()) {
                   auto color = GfVec3f(1);
                   float opacity = 1;
@@ -515,7 +551,7 @@ namespace remix::usd {
                {"source_path", source_path(prim)},
                {"transform", matrix_json(world)},
                {"surfaces", parts},
-               {"skinned", !skeleton.empty()},
+               {"skinned", !skeleton.empty() || influences > 0},
                {"skeleton", skeleton},
                {"double_sided", attribute(prim, "doubleSided", false)},
                {"alpha_state", capture_alpha(prim)},

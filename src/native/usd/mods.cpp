@@ -282,13 +282,16 @@ namespace remix::usd {
     // within 3 m (dxvk-remix's rtx.uniqueObjectDistance), so what hangs under
     // the replacement stays the same when the instance moves. Draws sharing a
     // transform share an identity, as they would a hash of it.
-    uint64_t instanceIdentity(uint64_t mesh, const remixapi_Transform &transform) {
+    // again: an instance of the mesh already drew there this frame.
+    uint64_t instanceIdentity(uint64_t mesh, const remixapi_Transform &transform, bool &again) {
       const auto same = [&](const auto &placed) {
         return std::memcmp(&placed.transform, &transform, sizeof(transform)) == 0;
       };
       auto &now = state.placed[mesh];
-      if (const auto found = std::find_if(now.begin(), now.end(), same); found != now.end())
+      if (const auto found = std::find_if(now.begin(), now.end(), same); found != now.end()) {
+        again = true;
         return found->id;
+      }
       auto &before = state.placedBefore[mesh];
       auto match = std::find_if(before.begin(), before.end(), same);
       if (match == before.end()) {
@@ -517,13 +520,25 @@ namespace remix::usd {
       const auto *own = static_cast<const remixapi_InstanceIdentityEXT *>(
           scene::extension(info.pNext, REMIXAPI_STRUCT_TYPE_INSTANCE_IDENTITY_EXT));
       remixapi_InstanceIdentityEXT identity{};
+      // A draw repeated where it already drew (a game's second pass over a
+      // mesh) is the same instance: its replacement draws once (dxvk-remix
+      // merges them).
+      bool again = false;
       if (!own || !own->instanceId) {
         identity.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_IDENTITY_EXT;
         identity.pNext = info.pNext;
-        identity.instanceId = instanceIdentity(it->first, info.transform);
+        // A skinned draw's bones carry where it is: instances of a mesh can
+        // share their transform. The last bone is one the draw uses.
+        auto placed = info.transform;
+        if (const auto *bones = static_cast<const remixapi_InstanceInfoBoneTransformsEXT *>(
+                scene::extension(info.pNext, REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_BONE_TRANSFORMS_EXT));
+            bones && bones->boneTransforms_count)
+          placed = transformed(info.transform, bones->boneTransforms_values[bones->boneTransforms_count - 1]);
+        identity.instanceId = instanceIdentity(it->first, placed, again);
         parent.pNext = &identity;
       }
-      state.submissions[index]->draw(false, 1, &parent, entry["path"], parts.meshes, parts.lights);
+      if (!again)
+        state.submissions[index]->draw(false, 1, &parent, entry["path"], parts.meshes, parts.lights);
     }
     if (entry.value("preserve", false)) {
       if (!parts.materials || !entry.contains("material"))

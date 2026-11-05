@@ -162,7 +162,7 @@ namespace remix::usd {
   }
   Json composeReplacement(DeferredStage &deferred, const std::string &root) {
     std::lock_guard lock(deferred.mutex);
-    auto scene = compose_scene(deferred.stage, 1, {root, ""});
+    auto scene = compose_scene(deferred.stage, 1, {root, "", true});
     toHost(scene, deferred.conversion);
     for (auto &material : scene["materials"])
       material["hash"] = capturedHash(material["id"]);

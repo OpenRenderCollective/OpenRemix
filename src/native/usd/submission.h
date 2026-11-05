@@ -7,6 +7,7 @@
 
 namespace remix::usd {
   // CPU resources only. Draws hold shared ownership while GPU retirement proceeds.
+  remixapi_Transform transformed(const remixapi_Transform &delta, const remixapi_Transform &original);
   class Submission {
   public:
     explicit Submission(NativeResources &resources, const Snapshot &snapshot, uint64_t namespaceId,
@@ -73,6 +74,7 @@ namespace remix::usd {
     uint64_t namespace_;
     bool applyMods_;
     std::vector<uint64_t> instance_hashes_;
+    std::vector<uint32_t> instance_bones_; // bones an instance's skinned mesh needs
     Json snapshot_;
     std::map<std::string, remixapi_MaterialHandle> materials_;
     std::map<std::string, Json> material_defs_;

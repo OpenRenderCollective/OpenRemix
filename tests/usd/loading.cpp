@@ -169,6 +169,15 @@ int main(int argc, char **argv) {
               "subsurface submitted");
       sssResources.finishFrame();
     }
+    {
+      // A polygon with no area is left as a fan: one such face must not lose its mesh.
+      const auto path = std::filesystem::temp_directory_path() / ("openremix-degenerate-" + std::to_string(getpid()) + ".usda");
+      std::ofstream(path) << "#usda 1.0\ndef Mesh \"flat\" {\npoint3f[] points = [(0,0,0),(1,0,0),(2,0,0),(3,0,0),(0,1,0),(1,1,0),(0,0,1)]\n"
+                             "int[] faceVertexCounts = [4,3]\nint[] faceVertexIndices = [0,1,2,3,4,5,6]\n}\n";
+      auto loaded = usd::load({path.string()});
+      std::filesystem::remove(path);
+      require(loaded.scene["meshes"].size() == 1 && loaded.scene["warnings"].empty(), "a degenerate polygon keeps its mesh");
+    }
     auto converted = usd::load({(fixture / "capture.usda").string(), 1, 2});
     require(converted.scene["meters_per_unit"] == 1 && converted.scene["up_axis"] == "Z",
             "explicit host coordinates");
@@ -321,6 +330,72 @@ int main(int argc, char **argv) {
     const auto returning = attached({20}).at(20);
     attached({});
     require(attached({20}).at(20) == returning, "an instance back in view keeps its lights");
+    // A skinned replacement: posed by the replaced draw's bones through its own
+    // joint indices, whatever its skeleton, and what that draw is (view model).
+    // The skeleton named here does not exist, as in mods clearing their joints.
+    write("#usda 1.0\n(\nmetersPerUnit = 1\nupAxis = \"Y\"\n)\ndef Xform \"RootNode\" { def Scope \"meshes\" { "
+          "def Xform \"mesh_0123456789ABCDEF\" {\n custom int preserveOriginalDrawCall = 0\n"
+          "def Mesh \"body\" (prepend apiSchemas = [\"SkelBindingAPI\"]) {\n"
+          "point3f[] points = [(0,0,0),(1,0,0),(0,1,0)]\nint[] faceVertexCounts = [3]\nint[] faceVertexIndices = [0,1,2]\n"
+          "int[] primvars:skel:jointIndices = [0,2,0] (elementSize = 1\n interpolation = \"vertex\")\n"
+          "float[] primvars:skel:jointWeights = [1,1,1] (elementSize = 1\n interpolation = \"vertex\")\n"
+          "rel skel:skeleton = </RootNode/meshes/gone>\n}\n"
+          "def SphereLight \"child\" {\n float inputs:radius = 1\n }\n }\n }\n }\n");
+    const auto skinnedDraw = [&](const std::vector<float> &bonesX, uint32_t categories) {
+      std::vector<remixapi_Transform> bones(bonesX.size());
+      for (size_t b = 0; b < bonesX.size(); ++b) {
+        for (int c = 0; c < 3; ++c)
+          bones[b].matrix[c][c] = 1;
+        bones[b].matrix[0][3] = bonesX[b];
+      }
+      remixapi_InstanceInfoBoneTransformsEXT given{};
+      given.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_BONE_TRANSFORMS_EXT;
+      given.boneTransforms_values = bones.data();
+      given.boneTransforms_count = uint32_t(bones.size());
+      auto instance = original;
+      for (int c = 0; c < 3; ++c)
+        instance.transform.matrix[c][c] = 1;
+      instance.categoryFlags = categories;
+      instance.pNext = bonesX.empty() ? nullptr : &given;
+      return usd::modInstance(resources, instance);
+    };
+    bool skinnedReady = false;
+    for (int i = 0; i < 300 && !skinnedReady; ++i) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(20));
+      usd::modBoundary(resources);
+      skinnedReady = skinnedDraw({0, 0, 0}, 0) && !resources.draws().empty() && resources.draws()[0].surface->bonesPerVertex;
+      resources.finishFrame();
+    }
+    require(skinnedReady, "a replacement keeps its joint influences");
+    usd::modBoundary(resources);
+    skinnedDraw({1, 2, 3}, REMIXAPI_INSTANCE_CATEGORY_BIT_VIEW_MODEL);
+    {
+      const auto &draw = resources.draws().at(0);
+      require(draw.bones && draw.bones->size() == 3 && (*draw.bones)[2][12] == 3, "a replacement takes its draw's bones");
+      require(draw.camera == REMIXAPI_CAMERA_TYPE_VIEW_MODEL, "a replacement of a view model is one");
+    }
+    resources.finishFrame();
+    usd::modBoundary(resources);
+    skinnedDraw({1}, 0);
+    require(resources.draws().at(0).bones->size() == 3 && (*resources.draws().at(0).bones)[0][12] == 1 &&
+                (*resources.draws().at(0).bones)[2][12] == 0,
+            "bones past those its draw names stay at identity");
+    resources.finishFrame();
+    usd::modBoundary(resources);
+    require(skinnedDraw({}, 0) && resources.draws().at(0).bones->size() == 3 && resources.draws().at(0).bones->at(2)[12] == 0,
+            "a replacement of a draw without bones stays in its bind pose");
+    resources.finishFrame();
+    usd::modBoundary(resources);
+    skinnedDraw({10, 0, 10}, 0);
+    skinnedDraw({10, 0, 10}, 0);
+    require(resources.draws().size() == 1, "a draw repeated with the same pose is one instance");
+    resources.finishFrame();
+    usd::modBoundary(resources);
+    skinnedDraw({10, 0, 10}, 0);
+    skinnedDraw({50, 0, 50}, 0);
+    require(resources.sphereLights().size() == 2 && resources.sphereLights()[0].id != resources.sphereLights()[1].id,
+            "skinned instances sharing a transform are their own instances");
+    resources.finishFrame();
     usd::stopMods(resources);
     std::filesystem::remove_all(dir);
     std::cout << "USD tests passed\n";

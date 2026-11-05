@@ -57,17 +57,6 @@ namespace remix::usd {
           result.matrix[r][c] = values.at(c * 4 + r).get<float>();
       return result;
     }
-    remixapi_Transform transformed(const remixapi_Transform &delta, const remixapi_Transform &original) {
-      remixapi_Transform result{};
-      for (int r = 0; r < 3; ++r)
-        for (int c = 0; c < 4; ++c) {
-          for (int k = 0; k < 3; ++k)
-            result.matrix[r][c] += delta.matrix[r][k] * original.matrix[k][c];
-          if (c == 3)
-            result.matrix[r][c] += delta.matrix[r][3];
-        }
-      return result;
-    }
 #ifdef _WIN32
     using NativePath = std::wstring;
     NativePath native_path(const std::string &value) { return utf8Path(value).wstring(); }
@@ -77,6 +66,17 @@ namespace remix::usd {
 #endif
 
   } // namespace
+  remixapi_Transform transformed(const remixapi_Transform &delta, const remixapi_Transform &original) {
+    remixapi_Transform result{};
+    for (int r = 0; r < 3; ++r)
+      for (int c = 0; c < 4; ++c) {
+        for (int k = 0; k < 3; ++k)
+          result.matrix[r][c] += delta.matrix[r][k] * original.matrix[k][c];
+        if (c == 3)
+          result.matrix[r][c] += delta.matrix[r][3];
+      }
+    return result;
+  }
   Submission::Submission(NativeResources &resources, const Snapshot &snapshot, uint64_t namespaceId,
                          bool applyMods)
       : resources_(resources), namespace_(namespaceId), applyMods_(applyMods),
@@ -394,6 +394,37 @@ namespace remix::usd {
         continue;
       auto instance = instances_[i];
       instance.pNext = &blend_states_[i];
+      // Skinned by the bones of the draw it replaces (dxvk-remix: the replaced
+      // draw's skinning state). Bones past those the draw names stay at
+      // identity, as D3D9's world matrices start, which a draw without bones
+      // leaves in the bind pose.
+      remixapi_InstanceInfoBoneTransformsEXT bones{};
+      std::vector<remixapi_Transform> palette;
+      if (const uint32_t needed = instance_bones_[i]) {
+        const auto *given =
+            parent ? static_cast<const remixapi_InstanceInfoBoneTransformsEXT *>(scene::extension(
+                         parent->pNext, REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_BONE_TRANSFORMS_EXT))
+                   : nullptr;
+        bones.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_BONE_TRANSFORMS_EXT;
+        bones.pNext = instance.pNext;
+        if (given && given->boneTransforms_count >= needed) {
+          bones.boneTransforms_values = given->boneTransforms_values;
+          bones.boneTransforms_count = given->boneTransforms_count;
+        } else {
+          remixapi_Transform unmoved{};
+          for (int c = 0; c < 3; ++c)
+            unmoved.matrix[c][c] = 1;
+          palette.assign(needed, unmoved);
+          if (given)
+            std::copy_n(given->boneTransforms_values, given->boneTransforms_count, palette.begin());
+          bones.boneTransforms_values = palette.data();
+          bones.boneTransforms_count = needed;
+        }
+        instance.pNext = &bones;
+      }
+      // What the draw it replaces is (its view model, sky...).
+      if (parent)
+        instance.categoryFlags |= parent->categoryFlags;
       if (cut.group) {
         cut.pNext = instance.pNext;
         instance.pNext = &cut;
@@ -609,11 +640,19 @@ namespace remix::usd {
       return;
     }
     std::vector<std::vector<remixapi_HardcodedVertex>> vertices;
-    std::vector<std::vector<uint32_t>> indices;
+    std::vector<std::vector<uint32_t>> indices, jointIndices;
+    std::vector<std::vector<float>> jointWeights;
     std::vector<remixapi_MeshInfoSurfaceTriangles> surfaces;
     for (const auto &surface : data.at("surfaces")) {
       vertices.emplace_back();
       indices.push_back(surface.at("indices").get<std::vector<uint32_t>>());
+      if (surface.contains("influences")) {
+        jointIndices.push_back(surface.at("joint_indices").get<std::vector<uint32_t>>());
+        jointWeights.push_back(surface.at("joint_weights").get<std::vector<float>>());
+      } else {
+        jointIndices.emplace_back();
+        jointWeights.emplace_back();
+      }
       const auto colors = surface.value("colors", Json::array());
       if (!colors.empty() && colors.size() != surface.at("vertices").size())
         throw std::runtime_error("Invalid mesh vertex colors");
@@ -647,6 +686,14 @@ namespace remix::usd {
       info.vertices_count = vertices.back().size();
       info.indices_values = indices.back().data();
       info.indices_count = indices.back().size();
+      if (!jointIndices.back().empty()) {
+        info.skinning_hasvalue = 1;
+        info.skinning_value.bonesPerVertex = surface.at("influences").get<uint32_t>();
+        info.skinning_value.blendWeights_values = jointWeights.back().data();
+        info.skinning_value.blendWeights_count = uint32_t(jointWeights.back().size());
+        info.skinning_value.blendIndices_values = jointIndices.back().data();
+        info.skinning_value.blendIndices_count = uint32_t(jointIndices.back().size());
+      }
       info.material = materialHandle(surface.at("material").get<std::string>());
       if (!info.material)
         throw std::runtime_error("Unknown material " + surface.at("material").get<std::string>());
@@ -676,6 +723,11 @@ namespace remix::usd {
       instance_sink_->push_back(instances_.size());
     instances_.push_back(instance);
     instance_hashes_.push_back(data.value("hash", uint64_t(0)));
+    uint32_t bones = 0;
+    for (const auto &surface : data.at("surfaces"))
+      for (const auto &joint : surface.value("joint_indices", Json::array()))
+        bones = std::max(bones, joint.get<uint32_t>() + 1);
+    instance_bones_.push_back(bones);
     blend_states_.push_back(blend_state(data.value("alpha_state", Json::object())));
     instance_origins_.emplace_back(data.at("id").get<std::string>(), instance.transform);
   }
