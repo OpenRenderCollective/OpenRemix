@@ -1496,12 +1496,13 @@ void RemixNativeRuntime::presented() {
     const HdrNits nits{settings.hdrPeakNits, settings.hdrPaperWhiteNits, settings.hdrUiNits};
     // The HUD layer and the developer UI at their own brightness
     // (HdrOutput::scaleUi).
+    const float uiScale = hdr ? nits.uiScale() : 1.f;
     auto drawUiLayer = [&](auto &&draw) {
-      if (hdr)
-        m_hdrOutput.scaleUi(buffer, 1 / nits.uiScale());
+      if (uiScale != 1.f)
+        m_hdrOutput.scaleUi(buffer, 1 / uiScale);
       draw();
-      if (hdr)
-        m_hdrOutput.scaleUi(buffer, nits.uiScale());
+      if (uiScale != 1.f)
+        m_hdrOutput.scaleUi(buffer, uiScale);
     };
     if (hdr)
       m_hdrOutput.prepare(buffer, m_frameIndex);
