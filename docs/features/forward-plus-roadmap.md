@@ -5276,3 +5276,5 @@ These are work-reduction paths, not quality presets. General native 1080p 300-40
 
 - [x] Attribute optional receiver timings and fragment counters to emitted receiver-run pipelines, preserving draw order. Partially charted source meshes must not be mistaken for generic partial-shader work.
 - [ ] Investigate deferring attributed diffuse-field reads until a moving shadow actually requires aggregate correction. Preserve finite-emitter energy and all unknown/static fallback paths; require rendered validation and repeated map comparisons.
+
+- Early moving-shadow filtering before indexed diffuse-field reads passed rendered validation but did not qualify in the Construct frame-time comparison. Keep the existing query order; obtain hardware-counter evidence before further control-flow variants.
