@@ -5268,3 +5268,8 @@ These are work-reduction paths, not quality presets. General native 1080p 300-40
 
 - Reduce receiver-local candidate-light work while preserving finite-emitter direct fields and moving corrections. Simple cone-rejection reorderings have not qualified across Construct and Crossfire; investigate receiver-local influence selection instead.
 - One-frame image diagnostics latch requests at the first record call after slot selection. Mid-record requests defer to the next frame, preserving a complete fenced image/buffer set.
+
+
+- [ ] Evaluate optional authored maximum influence distances for point/spot lights alongside the existing intensity-derived cutoff. Keep bake/runtime attenuation consistent and compare image quality before changing defaults; do not assume a Source 2 fixed distance without verifying the reference.
+
+- Compact standard-material cone lists did not qualify consistently across map cases; retain the ordered raw query path while investigating broader candidate-work reduction.
