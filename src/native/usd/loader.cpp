@@ -171,8 +171,9 @@ namespace remix::usd {
       // Private layers keep reload parsing independent of an active scene and never
       // modify the capture on disk. Anchor every asset to its authoring layer before
       // replacing layer references with private identifiers, including Windows paths.
-      // A mod is hundreds of layers: they open and have their paths rewritten on
-      // several threads, each a layer at a time.
+      // A mod is hundreds of layers, and a layer can name a hundred others: they
+      // open on several threads as soon as what names them has, rather than one
+      // by one as its paths are rewritten.
       struct Layer {
         std::once_flag once;
         SdfLayerRefPtr layer;
@@ -181,7 +182,16 @@ namespace remix::usd {
       std::condition_variable wake;
       std::map<std::string, std::shared_ptr<Layer>> layers;
       std::vector<std::pair<SdfLayerRefPtr, std::filesystem::path>> rewrites;
+      std::vector<std::filesystem::path> opens;
       size_t rewriting = 0;
+      const auto assetOf = [](const std::filesystem::path &parent, const std::string &authored) {
+        auto normalized = authored;
+        std::replace(normalized.begin(), normalized.end(), '\\', '/');
+        auto asset = std::filesystem::path(normalized);
+        if (asset.is_relative())
+          asset = parent.parent_path() / asset;
+        return asset.lexically_normal();
+      };
       std::optional<std::string> failure;
       const auto makeLayer = [&](const std::filesystem::path &path, const std::string &key, bool root) -> SdfLayerRefPtr {
         // A layer another layer names but which is not on disk is left out, as
@@ -218,11 +228,15 @@ namespace remix::usd {
         auto layer = SdfLayer::OpenAsAnonymous(key);
         if (!layer)
           throw std::runtime_error("Could not open USD layer: " + key);
+        const auto children = layer->GetCompositionAssetDependencies();
         {
           std::lock_guard lock(mutex);
           rewrites.emplace_back(layer, path);
+          for (const auto &child : children)
+            if (!child.empty())
+              opens.push_back(assetOf(path, child));
         }
-        wake.notify_one();
+        wake.notify_all();
         return layer;
       };
       const auto openLayer = [&](std::filesystem::path path, bool root = false) -> SdfLayerRefPtr {
@@ -244,12 +258,7 @@ namespace remix::usd {
         UsdUtilsModifyAssetPaths(layer, [&](const std::string &authored) {
           if (authored.empty())
             return authored;
-          auto normalized = authored;
-          std::replace(normalized.begin(), normalized.end(), '\\', '/');
-          auto asset = std::filesystem::path(normalized);
-          if (asset.is_relative())
-            asset = path.parent_path() / asset;
-          asset = asset.lexically_normal();
+          const auto asset = assetOf(path, authored);
           auto ext = asset.extension().string();
           std::transform(ext.begin(), ext.end(), ext.begin(),
                          [](unsigned char c) { return std::tolower(c); });
@@ -273,9 +282,32 @@ namespace remix::usd {
         const auto work = [&] {
           std::unique_lock lock(mutex);
           for (;;) {
-            wake.wait(lock, [&] { return failure || !rewrites.empty() || !rewriting; });
-            if (failure || (rewrites.empty() && !rewriting))
+            wake.wait(lock, [&] { return failure || !opens.empty() || !rewrites.empty() || !rewriting; });
+            if (failure || (opens.empty() && rewrites.empty() && !rewriting))
               break;
+            if (!opens.empty()) {
+              auto path = std::move(opens.back());
+              opens.pop_back();
+              ++rewriting;
+              lock.unlock();
+              std::optional<std::string> error;
+              try {
+                auto ext = path.extension().string();
+                std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return std::tolower(c); });
+                if (ext == ".usd" || ext == ".usda" || ext == ".usdc")
+                  openLayer(path);
+              } catch (const std::exception &e) {
+                error = e.what();
+              } catch (...) {
+                error = "Could not read USD layer: " + path.string();
+              }
+              lock.lock();
+              --rewriting;
+              if (error && !failure)
+                failure = std::move(error);
+              wake.notify_all();
+              continue;
+            }
             auto [layer, path] = std::move(rewrites.back());
             rewrites.pop_back();
             ++rewriting;

@@ -534,6 +534,64 @@ namespace remix::usd {
         };
         const bool leftHanded =
             attribute(prim, "orientation", UsdGeomTokens->rightHanded) == UsdGeomTokens->leftHanded;
+        // Read once: this runs per corner of millions, where asking USD for an
+        // interpolation, or a non-const VtArray for an element, is what costs.
+        const auto uv_interpolation = st ? st.GetInterpolation() : TfToken();
+        const auto color_interpolation = color_primvar ? color_primvar.GetInterpolation() : TfToken();
+        const auto opacity_interpolation = opacity_primvar ? opacity_primvar.GetInterpolation() : TfToken();
+        const GfVec3f *point_values = points.cdata(), *normal_values = normals.cdata(), *color_values = colors.cdata();
+        const GfVec2f *uv_values = uv.cdata();
+        const int *index_values = indices.cdata(), *joint_values = joints.cdata();
+        const float *weight_values = jointWeights.cdata(), *opacity_values = opacities.cdata();
+        const bool painted = !colors.empty() || !opacities.empty();
+        const auto emit = [&](ComposedSurface &surface, size_t face, std::array<int, 3> triangle) {
+          if (leftHanded)
+            std::swap(triangle[1], triangle[2]);
+          GfVec3f geometric(0);
+          bool computed = false;
+          for (int c : triangle) {
+            const int vertex = index_values[c];
+            const auto &point = point_values[vertex];
+            GfVec3f normal;
+            const auto n = element_index(normal_interpolation, face, c, vertex);
+            if (n >= 0 && size_t(n) < normals.size()) {
+              normal = normal_values[n];
+            } else {
+              if (!computed) {
+                geometric = GfCross(point_values[index_values[triangle[1]]] - point_values[index_values[triangle[0]]],
+                                    point_values[index_values[triangle[2]]] - point_values[index_values[triangle[0]]])
+                                .GetNormalized();
+                computed = true;
+              }
+              normal = geometric;
+            }
+            GfVec2f texcoord(0);
+            const int u = element_index(uv_interpolation, face, c, vertex);
+            if (u >= 0 && size_t(u) < uv.size())
+              texcoord = uv_values[u];
+            surface.vertices.insert(surface.vertices.end(), {point[0], point[1], point[2], normal[0], normal[1],
+                                                             normal[2], texcoord[0], texcoord[1]});
+            if (influences) {
+              surface.influences = uint32_t(influences);
+              const size_t first = everyVertex ? size_t(vertex) * influences : 0;
+              for (int k = 0; k < influences; ++k) {
+                surface.jointIndices.push_back(uint32_t(std::max(joint_values[first + k], 0)));
+                surface.jointWeights.push_back(weight_values[first + k]);
+              }
+            }
+            if (painted) {
+              auto color = GfVec3f(1);
+              float opacity = 1;
+              const int ci = color_primvar ? element_index(color_interpolation, face, c, vertex) : -1;
+              const int ai = opacity_primvar ? element_index(opacity_interpolation, face, c, vertex) : -1;
+              if (ci >= 0 && size_t(ci) < colors.size())
+                color = color_values[ci];
+              if (ai >= 0 && size_t(ai) < opacities.size())
+                opacity = opacity_values[ai];
+              surface.colors.push_back(packed_color(color, opacity));
+            }
+          }
+        };
         ComposedSurface *whole = nullptr; // Every face's, without subsets.
         int corner = 0;
         for (size_t face = 0; face < counts.size(); ++face) {
@@ -541,52 +599,16 @@ namespace remix::usd {
           corner += count;
           if (!holes.empty() && std::find(holes.begin(), holes.end(), int(face)) != holes.end())
             continue;
-          if (!whole && face_materials.empty())
+          if (!whole && face_materials.empty()) {
             whole = &surface_of(binding);
-          auto &surface = whole ? *whole : surface_of(face_materials.count(face) ? face_materials.at(face) : binding);
-          for (auto triangle : triangulate(points, indices, first, count)) {
-            if (leftHanded)
-              std::swap(triangle[1], triangle[2]);
-            auto geometric = GfCross(points[indices[triangle[1]]] - points[indices[triangle[0]]],
-                                     points[indices[triangle[2]]] - points[indices[triangle[0]]])
-                                 .GetNormalized();
-            for (int c : triangle) {
-              int vertex = indices[c];
-              auto point = points[vertex];
-              auto normal = geometric;
-              auto n = element_index(normal_interpolation, face, c, vertex);
-              if (n >= 0 && size_t(n) < normals.size())
-                normal = normals[n];
-              GfVec2f texcoord(0);
-              int u = st ? element_index(st.GetInterpolation(), face, c, vertex) : -1;
-              if (u >= 0 && size_t(u) < uv.size())
-                texcoord = uv[u];
-              surface.vertices.insert(surface.vertices.end(), {point[0], point[1], point[2], normal[0], normal[1],
-                                                               normal[2], texcoord[0], texcoord[1]});
-              if (influences) {
-                surface.influences = uint32_t(influences);
-                const size_t first = everyVertex ? size_t(vertex) * influences : 0;
-                for (int k = 0; k < influences; ++k) {
-                  surface.jointIndices.push_back(uint32_t(std::max(joints[first + k], 0)));
-                  surface.jointWeights.push_back(jointWeights[first + k]);
-                }
-              }
-              if (!colors.empty() || !opacities.empty()) {
-                auto color = GfVec3f(1);
-                float opacity = 1;
-                const int ci =
-                    color_primvar ? element_index(color_primvar.GetInterpolation(), face, c, vertex) : -1;
-                const int ai = opacity_primvar
-                                   ? element_index(opacity_primvar.GetInterpolation(), face, c, vertex)
-                                   : -1;
-                if (ci >= 0 && size_t(ci) < colors.size())
-                  color = colors[ci];
-                if (ai >= 0 && size_t(ai) < opacities.size())
-                  opacity = opacities[ai];
-                surface.colors.push_back(packed_color(color, opacity));
-              }
-            }
+            whole->vertices.reserve(indices.size() * 8);
           }
+          auto &surface = whole ? *whole : surface_of(face_materials.count(face) ? face_materials.at(face) : binding);
+          if (count == 3)
+            emit(surface, face, {first, first + 1, first + 2});
+          else
+            for (const auto &triangle : triangulate(points, indices, first, count))
+              emit(surface, face, triangle);
         }
         ComposedMesh composed;
         composed.id = path;
