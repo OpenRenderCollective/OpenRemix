@@ -3,6 +3,12 @@
 // belong to the caller. Guide storage and bilateral reconstruction stay here.
 #include "reflection-sample.glsl"
 ReflectionSample sampleTransportReflection(ivec2 pixel, vec4 guide, float centerDepth) {
+  // At native resolution the footprint is exactly this receiver's texel.
+  // Bilateral weights cancel, and the other three upscale taps have zero weight.
+  if (NativeReflectionResolution) {
+    vec4 radiance = texelFetch(rawRadiance, pixel, 0);
+    return ReflectionSample(radiance.rgb, radiance.a);
+  }
   vec2 low = (vec2(pixel) - float(frame.config.y / 2u)) / float(frame.config.y);
   ivec2 base = ivec2(floor(low));
   vec4 radiance = vec4(0);

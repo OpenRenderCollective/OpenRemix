@@ -35,6 +35,13 @@ matching syntax does not require migrating shader languages or exposing GPU ABI.
   BRDF. SSR composes once with the selected fallback; normalize captured lighting
   against receiver irradiance before that composition.
 
+Reflection reconstruction is selected when its target is created. At native
+resolution, source radiance/confidence already aligns with the receiver texel;
+the filter kernel fetches it directly. Reduced-resolution sources retain the
+2x2 bilateral reconstruction. Changing reflection scale recreates the target
+and its specialized kernel; this does not add a lighting technique or runtime
+material branch.
+
 Initial extraction: `shaders/receiver-lighting.glsl` owns diffuse receiver lookup
 for world and viewmodels. It preserves the existing surface/probe/live-GI behavior
 and aggregate-light bookkeeping.

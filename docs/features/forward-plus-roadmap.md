@@ -1,5 +1,7 @@
 ## Next performance isolation
 
+- Native-resolution reflection reconstruction now fetches the matching source texel directly; reduced-resolution modes retain bilateral filtering. Target-owned kernel specialization removes unused upscale work without changing the lighting/material API. This is a small pass-work reduction; continue using full-frame measurements for the FPS target.
+
 - Reuse the viewmodel frozen-world sun fallback for an unchanged bake scene and exact projection. Moving/self shadows remain live; replacement, removal and projection changes invalidate the fallback.
 - A conservative cluster zero-response hint trial was removed after inconsistent full-frame qualification. Fewer candidate queries alone is not an acceptance gate; preserve raw custom-lighting semantics in future list work.
 

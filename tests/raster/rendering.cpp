@@ -4931,6 +4931,8 @@ namespace {
           require(target.forward->statistics().baking.active, "Reflection blend bake completed");
         }
         const auto reflected = drawScene();
+        const auto evidence = "ssr-" + std::to_string(samples) + "x-scale-" + std::to_string(scale) + ".ppm";
+        save(evidence.c_str(), reflected);
         if (baked) {
           size_t replaced = 0, fallback = 0;
           for (uint32_t y = target.extent.height / 2; y < target.extent.height; ++y)

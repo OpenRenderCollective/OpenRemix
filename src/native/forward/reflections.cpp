@@ -177,14 +177,15 @@ namespace remix::forward {
     check(pipeline::createPipelineLayout(device, &layoutInfo, nullptr, &layout));
   }
   void Reflections::Gpu::createPipelines() {
-    auto compute = [&](const uint32_t *code, size_t bytes) {
+    auto compute = [&](const uint32_t *code, size_t bytes, const VkSpecializationInfo *specialization = nullptr) {
       const auto module = shaderModule(device, code, bytes);
       const VkComputePipelineCreateInfo info{
           .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
           .stage = {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
                     .stage = VK_SHADER_STAGE_COMPUTE_BIT,
                     .module = module,
-                    .pName = "main"},
+                    .pName = "main",
+                    .pSpecializationInfo = specialization},
           .layout = layout};
       VkPipeline result;
       const auto status =
@@ -198,7 +199,12 @@ namespace remix::forward {
                   : compute(ssrResolveShader, sizeof(ssrResolveShader));
     reduce = compute(ssrReduceShader, sizeof(ssrReduceShader));
     trace = compute(ssrTraceShader, sizeof(ssrTraceShader));
-    filter = compute(ssrFilterShader, sizeof(ssrFilterShader));
+    // Scale is immutable for this target. Native reconstruction needs no
+    // upscale footprint, so keep that code out of the native filter kernel.
+    const VkBool32 nativeResolution = scale == 1;
+    const VkSpecializationMapEntry nativeEntry{0, 0, sizeof(nativeResolution)};
+    const VkSpecializationInfo nativeSpecialization{1, &nativeEntry, sizeof(nativeResolution), &nativeResolution};
+    filter = compute(ssrFilterShader, sizeof(ssrFilterShader), &nativeSpecialization);
     const VkSamplerCreateInfo samplerInfo{.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
                                           .magFilter = VK_FILTER_NEAREST,
                                           .minFilter = VK_FILTER_NEAREST,

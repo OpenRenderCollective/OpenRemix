@@ -131,6 +131,7 @@ void main() {
 #endif
 
 #ifdef SSR_FILTER
+layout(constant_id = 0) const bool NativeReflectionResolution = false;
 #include "reflection-lighting.glsl"
 #include "reflection-transport.glsl"
 #include "standard-reflection-response.glsl"
