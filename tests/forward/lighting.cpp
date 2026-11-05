@@ -650,6 +650,53 @@ int main() {
       require(std::isfinite(value), "Finite shadow transforms");
   }
   {
+    for (float depthSign : {-1.f, 1.f}) {
+      // Keep a fixed lens while turning and translating the camera. A tight
+      // light-space AABB breathes under rotation even when its centre is snapped.
+      Matrix lens{};
+      lens[0] = .75f; lens[5] = 1.25f;
+      lens[10] = depthSign * 200.f / 199.9f; lens[11] = depthSign;
+      lens[14] = -.1f * 200.f / 199.9f;
+      const DepthRange range{.1f, 200, depthSign};
+      std::array<float, cascadeCount> reference{};
+      for (uint32_t pose = 0; pose < 8; ++pose) {
+        const float angle = pose * .23f;
+        Matrix view = scene::identity();
+        view[0] = view[10] = std::cos(angle);
+        view[2] = -std::sin(angle); view[8] = std::sin(angle);
+        view[12] = pose * .031f; view[13] = -float(pose) * .017f;
+        const auto camera = scene::multiply(lens, view);
+        const auto fitted = shadowCascades(camera, view, range, {.3f, .7f, 1}, bounds, 100, 2048);
+        for (uint32_t c = 0; c < cascadeCount; ++c) {
+          const auto &m = fitted.matrices[c];
+          const float scale = std::sqrt(m[0] * m[0] + m[4] * m[4] + m[8] * m[8]);
+          if (!pose) reference[c] = scale;
+          require(std::abs(scale - reference[c]) <= reference[c] * 1e-5f,
+                  "Turning a fixed-lens camera preserves cascade texel size");
+          for (uint32_t axis = 0; axis < 2; ++axis) {
+            const float texelOrigin = m[12 + axis] * 1024;
+            require(std::abs(texelOrigin - std::round(texelOrigin)) < .001f,
+                    "Sun cascade translation stays on the world-anchored texel lattice");
+          }
+          const auto inverse = scene::inverse(camera);
+          for (float x : {-1.f, 1.f}) for (float y : {-1.f, 1.f}) {
+            const auto nearPoint = transformPoint(inverse, {x, y, 0});
+            const auto farPoint = transformPoint(inverse, {x, y, .9999f});
+            const float az = transformPoint(view, nearPoint)[2] * depthSign, bz = transformPoint(view, farPoint)[2] * depthSign;
+            for (float depth : {c ? fitted.splits[c - 1] : range.nearPlane, fitted.splits[c]}) {
+              Vec3 p;
+              for (uint32_t axis = 0; axis < 3; ++axis)
+                p[axis] = nearPoint[axis] + (farPoint[axis] - nearPoint[axis]) * ((depth - az) / (bz - az));
+              const auto q = transformPoint(m, p);
+              require(std::abs(q[0]) <= 1.0001f && std::abs(q[1]) <= 1.0001f,
+                      "Stable sun cascades retain every receiver-frustum corner");
+            }
+          }
+        }
+      }
+    }
+  }
+  {
     shadows::SunCache fittedCache;
     auto fitted = shadowCascades(identity, identity, {.001f, 1, 1}, {.3f, .7f, 1}, bounds, 1, 2048).matrices;
     fittedCache.update(source, true, fitted, 2048);

@@ -1180,3 +1180,8 @@ Frame captures are private diagnostics; keep them under `_work/reports`.
 ### Receiver profiling categories
 
 Optional receiver GPU scopes and fragment counters follow the pipeline used by each emitted receiver run. A partially charted source mesh can emit fully mapped and probe-only runs; its source classification is not a measurement of the generic partial-receiver shader. Consecutive equal categories share a scope without reordering draws. Depth, terrain, live GI and viewmodels retain their own pass categories. Query capacity remains bounded and omitted ranges are reported; instrumented timings are diagnostics, not FPS acceptance measurements.
+
+
+### Stable world sun cascades
+
+World sun cascades fit their receiver-frustum corners with a rotation-invariant sphere before snapping the light-space XY centre to texels. The outward-rounded radius keeps small inverse-camera rounding changes from continuously rescaling the grid. This uses a wider, stable footprint instead of the previous per-frame tight AABB; shadow image resolution and filtering are unchanged. Depth still includes all submitted caster bounds, including offscreen casters. Baked/moving ownership, local cube shadows and the separate viewmodel projection are unchanged.

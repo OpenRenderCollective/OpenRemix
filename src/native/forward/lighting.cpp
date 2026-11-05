@@ -173,6 +173,8 @@ namespace remix::forward {
                           .35f * (range.nearPlane + (cascadeFar - range.nearPlane) * fraction);
       result.splits[c] = split;
       Bounds box;
+      std::array<Vec3, 8> receiverCorners;
+      uint32_t receiverCorner = 0;
       for (float sx : {-1.f, 1.f})
         for (float sy : {-1.f, 1.f}) {
           const auto a = transformPoint(inverse, {sx, sy, 0});
@@ -184,9 +186,29 @@ namespace remix::forward {
             const float t = (depth - az) / (bz - az);
             for (int i = 0; i < 3; ++i)
               p[i] = a[i] + (b[i] - a[i]) * t;
+            receiverCorners[receiverCorner++] = p;
             box.include(transformPoint(basis, p));
           }
         }
+      // A tight light-space AABB changes size as the camera turns. Fit a
+      // rotation-invariant receiver sphere so snapping also stabilizes texel
+      // size. Round outward to absorb small inverse-camera rounding changes.
+      Vec3 receiverCentre{};
+      for (const auto &p : receiverCorners)
+        for (uint32_t axis = 0; axis < 3; ++axis) receiverCentre[axis] += p[axis] / 8;
+      float radius = .005f;
+      for (const auto &p : receiverCorners) {
+        Vec3 delta;
+        for (uint32_t axis = 0; axis < 3; ++axis) delta[axis] = p[axis] - receiverCentre[axis];
+        radius = std::max(radius, std::sqrt(dot(delta, delta)));
+      }
+      const float quantum = std::ldexp(1.f, std::ilogb(radius) - 10);
+      radius = std::ceil(radius / quantum) * quantum;
+      const auto lightCentre = transformPoint(basis, receiverCentre);
+      for (uint32_t axis = 0; axis < 2; ++axis) {
+        box.minimum[axis] = lightCentre[axis] - radius;
+        box.maximum[axis] = lightCentre[axis] + radius;
+      }
       // All submitted casters contribute Z bounds, including off-screen ones.
       // XY remains fitted to this cascade to keep texel density useful.
       if (casters.valid)

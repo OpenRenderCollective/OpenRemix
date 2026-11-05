@@ -5278,3 +5278,12 @@ These are work-reduction paths, not quality presets. General native 1080p 300-40
 - [ ] Investigate deferring attributed diffuse-field reads until a moving shadow actually requires aggregate correction. Preserve finite-emitter energy and all unknown/static fallback paths; require rendered validation and repeated map comparisons.
 
 - Early moving-shadow filtering before indexed diffuse-field reads passed rendered validation but did not qualify in the Construct frame-time comparison. Keep the existing query order; obtain hardware-counter evidence before further control-flow variants.
+
+
+### Construct prop lighting and shadow follow-up
+
+- [x] Stabilize world sunlight cascade texel scale under camera rotation, in addition to snapping the centre; preserve receiver and offscreen-caster coverage.
+- [ ] Continue local-light shadow filtering and moving-camera visual checks; the separate viewmodel projection still fits its own receiver bounds.
+- [ ] Reproduce abrupt probe-lighting changes on props in Construct main room. Prioritize continuity and visibility/relocation correctness alongside density; increasing sample count alone is not a complete fix.
+- [ ] Improve near-receiver probe allocation, especially playable-floor/object-height regions, while keeping distant air sparse and total budgets bounded. Keep OpenRemix game agnostic; any walkability/up-axis hints belong to an opt-in host contract.
+- [ ] Use the newly working NVIDIA hardware-counter capture to distinguish shading, texture traffic and occupancy costs before further shader control-flow experiments.
