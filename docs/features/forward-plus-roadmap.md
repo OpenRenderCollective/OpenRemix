@@ -5273,3 +5273,6 @@ These are work-reduction paths, not quality presets. General native 1080p 300-40
 - [ ] Evaluate optional authored maximum influence distances for point/spot lights alongside the existing intensity-derived cutoff. Keep bake/runtime attenuation consistent and compare image quality before changing defaults; do not assume a Source 2 fixed distance without verifying the reference.
 
 - Compact standard-material cone lists did not qualify consistently across map cases; retain the ordered raw query path while investigating broader candidate-work reduction.
+
+- [x] Attribute optional receiver timings and fragment counters to emitted receiver-run pipelines, preserving draw order. Partially charted source meshes must not be mistaken for generic partial-shader work.
+- [ ] Investigate deferring attributed diffuse-field reads until a moving shadow actually requires aggregate correction. Preserve finite-emitter energy and all unknown/static fallback paths; require rendered validation and repeated map comparisons.

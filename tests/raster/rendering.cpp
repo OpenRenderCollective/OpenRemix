@@ -129,6 +129,8 @@ namespace {
       vkGetPhysicalDeviceFeatures(physical, &supported);
       enabled.samplerAnisotropy = supported.samplerAnisotropy;
       enabled.fillModeNonSolid = supported.fillModeNonSolid;
+      enabled.pipelineStatisticsQuery = supported.pipelineStatisticsQuery;
+      enabled.occlusionQueryPrecise = supported.occlusionQueryPrecise;
       VkPhysicalDeviceRayQueryFeaturesKHR query{
           .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR, .rayQuery = VK_TRUE};
       VkPhysicalDeviceAccelerationStructureFeaturesKHR acceleration{

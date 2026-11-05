@@ -1175,3 +1175,8 @@ draw constants and shadow policy. This does not require a full bake capture,
 surface atlas dump or changes to rendering features. The legacy
 `REMIX_DEBUG_BAKE_CAPTURE_PREFIX` and its capture/request gates remain supported.
 Frame captures are private diagnostics; keep them under `_work/reports`.
+
+
+### Receiver profiling categories
+
+Optional receiver GPU scopes and fragment counters follow the pipeline used by each emitted receiver run. A partially charted source mesh can emit fully mapped and probe-only runs; its source classification is not a measurement of the generic partial-receiver shader. Consecutive equal categories share a scope without reordering draws. Depth, terrain, live GI and viewmodels retain their own pass categories. Query capacity remains bounded and omitted ranges are reported; instrumented timings are diagnostics, not FPS acceptance measurements.

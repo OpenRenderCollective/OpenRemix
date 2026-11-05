@@ -70,6 +70,24 @@ namespace remix::forward {
     VkPipeline boundPipeline = VK_NULL_HANDLE;
     VkDescriptorSet boundMaterial = VK_NULL_HANDLE;
     VkBuffer boundVertices = VK_NULL_HANDLE, boundIndices = VK_NULL_HANDLE;
+    static const bool profileReceivers = std::getenv("REMIX_DEBUG_FORWARD_RECEIVER_TIMINGS") != nullptr;
+    const bool receiverTimings = profileReceivers && gpu::timing();
+    const bool receiverStatistics = (receiverTimings || fragmentStatistics->enabled()) &&
+                                    !terrain && !depthOnly && !gi;
+    std::optional<gpu::GpuScope> receiverTime;
+    uint32_t receiverKind = 3;
+    auto selectReceiver = [&](VkPipeline pipeline) {
+      if (!receiverStatistics) return;
+      const uint32_t kind = pipeline == lightmapPipeline ? 1 : pipeline == partialLightmapPipeline ? 2 : 0;
+      if (kind == receiverKind) return;
+      receiverTime.reset();
+      fragmentStatistics->end(command);
+      fragmentStatistics->begin(command, kind);
+      const char *names[] = {"Forward+ probe-lit receivers", "Forward+ lightmapped receivers",
+                             "Forward+ partially mapped receivers"};
+      if (receiverTimings) receiverTime.emplace(command, names[kind], extent);
+      receiverKind = kind;
+    };
     auto drawCommand = [&](const Command &draw) {
       if (depthOnly && draw.depthBatched) return;
       if (!draw.source.rasterVisible)
@@ -87,6 +105,7 @@ namespace remix::forward {
       if (!depthOnly && !terrain && !gi && !mapped && zeroDiffusePipeline &&
           zeroDiffuseMaterial(*draw.source.material)) selected = zeroDiffusePipeline;
       auto bindPipeline = [&](VkPipeline pipeline) {
+        selectReceiver(pipeline);
         if (pipeline != boundPipeline) {
           vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
           boundPipeline = pipeline;
@@ -133,35 +152,16 @@ namespace remix::forward {
         if (depthOnly) ++calls.worldDepthLogical;
       }
     };
-    // Time consecutive source-draw classes without changing coplanar/decal order.
-    // A partially mapped source draw may emit several specialized receiver runs.
-    // Terrain blending and depth passes keep their ordinary timing scopes.
-    static const bool profileReceivers = std::getenv("REMIX_DEBUG_FORWARD_RECEIVER_TIMINGS") != nullptr;
-    const bool receiverTimings = profileReceivers && gpu::timing();
-    if ((receiverTimings || fragmentStatistics->enabled()) && !terrain && !depthOnly && !gi) {
-      const char *names[] = {"Forward+ probe-lit receivers", "Forward+ lightmapped receivers",
-                             "Forward+ partially mapped receivers"};
-      std::optional<gpu::GpuScope> receiverTime;
-      uint32_t kind = 3;
-      for (const auto &draw : frame.commands) {
-        if (!draw.source.rasterVisible || !intersectsClip(draw.worldBounds, frame.data.camera)) continue;
-        const uint32_t receiver = !draw.lightmap ? 0 : draw.lightmap->fullyMapped ? 1 : 2;
-        if (receiver != kind) {
-          receiverTime.reset();
-          fragmentStatistics->end(command);
-          fragmentStatistics->begin(command, receiver);
-          if (receiverTimings) receiverTime.emplace(command, names[receiver], extent);
-          kind = receiver;
-        }
-        drawCommand(draw);
-      }
-      fragmentStatistics->end(command);
-    } else {
+    // Attribute actual emitted receiver runs, rather than their source mesh.
+    // Partial source meshes can use both mapped and probe-only pipelines.
+    // Group consecutive runs without changing coplanar/decal draw order.
+    if (!receiverStatistics)
       fragmentStatistics->begin(command, depthOnly ? 3 : terrain ? 4 : 5);
-      for (const auto &draw : terrain ? frame.terrainCommands : frame.commands) drawCommand(draw);
-      fragmentStatistics->end(command);
-    }
+    for (const auto &draw : terrain ? frame.terrainCommands : frame.commands) drawCommand(draw);
+    receiverTime.reset();
+    fragmentStatistics->end(command);
   }
+
   void Renderer::Gpu::drawSunCasters(VkCommandBuffer command, uint32_t cascade, bool staticCasters) {
     const auto &frame = frames[slot];
     const auto &commands = staticCasters ? frame.staticCommands : frame.commands;
