@@ -148,6 +148,36 @@ namespace remix {
                std::equal(bloodRange, bloodRange + 2, o.bloodRange);
       }
     };
+    // remixapi_MaterialPortalRimEXT, validated: Portal 2's portal rim, whose
+    // noise is the material's albedo texture (read as stored). The ramp is
+    // read through rampSampler (bilinear, clamped).
+    struct PortalRim {
+      std::shared_ptr<Texture> ramp;
+      std::shared_ptr<Material> rampSampler;
+      float colorScale = 1;
+      bool operator==(const PortalRim &o) const { return ramp == o.ramp && colorScale == o.colorScale; }
+    };
+    // remixapi_MaterialSolidEnergyEXT, validated: Portal 2's SolidEnergy
+    // surface (a light bridge), whose base is the material's albedo texture.
+    // The details are read through their samplers (bilinear, repeating).
+    struct SolidEnergy {
+      std::shared_ptr<Texture> detail1, detail2;
+      std::shared_ptr<Material> detail1Sampler, detail2Sampler;
+      float intensity = 1;
+      float baseScroll[2] = {}, detail1Scroll[2] = {}, detail2Scroll[2] = {}, detail1Sway[2] = {};
+      // Its glow averaged over the textures (the scrolls move them apart, so
+      // over time every texel of each meets every other's), linear: the
+      // light it gives per unit of the material's emission (scene/emission.cpp,
+      // once per material).
+      mutable std::once_flag meanOnce;
+      mutable std::array<float, 3> mean{};
+      bool operator==(const SolidEnergy &o) const {
+        auto same = [](const float *a, const float *b) { return a[0] == b[0] && a[1] == b[1]; };
+        return detail1 == o.detail1 && detail2 == o.detail2 && intensity == o.intensity &&
+               same(baseScroll, o.baseScroll) && same(detail1Scroll, o.detail1Scroll) &&
+               same(detail2Scroll, o.detail2Scroll) && same(detail1Sway, o.detail1Sway);
+      }
+    };
     // remixapi_InstanceInfoWoundCutEXT, validated. A description keeps the
     // texture's name (path); the draws built from it hold the texture and
     // its sampler material (bilinear, clipped: black outside 0..1).
@@ -191,6 +221,11 @@ namespace remix {
       // remixapi_MaterialGradientMapEXT (null: none); texture is then a data
       // texture (as stored).
       std::shared_ptr<const GradientMap> gradient;
+      // remixapi_MaterialPortalRimEXT (null: none); texture is then its noise,
+      // a data texture (as stored).
+      std::shared_ptr<const PortalRim> portalRim;
+      // remixapi_MaterialSolidEnergyEXT (null: none).
+      std::shared_ptr<const SolidEnergy> solidEnergy;
       // remixapi_MaterialNormalScrollEXT (normal encoding 5): layers, then the
       // base, layer 1 and layer 2 rates.
       uint32_t scrollLayers = 1;
@@ -243,6 +278,9 @@ namespace remix {
       // remixapi_MaterialInfoScreenCameraEXT: the screen camera slot + 1 it
       // shows (0: none).
       uint8_t screenCamera = 0;
+      // remixapi_MaterialInfoPortalEXT: the ray portal index + 1 its surface
+      // opens (0: none; scene/portals.h).
+      uint8_t rayPortal = 0;
       // Wrap modes in RTX Remix's MDL encoding: 0 clamp, 1 repeat, 2 mirrored
       // repeat, 3 clip.
       uint8_t filter = 0, wrapU = 1, wrapV = 1;
@@ -263,6 +301,12 @@ namespace remix {
       // remixapi_MaterialGradientMapEXT (frame_tables.h materialFields: its
       // parameters take the thin film's fields, which such a material lacks).
       static constexpr uint32_t gradientMap = 1024;
+      // remixapi_MaterialPortalRimEXT (frame_tables.h portalRimFields: its
+      // ramp and colour scale in the film's fields, which it lacks too).
+      static constexpr uint32_t portalRim = 2048;
+      // remixapi_MaterialSolidEnergyEXT (frame_tables.h solidEnergyFields:
+      // its details and rates in the film's fields, likewise).
+      static constexpr uint32_t solidEnergy = 4096;
       uint32_t flags = 0, pbrWord = 0;
       float selfIlluminationScale = 0;
     };

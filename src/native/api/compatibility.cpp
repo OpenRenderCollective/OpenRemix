@@ -23,6 +23,7 @@
 #include "api/state.h"
 #include "api/entrypoints.h"
 #include "pathtrace/volume_policy.h"
+#include "scene/portals.h"
 
 namespace remix::api {
   remixapi_ErrorCode REMIXAPI_CALL requireRenderer() {
@@ -197,5 +198,18 @@ REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_SetFogState(const remixapi_Fo
 }
 
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_AutoInstancePersistentLights() { return ignoredEffect(); }
+
+// remixapi_MaterialInfoPortalEXT indices 0..count-1, paired as i and i ^ 1
+// (scene/portals.h). Portals open on surfaces only: there are no portal volumes.
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetRayPortalCapabilities(uint32_t *out_maxActivePortalSurfaces,
+                                                                            uint32_t *out_maxDedicatedPortalVolumes) {
+  if (!out_maxActivePortalSurfaces && !out_maxDedicatedPortalVolumes)
+    return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
+  if (out_maxActivePortalSurfaces)
+    *out_maxActivePortalSurfaces = remix::scene::rayPortalSlots;
+  if (out_maxDedicatedPortalVolumes)
+    *out_maxDedicatedPortalVolumes = 0;
+  return REMIXAPI_ERROR_CODE_SUCCESS;
+}
 
 }

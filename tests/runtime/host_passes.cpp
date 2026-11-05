@@ -265,10 +265,24 @@ int main(int argc, char **argv) {
   ok(api.Present(nullptr));
   ok(statistics(&stats));
   require(stats.passes == 0, "Host passes off: submission dropped");
+  // Passes flagged REMIXAPI_HOST_PASS_ALWAYS_EXT run regardless (the clear
+  // here); the rest stay dropped.
+  const uint32_t clearAlways[1] = {REMIXAPI_HOST_PASS_ALWAYS_EXT};
+  remixapi_HostPassListFlagsEXT listFlags = {};
+  listFlags.sType = REMIXAPI_STRUCT_TYPE_HOST_PASS_LIST_FLAGS_EXT;
+  listFlags.flags = clearAlways;
+  listFlags.flagCount = 1;
+  list.pNext = &listFlags;
+  ok(submit(&list));
+  ok(api.Present(nullptr));
+  ok(statistics(&stats));
+  require(stats.passes == 1 && stats.clears == 1 && stats.always == 1 && stats.dropped == 3,
+          "Host passes off: the always pass ran");
+  list.pNext = nullptr;
   ok(api.SetConfigVariable("rtx.native.hostPasses", "1"));
   ok(passesEnabled(&hostPassesOn));
   require(hostPassesOn, "Host passes on");
-  ok(updateTarget(9, 2, 2, 37, white, sizeof(white))); // the earlier upload was dropped
+  ok(updateTarget(9, 2, 2, 37, white, sizeof(white))); // again (the earlier one went up with the always pass)
   // Pipelines compile in the background: the draws are skipped until ready.
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
   bool complete = false;

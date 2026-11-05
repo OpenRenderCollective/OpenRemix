@@ -128,6 +128,10 @@ void main() {
   vec4 b = combine(((s >> 6) & 3) | ((s >> 11) & 4), arg((s >> 8) & 3, texel, vertex), arg((s >> 10) & 3, texel, vertex));
   result = vec4(a.rgb, b.a) * draw.tint;
 #endif
+#ifdef INFECTED
+  // A portal rim: its own colour and coverage, at the mesh's coordinate.
+  if ((flags & 64u) != 0u) result = portalRimColour((uv - draw.uvTransform.zw) / draw.uvTransform.xy, vertexColor);
+#endif
   if ((draw.state.w & 1) != 0) result.a = 1;
   float ref = uintBitsToFloat(draw.state.z);
   uint op = draw.state.y & 0xffffu;

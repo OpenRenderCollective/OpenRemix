@@ -289,7 +289,12 @@ namespace remix::scene {
     if (m.emission[0] == 0 && m.emission[1] == 0 && m.emission[2] == 0)
       return {};
     std::array<float, 3> result{};
-    if (!m.emissionTexture && !m.selfIllumination) {
+    // A portal rim's estimate depends on its vertex colours (the opening and
+    // the static), which no material cache entry keys; a SolidEnergy one is
+    // the material's (below).
+    if (m.portalRim || m.solidEnergy)
+      cached = false;
+    if (!m.emissionTexture && !m.selfIllumination && !m.portalRim && !m.solidEnergy) {
       std::copy_n(m.emission, 3, result.begin());
       return result;
     }
@@ -333,6 +338,101 @@ namespace remix::scene {
       map.channels = &linearChannels[p.srgb];
       return map;
     };
+    // remixapi_MaterialSolidEnergyEXT (a light bridge): what the sheet adds
+    // where seen, G = (2 B D1 + D2 D1) (1 + B.a) x its intensity, averaged
+    // once per material over its textures (their scrolls part them, so the
+    // time average is the product of the averages) and the same on every
+    // triangle: a constant light, which neither the animation nor a rebuilt
+    // mesh makes the light tree estimate again. Times the material's emission
+    // (the host's light scale; the sheet's look does not use it).
+    if (m.solidEnergy) {
+      const auto &e = *m.solidEnergy;
+      std::call_once(e.meanOnce, [&] {
+        auto average = [&](const Texture *texture) {
+          std::array<float, 4> sum{};
+          const Map map = open(texture);
+          if (!map)
+            return std::array<float, 4>{1, 1, 1, 1};
+          const size_t texels = size_t(map.width) * map.height;
+          for (size_t i = 0; i < texels; ++i) {
+            const auto v = map.at(i * 4);
+            for (unsigned c = 0; c < 4; ++c)
+              sum[c] += v[c];
+          }
+          for (auto &v : sum)
+            v /= float(texels);
+          return sum;
+        };
+        // B (1 + B.a) and (1 + B.a) need the base's texels together.
+        std::array<float, 3> b{};
+        float lift = 0;
+        if (const Map base = open(m.texture.get())) {
+          const size_t texels = size_t(base.width) * base.height;
+          for (size_t i = 0; i < texels; ++i) {
+            const auto v = base.at(i * 4);
+            for (unsigned c = 0; c < 3; ++c)
+              b[c] += v[c] * (1 + v[3]);
+            lift += 1 + v[3];
+          }
+          for (auto &v : b)
+            v /= float(texels);
+          lift /= float(texels);
+        }
+        const auto d1 = average(e.detail1.get()), d2 = average(e.detail2.get());
+        for (unsigned c = 0; c < 3; ++c)
+          e.mean[c] = (2 * b[c] * d1[c] + d2[c] * d1[c] * lift) * e.intensity;
+      });
+      for (unsigned c = 0; c < 3; ++c)
+        result[c] = e.mean[c] * m.emission[c];
+      return result;
+    }
+    // remixapi_MaterialPortalRimEXT: coverage times colour (a x C, as traced
+    // rays meet it), at mesh UVs and vertex colours, the noise term h taken
+    // at three values around the mean of Portal 2's noise (0.53). At a 4 x 4
+    // subset of the samples: a rim's triangles are thin slices of its rings,
+    // and a new rim mesh (each step of a portal's opening) is estimated whole
+    // on the render thread (all 256: ~40 ms a step for a pair's rims).
+    if (m.portalRim) {
+      const Map ramp = open(m.portalRim->ramp.get());
+      float colour[3][4];
+      for (unsigned i = 0; i < 3; ++i) {
+        const auto &vertex = s.vertices[s.indices[triangle * 3 + i]];
+        std::copy_n(vertex.color, 4, colour[i]);
+        std::copy_n(vertex.uv, 2, uv[i]);
+      }
+      auto smooth = [](float x) { return x * x * (3 - 2 * x); };
+      auto saturate = [](float x) { return std::clamp(x, 0.f, 1.f); };
+      for (unsigned sample = 0; sample < 16; ++sample) {
+        const auto &w = emissionSamples[(sample / 4 * 4 + 2) * 16 + sample % 4 * 4 + 2];
+        float u = 0, v = 0, opening = 0, stat = 0;
+        for (unsigned i = 0; i < 3; ++i) {
+          u += uv[i][0] * w[i];
+          v += uv[i][1] * w[i];
+          opening += colour[i][0] * w[i];
+          stat += colour[i][1] * w[i];
+        }
+        opening = saturate(opening);
+        stat = saturate(stat);
+        const float cx = u * 1.075f - .0375f, cy = v * 1.075f - .0375f;
+        const float d = std::hypot(2 * cx - 1, 2 * cy - 1), k = smooth(opening), r = k * k;
+        const bool inside = d <= r;
+        const float e = inside ? saturate((d - r + .3f) / .3f) : 1 - saturate((d - r) * 13.3333f);
+        const float edge = e * std::max(saturate(2.5f * k), stat);
+        for (const float h : {.42f, .53f, .64f}) {
+          const float p = 1 - smooth(saturate((h - edge + .875f) / 1.75f));
+          const float q = 1 - smooth(saturate((1 - stat) / h));
+          const float level = saturate(edge * p + (inside ? q : 0.f));
+          const float x = 1.5f * level * std::sqrt(p) * (.8f * std::pow(std::abs(cy), 1.5f) + .2f);
+          const float a = saturate(1.5f * level);
+          std::array<float, 4> value{1, 1, 1, 1};
+          if (ramp)
+            value = ramp.at(4 * std::min(size_t(ramp.width) - 1, size_t(saturate(x) * ramp.width)));
+          for (unsigned c = 0; c < 3; ++c)
+            result[c] += a * value[c] * m.portalRim->colorScale * m.emission[c] / (16 * 3);
+        }
+      }
+      return result;
+    }
     const Map emissive = open(m.emissionTexture.get());
     // remixapi_MaterialInfoSelfIlluminationEXT: the albedo colour (texture and
     // constant; no vertex colours or texture stages here) and the mask.

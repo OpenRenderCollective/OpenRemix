@@ -457,9 +457,10 @@ namespace remix {
     // The layout and shader modules; false when they cannot be created.
     bool prepareSprite();
     void destroySprite();
-    // remixapi_MaterialGradientMapEXT and remixapi_InstanceInfoWoundCutEXT
-    // (raster/infected.cpp): the raster stages with INFECTED, whose set 1
-    // holds the gradient, detail, cut and burn textures and the draw's parameters.
+    // remixapi_MaterialGradientMapEXT, remixapi_MaterialPortalRimEXT and
+    // remixapi_InstanceInfoWoundCutEXT (raster/infected.cpp): the raster
+    // stages with INFECTED, whose set 1 holds the gradient (or the rim's
+    // ramp), detail, cut and burn textures and the draw's parameters.
     struct Infected {
       VkDescriptorSetLayout setLayout = VK_NULL_HANDLE;
       VkPipelineLayout layout = VK_NULL_HANDLE; // the raster layout and, set 1, the above
@@ -476,8 +477,9 @@ namespace remix {
     bool prepareInfected();
     void destroyInfected();
     // A command's parameter block (Command::infected) for a draw with a
-    // gradient-mapped material or a wound cut.
-    void infectedParameters(const scene::Draw &draw, Command &out, VkCommandBuffer command);
+    // gradient-mapped material, a portal rim or a wound cut; seconds: the
+    // frame's clock (a portal rim's scroll).
+    void infectedParameters(const scene::Draw &draw, Command &out, VkCommandBuffer command, double seconds);
     // After the frame's commands: their parameters' buffer and sets.
     void finishInfected();
     // The NUMOS sky over the target (raster/sky.cpp): fullscreen draws that

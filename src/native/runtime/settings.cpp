@@ -323,6 +323,8 @@ namespace remix::config {
         TRACE(sharcDynamicSurfaces, 0, 1);
         TRACE(sharcGlossySurfaces, 0, 1);
         TRACE(sharcFootprintTest, 0, 1);
+        TRACE(rayPortalTeleports, 0, 8);
+        TRACE(rayPortalExitOffset, 0, 100);
         TRACE(sky, 0, 1);
         TRACE(forceRebuild, 0, 1);
         TRACE(fsrSharpness, 0, 1);

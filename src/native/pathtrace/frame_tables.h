@@ -168,6 +168,35 @@ namespace remix::trace::detail {
     const uint32_t strength = halfBits(std::clamp(g.burnStrength, 0.f, 1.f));
     burnOut = burn && strength ? burn | strength << 16 : 0;
   }
+  // remixapi_MaterialPortalRimEXT (MaterialDecode::portalRim) in the film's
+  // fields, which such a material lacks (film[0] stays 0): film[1] the colour
+  // scale; maps[0] the ramp's texture slot. The noise is the albedo texture
+  // (scene.glsl portalRim).
+  inline void portalRimFields(const scene::PortalRim &rim, uint32_t ramp, float film[4], uint32_t maps[4]) {
+    film[0] = 0;
+    film[1] = rim.colorScale;
+    film[2] = film[3] = 0;
+    maps[0] = ramp;
+    maps[1] = maps[2] = maps[3] = 0;
+  }
+  // remixapi_MaterialSolidEnergyEXT (MaterialDecode::solidEnergy) in the
+  // film's fields, which such a material lacks (film[0] stays 0), as half
+  // floats: film[1] the intensity and the sway's period, film[2] the base's
+  // scroll, film[3] detail 1's; maps[0] and maps[1] the details' texture
+  // slots, maps[2] detail 2's scroll, maps[3] the sway's amplitude
+  // (scene.glsl solidEnergy).
+  inline void solidEnergyFields(const scene::SolidEnergy &e, uint32_t detail1, uint32_t detail2, float film[4],
+                                uint32_t maps[4]) {
+    auto pair = [](float a, float b) { return halfBits(a) | halfBits(b) << 16; };
+    const uint32_t words[3] = {pair(e.intensity, e.detail1Sway[1]), pair(e.baseScroll[0], e.baseScroll[1]),
+                               pair(e.detail1Scroll[0], e.detail1Scroll[1])};
+    film[0] = 0;
+    std::memcpy(&film[1], words, sizeof(words));
+    maps[0] = detail1;
+    maps[1] = detail2;
+    maps[2] = pair(e.detail2Scroll[0], e.detail2Scroll[1]);
+    maps[3] = pair(e.detail1Sway[0], 0);
+  }
   // remixapi_InstanceInfoWoundCutEXT: a surface's wound record, an entry of
   // the surface table after the frame's surfaces that no instance points to
   // (the surface's textureState[1] does; vertex-wound.comp). Its fields
@@ -810,19 +839,27 @@ namespace remix::trace {
         *slotsOut[i] = index->second + 1;
       }
       value.filmMaps[3] |= filmMap;
-      // A gradient map's textures, each through its own sampler (a sampler
-      // material's albedo descriptor), in the film's fields.
+      // A gradient map's or portal rim's textures, each through its own
+      // sampler (a sampler material's albedo descriptor), in the film's fields.
+      auto sampled = [&](const std::shared_ptr<scene::Material> &sampler) {
+        if (count() >= limit)
+          env.tooManyObjects();
+        const auto index = uint32_t(count());
+        requests.push_back({sampler, nullptr, DescriptorRequest::Albedo});
+        const auto samplerFingerprint = sampler->texture->fingerprint();
+        append(&samplerFingerprint, sizeof(samplerFingerprint));
+        return index;
+      };
+      if (material.portalRim)
+        detail::portalRimFields(*material.portalRim, sampled(material.portalRim->rampSampler), value.film,
+                                value.filmMaps);
+      if (material.solidEnergy) {
+        const auto &e = *material.solidEnergy;
+        const uint32_t detail1 = sampled(e.detail1Sampler), detail2 = sampled(e.detail2Sampler);
+        detail::solidEnergyFields(e, detail1, detail2, value.film, value.filmMaps);
+      }
       if (material.gradient) {
         const auto &g = *material.gradient;
-        auto sampled = [&](const std::shared_ptr<scene::Material> &sampler) {
-          if (count() >= limit)
-            env.tooManyObjects();
-          const auto index = uint32_t(count());
-          requests.push_back({sampler, nullptr, DescriptorRequest::Albedo});
-          const auto samplerFingerprint = sampler->texture->fingerprint();
-          append(&samplerFingerprint, sizeof(samplerFingerprint));
-          return index;
-        };
         const uint32_t gradient = sampled(g.gradientSampler);
         const uint32_t detail = g.detailSampler ? sampled(g.detailSampler) + 1 : 0;
         const uint32_t burn = g.burnSampler && g.burnStrength > 0 ? sampled(g.burnSampler) + 1 : 0;
@@ -1027,6 +1064,9 @@ namespace remix::trace {
                          // remixapi_InstanceInfoMaskEXT CUT: the group (bits 16-21) whose
                          // coverage hides the surface from camera rays.
                          uint32_t(surface.cutGroup) << 16 |
+                         // Bits 22-25: the ray portal index + 1 it opens (0: none;
+                         // scene/portals.h).
+                         uint32_t(material.rayPortal) << 22 |
                          // remixapi_InstanceInfoCameraCullingEXT (bits 9-10): camera rays
                          // skip its back faces / its parts in clusters the camera cannot see.
                          uint32_t(surface.cameraCull & 3u) << 9;

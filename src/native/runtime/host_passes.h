@@ -39,7 +39,8 @@ public:
                                   uint32_t format, const void *pixels, uint64_t bytes, uint32_t depth = 1);
   bool pending() const;
   // The user's setting (rtx.native.hostPasses), from the frame's settings:
-  // off, submissions and uploads are dropped (and what is pending with them).
+  // off, submissions keep only their REMIXAPI_HOST_PASS_ALWAYS_EXT passes
+  // (what is pending keeps them likewise); uploads are kept for those.
   void setEnabled(bool enabled);
   // For remixapi_GetHostPassesEnabledEXT: the setting; the host asking is what
   // shows the setting in the UI (asked()).
@@ -91,6 +92,7 @@ private:
     std::vector<remixapi_HostPassAttributeEXT> attributes;
     std::vector<uint8_t> data; // buffers', push constants' and vertices' bytes, in that order
     std::vector<uint32_t> indices;
+    bool always = false; // REMIXAPI_HOST_PASS_ALWAYS_EXT: replayed while the setting is off
   };
   // A target's contents from the host, uploaded before the frame's passes.
   struct Upload {

@@ -117,23 +117,54 @@ remixapi_ErrorCode HostPasses::destroyShader(remixapi_HostShaderHandleEXT shader
 void HostPasses::setEnabled(bool enabled) {
   if (m_enabled.exchange(enabled) == enabled || enabled)
     return;
+  // Off: only the passes replayed regardless stay (with the uploads, which
+  // they may sample).
   std::lock_guard lock(m_mutex);
-  m_pending.clear();
-  m_uploads.clear();
+  std::erase_if(m_pending, [](const Pass &pass) { return !pass.always; });
 }
 
 remixapi_ErrorCode HostPasses::submit(const remixapi_HostPassListEXT &list) {
   if ((list.passCount && !list.passes) || list.passCount > 1024)
     return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
-  if (!m_enabled)
+  // The passes' flags (remixapi_HostPassListFlagsEXT), when the list has them.
+  const uint32_t *flags = nullptr;
+  uint32_t flagCount = 0;
+  for (auto *next = static_cast<const remixapi_HostPassListFlagsEXT *>(list.pNext); next;
+       next = static_cast<const remixapi_HostPassListFlagsEXT *>(next->pNext))
+    if (next->sType == REMIXAPI_STRUCT_TYPE_HOST_PASS_LIST_FLAGS_EXT) {
+      if (next->flagCount && !next->flags)
+        return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
+      flags = next->flags;
+      flagCount = std::min(next->flagCount, list.passCount);
+    }
+  // The setting off: only the passes flagged to run regardless; the rest are
+  // dropped unchecked, as before the flag.
+  const bool enabled = m_enabled;
+  uint32_t always = 0, dropped = 0;
+  for (uint32_t i = 0; i < flagCount; ++i)
+    always += (flags[i] & REMIXAPI_HOST_PASS_ALWAYS_EXT) != 0;
+  if (!enabled && !always) {
+    std::lock_guard lock(m_mutex);
+    m_pending.clear();
+    m_stats.passes = m_stats.draws = m_stats.copies = m_stats.clears = m_stats.skipped = 0;
+    m_stats.skippedCopySource = m_stats.skippedShaders = m_stats.skippedPipeline = m_stats.skippedDescriptors = 0;
+    m_stats.skippedBuffer = m_stats.skippedSampler = m_stats.skippedTarget = m_stats.skippedViewDepth = 0;
+    m_stats.always = 0;
+    m_stats.dropped = list.passCount;
     return REMIXAPI_ERROR_CODE_SUCCESS; // the setting is off: dropped
+  }
   std::vector<Pass> passes;
-  passes.reserve(list.passCount);
+  passes.reserve(enabled ? list.passCount : always);
   std::lock_guard lock(m_mutex);
   for (uint32_t i = 0; i < list.passCount; ++i) {
     const auto &info = list.passes[i];
     Pass pass;
     pass.info = info;
+    pass.always = i < flagCount && (flags[i] & REMIXAPI_HOST_PASS_ALWAYS_EXT);
+    if (!enabled && !pass.always) {
+      ++dropped;
+      continue;
+    }
     const bool frameDepthTarget = info.target == REMIXAPI_HOST_TARGET_FRAME_DEPTH_EXT;
     if (info.kind > REMIXAPI_HOST_PASS_CLEAR_EXT ||
         (info.target >= REMIXAPI_HOST_TARGET_RESERVED_EXT && !frameDepthTarget) ||
@@ -200,6 +231,8 @@ remixapi_ErrorCode HostPasses::submit(const remixapi_HostPassListEXT &list) {
   m_stats.passes = m_stats.draws = m_stats.copies = m_stats.clears = m_stats.skipped = 0;
   m_stats.skippedCopySource = m_stats.skippedShaders = m_stats.skippedPipeline = m_stats.skippedDescriptors = 0;
   m_stats.skippedBuffer = m_stats.skippedSampler = m_stats.skippedTarget = m_stats.skippedViewDepth = 0;
+  m_stats.always = always;
+  m_stats.dropped = dropped;
   return REMIXAPI_ERROR_CODE_SUCCESS;
 }
 
@@ -209,8 +242,9 @@ remixapi_ErrorCode HostPasses::updateTarget(remixapi_HostTargetHandleEXT target,
       height > 16384 || depth > 2048 || bytes != uint64_t(width) * height * depth * 4 ||
       (format != formatRgba8 && format != formatBgra8))
     return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
-  if (!m_enabled)
-    return REMIXAPI_ERROR_CODE_SUCCESS; // the setting is off: dropped
+  // Kept while the setting is off too: passes flagged
+  // REMIXAPI_HOST_PASS_ALWAYS_EXT sample them (a host keeps its other work
+  // for when the setting is on).
   Upload upload{target, format, width, height, depth, {}};
   upload.pixels.assign(static_cast<const uint8_t *>(pixels), static_cast<const uint8_t *>(pixels) + bytes);
   std::lock_guard lock(m_mutex);

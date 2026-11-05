@@ -6,6 +6,7 @@
 #include "usd/mods.h"
 #endif
 #include "api/entrypoints.h"
+#include "pathtrace/block_costs.h"
 #include "pathtrace/volume_policy.h"
 #include "platform/gpu_timings.h"
 #include "runtime/profiles.h"
@@ -243,6 +244,14 @@ void serviceDevRequests() {
                           sparse.rate * 100);
           else
             std::snprintf(line, sizeof(line), "# sparse rendering: off (%s)\n", sparse.reason);
+          text += line;
+        }
+        if (const auto portals = remix::trace::g_rayPortalState; portals.surfaces) {
+          std::snprintf(line, sizeof(line),
+                        "# ray portals: %u surfaces, %u open pairs, %u duplicate indices, %u teleports per camera "
+                        "ray%s\n",
+                        portals.surfaces, portals.pairs, portals.duplicates, portals.teleports,
+                        portals.traced ? "" : " (not traced: needs raster primary and a denoiser)");
           text += line;
         }
         if (const auto volume = remix::trace::g_volumeState; volume.requested) {

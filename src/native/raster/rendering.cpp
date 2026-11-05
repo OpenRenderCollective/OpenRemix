@@ -278,10 +278,11 @@ namespace remix {
       // A sprite overlay (raster/sprite.cpp): a blended draw that is not masked.
       const bool sprite = !silhouette && draw.spriteFlags && draw.blend.enabled && !draw.maskGroup && !draw.cutGroup &&
                           !draw.ui && g.sprite.layout && g.sprite.vertex && g.sprite.fragment && !g.sprite.failed;
-      // A gradient-mapped material or a wound cut (raster/infected.cpp); a
-      // masked or sprite draw is drawn plainly.
-      const bool infected = !silhouette && slot < 0 && !sprite && (draw.wound || mat.gradient) && !draw.ui &&
-                            g.infected.layout && g.infected.vertex && g.infected.fragment && !g.infected.failed;
+      // A gradient-mapped material, a portal rim or a wound cut
+      // (raster/infected.cpp); a masked or sprite draw is drawn plainly.
+      const bool infected = !silhouette && slot < 0 && !sprite && (draw.wound || mat.gradient || mat.portalRim) &&
+                            !draw.ui && g.infected.layout && g.infected.vertex && g.infected.fragment &&
+                            !g.infected.failed;
       try {
         out.pipeline = silhouette ? silhouette->pipelines[tested] : g.pipeline(draw, slot >= 0, sprite, infected);
       } catch (VkResult result) {
@@ -310,7 +311,7 @@ namespace remix {
         out.area = outside ? whole : masks.area[slot];
       }
       if (infected) {
-        g.infectedParameters(draw, out, command);
+        g.infectedParameters(draw, out, command, seconds);
         out.bindBuffer = mesh.data->buffer;
         out.bindOffset = mesh.data->offset;
       }

@@ -812,6 +812,28 @@ namespace remix {
       lastScreenCameras = screens;
       append(frame.screenCameras, sizeof(frame.screenCameras));
     }
+    {
+      // remixapi_MaterialInfoPortalEXT: the frame's open pairs. A pair whose
+      // map changed restarts the history of what is seen through it (flag 2
+      // on both sides).
+      auto portals = scene::rayPortals(resources.draws());
+      for (uint32_t index = 0; index < scene::rayPortalSlots; ++index) {
+        const auto &slot = portals.slots[index];
+        std::copy_n(slot.data(), 16, &frame.rayPortals[index][0][0]);
+        if (slot[15] != 0 && (slot != lastRayPortals.slots[index] || portals.slots[index ^ 1] != lastRayPortals.slots[index ^ 1]))
+          frame.rayPortals[index][3][3] += 2;
+      }
+      frame.rayPortalConfig[0] = std::min(options.rayPortalTeleports, 8u);
+      const float exitOffset = std::max(options.rayPortalExitOffset, 0.f);
+      std::memcpy(&frame.rayPortalConfig[1], &exitOffset, 4);
+      std::copy(portals.planes.begin(), portals.planes.end(), frame.rayPortalPlanes);
+      trace::g_rayPortalState = {portals.surfaces, portals.pairs, portals.duplicates, frame.rayPortalConfig[0],
+                                 denoiser && psrCompute && options.rasterPrimary};
+      lastRayPortals = portals;
+      append(frame.rayPortals, sizeof(frame.rayPortals));
+      append(frame.rayPortalConfig, sizeof(frame.rayPortalConfig));
+      append(frame.rayPortalPlanes, sizeof(frame.rayPortalPlanes));
+    }
     frame.upAxis = float(std::min(options.volumetricUpAxis, 2u));
     {
       // Scrolling maps (water): wrapped well before float precision suffers.

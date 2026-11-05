@@ -950,6 +950,22 @@ typedef struct remixapi_HostPassListEXT {
   const remixapi_HostPassEXT* passes;
   uint32_t passCount;
 } remixapi_HostPassListEXT;
+// Optional HostPassListEXT pNext: flags of the list's passes, flags[i] for
+// passes[i] (passes past flagCount have none). REMIXAPI_HOST_PASS_ALWAYS_EXT:
+// the pass is replayed whatever the user's host-pass setting (see
+// GetHostPassesEnabledEXT): a host's draw that belongs on the frame (a game's
+// own overlay the path tracer has no stand-in for) rather than an
+// experimental replacement of the runtime's work. While the setting is off,
+// a submission keeps only these passes (the rest are dropped, as without the
+// flag) and target updates are kept for them.
+#define REMIXAPI_HOST_PASS_ALWAYS_EXT 1u
+#define REMIXAPI_STRUCT_TYPE_HOST_PASS_LIST_FLAGS_EXT ((remixapi_StructType)0x7fff1032)
+typedef struct remixapi_HostPassListFlagsEXT {
+  remixapi_StructType sType;
+  const void* pNext;
+  const uint32_t* flags; // REMIXAPI_HOST_PASS_* flags
+  uint32_t flagCount;
+} remixapi_HostPassListFlagsEXT;
 // The passes of the next presented frame, in order (replacing any submitted
 // before it this frame). Pipelines compile on first use in the background: a
 // pass whose pipeline is not ready yet is skipped that frame.
@@ -977,8 +993,9 @@ REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_UpdateHostVolumeEXT(
 
 // Whether host passes run: the user's setting (rtx.native.hostPasses, shown
 // in the Rendering tab as "Pass-through game shaders (experimental)" to a host
-// that has asked this). While it is off, SubmitHostPassesEXT and the target
-// updates succeed but are dropped; a host polls this each frame and keeps
+// that has asked this). While it is off, SubmitHostPassesEXT succeeds but
+// drops every pass not flagged REMIXAPI_HOST_PASS_ALWAYS_EXT, and target
+// updates are kept only for those; a host polls this each frame and keeps
 // its own work (recording, compiling shaders) for when it is on.
 typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_GetHostPassesEnabledEXT)(remixapi_Bool* enabled);
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetHostPassesEnabledEXT(remixapi_Bool* enabled);
@@ -995,6 +1012,11 @@ typedef struct remixapi_HostPassStatisticsEXT {
   // sampler, a sampled target without an image, no view depth this frame.
   uint32_t skippedCopySource, skippedShaders, skippedPipeline, skippedDescriptors;
   uint32_t skippedBuffer, skippedSampler, skippedTarget, skippedViewDepth;
+  // Versioned by structSize (a caller's smaller struct, without these, gets
+  // the fields it has). Last submission: passes flagged
+  // REMIXAPI_HOST_PASS_ALWAYS_EXT (counted in `passes` too when replayed),
+  // and passes dropped because the setting is off.
+  uint32_t always, dropped;
 } remixapi_HostPassStatisticsEXT;
 typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_GetHostPassStatisticsEXT)(remixapi_HostPassStatisticsEXT* out);
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetHostPassStatisticsEXT(remixapi_HostPassStatisticsEXT* out);
@@ -1438,6 +1460,86 @@ typedef struct remixapi_InstanceInfoWoundCutEXT {
   float cutScaleBias[2][4];
   float threshold;
 } remixapi_InstanceInfoWoundCutEXT;
+
+// Optional pNext on an opaque MaterialInfo: a portal's rim, as Portal 2's
+// PortalRefract shader draws it ($Stage 2: the glow around an opening and,
+// while the portal has no partner, the swirl that fills it). The effect takes
+// the place of the material's colour and emission wherever it is shaded: the
+// surface reflects nothing, covers with alpha a and emits a x C x the
+// emissive colour and intensity; the albedo texture N is its noise (read as
+// stored, with the material's sampler) and colorTexture R its colour ramp
+// (read like an albedo texture: sRGB-decoded if sRGB-encoded; clamped). Per
+// vertex, the colour's red is the opening o (0 closed to 1 open) and its
+// green the static s (1: no partner shown), as stored (no sRGB decode),
+// interpolated like any vertex colour (a mesh keeps them equal at its
+// vertices). With the mesh's texture coordinate uv (0..1 over the engine's
+// quad, v down; the instance's texture coordinate transform is not applied)
+// and t the runtime's clock in seconds:
+//   c = 1.075 uv - 0.0375, d = |2c - 1|, k = smoothstep(o), r = k^2
+//   e = d <= r ? saturate((d - r + 0.3) / 0.3) : 1 - saturate(13.333 (d - r))
+//   E = e max(saturate(2.5 k), s)
+//   w = 0.3 ((uv - 0.5) / saturate(o + 0.001) + 0.5)
+//   A = w + (0.0275 t, 0), B = w - (0.0275 t, 0)
+//   n1 = N(A), n2 = N(B.yx - 0.02 n1.xy), n3 = N(A - 0.02 n2.xy)
+//   h = (n2.g + n3.g) / 2
+//   P = 1 - smoothstep(saturate((h - E + 0.875) / 1.75))
+//   Q = 1 - smoothstep(saturate((1 - s) / h))
+//   I = saturate(E P + (d <= r ? Q : 0))
+//   x = 1.5 I sqrt(P) (0.8 |c.y|^1.5 + 0.2)
+//   C = R(x, 0.5).rgb colorScale, a = saturate(1.5 I)
+// (smoothstep(x) = x^2 (3 - 2x)). A blended instance (source alpha over) shows
+// it as the game's overlay, rasterized or traced (a sheet of coverage a
+// emitting C). Traced rays meet an instance that is not blended wherever its
+// triangles are, its coverage untested (a host cuts its mesh to where a is
+// high: the alpha test reads the albedo texture as usual), and it emits a x C
+// there; light and shadow rays take any surface of it by its albedo texture.
+// Its emitters are estimated with h at 0.42, 0.53 and 0.64 (around the mean
+// of Portal 2's noise). The raster backend evaluates the same (the Metal
+// backend draws the plain material). Not with a gradient map, a thin film, a
+// portal or a translucent material; colorTexture is named as material
+// textures are and required; colorScale finite, at least 0.
+#define REMIXAPI_STRUCT_TYPE_MATERIAL_PORTAL_RIM_EXT ((remixapi_StructType)0x7fff1029)
+typedef struct remixapi_MaterialPortalRimEXT {
+  remixapi_StructType sType;
+  const void *pNext;
+  remixapi_Path colorTexture;
+  float colorScale;
+} remixapi_MaterialPortalRimEXT;
+
+// Optional pNext on an opaque MaterialInfo: Portal 2's SolidEnergy surface
+// (a light bridge, effects/projected_wall: $detail1blendmode 1, $detail2blendmode
+// 0, $additive), a glowing sheet seen through. Its base B is the material's
+// albedo texture, D1 detail1Texture and D2 detail2Texture (sRGB as material
+// textures are), at mesh UVs (the surface's UV transform left out) moved by
+// the runtime's clock t:
+//   B at uv + baseScroll t
+//   D1 at uv + detail1Scroll t + (a + a sin(2 pi t / period), 0), with
+//     detail1Sway = (a, period) (period 0: no sway)
+//   D2 at uv + detail2Scroll t
+//   G = (2 B.rgb D1.rgb + D2.rgb D1.rgb) (1 + B.a) intensity
+// (solidenergy_ps30; the additive blend's output intensity squared in
+// intensity). What it shows is G added over what is behind it, as a blended
+// sheet (source alpha over) of coverage a = min(max(G) / 2, 1/2) emitting
+// G / a: what is behind dims by 1 - a. It reflects nothing and is not a
+// light: its emission is met only by the rays that see it (its material's
+// emissive intensity is 0; it gives no estimate to the light tree). Light and
+// shadow rays take it by its texture stages' alpha, as other blended sheets
+// (a host keeps that low: the bridge casts no shadow in the game). Not with a
+// gradient map, a portal rim, a thin film, a portal or a translucent
+// material; both detail textures are named as material textures are and
+// required; every value finite, intensity and period at least 0.
+#define REMIXAPI_STRUCT_TYPE_MATERIAL_SOLID_ENERGY_EXT ((remixapi_StructType)0x7fff1033)
+typedef struct remixapi_MaterialSolidEnergyEXT {
+  remixapi_StructType sType;
+  const void *pNext;
+  remixapi_Path detail1Texture;
+  remixapi_Path detail2Texture;
+  float intensity;
+  float baseScroll[2];
+  float detail1Scroll[2];
+  float detail2Scroll[2];
+  float detail1Sway[2];
+} remixapi_MaterialSolidEnergyEXT;
 
 // Optional pNext on opaque or translucent MaterialInfo: a thin-film coating
 // whose interference colours the reflection (iridescence), evaluated

@@ -63,11 +63,12 @@ namespace remix {
     // compile, about 100 ms, and the first shot of a session needs several.
     // prepare() leaves such a draw out until its pipeline is ready. The raster
     // backend draws the scene itself and waits, as before.
-    // Gradient-mapped materials and wound cuts (raster/infected.cpp) take
-    // their own stages, waited for like any draw's; plain if they cannot be made.
+    // Gradient-mapped materials, portal rims and wound cuts (raster/infected.cpp)
+    // take their own stages, waited for like any draw's; plain if they cannot be made.
     int infected = -1;
     const auto infectedStages = [&](const scene::Draw &draw) {
-      if ((!draw.wound && !(draw.material && draw.material->gradient)) || draw.ui || (draw.spriteFlags && draw.blend.enabled))
+      if ((!draw.wound && !(draw.material && (draw.material->gradient || draw.material->portalRim))) || draw.ui ||
+          (draw.spriteFlags && draw.blend.enabled))
         return false;
       if (infected < 0) {
         try {

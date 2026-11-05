@@ -590,6 +590,10 @@ namespace remix {
         if (d.hasRasterState && d.disableColorWrites)
           draw.blend.mask = 0;
         draw.blend.enabled |= draw.material->translucent;
+        // A ray portal pairs by the frame's transforms (scene/portals.h): it
+        // is in every frame's draw list, never part of the static set.
+        if (draw.material->rayPortal && draw.classification == REMIXAPI_INSTANCE_STATIC_EXT)
+          draw.classification = REMIXAPI_INSTANCE_DYNAMIC_EXT;
         draw.doubleSided = d.doubleSided;
         draw.ignoreAlpha = (d.categoryFlags & REMIXAPI_INSTANCE_CATEGORY_BIT_IGNORE_ALPHA_CHANNEL) != 0;
         if (draw.ignoreAlpha) {

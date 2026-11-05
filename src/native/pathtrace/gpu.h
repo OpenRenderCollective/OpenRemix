@@ -6,6 +6,7 @@
 #include "pathtrace/renderer.h"
 #include "pathtrace/shader_code.h"
 #include "pathtrace/tlas_policy.h"
+#include "scene/portals.h"
 #include "platform/gpu_timers.h"
 #include "platform/timing.h"
 #include "platform/workers.h"
@@ -225,8 +226,18 @@ namespace remix::trace::detail {
     // radius (rtx.subsurface.diffusionProfileScale in them) and the thickness scale.
     uint64_t woundVertices = 0;
     float subsurfaceUnits = 0, subsurfaceThickness = 1;
+    // remixapi_MaterialInfoPortalEXT by index (scene::RayPortals): the rows of
+    // the map to the partner portal, then the front's normal with flags (w: 1
+    // the pair is open, plus 2 when it moved since the last frame: what is
+    // seen through it restarts its history). rayPortalConfig: teleports per
+    // camera ray (rtx.native.pathtrace.rayPortalTeleports), the exit offset
+    // (float bits, rtx.native.pathtrace.rayPortalExitOffset), reserved.
+    // rayPortalPlanes: each opening's plane (scene::RayPortals::planes).
+    float rayPortals[scene::rayPortalSlots][4][4] = {};
+    uint32_t rayPortalConfig[4] = {};
+    float rayPortalPlanes[scene::rayPortalSlots] = {};
   };
-  static_assert(sizeof(Frame) == 2336 && offsetof(Frame, woundVertices) == 2320 && offsetof(Frame, screenCameras) == 1808 && offsetof(Frame, srgbTextures) == 1280 && offsetof(Frame, pathDebug) == 1792 &&
+  static_assert(sizeof(Frame) == 2896 && offsetof(Frame, rayPortalPlanes) == 2864 && offsetof(Frame, rayPortals) == 2336 && offsetof(Frame, woundVertices) == 2320 && offsetof(Frame, screenCameras) == 1808 && offsetof(Frame, srgbTextures) == 1280 && offsetof(Frame, pathDebug) == 1792 &&
                 offsetof(Frame, localProbeRead) == 1168 &&
                 offsetof(Frame, localProbeParams) == 1184 && offsetof(Frame, volumeLightScales) == 1200 &&
                 offsetof(Frame, cloudShadow) == 1216 && offsetof(Frame, cloudShadowConfig) == 1264 &&
@@ -625,6 +636,7 @@ namespace remix {
       remixapi_CameraCullingStatisticsEXT statistics{.structSize = sizeof(remixapi_CameraCullingStatisticsEXT)};
     } cameraCulling;
     ScreenCameras lastScreenCameras = {}; // the previous traced frame's (Frame::screenCameras flag 2)
+    scene::RayPortals lastRayPortals = {}; // the previous traced frame's (Frame::rayPortals flag 2)
     // Sets the frame's camera culling constants; uploads what they refer to.
     void configureCameraCulling(VkCommandBuffer command, Frame &frame, const TraceOptions &options,
                                 const RasterRenderer &resources);

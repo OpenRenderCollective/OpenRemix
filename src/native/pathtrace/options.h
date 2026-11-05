@@ -299,6 +299,15 @@ namespace remix {
     uint32_t debugView = 0;        // display diagnostics; never selects an integrator
     float sunAngularDiameter = -1; // -1 inherits the distant light's diameter.
     bool rasterPrimary = true;
+    // remixapi_MaterialInfoPortalEXT: how many portals one camera ray passes
+    // (0..8). Past them, and at a portal's back or without its partner, the
+    // portal's surface shows its own material. Camera rays only: the primary
+    // surface replacement pass (raster primary with a denoiser) traces them.
+    uint32_t rayPortalTeleports = 4;
+    // World units in front of the partner's opening where a teleported ray
+    // starts: past the partner's own mesh (which may stand off its wall) so
+    // its first hit is not the partner portal.
+    float rayPortalExitOffset = .25f;
     bool waterIndirectReuse = true;
     // Caustics: light through translucent surfaces with normal maps (water,
     // bumpy glass) focused by their waves or bumps. Strength scales the

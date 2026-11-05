@@ -59,8 +59,13 @@ _Static_assert(sizeof(remixapi_HostPassVertexBindingEXT) == 16, "Host pass verte
 _Static_assert(sizeof(remixapi_HostPassAttributeEXT) == 16, "Host pass attribute ABI");
 _Static_assert(sizeof(remixapi_HostPassEXT) == 272, "Host pass ABI");
 _Static_assert(sizeof(remixapi_HostPassListEXT) == 32, "Host pass list ABI");
-_Static_assert(sizeof(remixapi_HostPassStatisticsEXT) == 72, "Host pass statistics ABI");
+_Static_assert(sizeof(remixapi_HostPassListFlagsEXT) == 32, "Host pass list flags ABI");
+_Static_assert(sizeof(remixapi_HostPassStatisticsEXT) == 80, "Host pass statistics ABI");
+_Static_assert(offsetof(remixapi_HostPassStatisticsEXT, always) == 72, "Host pass statistics version 1 size");
 _Static_assert(sizeof(remixapi_InstanceInfoWireframeEXT) == 24, "Wireframe instance ABI");
+_Static_assert(sizeof(remixapi_MaterialPortalRimEXT) == 32, "Portal rim material ABI");
+_Static_assert(sizeof(remixapi_MaterialSolidEnergyEXT) == 72, "Solid energy material ABI");
+_Static_assert(offsetof(remixapi_MaterialSolidEnergyEXT, intensity) == 32, "Solid energy material intensity");
 _Static_assert(sizeof(remixapi_ParticleEmitterInfoEXT) == 232, "Particle emitter ABI");
 _Static_assert(offsetof(remixapi_ParticleEmitterInfoEXT, transform) == 40, "Particle emitter transform");
 _Static_assert(offsetof(remixapi_ParticleEmitterInfoEXT, colorStart) == 168, "Particle emitter colours");

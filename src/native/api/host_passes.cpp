@@ -1,6 +1,8 @@
 // Host passes (remixapi_HostPassEXT): the host's screen-space passes with its
 // own shaders, replayed on the composed frame before the UI.
 #include "api/state.h"
+#include <algorithm>
+#include <cstddef>
 #include <cstring>
 #include <exception>
 #include <SDL3/SDL.h>
@@ -72,11 +74,14 @@ REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetHostPassesEnabledEXT(remix
 }
 
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetHostPassStatisticsEXT(remixapi_HostPassStatisticsEXT *out) {
-  if (!out || out->structSize < sizeof(remixapi_HostPassStatisticsEXT))
+  // Versioned by structSize: the first version ended before `always`.
+  if (!out || out->structSize < offsetof(remixapi_HostPassStatisticsEXT, always))
     return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
   return hostCall([&](auto &passes) {
-    const auto statistics = passes.statistics();
-    std::memcpy(out, &statistics, sizeof(statistics));
+    auto statistics = passes.statistics();
+    const size_t size = std::min(size_t(out->structSize), sizeof(statistics));
+    statistics.structSize = size;
+    std::memcpy(out, &statistics, size);
     return REMIXAPI_ERROR_CODE_SUCCESS;
   });
 }
