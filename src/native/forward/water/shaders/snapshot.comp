@@ -12,10 +12,11 @@ layout(set = 0, binding = 3, rgba16f) writeonly uniform image2D savedHdr;
 layout(set = 0, binding = 4, r32f) writeonly uniform image2D savedDepth;
 layout(push_constant) uniform Settings { uvec4 target; }; // width, height, samples, flags: reflections/standard samples
 #ifndef SINGLE_SAMPLE
+layout(constant_id = 0) const uint DepthSamples = 4u;
 vec4 waterDepthSamples(ivec2 pixel) {
-  vec4 values = vec4(1);
-  for (uint i = 0u; i < target.z; ++i)
-    values[i] = texelFetch(opaqueDepth, pixel, int(i)).r;
+  vec4 values = vec4(texelFetch(opaqueDepth, pixel, 0).r, texelFetch(opaqueDepth, pixel, 1).r, 1, 1);
+  if (DepthSamples == 4u)
+    values.zw = vec2(texelFetch(opaqueDepth, pixel, 2).r, texelFetch(opaqueDepth, pixel, 3).r);
   return values;
 }
 #include "depth.glsl"

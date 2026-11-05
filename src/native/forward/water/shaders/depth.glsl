@@ -5,15 +5,15 @@
 // one plane. Retain nearest depth for discontinuities, sky and unknown patterns.
 vec4 waterDepthSamples(ivec2 pixel);
 vec2 waterDepthRange(vec4 values) {
-  vec2 result = vec2(1, 0);
-  for (uint i = 0u; i < target.z; ++i)
-    result = vec2(min(result.x, values[i]), max(result.y, values[i]));
-  return result;
+  vec2 range = vec2(min(values.x, values.y), max(values.x, values.y));
+  if (DepthSamples == 4u)
+    range = vec2(min(range.x, min(values.z, values.w)), max(range.y, max(values.z, values.w)));
+  return range;
 }
 vec2 waterSampleOffset(uint sampleIndex) {
   // Vulkan's standard 2x/4x locations, relative to the pixel centre. The host
   // enables reconstruction only when standardSampleLocations is guaranteed.
-  if (target.z == 2u) return sampleIndex == 0u ? vec2(.25) : vec2(-.25);
+  if (DepthSamples == 2u) return sampleIndex == 0u ? vec2(.25) : vec2(-.25);
   const vec2 offsets[4] = vec2[4](vec2(-.125, -.375), vec2(.375, -.125),
                                   vec2(-.375, .125), vec2(.125, .375));
   return offsets[sampleIndex];
@@ -36,7 +36,7 @@ float waterResolvedDepth(ivec2 pixel) {
   }
   float centre = (range.x + range.y) * .5;
   vec2 gradient = vec2(centres.y - centres.x, centres.w - centres.z) * .5;
-  for (uint sampleIndex = 0u; sampleIndex < target.z; ++sampleIndex) {
+  for (uint sampleIndex = 0u; sampleIndex < DepthSamples; ++sampleIndex) {
     vec2 offset = waterSampleOffset(sampleIndex);
     if (abs(samples[sampleIndex] - (centre + dot(gradient, offset))) > tolerance)
       return range.x;
