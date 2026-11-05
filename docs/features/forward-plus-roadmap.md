@@ -5256,3 +5256,5 @@ These are work-reduction paths, not quality presets. General native 1080p 300-40
 - [x] Measure actual sparse directional-field storage and current selected-light footprints before designing a cache. All-light expansion is substantially larger than the four selected shadow-light fields; retain a strict budget and uncached fallback.
 - [x] Add frame-only CPU diagnostics so light/draw inspection no longer requires saving a full bake/atlas capture. Preserve existing capture/request gates for legacy tools.
 - [ ] Prototype selected-field expansion with the original nine signed half coefficients and manual interpolation first; hardware bilinear precision is not assumed equivalent. Reuse existing immutable publication, completion-event and submission-owner lifetime patterns; qualify net frame time and peak resident memory before defaults.
+
+- Keep packed per-light directional queries as the current path. Selected coefficient expansion has no accepted full-frame performance benefit; do not retain it as another runtime setting. Revisit only with representative frame-time evidence.
