@@ -368,7 +368,8 @@ namespace remix::forward {
       allCasters.merge(receivers);
       frame.viewModelProjection = viewmodel::sunProjection(receivers, allCasters, direction,
                                                            options.shadowResolution);
-      if (shadowPlanner.source())
+      frame.viewModelStaticSunDirty = viewModelSun->updateStatic(shadowPlanner.source(), frame.viewModelProjection);
+      if (frame.viewModelStaticSunDirty && shadowPlanner.source())
         for (size_t i = 0; i < shadowPlanner.source()->draws.size(); ++i) {
           if (shadowPlanner.source()->receiverOnly(i)) continue;
           const auto &draw = shadowPlanner.source()->draws[i];

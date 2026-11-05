@@ -277,6 +277,16 @@ work without necessarily reducing the visible material shading bottleneck.
 Occlusion/Hi-Z is a further candidate, not an implemented equivalent of PVS.
 
 
+### Viewmodel sun-shadow reuse
+
+Viewmodel sunlight has a frozen-world fallback layer and a moving/self-shadow
+layer. The fallback is reused only for the same immutable bake scene and exact
+fitted projection; a scene replacement, removal, or projection change refreshes
+it. Target recreation starts with an invalid cache. The cache follows the ordered
+graphics queue, like the world sun maps. Moving/self shadows still update every
+frame. This changes neither probe coverage nor mixed-lighting ownership, and it
+does not quantize viewmodel poses or projections.
+
 ### Standard direct-light composition
 
 The standard material entry point delegates direct illumination to

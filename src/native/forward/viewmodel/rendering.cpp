@@ -32,7 +32,7 @@ namespace remix::forward {
     if (frame.data.target[3]) {
       gpu::GpuScope shadowTime(command, "Forward+ viewmodel sun shadow",
                                 options.shadowResolution, options.shadowResolution);
-      viewModelSun->record(command, [&](uint32_t layer) {
+      viewModelSun->record(command, frame.viewModelStaticSunDirty, [&](uint32_t layer) {
         vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipeline);
         vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1,
                                 &frame.viewModelScene, 0, nullptr);

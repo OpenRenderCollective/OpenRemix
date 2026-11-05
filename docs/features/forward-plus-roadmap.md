@@ -1,5 +1,8 @@
 ## Next performance isolation
 
+- Reuse the viewmodel frozen-world sun fallback for an unchanged bake scene and exact projection. Moving/self shadows remain live; replacement, removal and projection changes invalidate the fallback.
+- A conservative cluster zero-response hint trial was removed after inconsistent full-frame qualification. Fewer candidate queries alone is not an acceptance gate; preserve raw custom-lighting semantics in future list work.
+
 Latest split qualification: matched fixed-warm-up Construct/Crossfire ABBA
 checks preserve content, settings, draw counts and the checked world-image crop.
 No consistent latest-host CPU/GPU regression was demonstrated. This qualifies

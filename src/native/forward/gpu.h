@@ -148,6 +148,7 @@ namespace remix::forward {
       std::unique_ptr<depth_batch::Batch> depthBatch;
       std::unique_ptr<Buffer> viewModelConstants, viewModelReflectionConstants;
       Matrix viewModelProjection = scene::identity();
+      bool viewModelStaticSunDirty = true;
       bool skyEnabled = false;
       VkDescriptorImageInfo skyImage{};
       std::vector<Command> commands, staticCommands;

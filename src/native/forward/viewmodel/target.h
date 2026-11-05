@@ -1,5 +1,6 @@
 #pragma once
 #include "forward/resources.h"
+#include "scene/bake_scene.h"
 #include <array>
 #include <functional>
 #include <memory>
@@ -32,7 +33,10 @@ namespace remix::forward::viewmodel {
     ~SunShadow();
     void initialize(VkPhysicalDevice physical, VkDevice device, VkRenderPass pass, uint32_t resolution);
     // Layer 0 is the static fallback; layer 1 contains moving/self shadows.
-    void record(VkCommandBuffer command, const std::function<void(uint32_t)> &draw);
+    // Reuse the fallback only for the same frozen scene and exact projection.
+    // A new target starts invalid; moving/self shadows always update.
+    bool updateStatic(const std::shared_ptr<const scene::BakeScene> &source, const scene::Matrix &projection);
+    void record(VkCommandBuffer command, bool refreshStatic, const std::function<void(uint32_t)> &draw);
     VkImageView view() const { return m_depth.view; }
     uint64_t bytes() const { return m_depth.bytes; }
 
@@ -43,5 +47,8 @@ namespace remix::forward::viewmodel {
     std::array<VkImageView, 2> m_layers{};
     uint32_t m_resolution = 0;
     Image m_depth;
+    std::weak_ptr<const scene::BakeScene> m_staticSource;
+    scene::Matrix m_staticProjection{};
+    bool m_staticValid = false, m_staticHasSource = false;
   };
 } // namespace remix::forward::viewmodel

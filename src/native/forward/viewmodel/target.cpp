@@ -119,9 +119,20 @@ namespace remix::forward::viewmodel {
       check(vkCreateFramebuffer(device, &info, nullptr, &m_framebuffers[layer]));
     }
   }
-  void SunShadow::record(VkCommandBuffer command, const std::function<void(uint32_t)> &draw) {
+  bool SunShadow::updateStatic(const std::shared_ptr<const scene::BakeScene> &source,
+                                const scene::Matrix &projection) {
+    const bool dirty = !m_staticValid || m_staticHasSource != bool(source) ||
+                       m_staticSource.lock() != source || m_staticProjection != projection;
+    m_staticSource = source;
+    m_staticHasSource = bool(source);
+    m_staticProjection = projection;
+    m_staticValid = true;
+    return dirty;
+  }
+  void SunShadow::record(VkCommandBuffer command, bool refreshStatic, const std::function<void(uint32_t)> &draw) {
     const VkClearValue clear{.depthStencil = {1, 0}};
     for (uint32_t layer = 0; layer < m_framebuffers.size(); ++layer) {
+      if (layer == 0 && !refreshStatic) continue;
       const VkRenderPassBeginInfo info{.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
           .renderPass = m_pass, .framebuffer = m_framebuffers[layer],
           .renderArea = {{0, 0}, {m_resolution, m_resolution}}, .clearValueCount = 1, .pClearValues = &clear};

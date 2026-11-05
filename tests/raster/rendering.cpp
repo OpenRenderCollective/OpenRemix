@@ -1,5 +1,6 @@
 #include "raster/renderer.h"
 #include "forward/renderer.h"
+#include "forward/viewmodel/target.h"
 #include "forward/probes/standalone_capture.h"
 #include "forward/presets.h"
 #include "forward/bake/controller.h"
@@ -2175,6 +2176,21 @@ namespace {
   }
   void viewModelLightingTests(const std::filesystem::path &directory, bool probeTest = false,
                               bool reflectionTest = false, bool authoringTest = false) {
+    {
+      remix::forward::viewmodel::SunShadow cache;
+      auto source = std::make_shared<remix::scene::BakeScene>();
+      auto projection = remix::scene::identity();
+      require(cache.updateStatic(source, projection) && !cache.updateStatic(source, projection),
+              "Viewmodel frozen sun layer reuses only an initialized matching scene and projection");
+      projection[12] += .0001f;
+      require(cache.updateStatic(source, projection) && !cache.updateStatic(source, projection),
+              "Even a small viewmodel sun projection change refreshes the frozen layer");
+      auto replacement = std::make_shared<remix::scene::BakeScene>();
+      require(cache.updateStatic(replacement, projection), "Replacing the frozen scene refreshes viewmodel sun shadows");
+      replacement.reset();
+      require(cache.updateStatic(nullptr, projection) && !cache.updateStatic(nullptr, projection),
+              "An expired frozen source still clears its previous viewmodel fallback shadows");
+    }
     for (bool ssr : {false, true})
       for (bool local : {false, true})
         for (uint32_t samples : {1u, 2u, 4u}) {
