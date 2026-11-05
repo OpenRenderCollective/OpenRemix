@@ -70,8 +70,9 @@ vec4 traceScreenReflection(ScreenReflectionView screen, vec3 p, vec3 normal,
     vec3 q = fma(delta, vec3(t), origin);
     if (any(lessThan(q, vec3(0))) || any(greaterThan(q, vec3(1))))
       break;
-    float cellSize = exp2(float(mip));
-    ivec2 dimensions = textureSize(depthPyramid, mip);
+    // The depth pyramid starts at screen.extent and halves each axis per level.
+    float cellSize = float(1u << mip);
+    ivec2 dimensions = ivec2(max(screen.extent >> mip, uvec2(1)));
     ivec2 cell = min(ivec2(q.xy * vec2(screen.extent) / cellSize), dimensions - 1);
     float exit = min(t + reflectionCellExit(q.xy, delta.xy, cell, dimensions, cellSize, screen.extent), limit);
     float endDepth = fma(delta.z, exit, origin.z);
