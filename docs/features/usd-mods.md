@@ -21,6 +21,21 @@ All of it runs off the Present thread (`usd/mods.cpp` `parse`):
 The Present thread then creates materials and meshes for at most a few milliseconds a frame
 (`Submission::publish`), and the whole set takes effect at once.
 
+## The cache
+
+A load that takes over two seconds leaves what it made in `openremix/cache/usd/<hash>.bin`, beside
+the pipeline cache and one file per mod (`usd/mod_cache.h`). The next start reads that instead of
+the mod's USD. HL2 RTX's mod goes from 14 s to under 5 s, with its geometry byte for byte the same.
+
+A file is used only while the runtime's file, the units and every file the mod depends on, absent ones
+included, have the times and sizes it recorded. Anything else, a damaged file included, means loading
+from USD as if it were not there.
+
+It is written in the background, and not after a reload caused by a change to the mod, so saves while
+editing one do not rewrite gigabytes.
+It takes about as much disk as the mod's geometry in memory, and is left out if that would leave under
+10 GiB free. Deleting it is always safe. `OPENREMIX_USD_CACHE=0` turns it off.
+
 ## Streaming
 
 A material starts on its textures' low mips. The first time a draw resolves to it

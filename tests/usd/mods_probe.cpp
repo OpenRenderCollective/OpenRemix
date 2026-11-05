@@ -56,12 +56,18 @@ int main(int argc, char **argv) {
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(16));
   }
-  const auto status = usd::modStatus();
+  auto status = usd::modStatus();
   const auto [now, peak] = memoryGb();
-  std::printf("%7.1f s  done: %zu mods, geometry %.2f GB, %zu materials; memory %.2f GB, peak %.2f GB; "
+  std::printf("%7.1f s  done%s: %zu mods, geometry %.2f GB, %zu materials; memory %.2f GB, peak %.2f GB; "
               "slowest frame boundary %.1f ms\n",
-              seconds(), status.mods.size(), double(status.geometryBytes) / 1e9, status.materials, now, peak,
-              worstBoundary);
+              seconds(), status.fromCache ? " from its cache" : "", status.mods.size(),
+              double(status.geometryBytes) / 1e9, status.materials, now, peak, worstBoundary);
+  std::fflush(stdout);
+  if (status.cacheWriting) {
+    while (usd::modStatus().cacheWriting)
+      std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    std::printf("%7.1f s  cache file written\n", seconds());
+  }
   for (const auto &mod : status.mods)
     std::printf("  %s: %zu meshes, %zu attached lights, %zu light overrides, %zu materials, %zu missing textures\n",
                 mod.name.c_str(), mod.meshes, mod.lights, mod.lightOverrides, mod.materials, mod.missingTextures);

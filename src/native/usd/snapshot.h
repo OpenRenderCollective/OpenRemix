@@ -31,7 +31,7 @@ namespace remix::usd {
     Json alphaState;
   };
   // What a load has got to (mods.h modLoadText says it).
-  enum class LoadStage : uint32_t { Waiting, Opening, Meshes, Materials, Textures, Finishing };
+  enum class LoadStage : uint32_t { Waiting, Opening, Meshes, Materials, Cache, Textures, Finishing };
   struct Progress {
     std::atomic<LoadStage> stage{LoadStage::Waiting};
     std::atomic<uint32_t> done{0}, total{0}; // of the stage

@@ -49,6 +49,8 @@ namespace remix::usd {
     std::vector<ModInfo> mods;
     // The loaded mods: seconds the load took, and their geometry in memory.
     double loadSeconds = 0;
+    bool fromCache = false; // Every mod came from its cache file (usd/mod_cache.h).
+    bool cacheWriting = false; // A cache file is still being written.
     uint64_t geometryBytes = 0;
     size_t materials = 0, materialsInFull = 0;
   };

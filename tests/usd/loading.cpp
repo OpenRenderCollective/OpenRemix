@@ -1,6 +1,7 @@
 #include "scene/images.h"
 #include "usd/mods.h"
 #include "usd/submission.h"
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstring>
@@ -341,6 +342,102 @@ int main(int argc, char **argv) {
       require(drawnWidth() == usd::previewEdge, "and draws its low levels again");
       std::filesystem::remove(big);
       std::filesystem::remove(dir / "a/mod.usda");
+      for (int i = 0; i < 100; ++i) {
+        usd::modBoundary(resources);
+        resources.finishFrame();
+        if (!usd::modStatus().loading && !usd::modInstance(resources, original))
+          break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+      }
+      resources.finishFrame();
+    }
+    {
+      // A cache file stands in for a mod's USD only while it can: it gives the same
+      // replacement, and a changed or damaged file means loading from the USD.
+      const auto setEnvironment = [](const char *name, const std::string &value) {
+#ifdef _WIN32
+        _putenv_s(name, value.c_str());
+#else
+        setenv(name, value.c_str(), 1);
+#endif
+      };
+      const auto cacheConfig = dir / "cache-config";
+      setEnvironment("REMIX_CONFIG_DIR", cacheConfig.string());
+      setEnvironment("OPENREMIX_USD_CACHE", "always");
+      const auto mod = dir / "a/mod.usda";
+      const auto writeMesh = [&](const char *lastPoint) {
+        write(std::string("#usda 1.0\n(\nmetersPerUnit = 1\nupAxis = \"Y\"\n)\ndef Xform \"RootNode\" {\n"
+                          "def Scope \"meshes\" { def Xform \"mesh_0123456789ABCDEF\" { def Mesh \"mesh\" {\n"
+                          "point3f[] points = [(0,0,0),(1,0,0),(1,1,0),") +
+              lastPoint + "]\nint[] faceVertexCounts = [4]\nint[] faceVertexIndices = [0,1,2,3]\n}\n}\n}\n}\n");
+        // Older than the load: a file changing as a load starts is not kept.
+        std::filesystem::last_write_time(mod, std::filesystem::file_time_type::clock::now() - std::chrono::hours(1));
+      };
+      const auto settle = [&] {
+        for (int i = 0; i < 400; ++i) {
+          usd::modBoundary(resources);
+          if (!usd::modStatus().loading && i > 2)
+            return;
+          std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+      };
+      const auto drawnVertices = [&] {
+        usd::modBoundary(resources);
+        resources.finishFrame();
+        require(usd::modInstance(resources, original) && !resources.draws().empty(), "a cached mod draws");
+        const auto &surface = *resources.draws().back().surface;
+        float top = 0;
+        for (const auto &vertex : surface.vertices)
+          top = std::max(top, vertex.position[1]);
+        const auto result = std::pair(surface.vertices.size(), top);
+        resources.finishFrame();
+        return result;
+      };
+      writeMesh("(0,1,0)");
+      for (int i = 0; i < 200 && !usd::modInstance(resources, original); ++i) {
+        usd::modBoundary(resources);
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+      }
+      resources.finishFrame();
+      require(!usd::modStatus().fromCache, "the first load is from USD");
+      const auto fromUsd = drawnVertices();
+      for (int i = 0; i < 400 && usd::modStatus().cacheWriting; ++i) {
+        usd::modBoundary(resources);
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      }
+      std::filesystem::path cacheFile;
+      for (const auto &entry : std::filesystem::directory_iterator(cacheConfig / "cache/usd"))
+        cacheFile = entry.path();
+      require(cacheFile.extension() == ".bin", "a load leaves a cache file, and no temporary one");
+      usd::reloadMods();
+      settle();
+      require(usd::modStatus().fromCache, "the next load is from the cache file");
+      require(drawnVertices() == fromUsd && fromUsd.second == 1, "a cached mod is what its USD gave");
+      // Cut short, as a crash mid-write would not leave it but a full disk might.
+      const auto whole = std::filesystem::file_size(cacheFile);
+      std::filesystem::resize_file(cacheFile, whole - 8);
+      usd::reloadMods();
+      settle();
+      require(!usd::modStatus().fromCache && drawnVertices() == fromUsd, "a damaged file loads from USD");
+      // Writes it again ("always"), then a changed mod must not read it.
+      for (int i = 0; i < 400 && usd::modStatus().cacheWriting; ++i) {
+        usd::modBoundary(resources);
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      }
+      usd::reloadMods();
+      settle();
+      require(usd::modStatus().fromCache, "the file is back");
+      writeMesh("(0,2,0)");
+      for (int i = 0; i < 400; ++i) {
+        usd::modBoundary(resources);
+        if (!usd::modStatus().loading && !usd::modStatus().fromCache)
+          break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      }
+      require(!usd::modStatus().fromCache && drawnVertices().second == 2, "a changed mod does not use its old file");
+      setEnvironment("OPENREMIX_USD_CACHE", "");
+      setEnvironment("REMIX_CONFIG_DIR", "");
+      std::filesystem::remove(mod);
       for (int i = 0; i < 100; ++i) {
         usd::modBoundary(resources);
         resources.finishFrame();

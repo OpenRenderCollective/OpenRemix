@@ -1,4 +1,5 @@
 #include "usd/mods.h"
+#include "usd/mod_cache.h"
 #include "usd/submission.h"
 #include <pxr/usd/sdf/layer.h>
 #include <algorithm>
@@ -26,6 +27,8 @@ namespace remix::usd {
       uint64_t geometryBytes = 0;
       uint64_t partsVersion = 0; // of the toggles index applied
       std::string undecodable;   // The first texture left out for not decoding.
+      bool fromCache = false;    // Every mod came from its cache file.
+      std::vector<std::future<void>> cacheWrites;
       // Parse failures travel in-band: an exception_ptr crossing threads is
       // destroyed early under mixed MSVC runtimes (Proton's builtin vcruntime).
       std::optional<std::string> error;
@@ -63,6 +66,8 @@ namespace remix::usd {
       bool pressure = false;
       uint64_t partsVersion = 0; // Bumped by the toggles.
       std::future<void> retiring; // A previous set going, off the Present thread.
+      std::vector<std::future<void>> cacheWrites;
+      std::shared_ptr<std::atomic<bool>> cacheCancel = std::make_shared<std::atomic<bool>>(false);
       Set active;
       std::set<std::string> failedDependencies;
       std::set<remixapi_LightHandle> overriddenLights;
@@ -230,8 +235,12 @@ namespace remix::usd {
       bool modsEnabled = true;
       uint64_t version = 0;
     };
-    Set parse(std::string directory, Options options, std::shared_ptr<Progress> progress, Toggles toggles) {
+    Set parse(std::string directory, Options options, std::shared_ptr<Progress> progress, Toggles toggles,
+              bool edited, std::shared_ptr<std::atomic<bool>> cacheCancel) {
       Set result;
+      result.fromCache = true;
+      const char *cacheSetting = std::getenv("OPENREMIX_USD_CACHE");
+      const bool cacheAlways = cacheSetting && std::strcmp(cacheSetting, "always") == 0;
       // RTX Remix's mod load: every replacement's geometry and material now, off
       // the Present thread, and from when they are all ready each draws from its
       // first frame. Geometry stays in host memory in its compact form, not as
@@ -245,21 +254,39 @@ namespace remix::usd {
         Snapshot snapshot;
         PreparedMeshes prepared;
         std::mutex preparing;
-        options.meshSink = [&](ComposedMesh &&mesh) {
-          const auto id = mesh.id;
+        const auto cacheFile = modCacheFile(path);
+        if (auto cached = readModCache(cacheFile, options.meters, options.axis, *progress)) {
+          snapshot = std::move(cached->snapshot);
+          prepared = std::move(cached->meshes);
+        } else {
+          result.fromCache = false;
+          const auto loadStarted = Clock::now();
+          const auto fileLoadStarted = std::filesystem::file_time_type::clock::now();
+          options.meshSink = [&](ComposedMesh &&mesh) {
+            const auto id = mesh.id;
+            try {
+              prepared.add(std::move(mesh), preparing);
+            } catch (...) {
+              // Its replacement stays the game's mesh.
+              std::lock_guard lock(preparing);
+              prepared.failed.insert(id.substr(0, id.find('/', sizeof("/RootNode/meshes/") - 1)));
+            }
+          };
           try {
-            prepared.add(std::move(mesh), preparing);
-          } catch (...) {
-            // Its replacement stays the game's mesh.
-            std::lock_guard lock(preparing);
-            prepared.failed.insert(id.substr(0, id.find('/', sizeof("/RootNode/meshes/") - 1)));
+            snapshot = load(options);
+          } catch (const LoadError &error) {
+            result.dependencies.insert(error.dependencies.begin(), error.dependencies.end());
+            throw LoadError(error.what(), std::move(result.dependencies));
           }
-        };
-        try {
-          snapshot = load(options);
-        } catch (const LoadError &error) {
-          result.dependencies.insert(error.dependencies.begin(), error.dependencies.end());
-          throw LoadError(error.what(), std::move(result.dependencies));
+          // Worth a file when it saves a wait, and not at every save while a mod is
+          // being edited.
+          if (cacheAlways || (!edited && Clock::now() - loadStarted >= std::chrono::seconds(2)))
+            if (auto write = prepareModCacheWrite(cacheFile, snapshot, prepared, options.meters, options.axis,
+                                                  fileLoadStarted))
+              result.cacheWrites.push_back(std::async(std::launch::async,
+                                                      [write = std::move(*write), cacheCancel]() mutable {
+                                                        writeModCache(std::move(write), *cacheCancel);
+                                                      }));
         }
         auto textures = prepareTextures(snapshot, *progress);
         result.geometryBytes += prepared.bytes;
@@ -319,7 +346,8 @@ namespace remix::usd {
         state.changed = Clock::now();
       state.stamps = std::move(current);
     }
-    void launch() {
+    // edited: the mods' files changed under a running game.
+    void launch(bool edited = false) {
       if (!state.hostAxis)
         state.options.axis = scene::sceneUpAxis.load();
       state.progress = std::make_shared<Progress>();
@@ -327,9 +355,10 @@ namespace remix::usd {
       state.pending = std::async(std::launch::async, [directory = state.directory, options = state.options,
                                                       progress = state.progress,
                                                       toggles = Toggles{state.modParts, state.modsEnabled,
-                                                                        state.partsVersion}] {
+                                                                        state.partsVersion},
+                                                      edited, cancel = state.cacheCancel] {
         try {
-          return parse(directory, options, progress, toggles);
+          return parse(directory, options, progress, toggles, edited, cancel);
         } catch (const LoadError &e) {
           Set failed;
           failed.error = e.what();
@@ -482,6 +511,9 @@ namespace remix::usd {
     launch();
   }
   void stopMods(NativeResources &resources) {
+    // A cache write in flight stops where it is; its file was never in place.
+    *state.cacheCancel = true;
+    state.cacheWrites.clear();
     resources.clearModMaterials();
     for (auto light : state.overriddenLights)
       resources.destroyLight(light);
@@ -545,6 +577,9 @@ namespace remix::usd {
         state.pending.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
       try {
         auto next = state.pending.get();
+        for (auto &write : next.cacheWrites)
+          state.cacheWrites.push_back(std::move(write));
+        next.cacheWrites.clear();
         if (next.error && next.loadError)
           throw LoadError(*next.error, std::move(next.dependencies));
         if (next.error)
@@ -617,7 +652,7 @@ namespace remix::usd {
     }
     if (state.changed != Clock::time_point{} && now - state.changed >= std::chrono::milliseconds(250)) {
       state.changed = {};
-      launch();
+      launch(true);
     }
   }
   bool modInstance(NativeResources &resources, const remixapi_InstanceInfo &info, uint64_t originalHash) {
@@ -764,6 +799,9 @@ namespace remix::usd {
     case LoadStage::Materials:
       what = "Processing materials";
       break;
+    case LoadStage::Cache:
+      what = "Reading cache";
+      break;
     case LoadStage::Textures:
       what = "Reading textures";
       break;
@@ -783,6 +821,9 @@ namespace remix::usd {
     status.enabled = state.modsEnabled;
     status.loading = state.pending.valid() || state.publishing;
     status.loadSeconds = state.loadSeconds;
+    status.fromCache = state.active.fromCache && !state.active.snapshots.empty();
+    for (const auto &write : state.cacheWrites)
+      status.cacheWriting |= write.valid() && write.wait_for(std::chrono::seconds(0)) != std::future_status::ready;
     status.geometryBytes = state.active.geometryBytes;
     for (const auto &submission : state.submissions) {
       status.materials += submission->materialCount();

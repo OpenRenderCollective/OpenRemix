@@ -108,8 +108,9 @@ namespace remix::ui {
     if (status.loading)
       ImGui::TextUnformatted(usd::modLoadText().c_str());
     else if (!status.mods.empty())
-      ImGui::Text("Loaded in %.1f s: geometry %.2f GB; %zu of %zu replacement materials in full", status.loadSeconds,
-                  double(status.geometryBytes) / 1e9, status.materialsInFull, status.materials);
+      ImGui::Text("Loaded in %.1f s%s: geometry %.2f GB; %zu of %zu replacement materials in full", status.loadSeconds,
+                  status.fromCache ? " from its cache" : "", double(status.geometryBytes) / 1e9,
+                  status.materialsInFull, status.materials);
     if (!status.diagnostic.empty())
       ImGui::TextColored(ImVec4(1, .55f, .4f, 1), "%s", status.diagnostic.c_str());
     ImGui::Separator();
