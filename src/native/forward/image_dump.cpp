@@ -32,6 +32,10 @@ namespace remix::forward {
     if (m_prefix.empty() || m_done || (m_slot && *m_slot != slot))
       return false;
     if (!m_slot) {
+      // A request arriving between record calls belongs to the next frame,
+      // not a partial set of this frame's remaining images/buffers.
+      if (m_requestChecked) return false;
+      m_requestChecked = true;
       if (!std::filesystem::exists(m_prefix + ".frame.request"))
         return false;
       m_slot = slot;
@@ -121,6 +125,7 @@ namespace remix::forward {
     }
   }
   void ImageDump::selectFrame(uint32_t slot) noexcept {
+    m_requestChecked = false;
     if (!m_slot || *m_slot != slot || m_done)
       return;
     m_done = true;

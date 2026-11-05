@@ -35,7 +35,7 @@ namespace remix::forward {
     VkDevice m_device;
     std::string m_prefix;
     std::optional<uint32_t> m_slot;
-    bool m_done = false;
+    bool m_done = false, m_requestChecked = false;
     bool m_fullImages = false;
     std::vector<Readback> m_pending;
     std::vector<BufferReadback> m_buffers;

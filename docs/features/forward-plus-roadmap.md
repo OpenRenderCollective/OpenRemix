@@ -5260,3 +5260,6 @@ These are work-reduction paths, not quality presets. General native 1080p 300-40
 - Keep packed per-light directional queries as the current path. Selected coefficient expansion has no accepted full-frame performance benefit; do not retain it as another runtime setting. Revisit only with representative frame-time evidence.
 
 - Retain the current standard BRDF path and live viewmodel self-shadow updates. Explicit receiver-term preparation and exact-pose viewmodel shadow reuse have not earned adoption; reduce the measured shading/synchronization cost before adding further cache paths.
+
+- Reduce receiver-local candidate-light work while preserving finite-emitter direct fields and moving corrections. Simple cone-rejection reorderings have not qualified across Construct and Crossfire; investigate receiver-local influence selection instead.
+- One-frame image diagnostics latch requests at the first record call after slot selection. Mid-record requests defer to the next frame, preserving a complete fenced image/buffer set.

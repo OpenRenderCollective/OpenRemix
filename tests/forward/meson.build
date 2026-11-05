@@ -153,6 +153,11 @@ if get_option('gpu_tests')
     include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
     cpp_args : test_cpp_args)
   test('Static depth batch preserves geometry, visibility and fenced ownership', depth_batch_test, timeout : 60)
+  image_dump_test = executable('remix-image-dump-test', 'image_dump.cpp',
+    include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
+    cpp_args : test_cpp_args)
+  test('Image dump requests retain complete fenced submissions', image_dump_test,
+    args : [meson.current_build_dir() / 'image-dump-readback'], timeout : 60)
   probe_batch_test = executable('remix-probe-batch-test', forward_gpu_shaders, 'probe_batch.cpp',
     include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
     cpp_args : test_cpp_args)
