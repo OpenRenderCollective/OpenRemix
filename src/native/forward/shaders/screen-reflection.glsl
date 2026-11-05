@@ -87,18 +87,19 @@ vec4 traceScreenReflection(ScreenReflectionView screen, vec3 p, vec3 normal,
       continue;
     }
     precise float hitT = q.z >= surface ? t : t + (surface - q.z) / max(delta.z, 1e-10);
-    vec3 hit = fma(delta, vec3(hitT), origin);
-    float behind = reflectionViewDepth(screen, hit.xy, hit.z) - reflectionViewDepth(screen, hit.xy, surface);
-    vec3 hitNormal = reflectionGuideNormal(texelFetch(normals, cell, 0));
-    if (hitT <= exit + epsilon && behind >= -screen.trace.z && behind <= screen.trace.y &&
-        reflectionDot(hitNormal, direction) < -.001) {
-      float colorMip = reflectionColorMip(roughness, uv, hit.xy, vec2(screen.extent), nv);
-      vec4 color = finiteRadiance(textureLod(opaqueColor, hit.xy, colorMip));
-      float edge = min(min(hit.x, hit.y), min(1 - hit.x, 1 - hit.y));
-      float confidence = smoothstep(0, .05, edge) * (1 - smoothstep(.8, 1, hitT));
-      confidence *= 1 - smoothstep(screen.trace.w * .75, screen.trace.w, roughness);
-      confidence *= smoothstep(.01, .1, nv) * color.a;
-      return vec4(color.rgb / max(color.a, 1e-5) * confidence, confidence);
+    if (hitT <= exit + epsilon) {
+      vec3 hit = fma(delta, vec3(hitT), origin);
+      float behind = reflectionViewDepth(screen, hit.xy, hit.z) - reflectionViewDepth(screen, hit.xy, surface);
+      if (behind >= -screen.trace.z && behind <= screen.trace.y &&
+          reflectionDot(reflectionGuideNormal(texelFetch(normals, cell, 0)), direction) < -.001) {
+        float colorMip = reflectionColorMip(roughness, uv, hit.xy, vec2(screen.extent), nv);
+        vec4 color = finiteRadiance(textureLod(opaqueColor, hit.xy, colorMip));
+        float edge = min(min(hit.x, hit.y), min(1 - hit.x, 1 - hit.y));
+        float confidence = smoothstep(0, .05, edge) * (1 - smoothstep(.8, 1, hitT));
+        confidence *= 1 - smoothstep(screen.trace.w * .75, screen.trace.w, roughness);
+        confidence *= smoothstep(.01, .1, nv) * color.a;
+        return vec4(color.rgb / max(color.a, 1e-5) * confidence, confidence);
+      }
     }
     t = exit + epsilon;
     mip = min(1, int(screen.config.w) - 1);
