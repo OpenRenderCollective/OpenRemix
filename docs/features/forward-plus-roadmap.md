@@ -5287,3 +5287,5 @@ These are work-reduction paths, not quality presets. General native 1080p 300-40
 - [ ] Reproduce abrupt probe-lighting changes on props in Construct main room. Prioritize continuity and visibility/relocation correctness alongside density; increasing sample count alone is not a complete fix.
 - [ ] Improve near-receiver probe allocation, especially playable-floor/object-height regions, while keeping distant air sparse and total budgets bounded. Keep OpenRemix game agnostic; any walkability/up-axis hints belong to an opt-in host contract.
 - [ ] Use the newly working NVIDIA hardware-counter capture to distinguish shading, texture traffic and occupancy costs before further shader control-flow experiments.
+
+- Decouple finer near-receiver targets from global fallback-lattice spacing. A denser request can consume the additional budget on coarse background records without reaching finer patches; qualify receiver-focused allocation rather than raising the global probe budget by default.
