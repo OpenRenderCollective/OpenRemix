@@ -5242,3 +5242,9 @@ These are work-reduction paths, not quality presets. General native 1080p 300-40
 - [ ] Investigate remaining opaque receiver/shader and reflection/composition costs with full-quality, timers-off acceptance comparisons; distinguish timestamp attribution from throughput.
 
 - [x] Reject the standard sun back-facing-response early-out trial: preserved finite-disc diffuse support and passed GPU regression checks, but all measured full-frame cases were slower at matching GPU clocks. Remove the extra branch and retain the original path.
+
+### Current-build overdraw and reference workload audit
+
+- [x] Confirm effective world early-depth rejection in the measured Construct hall: approximately 2.11M world colour invocations for a 2.07M-pixel output, with complete GPU query coverage. Viewmodel adds approximately 220k invocations. Counts include helper execution and do not establish all pixel-level cost as avoidable.
+- [x] Recheck local VRF lightmap and ambient-cube probe shaders: compact directional fields and hardware 3D interpolation differ substantially from our full-L2 bicubic atlas and visibility-aware adaptive stencil. Source-level differences do not establish equivalent quality or explain the entire FPS gap.
+- [ ] Investigate field sampling/execution costs with representative material and probe-quality comparisons. Keep previously rejected lazy-coarse and zonal approximations removed; do not claim draw aggregation or extra culling alone will recover the shader budget in this view.
