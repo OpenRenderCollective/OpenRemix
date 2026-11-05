@@ -146,6 +146,8 @@ public:
   bool hasFailed() const { return m_failed; }
   // The API's scene: every resource call, DrawInstance and retained update.
   RasterRenderer &raster() { return m_raster; }
+  // Whether this process is near its share of video memory (USD mods).
+  bool videoMemoryShort();
   HostPasses &hostPasses() { return m_hostPasses; }
   RemixSdlWindow &window() { return m_window; }
   remixapi_FeatureAvailability getFeatureAvailability() const;
@@ -469,6 +471,8 @@ private:
   bool m_traceSupported = false;
   bool m_textureCompression = false; // textureCompressionBC enabled on m_device.
   bool m_memoryBudget = false;       // VK_EXT_memory_budget queries available.
+  uint32_t m_memoryShortFrames = 0;
+  bool m_memoryShort = false;
   remixapi_DenoisingCapabilitiesEXT m_denoiseCapabilities{
       .structSize = sizeof(remixapi_DenoisingCapabilitiesEXT)};
   std::string m_traceUnavailable;

@@ -18,6 +18,106 @@ namespace remix {
   // maxGeometryCount (2^24 on current drivers).
   constexpr uint32_t maxMeshSurfaces = 65536;
 
+  std::shared_ptr<Surface> NativeResources::prepareSurface(const remixapi_MeshInfoSurfaceTriangles &source,
+                                                           bool spriteVertices, uint64_t &bytes) {
+    if (!source.vertices_values || !source.vertices_count || source.vertices_count > 8 * 1024 * 1024 ||
+        source.indices_count > 24 * 1024 * 1024 || (source.indices_count && !source.indices_values) ||
+        (source.indices_count ? source.indices_count : source.vertices_count) % 3) {
+      throw invalid;
+    }
+    bytes += source.vertices_count * sizeof(Vertex) +
+             (source.indices_count ? source.indices_count : source.vertices_count) * 4;
+    if (bytes > 512u * 1024 * 1024) {
+      throw invalid;
+    }
+    auto surface = std::make_shared<Surface>();
+    surface->material = source.material;
+    surface->vertices.resize(size_t(source.vertices_count));
+    if (spriteVertices)
+      surface->sprite.resize(size_t(source.vertices_count));
+    std::array<float, 3> low{INFINITY, INFINITY, INFINITY}, high{-INFINITY, -INFINITY, -INFINITY};
+    for (size_t v = 0; v < surface->vertices.size(); ++v) {
+      const auto &src = source.vertices_values[v];
+      finite(src.position, 3);
+      finite(src.texcoord, 2);
+      auto &dst = surface->vertices[v];
+      std::copy_n(src.position, 3, dst.position);
+      std::copy_n(src.texcoord, 2, dst.uv);
+      // Legacy callers may omit normals. Invalid/zero normals retain flat
+      // shading; a valid authored normal must survive scene ownership.
+      if (spriteVertices) {
+        // remixapi_MeshInfoSpriteVerticesEXT: sprite parameters, no normal.
+        auto &sprite = surface->sprite[v];
+        std::copy_n(src.normal, 3, sprite.frame);
+        const uint32_t pads[5] = {src._pad0, src._pad1, src._pad2, src._pad3, src._pad4};
+        float values[5];
+        std::memcpy(values, pads, sizeof(values));
+        std::copy_n(values, 4, sprite.sequence);
+        sprite.weight2 = values[4];
+        finite(sprite.frame, 3);
+        finite(values, 5);
+      } else if (std::isfinite(src.normal[0]) && std::isfinite(src.normal[1]) && std::isfinite(src.normal[2])) {
+        const float length = std::hypot(src.normal[0], src.normal[1], src.normal[2]);
+        if (length > 1e-12f)
+          for (int c = 0; c < 3; ++c) dst.normal[c] = src.normal[c] / length;
+      }
+      rgba(src.color, dst.color);
+      for (int c = 0; c < 3; ++c) {
+        low[c] = std::min(low[c], src.position[c]);
+        high[c] = std::max(high[c], src.position[c]);
+      }
+    }
+    for (int c = 0; c < 3; ++c)
+      surface->center[c] = low[c] * .5f + high[c] * .5f;
+    if (source.indices_count) {
+      surface->indices.assign(source.indices_values, source.indices_values + source.indices_count);
+      for (auto index : surface->indices) {
+        if (index >= source.vertices_count) {
+          throw invalid;
+        }
+      }
+    } else {
+      surface->indices.resize(size_t(source.vertices_count));
+      std::iota(surface->indices.begin(), surface->indices.end(), 0u);
+    }
+    if (source.skinning_hasvalue) {
+      const auto &skin = source.skinning_value;
+      const uint64_t count = source.vertices_count * skin.bonesPerVertex;
+      if (!skin.bonesPerVertex || skin.bonesPerVertex > 256 || count != skin.blendWeights_count ||
+          count != skin.blendIndices_count || !skin.blendWeights_values || !skin.blendIndices_values) {
+        throw invalid;
+      }
+      bytes += count * 8;
+      if (bytes > 512u * 1024 * 1024) {
+        throw invalid;
+      }
+      surface->bonesPerVertex = skin.bonesPerVertex;
+      surface->weights.assign(skin.blendWeights_values, skin.blendWeights_values + count);
+      surface->bones.assign(skin.blendIndices_values, skin.blendIndices_values + count);
+      for (size_t n = 0; n < count; ++n) {
+        if (surface->bones[n] >= 256 || !std::isfinite(surface->weights[n]) || surface->weights[n] < 0) {
+          throw invalid;
+        }
+      }
+    }
+    return surface;
+  }
+
+  void NativeResources::adoptMesh(uint64_t hash, std::vector<std::shared_ptr<Surface>> surfaces,
+                                  remixapi_MeshHandle &handle) {
+    if (!hash || surfaces.empty())
+      throw invalid;
+    auto mesh = std::make_shared<Mesh>();
+    mesh->surfaces = std::move(surfaces);
+    if (auto previous = m_meshes.find(hash); previous != m_meshes.end()) {
+      previous->second->retired = true;
+      ++m_retireGeneration;
+    }
+    m_meshes[hash] = std::move(mesh);
+    ++m_resourceGeneration;
+    handle = reinterpret_cast<remixapi_MeshHandle>(uintptr_t(hash));
+  }
+
   void NativeResources::createMesh(const remixapi_MeshInfo &info, remixapi_MeshHandle &handle) {
     if (!info.hash || !info.surfaces_count || info.surfaces_count > maxMeshSurfaces || !info.surfaces_values) {
       throw invalid;
@@ -37,91 +137,10 @@ namespace remix {
     uint64_t bytes = 0;
     for (uint32_t i = 0; i < info.surfaces_count; ++i) {
       const auto &source = info.surfaces_values[i];
-      if (!source.vertices_values || !source.vertices_count || source.vertices_count > 8 * 1024 * 1024 ||
-          source.indices_count > 24 * 1024 * 1024 || (source.indices_count && !source.indices_values) ||
-          (source.indices_count ? source.indices_count : source.vertices_count) % 3) {
-        throw invalid;
-      }
       if (source.material && m_materials.find(key(source.material)) == m_materials.end()) {
         throw invalid;
       }
-      bytes += source.vertices_count * sizeof(Vertex) +
-               (source.indices_count ? source.indices_count : source.vertices_count) * 4;
-      if (bytes > 512u * 1024 * 1024) {
-        throw invalid;
-      }
-      auto surface = std::make_shared<Surface>();
-      surface->material = source.material;
-      surface->vertices.resize(size_t(source.vertices_count));
-      if (spriteVertices)
-        surface->sprite.resize(size_t(source.vertices_count));
-      std::array<float, 3> low{INFINITY, INFINITY, INFINITY}, high{-INFINITY, -INFINITY, -INFINITY};
-      for (size_t v = 0; v < surface->vertices.size(); ++v) {
-        const auto &src = source.vertices_values[v];
-        finite(src.position, 3);
-        finite(src.texcoord, 2);
-        auto &dst = surface->vertices[v];
-        std::copy_n(src.position, 3, dst.position);
-        std::copy_n(src.texcoord, 2, dst.uv);
-        // Legacy callers may omit normals. Invalid/zero normals retain flat
-        // shading; a valid authored normal must survive scene ownership.
-        if (spriteVertices) {
-          // remixapi_MeshInfoSpriteVerticesEXT: sprite parameters, no normal.
-          auto &sprite = surface->sprite[v];
-          std::copy_n(src.normal, 3, sprite.frame);
-          const uint32_t pads[5] = {src._pad0, src._pad1, src._pad2, src._pad3, src._pad4};
-          float values[5];
-          std::memcpy(values, pads, sizeof(values));
-          std::copy_n(values, 4, sprite.sequence);
-          sprite.weight2 = values[4];
-          finite(sprite.frame, 3);
-          finite(values, 5);
-        } else if (std::isfinite(src.normal[0]) && std::isfinite(src.normal[1]) && std::isfinite(src.normal[2])) {
-          const float length = std::hypot(src.normal[0], src.normal[1], src.normal[2]);
-          if (length > 1e-12f)
-            for (int c = 0; c < 3; ++c) dst.normal[c] = src.normal[c] / length;
-        }
-        rgba(src.color, dst.color);
-        for (int c = 0; c < 3; ++c) {
-          low[c] = std::min(low[c], src.position[c]);
-          high[c] = std::max(high[c], src.position[c]);
-        }
-      }
-      for (int c = 0; c < 3; ++c) {
-        surface->center[c] = low[c] * .5f + high[c] * .5f;
-      }
-      if (source.indices_count) {
-        surface->indices.assign(source.indices_values, source.indices_values + source.indices_count);
-        for (auto index : surface->indices) {
-          if (index >= source.vertices_count) {
-            throw invalid;
-          }
-        }
-      } else {
-        surface->indices.resize(size_t(source.vertices_count));
-        std::iota(surface->indices.begin(), surface->indices.end(), 0u);
-      }
-      if (source.skinning_hasvalue) {
-        const auto &skin = source.skinning_value;
-        const uint64_t count = source.vertices_count * skin.bonesPerVertex;
-        if (!skin.bonesPerVertex || skin.bonesPerVertex > 256 || count != skin.blendWeights_count ||
-            count != skin.blendIndices_count || !skin.blendWeights_values || !skin.blendIndices_values) {
-          throw invalid;
-        }
-        bytes += count * 8;
-        if (bytes > 512u * 1024 * 1024) {
-          throw invalid;
-        }
-        surface->bonesPerVertex = skin.bonesPerVertex;
-        surface->weights.assign(skin.blendWeights_values, skin.blendWeights_values + count);
-        surface->bones.assign(skin.blendIndices_values, skin.blendIndices_values + count);
-        for (size_t n = 0; n < count; ++n) {
-          if (surface->bones[n] >= 256 || !std::isfinite(surface->weights[n]) || surface->weights[n] < 0) {
-            throw invalid;
-          }
-        }
-      }
-      mesh->surfaces.push_back(std::move(surface));
+      mesh->surfaces.push_back(prepareSurface(source, spriteVertices, bytes));
     }
     auto previous = m_meshes.find(info.hash);
     if (update && update->enabled && std::none_of(mesh->surfaces.begin(), mesh->surfaces.end(),

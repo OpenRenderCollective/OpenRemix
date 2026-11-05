@@ -463,6 +463,7 @@ namespace remix {
               merged->caustics = merged->translucent && merged->normalTexture;
               merged->emissionCache.clear();
               merged->retired = false;
+              merged->streamUse = mod->streamUse;
               entry = {mod, original, std::move(merged)};
             }
             return entry.merged;
@@ -493,8 +494,6 @@ namespace remix {
           }
           return entry.merged;
         }
-        if (m_modCandidates.contains(modKey) && m_modRequested.insert(modKey).second)
-          m_modRequests.push_back(modKey);
       }
       return original;
     };
@@ -572,6 +571,9 @@ namespace remix {
         // layer whose meshes are shared between materials) has no other.
         if (materialOverride)
           draw.material = modMaterial(materialOverride, d.materialOverride);
+        // A scene instance replays these records without coming back here.
+        if (draw.material->streamUse)
+          *draw.material->streamUse = std::max<uint8_t>(*draw.material->streamUse, resolved ? 2 : 1);
         if (surface->bonesPerVertex) {
           if (!d.bones || d.bones->empty()) {
             throw invalid;

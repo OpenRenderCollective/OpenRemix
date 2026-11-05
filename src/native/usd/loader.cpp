@@ -8,9 +8,11 @@
 #include <thread>
 #include <atomic>
 #include <cmath>
+#include <condition_variable>
 #include <filesystem>
 #include <functional>
 #include <mutex>
+#include <optional>
 #include <pxr/base/gf/rotation.h>
 #include <pxr/base/tf/errorMark.h>
 #include <pxr/usd/usdGeom/mesh.h>
@@ -45,8 +47,9 @@ namespace remix::usd {
       // Found as scene.cpp's material_json finds it: an override's shader
       // is an untyped `over` too.
       UsdPrim shader;
-      if (auto connected = UsdShadeMaterial(material).ComputeSurfaceSource(TfToken("mdl")))
-        shader = connected.GetPrim();
+      if (material.IsA<UsdShadeMaterial>())
+        if (auto connected = UsdShadeMaterial(material).ComputeSurfaceSource(TfToken("mdl")))
+          shader = connected.GetPrim();
       if (!shader)
         shader = material.GetChild(TfToken("Shader"));
       for (auto child : material.GetAllChildren())
@@ -94,7 +97,8 @@ namespace remix::usd {
       return result;
     }
   } // namespace
-  std::vector<std::shared_ptr<scene::Texture>> decodeTextures(const std::vector<std::string> &paths) {
+  std::vector<std::shared_ptr<scene::Texture>> decodeTextures(const std::vector<std::string> &paths, uint32_t maxEdge,
+                                                              std::atomic<uint32_t> *progress) {
     // Half the cores leave room for the host still rendering meanwhile.
     std::vector<std::shared_ptr<scene::Texture>> decoded(paths.size());
     std::atomic<size_t> next{0};
@@ -102,12 +106,15 @@ namespace remix::usd {
       for (size_t i; (i = next++) < paths.size();) {
         try {
           auto texture = std::make_shared<scene::Texture>();
-          texture->pixels = scene::loadTexture(utf8Path(paths[i]));
+          texture->pixels = maxEdge ? scene::loadTexturePreview(utf8Path(paths[i]), maxEdge)
+                                    : scene::loadTexture(utf8Path(paths[i]));
           texture->fingerprint();
           decoded[i] = std::move(texture);
         } catch (...) {
           // Left null for the caller. Exceptions stay on their thread.
         }
+        if (progress)
+          ++*progress;
       }
     };
     const unsigned threads = std::clamp(std::thread::hardware_concurrency() / 2, 1u, 8u);
@@ -120,14 +127,7 @@ namespace remix::usd {
     return decoded;
   }
 
-  struct DeferredStage {
-    UsdStageRefPtr stage;
-    std::map<std::string, SdfLayerRefPtr> layers; // the private layers it composes
-    GfMatrix4d conversion;
-    std::mutex mutex;
-  };
   namespace {
-    const std::string replacementMeshes = "/RootNode/meshes/";
     // Composed meshes, lights and cameras in host coordinates, with their
     // capture hashes.
     void toHost(Json &scene, const GfMatrix4d &conversion) {
@@ -160,16 +160,6 @@ namespace remix::usd {
           paths.push_back(path);
     return paths;
   }
-  Json composeReplacement(DeferredStage &deferred, const std::string &root) {
-    std::lock_guard lock(deferred.mutex);
-    auto scene = compose_scene(deferred.stage, 1, {root, "", true});
-    toHost(scene, deferred.conversion);
-    for (auto &material : scene["materials"])
-      material["hash"] = capturedHash(material["id"]);
-    return {{"meshes", std::move(scene["meshes"])},
-            {"materials", std::move(scene["materials"])},
-            {"warnings", std::move(scene["warnings"])}};
-  }
   Snapshot load(const Options &options) {
     static std::mutex parserMutex;
     std::lock_guard lock(parserMutex);
@@ -181,14 +171,19 @@ namespace remix::usd {
       // Private layers keep reload parsing independent of an active scene and never
       // modify the capture on disk. Anchor every asset to its authoring layer before
       // replacing layer references with private identifiers, including Windows paths.
-      std::map<std::string, SdfLayerRefPtr> layers;
-      std::function<SdfLayerRefPtr(std::filesystem::path)> openLayer;
-      openLayer = [&](std::filesystem::path path) -> SdfLayerRefPtr {
-        path = std::filesystem::absolute(path).lexically_normal();
-        const auto key = path.string();
-        if (auto found = layers.find(key); found != layers.end())
-          return found->second;
-        result.dependencies.insert(key);
+      // A mod is hundreds of layers: they open and have their paths rewritten on
+      // several threads, each a layer at a time.
+      struct Layer {
+        std::once_flag once;
+        SdfLayerRefPtr layer;
+      };
+      std::mutex mutex; // Everything here but what a Layer's once guards.
+      std::condition_variable wake;
+      std::map<std::string, std::shared_ptr<Layer>> layers;
+      std::vector<std::pair<SdfLayerRefPtr, std::filesystem::path>> rewrites;
+      size_t rewriting = 0;
+      std::optional<std::string> failure;
+      const auto makeLayer = [&](const std::filesystem::path &path, const std::string &key, bool root) -> SdfLayerRefPtr {
         // A layer another layer names but which is not on disk is left out, as
         // USD itself composes around an unresolved reference: Remix mods
         // commonly reference material templates (SubUSDs/AperturePBR_*.usda)
@@ -196,7 +191,7 @@ namespace remix::usd {
         // stays a dependency, so the file appearing later reloads the mod. The
         // root layer, and a layer that exists but does not parse, are errors.
         std::error_code missing;
-        if (!layers.empty() && !std::filesystem::exists(path, missing)) {
+        if (!root && !std::filesystem::exists(path, missing)) {
           // The Remix material templates (AperturePBR_Opacity.usda, ..._Translucent.usda)
           // are what make a mod's material overs materials at all: the over itself only
           // carries the inputs. A mod that references one without shipping it gets the
@@ -218,13 +213,34 @@ namespace remix::usd {
                                    "        }\n    }\n}\n";
           if (!layer || !layer->ImportFromString(text))
             return nullptr;
-          layers.emplace(key, layer);
           return layer;
         }
         auto layer = SdfLayer::OpenAsAnonymous(key);
         if (!layer)
           throw std::runtime_error("Could not open USD layer: " + key);
-        layers.emplace(key, layer);
+        {
+          std::lock_guard lock(mutex);
+          rewrites.emplace_back(layer, path);
+        }
+        wake.notify_one();
+        return layer;
+      };
+      const auto openLayer = [&](std::filesystem::path path, bool root = false) -> SdfLayerRefPtr {
+        path = std::filesystem::absolute(path).lexically_normal();
+        const auto key = path.string();
+        std::shared_ptr<Layer> entry;
+        {
+          std::lock_guard lock(mutex);
+          result.dependencies.insert(key);
+          auto &slot = layers[key];
+          if (!slot)
+            slot = std::make_shared<Layer>();
+          entry = slot;
+        }
+        std::call_once(entry->once, [&] { entry->layer = makeLayer(path, key, root); });
+        return entry->layer;
+      };
+      const auto rewrite = [&](const SdfLayerRefPtr &layer, const std::filesystem::path &path) {
         UsdUtilsModifyAssetPaths(layer, [&](const std::string &authored) {
           if (authored.empty())
             return authored;
@@ -243,15 +259,86 @@ namespace remix::usd {
             return opened ? opened->GetIdentifier() : std::string();
           }
           // Asset dependencies include absent paths so a corrected file is watched.
-          result.dependencies.insert(asset.string());
+          {
+            std::lock_guard lock(mutex);
+            result.dependencies.insert(asset.string());
+          }
           return asset.string();
         });
-        return layer;
       };
-      auto stage = UsdStage::Open(openLayer(options.path));
+      if (options.progress)
+        options.progress->enter(LoadStage::Opening, 0);
+      const auto rootLayer = openLayer(options.path, true);
+      {
+        const auto work = [&] {
+          std::unique_lock lock(mutex);
+          for (;;) {
+            wake.wait(lock, [&] { return failure || !rewrites.empty() || !rewriting; });
+            if (failure || (rewrites.empty() && !rewriting))
+              break;
+            auto [layer, path] = std::move(rewrites.back());
+            rewrites.pop_back();
+            ++rewriting;
+            lock.unlock();
+            std::optional<std::string> error;
+            try {
+              rewrite(layer, path);
+            } catch (const std::exception &e) {
+              error = e.what();
+            } catch (...) {
+              error = "Could not read USD layer: " + path.string();
+            }
+            lock.lock();
+            --rewriting;
+            if (error && !failure)
+              failure = std::move(error);
+            wake.notify_all();
+          }
+          wake.notify_all();
+        };
+        const unsigned threads = std::clamp(std::thread::hardware_concurrency() / 2, 1u, 8u);
+        std::vector<std::thread> pool;
+        for (unsigned t = 1; t < threads; ++t)
+          pool.emplace_back(work);
+        work();
+        for (auto &thread : pool)
+          thread.join();
+      }
+      if (failure)
+        throw std::runtime_error(*failure);
+      auto stage = UsdStage::Open(rootLayer);
       if (!stage)
         throw std::runtime_error("Could not compose USD stage: " + options.path);
-      result.scene = compose_scene(stage, 1, {"", options.deferReplacementMeshes ? replacementMeshes : ""});
+      const double sourceMeters = UsdGeomGetStageMetersPerUnit(stage);
+      if (!std::isfinite(sourceMeters) || sourceMeters <= 0)
+        throw std::runtime_error("Invalid stage metersPerUnit");
+      const auto sourceAxis = UsdGeomGetStageUpAxis(stage);
+      const auto axis = options.axis == 1   ? UsdGeomTokens->y
+                        : options.axis == 2 ? UsdGeomTokens->z
+                                            : sourceAxis;
+      GfMatrix4d conversion(1);
+      if (axis != sourceAxis)
+        conversion.SetRotate(GfRotation(GfVec3d(1, 0, 0), axis == UsdGeomTokens->y ? -90 : 90));
+      GfMatrix4d scale(1);
+      scale.SetScale(sourceMeters / (options.meters > 0 ? options.meters : sourceMeters));
+      conversion *= scale;
+      ComposeScope scope;
+      if (options.meshSink) {
+        scope.hostBones = true;
+        scope.progress = options.progress;
+        scope.meshSink = [&](ComposedMesh &&mesh) {
+          GfMatrix4d matrix(1);
+          for (int row = 0; row < 4; ++row)
+            for (int col = 0; col < 4; ++col)
+              matrix[row][col] = mesh.transform[row * 4 + col];
+          matrix *= conversion;
+          for (int row = 0; row < 4; ++row)
+            for (int col = 0; col < 4; ++col)
+              mesh.transform[row * 4 + col] = matrix[row][col];
+          options.meshSink(std::move(mesh));
+        };
+      }
+      result.scene = compose_scene(stage, 1, scope);
       // A mod's light scale (mods.h ModInfo::authoredLightScale).
       const auto custom = stage->GetRootLayer()->GetCustomLayerData();
       if (const auto found = custom.find(lightScaleKey); found != custom.end()) {
@@ -277,6 +364,14 @@ namespace remix::usd {
         }
       result.scene["replacements"] = {
           {"meshes", Json::array()}, {"lights", Json::array()}, {"materials", Json::array()}};
+      if (options.progress) {
+        const auto root = stage->GetPrimAtPath(SdfPath("/RootNode/Looks"));
+        uint32_t count = 0;
+        if (root)
+          for (auto child : root.GetAllChildren())
+            (void)child, ++count;
+        options.progress->enter(LoadStage::Materials, count);
+      }
       for (const auto &[group, path] :
            std::vector<std::pair<std::string, std::string>>{{"meshes", "/RootNode/meshes"},
                                                             {"lights", "/RootNode/lights"},
@@ -355,6 +450,8 @@ namespace remix::usd {
                 result.scene["materials"].push_back(std::move(material));
             }
           }
+          if (group == "materials" && options.progress)
+            ++options.progress->done;
           if (group == "materials" && prim.IsActive()) {
             auto material = compose_material(prim);
             material["hash"] = hash;
@@ -370,19 +467,6 @@ namespace remix::usd {
           }
         }
       }
-      const double sourceMeters = UsdGeomGetStageMetersPerUnit(stage);
-      if (!std::isfinite(sourceMeters) || sourceMeters <= 0)
-        throw std::runtime_error("Invalid stage metersPerUnit");
-      const auto sourceAxis = UsdGeomGetStageUpAxis(stage);
-      const auto axis = options.axis == 1   ? UsdGeomTokens->y
-                        : options.axis == 2 ? UsdGeomTokens->z
-                                            : sourceAxis;
-      GfMatrix4d conversion(1);
-      if (axis != sourceAxis)
-        conversion.SetRotate(GfRotation(GfVec3d(1, 0, 0), axis == UsdGeomTokens->y ? -90 : 90));
-      GfMatrix4d scale(1);
-      scale.SetScale(sourceMeters / (options.meters > 0 ? options.meters : sourceMeters));
-      conversion *= scale;
       toHost(result.scene, conversion);
       for (auto &entry : result.scene["replacements"]["lights"]) {
         auto &overrides = entry["overrides"];
@@ -424,16 +508,6 @@ namespace remix::usd {
           if (warning.get<std::string>().starts_with("Unresolved texture "))
             throw std::runtime_error(warning.get<std::string>());
       if (options.preloadTextures) {
-        // Textures the snapshot's geometry and lights draw with. Materials
-        // referenced only as replacements load when first drawn (mods.cpp):
-        // large mods reference far more than any one map shows.
-        std::set<std::string> used{"default"};
-        for (const auto &mesh : result.scene["meshes"])
-          for (const auto &surface : mesh.value("surfaces", Json::array()))
-            used.insert(surface.value("material", std::string("default")));
-        for (const auto &entry : result.scene["replacements"]["meshes"])
-          if (entry.contains("material"))
-            used.insert(entry["material"].get<std::string>());
         std::vector<std::string> paths;
         std::set<std::string> seen;
         auto want = [&](const std::string &path) {
@@ -441,16 +515,8 @@ namespace remix::usd {
             paths.push_back(path);
         };
         for (const auto &material : result.scene["materials"])
-          if (used.contains(material.value("id", std::string()))) {
-            for (const char *key : {"albedo_texture", "normal_texture", "roughness_texture", "metallic_texture",
-                                    "emissive_texture"})
-              want(material.value(key, std::string()));
-            if (const auto film = material.find("iridescence"); film != material.end())
-              want(film->value("texture", std::string()));
-            if (const auto sss = material.find("subsurface"); sss != material.end())
-              for (const char *key : subsurfaceTextureKeys)
-                want(sss->value(key, std::string()));
-          }
+          for (const auto &path : materialTextureFiles(material))
+            want(path);
         for (const auto &light : result.scene["lights"])
           for (const char *key : {"texture", "cookie"})
             want(light.value(key, std::string()));
@@ -476,6 +542,9 @@ namespace remix::usd {
                 it.value() = "";
             if (material.contains("iridescence"))
               drop(material["iridescence"], "texture");
+            if (material.contains("subsurface"))
+              for (const char *key : subsurfaceTextureKeys)
+                drop(material["subsurface"], key);
           }
           for (auto &light : result.scene["lights"]) {
             drop(light, "texture");
@@ -487,12 +556,6 @@ namespace remix::usd {
       }
       result.scene["meters_per_unit"] = options.meters > 0 ? options.meters : sourceMeters;
       result.scene["up_axis"] = axis.GetString();
-      if (options.deferReplacementMeshes) {
-        result.deferred = std::make_shared<DeferredStage>();
-        result.deferred->stage = stage;
-        result.deferred->layers = std::move(layers);
-        result.deferred->conversion = conversion;
-      }
       return result;
     } catch (const std::exception &e) {
       throw LoadError(e.what(), std::move(result.dependencies));

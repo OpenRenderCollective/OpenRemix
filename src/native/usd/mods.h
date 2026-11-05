@@ -44,11 +44,20 @@ namespace remix::usd {
   struct ModStatus {
     bool active = false;  // mod loading started
     bool enabled = true;  // replacements applied at all
-    bool loading = false; // a parse is in flight
+    bool loading = false; // a load is in flight
     std::string directory, diagnostic;
     std::vector<ModInfo> mods;
+    // The loaded mods: seconds the load took, and their geometry in memory.
+    double loadSeconds = 0;
+    uint64_t geometryBytes = 0;
+    size_t materials = 0, materialsInFull = 0;
   };
   ModStatus modStatus();
+  // What a load in flight is doing, as the corner of the screen says it ("":
+  // none is).
+  std::string modLoadText();
+  // Whether video memory is short: streamed mod textures not in use go.
+  void setModMemoryPressure(bool pressure);
   void setModsEnabled(bool enabled);
   void setModEnabled(const std::string &name, bool enabled);
   void setModParts(const std::string &name, const ModParts &parts);

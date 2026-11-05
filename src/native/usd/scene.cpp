@@ -7,7 +7,9 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <atomic>
 #include <map>
+#include <mutex>
 #include <pxr/base/gf/vec2f.h>
 #include <pxr/usd/ar/resolver.h>
 #include <pxr/usd/ar/resolverContextBinder.h>
@@ -26,6 +28,7 @@
 #include <pxr/usd/usdShade/materialBindingAPI.h>
 #include <pxr/usd/usdShade/shader.h>
 #include <set>
+#include <thread>
 
 PXR_NAMESPACE_USING_DIRECTIVE
 namespace remix::usd {
@@ -146,7 +149,7 @@ namespace remix::usd {
     }
     Json material_json(const UsdPrim &prim, Json &warnings) {
       UsdPrim shader;
-      if (auto material = UsdShadeMaterial(prim)) {
+      if (auto material = UsdShadeMaterial(prim); material && prim.IsA<UsdShadeMaterial>()) {
         if (auto connected = material.ComputeSurfaceSource(TfToken("mdl")))
           shader = connected.GetPrim();
       }
@@ -384,6 +387,46 @@ namespace remix::usd {
     }
     return result;
   }
+  namespace {
+    Json mesh_json(const ComposedMesh &mesh) {
+      Json parts = Json::array();
+      for (const auto &surface : mesh.surfaces) {
+        Json part{{"material", surface.material},
+                  {"category_flags", surface.categoryFlags},
+                  {"vertices", Json::array()},
+                  {"indices", Json::array()}};
+        const size_t corners = surface.vertices.size() / 8;
+        auto &vertices = part["vertices"];
+        auto &indices = part["indices"];
+        for (size_t i = 0; i < corners; ++i) {
+          const float *v = surface.vertices.data() + i * 8;
+          vertices.push_back({v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7]});
+          indices.push_back(i);
+        }
+        if (surface.influences) {
+          part["influences"] = surface.influences;
+          part["joint_indices"] = surface.jointIndices;
+          part["joint_weights"] = surface.jointWeights;
+        }
+        if (!surface.colors.empty())
+          part["colors"] = surface.colors;
+        parts.push_back(std::move(part));
+      }
+      Json transform = Json::array();
+      for (const double value : mesh.transform)
+        transform.push_back(value);
+      return {{"id", mesh.id},
+              {"source_path", mesh.sourcePath},
+              {"transform", std::move(transform)},
+              {"surfaces", std::move(parts)},
+              {"skinned", mesh.skinned},
+              {"skeleton", mesh.skeleton},
+              {"double_sided", mesh.doubleSided},
+              {"alpha_state", mesh.alphaState},
+              {"ignore_alpha", mesh.ignoreAlpha},
+              {"alpha_blend_to_cutout", mesh.alphaBlendToCutout}};
+    }
+  } // namespace
   Json compose_scene(const UsdStageRefPtr &stage, uint64_t revision, const ComposeScope &scope) {
     Json result{{"revision", revision},
                 {"meshes", Json::array()},
@@ -399,167 +442,186 @@ namespace remix::usd {
     CaptureCategories categories(stage, result["warnings"]);
     result["category_sources"] = categories.sources();
     std::set<std::string> materials;
-    UsdPrimRange range = UsdPrimRange::Stage(stage, traversal());
-    if (!scope.root.empty()) {
-      const auto root = stage->GetPrimAtPath(SdfPath(scope.root));
-      range = root ? UsdPrimRange(root, traversal()) : UsdPrimRange();
-    }
-    for (auto prim : range) {
+    // Guards the JSON below while meshes compose in parallel (ComposeScope::meshSink).
+    std::mutex shared;
+    const auto warn = [&](const std::string &text) {
+      std::lock_guard lock(shared);
+      result["warnings"].push_back(text);
+    };
+    const auto compose_mesh = [&](const UsdPrim &prim, const GfMatrix4d &world) {
+      const auto path = prim.GetPath().GetString();
+      const UsdGeomMesh mesh(prim);
+      try {
+        VtVec3fArray points, normals;
+        VtIntArray indices, counts, holes;
+        mesh.GetPointsAttr().Get(&points, time);
+        mesh.GetFaceVertexIndicesAttr().Get(&indices, time);
+        mesh.GetFaceVertexCountsAttr().Get(&counts, time);
+        mesh.GetNormalsAttr().Get(&normals, time);
+        mesh.GetHoleIndicesAttr().Get(&holes, time);
+        std::string reason;
+        if (!UsdGeomMesh::ValidateTopology(indices, counts, points.size(), &reason))
+          throw std::runtime_error(reason);
+        auto normal_interpolation = mesh.GetNormalsInterpolation();
+        auto normal_primvar = UsdGeomPrimvarsAPI(mesh).GetPrimvar(TfToken("normals"));
+        if (normal_primvar && normal_primvar.ComputeFlattened(&normals, time))
+          normal_interpolation = normal_primvar.GetInterpolation();
+        std::string skeleton;
+        // A replacement's joint indices name the bones of the draw it
+        // replaces, whatever its skeleton (dxvk-remix UsdMeshImporter).
+        VtIntArray joints;
+        VtFloatArray jointWeights;
+        int influences = 0;
+        bool everyVertex = true;
+        if (scope.hostBones) {
+          const UsdSkelBindingAPI binding(prim);
+          const auto jointPrimvar = binding.GetJointIndicesPrimvar();
+          const auto weightPrimvar = binding.GetJointWeightsPrimvar();
+          if (jointPrimvar.HasValue() && weightPrimvar.HasValue() && jointPrimvar.ComputeFlattened(&joints, time) &&
+              weightPrimvar.ComputeFlattened(&jointWeights, time)) {
+            influences = jointPrimvar.GetElementSize();
+            everyVertex = jointPrimvar.GetInterpolation() != UsdGeomTokens->constant;
+            if (influences < 1 || joints.size() != jointWeights.size() ||
+                joints.size() != size_t(influences) * (everyVertex ? points.size() : 1)) {
+              warn(path + ": joint influences do not match its points; not skinned");
+              influences = 0;
+            }
+          }
+        } else {
+          try {
+            skeleton = skinning.deform(mesh, points, normals, normal_interpolation, indices, counts);
+          } catch (const std::exception &error) {
+            warn(path + ": " + error.what() + "; showing undeformed geometry");
+          }
+        }
+        VtVec2fArray uv;
+        auto st = UsdGeomPrimvarsAPI(mesh).GetPrimvar(TfToken("st"));
+        if (st)
+          st.ComputeFlattened(&uv, time);
+        const auto color_primvar =
+            UsdGeomPrimvarsAPI(mesh).FindPrimvarWithInheritance(TfToken("displayColor"));
+        const auto opacity_primvar =
+            UsdGeomPrimvarsAPI(mesh).FindPrimvarWithInheritance(TfToken("displayOpacity"));
+        VtVec3fArray colors;
+        VtFloatArray opacities;
+        if (color_primvar)
+          color_primvar.ComputeFlattened(&colors, time);
+        if (opacity_primvar)
+          opacity_primvar.ComputeFlattened(&opacities);
+        auto binding = UsdShadeMaterialBindingAPI(prim).ComputeBoundMaterial();
+        std::map<int, UsdShadeMaterial> face_materials;
+        for (auto subset :
+             UsdGeomSubset::GetGeomSubsets(mesh, UsdGeomTokens->face, TfToken("materialBind"))) {
+          VtIntArray faces;
+          subset.GetIndicesAttr().Get(&faces, time);
+          auto bound = UsdShadeMaterialBindingAPI(subset.GetPrim()).ComputeBoundMaterial();
+          for (int face : faces)
+            face_materials[face] = bound;
+        }
+        std::map<std::string, ComposedSurface> surfaces;
+        auto surface_of = [&](const UsdShadeMaterial &material) -> ComposedSurface & {
+          std::string material_id = material ? material.GetPath().GetString() : "default";
+          auto found = surfaces.find(material_id);
+          if (found != surfaces.end())
+            return found->second;
+          auto &added = surfaces[material_id];
+          added.material = material_id;
+          std::lock_guard lock(shared);
+          if (material && materials.insert(material_id).second)
+            result["materials"].push_back(material_json(material.GetPrim(), result["warnings"]));
+          added.categoryFlags = categories.flags(prim, material);
+          return added;
+        };
+        const bool leftHanded =
+            attribute(prim, "orientation", UsdGeomTokens->rightHanded) == UsdGeomTokens->leftHanded;
+        ComposedSurface *whole = nullptr; // Every face's, without subsets.
+        int corner = 0;
+        for (size_t face = 0; face < counts.size(); ++face) {
+          const int count = counts[face], first = corner;
+          corner += count;
+          if (!holes.empty() && std::find(holes.begin(), holes.end(), int(face)) != holes.end())
+            continue;
+          if (!whole && face_materials.empty())
+            whole = &surface_of(binding);
+          auto &surface = whole ? *whole : surface_of(face_materials.count(face) ? face_materials.at(face) : binding);
+          for (auto triangle : triangulate(points, indices, first, count)) {
+            if (leftHanded)
+              std::swap(triangle[1], triangle[2]);
+            auto geometric = GfCross(points[indices[triangle[1]]] - points[indices[triangle[0]]],
+                                     points[indices[triangle[2]]] - points[indices[triangle[0]]])
+                                 .GetNormalized();
+            for (int c : triangle) {
+              int vertex = indices[c];
+              auto point = points[vertex];
+              auto normal = geometric;
+              auto n = element_index(normal_interpolation, face, c, vertex);
+              if (n >= 0 && size_t(n) < normals.size())
+                normal = normals[n];
+              GfVec2f texcoord(0);
+              int u = st ? element_index(st.GetInterpolation(), face, c, vertex) : -1;
+              if (u >= 0 && size_t(u) < uv.size())
+                texcoord = uv[u];
+              surface.vertices.insert(surface.vertices.end(), {point[0], point[1], point[2], normal[0], normal[1],
+                                                               normal[2], texcoord[0], texcoord[1]});
+              if (influences) {
+                surface.influences = uint32_t(influences);
+                const size_t first = everyVertex ? size_t(vertex) * influences : 0;
+                for (int k = 0; k < influences; ++k) {
+                  surface.jointIndices.push_back(uint32_t(std::max(joints[first + k], 0)));
+                  surface.jointWeights.push_back(jointWeights[first + k]);
+                }
+              }
+              if (!colors.empty() || !opacities.empty()) {
+                auto color = GfVec3f(1);
+                float opacity = 1;
+                const int ci =
+                    color_primvar ? element_index(color_primvar.GetInterpolation(), face, c, vertex) : -1;
+                const int ai = opacity_primvar
+                                   ? element_index(opacity_primvar.GetInterpolation(), face, c, vertex)
+                                   : -1;
+                if (ci >= 0 && size_t(ci) < colors.size())
+                  color = colors[ci];
+                if (ai >= 0 && size_t(ai) < opacities.size())
+                  opacity = opacities[ai];
+                surface.colors.push_back(packed_color(color, opacity));
+              }
+            }
+          }
+        }
+        ComposedMesh composed;
+        composed.id = path;
+        composed.sourcePath = source_path(prim);
+        composed.skeleton = skeleton;
+        for (int row = 0; row < 4; ++row)
+          for (int col = 0; col < 4; ++col)
+            composed.transform[row * 4 + col] = world[row][col];
+        for (auto &entry : surfaces)
+          composed.surfaces.push_back(std::move(entry.second));
+        composed.skinned = !skeleton.empty() || influences > 0;
+        composed.doubleSided = attribute(prim, "doubleSided", false);
+        composed.alphaState = capture_alpha(prim);
+        composed.ignoreAlpha = attribute(prim, "remix_category:ignore_alpha_channel", false);
+        composed.alphaBlendToCutout = attribute(prim, "remix_category:alpha_blend_to_cutout", false);
+        if (scope.meshSink)
+          scope.meshSink(std::move(composed));
+        else
+          result["meshes"].push_back(mesh_json(composed));
+      } catch (const std::exception &error) {
+        warn(path + ": " + error.what());
+      }
+    };
+    std::vector<std::pair<UsdPrim, GfMatrix4d>> deferred;
+    for (auto prim : UsdPrimRange::Stage(stage, traversal())) {
       auto imageable = UsdGeomImageable(prim);
       if (imageable && imageable.ComputeVisibility() == UsdGeomTokens->invisible)
         continue;
       const auto path = prim.GetPath().GetString();
-      if (!scope.deferMeshesUnder.empty() && prim.IsA<UsdGeomMesh>() &&
-          path.starts_with(scope.deferMeshesUnder))
-        continue;
       const auto world = transforms.GetLocalToWorldTransform(prim);
-      if (auto mesh = UsdGeomMesh(prim)) {
-        try {
-          VtVec3fArray points, normals;
-          VtIntArray indices, counts, holes;
-          mesh.GetPointsAttr().Get(&points, time);
-          mesh.GetFaceVertexIndicesAttr().Get(&indices, time);
-          mesh.GetFaceVertexCountsAttr().Get(&counts, time);
-          mesh.GetNormalsAttr().Get(&normals, time);
-          mesh.GetHoleIndicesAttr().Get(&holes, time);
-          std::string reason;
-          if (!UsdGeomMesh::ValidateTopology(indices, counts, points.size(), &reason))
-            throw std::runtime_error(reason);
-          auto normal_interpolation = mesh.GetNormalsInterpolation();
-          auto normal_primvar = UsdGeomPrimvarsAPI(mesh).GetPrimvar(TfToken("normals"));
-          if (normal_primvar && normal_primvar.ComputeFlattened(&normals, time))
-            normal_interpolation = normal_primvar.GetInterpolation();
-          std::string skeleton;
-          // A replacement's joint indices name the bones of the draw it
-          // replaces, whatever its skeleton (dxvk-remix UsdMeshImporter).
-          VtIntArray joints;
-          VtFloatArray jointWeights;
-          int influences = 0;
-          bool everyVertex = true;
-          if (scope.hostBones) {
-            const UsdSkelBindingAPI binding(prim);
-            const auto jointPrimvar = binding.GetJointIndicesPrimvar();
-            const auto weightPrimvar = binding.GetJointWeightsPrimvar();
-            if (jointPrimvar.HasValue() && weightPrimvar.HasValue() && jointPrimvar.ComputeFlattened(&joints, time) &&
-                weightPrimvar.ComputeFlattened(&jointWeights, time)) {
-              influences = jointPrimvar.GetElementSize();
-              everyVertex = jointPrimvar.GetInterpolation() != UsdGeomTokens->constant;
-              if (influences < 1 || joints.size() != jointWeights.size() ||
-                  joints.size() != size_t(influences) * (everyVertex ? points.size() : 1)) {
-                result["warnings"].push_back(path + ": joint influences do not match its points; not skinned");
-                influences = 0;
-              }
-            }
-          } else {
-            try {
-              skeleton = skinning.deform(mesh, points, normals, normal_interpolation, indices, counts);
-            } catch (const std::exception &error) {
-              result["warnings"].push_back(path + ": " + error.what() + "; showing undeformed geometry");
-            }
-          }
-          VtVec2fArray uv;
-          auto st = UsdGeomPrimvarsAPI(mesh).GetPrimvar(TfToken("st"));
-          if (st)
-            st.ComputeFlattened(&uv, time);
-          const auto color_primvar =
-              UsdGeomPrimvarsAPI(mesh).FindPrimvarWithInheritance(TfToken("displayColor"));
-          const auto opacity_primvar =
-              UsdGeomPrimvarsAPI(mesh).FindPrimvarWithInheritance(TfToken("displayOpacity"));
-          VtVec3fArray colors;
-          VtFloatArray opacities;
-          if (color_primvar)
-            color_primvar.ComputeFlattened(&colors, time);
-          if (opacity_primvar)
-            opacity_primvar.ComputeFlattened(&opacities);
-          auto binding = UsdShadeMaterialBindingAPI(prim).ComputeBoundMaterial();
-          std::map<int, UsdShadeMaterial> face_materials;
-          for (auto subset :
-               UsdGeomSubset::GetGeomSubsets(mesh, UsdGeomTokens->face, TfToken("materialBind"))) {
-            VtIntArray faces;
-            subset.GetIndicesAttr().Get(&faces, time);
-            auto bound = UsdShadeMaterialBindingAPI(subset.GetPrim()).ComputeBoundMaterial();
-            for (int face : faces)
-              face_materials[face] = bound;
-          }
-          std::map<std::string, Json> surfaces;
-          int corner = 0;
-          for (size_t face = 0; face < counts.size(); ++face) {
-            const int count = counts[face], first = corner;
-            corner += count;
-            if (std::find(holes.begin(), holes.end(), int(face)) != holes.end())
-              continue;
-            auto material = face_materials.count(face) ? face_materials.at(face) : binding;
-            std::string material_id = material ? material.GetPath().GetString() : "default";
-            if (material && materials.insert(material_id).second)
-              result["materials"].push_back(material_json(material.GetPrim(), result["warnings"]));
-            if (!surfaces.count(material_id))
-              surfaces[material_id] = {{"material", material_id},
-                                       {"category_flags", categories.flags(prim, material)},
-                                       {"vertices", Json::array()},
-                                       {"indices", Json::array()}};
-            auto &surface = surfaces[material_id];
-            for (auto triangle : triangulate(points, indices, first, count)) {
-              if (attribute(prim, "orientation", UsdGeomTokens->rightHanded) == UsdGeomTokens->leftHanded)
-                std::swap(triangle[1], triangle[2]);
-              auto geometric = GfCross(points[indices[triangle[1]]] - points[indices[triangle[0]]],
-                                       points[indices[triangle[2]]] - points[indices[triangle[0]]])
-                                   .GetNormalized();
-              for (int c : triangle) {
-                int vertex = indices[c];
-                auto point = points[vertex];
-                auto normal = geometric;
-                auto n = element_index(normal_interpolation, face, c, vertex);
-                if (n >= 0 && size_t(n) < normals.size())
-                  normal = normals[n];
-                GfVec2f texcoord(0);
-                int u = st ? element_index(st.GetInterpolation(), face, c, vertex) : -1;
-                if (u >= 0 && size_t(u) < uv.size())
-                  texcoord = uv[u];
-                surface["indices"].push_back(surface["vertices"].size());
-                surface["vertices"].push_back({point[0], point[1], point[2], normal[0], normal[1], normal[2],
-                                               texcoord[0], texcoord[1]});
-                if (influences) {
-                  surface["influences"] = influences;
-                  const size_t first = everyVertex ? size_t(vertex) * influences : 0;
-                  for (int k = 0; k < influences; ++k) {
-                    surface["joint_indices"].push_back(std::max(joints[first + k], 0));
-                    surface["joint_weights"].push_back(jointWeights[first + k]);
-                  }
-                }
-                if (!colors.empty() || !opacities.empty()) {
-                  auto color = GfVec3f(1);
-                  float opacity = 1;
-                  const int ci =
-                      color_primvar ? element_index(color_primvar.GetInterpolation(), face, c, vertex) : -1;
-                  const int ai = opacity_primvar
-                                     ? element_index(opacity_primvar.GetInterpolation(), face, c, vertex)
-                                     : -1;
-                  if (ci >= 0 && size_t(ci) < colors.size())
-                    color = colors[ci];
-                  if (ai >= 0 && size_t(ai) < opacities.size())
-                    opacity = opacities[ai];
-                  surface["colors"].push_back(packed_color(color, opacity));
-                }
-              }
-            }
-          }
-          Json parts = Json::array();
-          for (auto &entry : surfaces)
-            parts.push_back(std::move(entry.second));
-          result["meshes"].push_back(
-              {{"id", path},
-               {"source_path", source_path(prim)},
-               {"transform", matrix_json(world)},
-               {"surfaces", parts},
-               {"skinned", !skeleton.empty() || influences > 0},
-               {"skeleton", skeleton},
-               {"double_sided", attribute(prim, "doubleSided", false)},
-               {"alpha_state", capture_alpha(prim)},
-               {"ignore_alpha", attribute(prim, "remix_category:ignore_alpha_channel", false)},
-               {"alpha_blend_to_cutout", attribute(prim, "remix_category:alpha_blend_to_cutout", false)}});
-        } catch (const std::exception &error) {
-          result["warnings"].push_back(path + ": " + error.what());
-        }
+      if (UsdGeomMesh(prim)) {
+        if (scope.meshSink)
+          deferred.emplace_back(prim, world);
+        else
+          compose_mesh(prim, world);
       } else if (auto light = UsdLuxLightAPI(prim)) {
         result["lights"].push_back(light_json(prim, world, result["warnings"]));
       } else if (auto camera = UsdGeomCamera(prim)) {
@@ -569,6 +631,29 @@ namespace remix::usd {
              {"focal_length", attribute(prim, "focalLength", 50.f)},
              {"horizontal_aperture", attribute(prim, "horizontalAperture", 20.955f)}});
       }
+    }
+    if (!deferred.empty()) {
+      if (scope.progress)
+        scope.progress->enter(LoadStage::Meshes, uint32_t(deferred.size()));
+      std::atomic<size_t> next{0};
+      const auto work = [&] {
+        for (size_t i; (i = next++) < deferred.size();) {
+          try {
+            compose_mesh(deferred[i].first, deferred[i].second);
+          } catch (...) {
+            // The sink's to report. Exceptions stay on their thread.
+          }
+          if (scope.progress)
+            ++scope.progress->done;
+        }
+      };
+      const unsigned threads = std::clamp(std::thread::hardware_concurrency() / 2, 1u, 8u);
+      std::vector<std::thread> pool;
+      for (unsigned t = 1; t < threads && t < deferred.size(); ++t)
+        pool.emplace_back(work);
+      work();
+      for (auto &thread : pool)
+        thread.join();
     }
     result["skeletons"] = skinning.skeletons();
     return result;

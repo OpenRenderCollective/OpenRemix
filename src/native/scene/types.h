@@ -163,6 +163,10 @@ namespace remix {
     }
     struct Material {
       uint64_t sourceHash = 0;
+      // A mod material whose textures stream (usd/submission.h): a draw that
+      // resolves to it sets 1, or 2 when a scene instance keeps it. The mod
+      // loader reads and clears it. Guarded by the API mutex.
+      std::shared_ptr<uint8_t> streamUse;
       std::shared_ptr<Texture> texture;
       std::shared_ptr<Texture> emissionTexture;
       std::shared_ptr<Texture> roughnessTexture, metallicTexture, normalTexture;

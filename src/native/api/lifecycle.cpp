@@ -560,6 +560,7 @@ REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_Present(const remixapi_Presen
 #if REMIX_HAS_USD
       if (status == REMIXAPI_ERROR_CODE_SUCCESS) {
         remix::usd::captureBoundary(g_runtime.raster());
+        remix::usd::setModMemoryPressure(g_runtime.videoMemoryShort());
         remix::usd::modBoundary(g_runtime.raster());
       }
 #endif
