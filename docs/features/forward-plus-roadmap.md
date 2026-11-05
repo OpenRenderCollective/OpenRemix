@@ -5240,3 +5240,5 @@ These are work-reduction paths, not quality presets. General native 1080p 300-40
 - [x] Profile the accepted local-shadow cache with and without a viewmodel. Remaining costs include opaque shading, reflection resolve and viewmodel shading/shadows; baked world local shadows are effectively idle in the measured steady view.
 - [x] Reject the empty-viewmodel-cube-face clear prototype: smaller timestamp scopes did not establish a material full-frame gain with timers disabled. Remove the prototype rather than retaining an unqualified path.
 - [ ] Investigate remaining opaque receiver/shader and reflection/composition costs with full-quality, timers-off acceptance comparisons; distinguish timestamp attribution from throughput.
+
+- [x] Reject the standard sun back-facing-response early-out trial: preserved finite-disc diffuse support and passed GPU regression checks, but all measured full-frame cases were slower at matching GPU clocks. Remove the extra branch and retain the original path.
