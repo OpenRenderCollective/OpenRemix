@@ -171,7 +171,7 @@ namespace remix::forward::lightmap {
                                     FilterDispatch dispatch, std::stop_token cancelled,
                                     DenoiseStatistics &statistics,
                                     const std::function<void(uint32_t, uint32_t)> &progress) {
-    if (!device.cpuQueues || device.cpuQueues > 4 ||
+    if (!device.cpuQueues || device.cpuQueues > maximumCpuQueues ||
         (device.cpuQueues > 1 && (device.device != FilterDevice::Cpu || !device.cpuThreads ||
                                   uint64_t(device.cpuThreads) * device.cpuQueues > 32)))
       throw std::invalid_argument("Invalid CPU denoising queue policy");

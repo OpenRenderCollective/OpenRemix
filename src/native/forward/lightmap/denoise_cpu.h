@@ -22,7 +22,7 @@ namespace remix::forward::lightmap::denoising {
   // Every queue owns its filters and scratch. An error cancels peers, and every
   // queue joins before borrowed chart arrays or callback state can be released.
   template <typename Task> void cpuQueues(uint32_t count, std::stop_token cancelled, Task task) {
-    if (!count || count > 4)
+    if (!count || count > maximumCpuQueues)
       throw std::invalid_argument("CPU chart queue count outside its budget");
     std::stop_source cancellation;
     std::stop_callback forward(cancelled, [&] { cancellation.request_stop(); });

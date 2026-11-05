@@ -3,6 +3,7 @@
 #include <array>
 
 namespace remix::forward::lightmap::denoising {
+  inline constexpr uint32_t maximumCpuQueues = 8;
   struct DeviceProbe {
     uint32_t width, height;
     uint32_t population; // usable charts in this size bin, including other aspect ratios

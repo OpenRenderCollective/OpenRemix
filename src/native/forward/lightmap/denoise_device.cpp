@@ -114,11 +114,10 @@ namespace remix::forward::lightmap::denoising {
       const int expected = device == FilterDevice::Cpu ? OIDN_DEVICE_TYPE_CPU : OIDN_DEVICE_TYPE_CUDA;
       return scratch.deviceType == expected ? projected : std::numeric_limits<double>::infinity();
     }
-    double measureCpuQueues(std::vector<ProbeBatch> &batches, uint32_t threads, size_t requiredCapacity,
-                            HostTransfers transfers, std::stop_token cancelled) {
-      constexpr uint32_t queues = 4;
-      std::array<DenoiseStatistics, queues> statistics;
-      std::array<std::unique_ptr<Filter>, queues> filters;
+    double measureCpuQueues(std::vector<ProbeBatch> &batches, uint32_t queues, uint32_t threads,
+                            size_t requiredCapacity, HostTransfers transfers, std::stop_token cancelled) {
+      std::array<DenoiseStatistics, maximumCpuQueues> statistics;
+      std::array<std::unique_ptr<Filter>, maximumCpuQueues> filters;
       for (uint32_t i = 0; i < queues; ++i) {
         filters[i] = std::make_unique<Filter>(statistics[i], requiredCapacity, transfers,
                                               FilterDispatch::Ordinary, FilterDevice::Cpu, threads);
@@ -194,20 +193,46 @@ namespace remix::forward::lightmap::denoising {
           statistics.cpuEstimateSeconds, statistics.defaultEstimateSeconds, unsigned(cpu));
       DeviceChoice choice{cpu ? FilterDevice::Cpu : FilterDevice::Default};
       // Keep explicit thread limits and small machines on the established path.
-      // Four devices share at most 32 nominal worker slots. Require a measured
+      // Independent devices share at most 32 nominal worker slots. Require a measured
       // 25% margin over serial CPU and 35% over the ordinary device before
       // paying their additional storage. Measure independently of serial CPU
       // selection: serial can lose to CUDA while parallel CPU still wins.
       const uint32_t hardware = std::min(32u, std::thread::hardware_concurrency());
       if (hardware >= 16 && !std::getenv("OIDN_NUM_THREADS")) {
         try {
-          statistics.parallelCpuEstimateSeconds =
-              measureCpuQueues(batches, hardware / 4, requiredCapacity, transfers, cancelled);
-          if (preferCpuQueues(statistics.parallelCpuEstimateSeconds, statistics.cpuEstimateSeconds,
-                              statistics.defaultEstimateSeconds)) {
-            choice.device = FilterDevice::Cpu;
-            choice.cpuQueues = 4;
-            choice.cpuThreads = hardware / 4;
+          // Serial/device calibration uses two independent samples per
+          // shape. Pool them for the parallel comparison so each worker
+          // sees several packets even with the wider queue schedule.
+          for (size_t i = 0; i < batches.size(); i += 2) {
+            auto &batch = batches[i], &second = batches[i + 1];
+            batch.population += second.population;
+            for (auto &original : second.original)
+              batch.original.push_back(std::move(original));
+            batch.packets.insert(batch.packets.end(), second.packets.begin(), second.packets.end());
+          }
+          for (size_t i = batches.size(); i != 0; i -= 2)
+            batches.erase(batches.begin() + i - 1);
+          constexpr uint32_t standardQueues = 4;
+          auto measure = [&](uint32_t queues) {
+            return measureCpuQueues(batches, queues, hardware / queues, requiredCapacity, transfers, cancelled);
+          };
+          auto choose = [&](uint32_t queues, double estimate) {
+            if (preferCpuQueues(estimate, statistics.cpuEstimateSeconds, statistics.defaultEstimateSeconds))
+              choice = {FilterDevice::Cpu, queues, hardware / queues};
+          };
+          const double standard = measure(standardQueues);
+          statistics.parallelCpuEstimateSeconds = standard;
+          choose(standardQueues, standard);
+          // Small chart inferences can run better across more independent
+          // queues. Keep the same thread budget and require a measured margin.
+          if (hardware == 32 && requiredCapacity <= batchBudgetBytes) {
+            const double wider = measure(maximumCpuQueues);
+            std::fprintf(stderr, "OIDN CPU queue comparison: four %.3f s / eight %.3f s\n",
+                         standard, wider);
+            if (wider < standard * .9) {
+              statistics.parallelCpuEstimateSeconds = wider;
+              choose(maximumCpuQueues, wider);
+            }
           }
         } catch (const std::exception &error) {
           checkCancellation(cancelled);
