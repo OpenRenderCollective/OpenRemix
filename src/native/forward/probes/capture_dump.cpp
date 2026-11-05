@@ -408,6 +408,11 @@ namespace remix::forward::probes {
     void dumpData(const char *suffix, const void *data, size_t bytes, bool frameRequest,
                   bool requireCapture = true) noexcept {
       const char *prefix = std::getenv("REMIX_DEBUG_BAKE_CAPTURE_PREFIX");
+      if (frameRequest) {
+        // Frame inspection must not require a full bake/atlas capture first.
+        const char *requested = std::getenv("REMIX_DEBUG_FRAME_PREFIX");
+        if (requested && *requested) { prefix = requested; requireCapture = false; }
+      }
       if ((!prefix || !*prefix) && !frameRequest) {
         // Inspect probe fields without dumping the much larger surface atlas.
         const std::string_view name(suffix);

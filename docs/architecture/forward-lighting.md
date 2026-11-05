@@ -1147,3 +1147,14 @@ Sun cascades retain conservative XY unions of the submitted moving-caster bounds
 The world local-shadow maps retain completed moving-caster depth when the selected light projection and complete caster inputs are unchanged. `shadows::MovingCache` owns the bounded CPU snapshots beside those GPU targets. It compares immutable surface ownership, model/index ranges and full bone matrices; alpha-tested draws also compare immutable albedo ownership, prepared alpha/UV inputs, the bound sampler and its filter/wrap state. Updatable textures, expired sources, oversized lists and inactive/reassigned slots invalidate reuse. Viewmodel self maps remain live. This does not use main-camera visibility to discard offscreen shadow casters.
 
 Scene mesh submission weakly shares exactly equal surface payloads up to 1 MiB through a bounded 512-entry content lookup. A fingerprint only selects a candidate; full payload equality is required. Mesh lifetimes, update streams and temporal correspondence stay independent. This lets recreated transient meshes benefit from existing geometry uploads and shadow identity without comparing vertex arrays for every light. Neither cache adds a GPU image, shader permutation, quality setting or public ABI. The owner must discard cached depth state with its targets after an abandoned recording or failed submission, following the existing queue-ordered static-shadow contract.
+
+
+### Small frame-only diagnostics
+
+Set `REMIX_DEBUG_FRAME_PREFIX` to a fresh absolute filename prefix and create
+`<prefix>.frame.request` after the desired scene/camera is ready. The render
+thread writes each available frame-data suffix once, including prepared lights,
+draw constants and shadow policy. This does not require a full bake capture,
+surface atlas dump or changes to rendering features. The legacy
+`REMIX_DEBUG_BAKE_CAPTURE_PREFIX` and its capture/request gates remain supported.
+Frame captures are private diagnostics; keep them under `_work/reports`.
