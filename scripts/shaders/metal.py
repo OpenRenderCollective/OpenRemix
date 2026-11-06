@@ -1,6 +1,6 @@
 """Metal libraries of the native Metal backend, translated from the Vulkan backends' SPIR-V.
 
-SPIR-V --pinned SPIRV-Cross fork--> MSL --xcrun metal--> AIR --metallib--> one library per stage,
+SPIR-V --pinned SPIRV-Cross (+ patches/)--> MSL --xcrun metal--> AIR --metallib--> one library per stage,
 each an XZ stream in metal/shaders/embedded.bin of the build's generated tree (generate.py --output),
 which the build generates before this from the same sources. The input is the SPIR-V the Vulkan
 backends embed, so both backends run the same shaders; for the backends embedded after spirv-opt -O
@@ -9,7 +9,7 @@ fails on the fully inlined lighting kernels and builds the structured ones in se
 buffer(set); embedded.h maps every (set, binding) of a stage to its argument buffer IDs, so the
 host binds resources by their Vulkan set and binding.
 """
-import hashlib, json, os, re, struct, subprocess, tempfile, threading
+import hashlib, json, lzma, os, re, struct, subprocess, tempfile, threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import generate
@@ -26,6 +26,10 @@ STAGES = {
     'maskWithin': ('raster', 'maskWithin'), 'maskOverlay': ('raster', 'maskOverlay'),
     'haloMask': ('raster', 'haloMask'), 'haloVert': ('raster', 'haloVert'),
     'haloBlur': ('raster', 'haloBlur'), 'haloComposite': ('raster', 'haloComposite'),
+    # The NUMOS sky over the raster target (raster/sky.cpp).
+    'skyComposite': ('raster', 'skyComposite'),
+    # HDR10 output (runtime/hdr_output.cpp): the PQ encode and the UI brightness scale.
+    'hdr10': ('upscale', 'hdr10'), 'hdrUi': ('upscale', 'hdrUi'),
     'compositeVert': ('pathtrace', 'vert'), 'compositeFrag': ('pathtrace', 'frag'),
     'gbufferVert': ('pathtrace', 'gbufferVert'), 'gbufferFrag': ('pathtrace', 'gbufferFrag'),
     'depthFrag': ('pathtrace', 'depthFrag'),
@@ -40,8 +44,19 @@ STAGES = {
     'psr': ('pathtrace', 'psr'), 'confidence': ('pathtrace', 'confidence'),
     'sigmaTemporal': ('pathtrace', 'sigmaTemporal'), 'localTemporal': ('pathtrace', 'localTemporal'),
     'localSigmaTemporal': ('pathtrace', 'localSigmaTemporal'),
+    # Split local lighting (pathtrace/local_lights.cpp): torch and emissive
+    # families, the split direct pass and its denoiser.
+    'splitLocalTemporal': ('pathtrace', 'splitLocalTemporal'),
+    'splitLocalSigmaTemporal': ('pathtrace', 'splitLocalSigmaTemporal'),
+    'splitLocalDirect': ('pathtrace', 'splitLocalDirect'),
+    # ReSTIR DI (pathtrace/restir.cpp), in the split direct pass's place.
+    'splitRestirInitial': ('pathtrace', 'splitRestirInitial'),
+    # Wound cuts (pathtrace/geometry.cpp evaluateWounds).
+    'vertexWound': ('pathtrace', 'vertexWound'),
+    'splitRestirSpatial': ('pathtrace', 'splitRestirSpatial'),
     'denoise': ('denoise', 'comp'), 'denoiseSigma': ('denoise', 'sigma'), 'denoiseLocal': ('denoise', 'local'),
-    'denoiseLocalSigma': ('denoise', 'localSigma'),
+    'denoiseLocalSigma': ('denoise', 'localSigma'), 'denoiseSplitLocal': ('denoise', 'splitLocal'),
+    'denoiseSplitLocalSigma': ('denoise', 'splitLocalSigma'),
     # Reconstruction (MetalFX): input preparation and the display composite.
     'reconstructPrepare': ('upscale', 'comp'), 'reconstructVert': ('upscale', 'vert'),
     'reconstructFrag': ('upscale', 'frag'),
@@ -57,6 +72,8 @@ STAGES = {
     'sharcConfidence': ('pathtrace', 'sharcConfidence'), 'sharcSigmaTemporal': ('pathtrace', 'sharcSigmaTemporal'),
     'sharcLocalTemporal': ('pathtrace', 'sharcLocalTemporal'),
     'sharcLocalSigmaTemporal': ('pathtrace', 'sharcLocalSigmaTemporal'),
+    'sharcSplitLocalTemporal': ('pathtrace', 'sharcSplitLocalTemporal'),
+    'sharcSplitLocalSigmaTemporal': ('pathtrace', 'sharcSplitLocalSigmaTemporal'),
     # The separate indirect pass and the front sheet's lighting (pathtrace/
     # renderer.cpp createRawPipelines, temporal.cpp beginFrame).
     'indirect': ('pathtrace', 'indirect'), 'sharcIndirect': ('pathtrace', 'sharcIndirect'),
@@ -67,6 +84,12 @@ STAGES = {
     # Volumetrics (volume.cpp) and sparse rendering (sparse.cpp).
     'volumeUpdate': ('pathtrace', 'volumeUpdate'),
     'sparseCompact': ('pathtrace', 'sparseCompact'), 'sparseArgs': ('pathtrace', 'sparseArgs'),
+    # Particle emitters (particles/renderer.cpp): the light volume, simulation,
+    # spawns (SHELTER's traced ones), indirect draw arguments and the draw.
+    'particleLight': ('particles', 'light'), 'particleSimulate': ('particles', 'simulate'),
+    'particleSpawn': ('particles', 'spawn'), 'particleSpawnTraced': ('particles', 'spawnTraced'),
+    'particleArgs': ('particles', 'args'), 'particleVert': ('particles', 'vert'),
+    'particleFrag': ('particles', 'frag'),
 }
 # denoise.comp switches on a push constant (pass.mode), so every image some
 # mode writes is a read_write texture in its translation, and Apple GPUs read
@@ -75,7 +98,8 @@ STAGES = {
 # which the images it only reads are plain textures.
 DENOISE_MODES = 7
 for _name, _stage in (('denoise', 'comp'), ('denoiseSigma', 'sigma'), ('denoiseLocal', 'local'),
-                      ('denoiseLocalSigma', 'localSigma')):
+                      ('denoiseLocalSigma', 'localSigma'), ('denoiseSplitLocal', 'splitLocal'),
+                      ('denoiseSplitLocalSigma', 'splitLocalSigma')):
     for _mode in range(DENOISE_MODES):
         STAGES[f'{_name}Mode{_mode}'] = ('denoise', _stage, [], _mode)
 # NRD's DXC SPIR-V (denoise/shaders/nrd_embedded.h), by identifier.
@@ -89,8 +113,25 @@ NONE = 0xffff
 _cache_lock = threading.Lock()
 
 
+def sky_shaders():
+    """[(name, SPIR-V)] of the NUMOS sky (generate.py sky), in its index order: the NUMOS passes in
+    numos::PassId order, then OpenRemix's adapter stages. Empty in builds without NUMOS."""
+    header = generate.OUTPUT / 'sky/shaders/embedded.h'
+    if not header.exists():
+        return []
+    table = header.read_text().split('embeddedShaders[] = {', 1)[1].split('};', 1)[0]
+    blob = header.with_suffix('.bin').read_bytes()
+    return [(name, lzma.decompress(blob[int(offset):int(offset) + int(size)]))
+            for offset, size, _, name in re.findall(r'\{(\d+)u, (\d+)u, (\d+)u\}, // (\w+)', table)]
+
+
 def spirv(backend, stage, cache={}):
     """The SPIR-V a Vulkan backend embeds for one stage."""
+    if backend == 'sky':
+        with _cache_lock:
+            if backend not in cache:
+                cache[backend] = [words for _, words in sky_shaders()]
+        return cache[backend][int(stage)]
     if backend == 'nrd':
         with _cache_lock:
             if backend not in cache:
@@ -137,7 +178,11 @@ def interface(msl, reflection, name):
                 continue
             if kind in ('ubos', 'ssbos'):
                 # Buffer blocks match by block type: anonymous instances are named m_<id>.
+                # Slang's structured buffers reflect their variable's name instead (all
+                # share the block type StructuredBuffer).
                 found = [v for t, v in members.values() if re.search(r'\b' + r['name'] + r'\*', t)]
+                if not found and r['name'] in members:
+                    found = [members[r['name']][1]]
                 if len(found) != 1:
                     raise SystemExit(f'{name}: buffer block {r["name"]} not found in set {set_index}')
                 ident = found[0]
@@ -189,14 +234,14 @@ def compile_stage(name, spirv_cross, temporary):
         source.write_bytes(words)
     reflection = json.loads(subprocess.run([spirv_cross, str(source), '--reflect'], check=True,
                                            capture_output=True, text=True).stdout)
-    model = reflection['entryPoints'][0]['mode']
+    model, entry = reflection['entryPoints'][0]['mode'], reflection['entryPoints'][0]['name']
     msl = directory / (name + '.metal')
     subprocess.run([spirv_cross, str(source), '--msl', '--msl-version', MSL_VERSION,
                     '--msl-argument-buffers', '--msl-argument-buffer-tier', '1',
                     '--msl-force-active-argument-buffer-resources',
                     '--msl-device-argument-buffer', '0', '--msl-device-argument-buffer', '1',
                     # Vulkan clip space is Y-down; Metal's is Y-up.
-                    '--flip-vert-y', '--rename-entry-point', 'main', name, model,
+                    '--flip-vert-y', '--rename-entry-point', entry, name, model,
                     '--output', str(msl)], check=True)
     air, library = msl.with_suffix('.air'), msl.with_suffix('.metallib')
     subprocess.run(['xcrun', '-sdk', 'macosx', 'metal', '-std=' + METAL_STD, '-mmacosx-version-min=' + MACOS_MIN,
@@ -270,6 +315,9 @@ def process():
     if not re.search(r'(?<![0-9a-f])' + LOCK['revision'][:7], version):
         raise SystemExit(f'Metal shaders require SPIRV-Cross {LOCK["repository"]} at {LOCK["revision"][:8]}; '
                          'build it with scripts/shaders/toolchain.py --metal (the build does) and pass --tools')
+    # The NUMOS sky's passes and adapters (metal/sky_bridge.mm), sky0 onwards in its index order.
+    for index, _ in enumerate(sky_shaders()):
+        STAGES[f'sky{index}'] = ('sky', str(index))
     with tempfile.TemporaryDirectory() as temporary, ThreadPoolExecutor(max_workers=os.cpu_count() or 1) as pool:
         tasks = {name: pool.submit(compile_stage, name, spirv_cross, temporary) for name in STAGES}
         results = {name: task.result() for name, task in tasks.items()}

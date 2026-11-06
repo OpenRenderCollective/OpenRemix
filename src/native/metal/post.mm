@@ -29,7 +29,9 @@ namespace remix::metal::post {
     id<MTLBuffer> settings[gpuFrameCount] = {}, readback[gpuFrameCount] = {};
     bool pending[gpuFrameCount] = {};
     id<MTLComputePipelineState> pipelines[4] = {};
-    ArgumentSet meterSet;
+    // The meter and the resolve bind the same resources, but SPIRV-Cross lays
+    // out each stage's argument buffer by the resources it uses: one set each.
+    ArgumentSet meterSet, resolveSet;
     std::vector<ArgumentSet> downSets, upSets;
     id<MTLSamplerState> edge = nil, border = nil;
     uint32_t slot = 0;
@@ -109,6 +111,7 @@ namespace remix::metal::post {
     for (unsigned i = 0; i < 4; ++i)
       g.pipelines[i] = computePipeline(device, stages[i]);
     g.meterSet = ArgumentSet(device, Stage::postMeter, 0);
+    g.resolveSet = ArgumentSet(device, Stage::postResolve, 0);
     for (size_t i = 0; i < g.down.size(); ++i)
       g.downSets.emplace_back(device, Stage::postDown, 0);
     for (size_t i = 0; i < g.up.size(); ++i)
@@ -176,6 +179,7 @@ namespace remix::metal::post {
       g.previousMeter = meterSettings;
       g.sourceGeneration = generation;
       g.write(g.meterSet, hdr, g.guide, g.dummy, g.edge);
+      g.write(g.resolveSet, hdr, g.guide, g.dummy, g.edge);
       const Push push{g.displayWidth,
                       g.displayHeight,
                       ((g.displayWidth + 15) / 16) * ((g.displayHeight + 15) / 16),
@@ -187,7 +191,7 @@ namespace remix::metal::post {
                       0,
                       uint32_t(reset)};
       g.dispatch(command, 0, g.meterSet, push, "Auto exposure meter");
-      g.dispatch(command, 1, g.meterSet, push, "Auto exposure resolve");
+      g.dispatch(command, 1, g.resolveSet, push, "Auto exposure resolve");
       ++g.stats.meterFrames;
       if (g.settlingFrames) {
         --g.settlingFrames;

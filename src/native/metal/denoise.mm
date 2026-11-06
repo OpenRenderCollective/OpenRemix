@@ -82,13 +82,13 @@ namespace remix::metal::denoise {
     ArgumentSet postSet[modeCount];
     Frame frame{};
     bool localFireflyFilter = false, initialized = false, submittedFrame = false;
-    bool sigma{}, local{}, validation{}, localReconstruction{};
+    bool sigma{}, local{}, split{}, validation{}, localReconstruction{};
     remixapi_ShadowStatisticsEXT shadowStats{.structSize = sizeof(shadowStats)};
     uint32_t quietFrames = 0, warmupFrames = 32;
     float smoothedFrameMilliseconds = 0;
     LocalTuning localTuning;
     remixapi_DenoisingStatisticsEXT stats{.structSize = sizeof(stats)};
-    std::unique_ptr<NrdPass> indirect, shadow, localDirect, pbr, foreground;
+    std::unique_ptr<NrdPass> indirect, shadow, localDirect, emissiveDirect, pbr, foreground;
 
     id<MTLTexture> texture(MTLPixelFormat format, uint32_t w, uint32_t h) {
       // Render target usage only for the clear when history starts.
@@ -102,7 +102,7 @@ namespace remix::metal::denoise {
     void recordNrd(NrdPass &pass, id<MTLComputeCommandEncoder> encoder);
     void pass(id<MTLComputeCommandEncoder> encoder, uint32_t mode, uint32_t step = 0);
     std::vector<NrdPass *> nrdPasses() {
-      return {indirect.get(), shadow.get(), localDirect.get(), pbr.get(), foreground.get()};
+      return {indirect.get(), shadow.get(), localDirect.get(), emissiveDirect.get(), pbr.get(), foreground.get()};
     }
   };
 
@@ -110,7 +110,7 @@ namespace remix::metal::denoise {
   Renderer::~Renderer() = default;
 
   void Renderer::initialize(id<MTLDevice> device, uint32_t width, uint32_t height, bool reblur, bool sigma,
-                            bool local, bool localDenoise, bool validation, bool localReconstruction,
+                            bool local, bool localDenoise, bool split, bool validation, bool localReconstruction,
                             bool foregroundDenoise, bool rayReconstruction) {
     m_gpu = std::make_unique<Gpu>();
     auto &g = *m_gpu;
@@ -119,12 +119,13 @@ namespace remix::metal::denoise {
     g.height = height;
     g.sigma = sigma;
     g.local = local;
+    g.split = split && local;
     g.validation = validation;
     g.localReconstruction = localReconstruction;
     foregroundDenoise |= reblur;
     for (uint32_t i = 0; i < ImageCount; ++i) {
       if ((i >= Penumbra && i < SigmaImageCount && !sigma) || (i >= LocalInput && i < LocalImageCount && !local) ||
-          (i >= EmissiveInput && i < EmissiveImageCount))
+          (i >= EmissiveInput && i < EmissiveImageCount && !g.split))
         continue;
       MTLPixelFormat pixel = MTLPixelFormatRGBA16Float;
       if (i == Normal || i == PreviousNormal || i == FrontNormal)
@@ -155,8 +156,9 @@ namespace remix::metal::denoise {
     }
     for (auto &uniform : g.uniforms)
       uniform = buffer(device, nullptr, sizeof(Frame));
-    const Stage first = local ? (sigma ? Stage::denoiseLocalSigmaMode0 : Stage::denoiseLocalMode0)
-                              : (sigma ? Stage::denoiseSigmaMode0 : Stage::denoiseMode0);
+    const Stage first = g.split ? (sigma ? Stage::denoiseSplitLocalSigmaMode0 : Stage::denoiseSplitLocalMode0)
+                        : local ? (sigma ? Stage::denoiseLocalSigmaMode0 : Stage::denoiseLocalMode0)
+                                : (sigma ? Stage::denoiseSigmaMode0 : Stage::denoiseMode0);
     for (uint32_t mode = 0; mode < Gpu::modeCount; ++mode) {
       g.postStage[mode] = Stage(uint32_t(first) + mode);
       g.post[mode] = computePipeline(device, g.postStage[mode]);
@@ -176,6 +178,11 @@ namespace remix::metal::denoise {
     if (localDenoise) {
       g.localDirect = std::make_unique<NrdPass>();
       g.initializeNrd(*g.localDirect, false, true);
+      if (g.split) {
+        g.emissiveDirect = std::make_unique<NrdPass>();
+        g.emissiveDirect->emissive = true;
+        g.initializeNrd(*g.emissiveDirect, false, true);
+      }
     }
     if (sigma) {
       g.shadow = std::make_unique<NrdPass>();
@@ -329,10 +336,16 @@ namespace remix::metal::denoise {
         g.pbr->wasActive = false;
     }
     if (g.localDirect) {
-      if (g.frame.shadow[3] && g.frame.local[0] && g.frame.local[1])
+      if (g.frame.shadow[3] && g.frame.local[0] && (g.split ? g.frame.families[0] : g.frame.local[1]))
         g.prepareNrd(*g.localDirect, projection, previousProjection);
       else
         g.localDirect->wasActive = false;
+    }
+    if (g.emissiveDirect) {
+      if (g.frame.shadow[3] && g.frame.local[0] && g.frame.families[1])
+        g.prepareNrd(*g.emissiveDirect, projection, previousProjection);
+      else
+        g.emissiveDirect->wasActive = false;
     }
     if (g.foreground) {
       if (g.frame.translucency[0])
@@ -427,7 +440,7 @@ namespace remix::metal::denoise {
         settings.fastHistoryClampingSigmaScale = 3.f;
       }
       if (pass.local) {
-        const bool responsive = frame.local[2] != 0;
+        const bool responsive = split ? frame.families[pass.emissive ? 3 : 2] != 0 : frame.local[2] != 0;
         settings.diffusePrepassBlurRadius = 0.f;
         settings.minBlurRadius = .5f;
         settings.maxBlurRadius = 8.f;
@@ -485,9 +498,10 @@ namespace remix::metal::denoise {
       case R::IN_VIEWZ:
         return images[pass.foreground ? FrontDepth : Depth];
       case R::IN_DIFF_RADIANCE_HITDIST:
-        return images[pass.foreground ? FrontDiffuse : pass.pbr ? Sh0 : LocalInput];
+        return images[pass.foreground ? FrontDiffuse : pass.pbr ? Sh0 : pass.emissive ? EmissiveInput : LocalInput];
       case R::OUT_DIFF_RADIANCE_HITDIST:
-        return images[pass.foreground ? FrontDiffuseOutput : pass.pbr ? PbrDiffuseOutput : LocalOutput];
+        return images[pass.foreground ? FrontDiffuseOutput : pass.pbr ? PbrDiffuseOutput
+                      : pass.emissive ? EmissiveOutput : LocalOutput];
       case R::IN_SPEC_RADIANCE_HITDIST:
         return images[pass.foreground ? FrontSpecular : PbrSpecularInput];
       case R::OUT_SPEC_RADIANCE_HITDIST:
@@ -583,8 +597,11 @@ namespace remix::metal::denoise {
       g.recordNrd(*g.pbr, encoder);
     if (g.sigma)
       g.recordNrd(*g.shadow, encoder);
-    if (g.localDirect && g.frame.shadow[3] && g.frame.local[0] && g.frame.local[1])
+    if (g.localDirect && g.frame.shadow[3] && g.frame.local[0] &&
+        (g.split ? g.frame.families[0] : g.frame.local[1]))
       g.recordNrd(*g.localDirect, encoder);
+    if (g.emissiveDirect && g.frame.shadow[3] && g.frame.local[0] && g.frame.families[1])
+      g.recordNrd(*g.emissiveDirect, encoder);
     if (g.frame.translucency[1])
       g.pass(encoder, 2, 0);
     [encoder endEncoding];

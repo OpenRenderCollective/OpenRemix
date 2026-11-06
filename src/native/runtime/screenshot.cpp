@@ -17,10 +17,12 @@
 namespace remix {
   namespace {
     std::filesystem::path nativePath(const char *path) { return utf8Path(path); }
+#if !defined(REMIX_METAL)
     void check(VkResult result) {
       if (result != VK_SUCCESS)
         throw result;
     }
+#endif
     // An IEEE half's bits to float.
     float halfFloat(uint16_t h) {
       const uint32_t sign = uint32_t(h & 0x8000u) << 16, exponent = (h >> 10) & 31u, mantissa = h & 0x3ffu;
@@ -412,6 +414,7 @@ namespace remix {
     return m_status;
   }
 
+#if !defined(REMIX_METAL)
   void PresentedScreenshot::record(VkPhysicalDevice physical, VkDevice device, VkCommandBuffer command,
                                    VkImage image, VkExtent2D extent, VkFormat format, VkImageLayout layout,
                                    HdrNits nits) {
@@ -496,56 +499,16 @@ namespace remix {
     if (ready != VK_SUCCESS)
       return;
     try {
-      Job job;
-      job.set = m_capturedSet;
-      if (job.set)
-        job.base = m_base;
-      else
-        job.single = nativePath(m_captured.c_str());
-      job.half = m_half;
-      job.formats = m_formats;
-      job.nits = m_nits;
-      job.width = m_extent.width;
-      job.height = m_extent.height;
-      // Allocate before mapping, so allocation failure cannot leave memory mapped.
-      const size_t pixels = size_t(m_extent.width) * m_extent.height;
-      (m_half ? job.halves.resize(pixels * 4) : job.bytes.resize(pixels * 4));
-      void *mapped = nullptr;
-      check(vkMapMemory(device, m_memory, 0, VK_WHOLE_SIZE, 0, &mapped));
-      const VkMappedMemoryRange range = {
-          .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, .memory = m_memory, .size = VK_WHOLE_SIZE};
-      const auto result = vkInvalidateMappedMemoryRanges(device, 1, &range);
-      if (result == VK_SUCCESS) {
-        if (m_half)
-          std::memcpy(job.halves.data(), mapped, job.halves.size() * sizeof(uint16_t));
-        else
-          std::memcpy(job.bytes.data(), mapped, job.bytes.size());
-      }
-      vkUnmapMemory(device, m_memory);
-      check(result);
-      for (size_t i = 0; i < job.bytes.size(); i += 4) {
-        if (m_bgra)
-          std::swap(job.bytes[i], job.bytes[i + 2]);
-        job.bytes[i + 3] = 255;
-      }
-      // Encoding takes long enough to show as a hitch: a worker writes the
-      // files (the previous capture's first, if it still runs).
-      if (m_writer.joinable())
-        m_writer.join();
-      m_writer = std::thread([this, job = std::move(job)]() mutable {
-        std::string status;
-        try {
-          if (job.set) {
-            std::error_code ec;
-            std::filesystem::create_directories(job.base.parent_path(), ec);
-          }
-          status = encode(job);
-        } catch (...) {
-          status = "Screenshot encoding failed";
-          SDL_Log("%s", status.c_str());
-        }
-        std::lock_guard lock(m_statusMutex);
-        m_status = std::move(status);
+      write([&](void *pixels, size_t bytes) {
+        void *mapped = nullptr;
+        check(vkMapMemory(device, m_memory, 0, VK_WHOLE_SIZE, 0, &mapped));
+        const VkMappedMemoryRange range = {
+            .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, .memory = m_memory, .size = VK_WHOLE_SIZE};
+        const auto result = vkInvalidateMappedMemoryRanges(device, 1, &range);
+        if (result == VK_SUCCESS)
+          std::memcpy(pixels, mapped, bytes);
+        vkUnmapMemory(device, m_memory);
+        check(result);
       });
     } catch (...) {
       SDL_Log("Screenshot readback failed: %s", m_captured.c_str());
@@ -564,5 +527,51 @@ namespace remix {
     if (!keepRequest)
       m_requested.clear();
     m_captured.clear();
+  }
+#endif
+
+  void PresentedScreenshot::write(const std::function<void(void *pixels, size_t bytes)> &read) {
+    Job job;
+    job.set = m_capturedSet;
+    if (job.set)
+      job.base = m_base;
+    else
+      job.single = nativePath(m_captured.c_str());
+    job.half = m_half;
+    job.formats = m_formats;
+    job.nits = m_nits;
+    job.width = m_extent.width;
+    job.height = m_extent.height;
+    // Allocate before reading, so allocation failure cannot leave memory mapped.
+    const size_t pixels = size_t(m_extent.width) * m_extent.height;
+    (m_half ? job.halves.resize(pixels * 4) : job.bytes.resize(pixels * 4));
+    if (m_half)
+      read(job.halves.data(), job.halves.size() * sizeof(uint16_t));
+    else
+      read(job.bytes.data(), job.bytes.size());
+    for (size_t i = 0; i < job.bytes.size(); i += 4) {
+      if (m_bgra)
+        std::swap(job.bytes[i], job.bytes[i + 2]);
+      job.bytes[i + 3] = 255;
+    }
+    // Encoding takes long enough to show as a hitch: a worker writes the
+    // files (the previous capture's first, if it still runs).
+    if (m_writer.joinable())
+      m_writer.join();
+    m_writer = std::thread([this, job = std::move(job)]() mutable {
+      std::string status;
+      try {
+        if (job.set) {
+          std::error_code ec;
+          std::filesystem::create_directories(job.base.parent_path(), ec);
+        }
+        status = encode(job);
+      } catch (...) {
+        status = "Screenshot encoding failed";
+        SDL_Log("%s", status.c_str());
+      }
+      std::lock_guard lock(m_statusMutex);
+      m_status = std::move(status);
+    });
   }
 } // namespace remix

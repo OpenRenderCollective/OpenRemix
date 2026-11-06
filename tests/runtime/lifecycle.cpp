@@ -472,6 +472,13 @@ int main(int argc, char **argv) {
       }
       require(callbacks == (cycle + 1) * 90, "Present callbacks were lost or recursive");
       ok(api.GetWindowState(&state));
+      // Leaving fullscreen is asynchronous on macOS (a Space transition): the
+      // window reports occluded until it has settled.
+      for (int wait = 0; wait < 300 && !(state.drawableWidth && state.drawableHeight); ++wait) {
+        SDL_Delay(10);
+        ok(api.PumpEvents());
+        ok(api.GetWindowState(&state));
+      }
       require(state.drawableWidth && state.drawableHeight, "No drawable presentation");
       ok(api.SetUIState(REMIXAPI_UI_STATE_NONE));
       ok(api.GetWindowState(&state));

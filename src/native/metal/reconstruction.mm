@@ -292,7 +292,8 @@ kernel void extractRoughness(texture2d<float, access::read> normalRoughness [[te
 
   // upscale/renderer.cpp composite.
   void Renderer::composite(id<MTLRenderCommandEncoder> encoder, id<MTLTexture> stableDepth, id<MTLBuffer> exposure,
-                           id<MTLTexture> bloom, id<MTLSamplerState> bloomSampler, id<MTLBuffer> postSettings, uint32_t slot) {
+                           id<MTLTexture> bloom, id<MTLSamplerState> bloomSampler, id<MTLBuffer> postSettings, uint32_t slot,
+                           const scene::DisplayOutput &display) {
     auto &g = *m_gpu;
     if (!g.compositePipeline) {
       auto *descriptor = [MTLRenderPipelineDescriptor new];
@@ -324,8 +325,7 @@ kernel void extractRoughness(texture2d<float, access::read> normalRoughness [[te
     [encoder setFragmentBuffer:g.postSet.current() offset:0 atIndex:1];
     g.compositeSet.use(encoder, MTLRenderStageFragment);
     g.postSet.use(encoder, MTLRenderStageFragment);
-    // upscale.frag's constants: SDR.
-    const scene::DisplayOutput display;
+    // upscale.frag's constants.
     const struct {
       uint32_t display;
       float peakNits, paperWhiteNits;

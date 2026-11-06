@@ -1,5 +1,7 @@
 #include "sky/shader_code.h"
+#if !defined(REMIX_METAL)
 #include "runtime/pipelines.h"
+#endif
 #include <xz.h>
 #include <iterator>
 #include <mutex>
@@ -48,7 +50,9 @@ namespace remix::sky {
         std::vector<uint32_t> words(source.bytes / 4);
         decompress(source, reinterpret_cast<uint8_t *>(words.data()));
         entry.words = std::move(words);
+#if !defined(REMIX_METAL)
         pipeline::nameCode(entry.words.data(), shaderNames[index]);
+#endif
       });
       return {entry.words.data(), entry.words.size() * sizeof(uint32_t)};
     }

@@ -1,17 +1,20 @@
 #include "runtime/host_passes.h"
+#if !defined(REMIX_METAL)
 #include "runtime/pipelines.h"
+#endif
 #include <algorithm>
 #include <cstring>
 #include <stdexcept>
 
 namespace remix {
 namespace {
+constexpr uint32_t kMaxBindings = 4, kMaxAttributes = 16, kMaxBuffers = 8, kMaxSamplers = 21;
+#if !defined(REMIX_METAL)
 void check(VkResult result) {
   if (result != VK_SUCCESS)
     throw result;
 }
 constexpr VkDeviceSize kSlotMinimum = 256 * 1024;
-constexpr uint32_t kMaxBindings = 4, kMaxAttributes = 16, kMaxBuffers = 8, kMaxSamplers = 21;
 // The frame's copy keeps the swapchain's channel order, raw (UNORM): the
 // host's shaders read and write its bytes as D3D9 does without sRGB states.
 VkFormat unorm(VkFormat format) {
@@ -25,7 +28,10 @@ bool fits(const int32_t rect[4], VkExtent2D extent) {
   return rect[2] == 0 || (rect[0] >= 0 && rect[1] >= 0 && rect[2] > 0 && rect[3] > 0 &&
                           uint32_t(rect[0] + rect[2]) <= extent.width && uint32_t(rect[1] + rect[3]) <= extent.height);
 }
+#endif
 } // namespace
+
+#if !defined(REMIX_METAL)
 
 void HostPasses::initialize(VkPhysicalDevice physical, VkDevice device) {
   m_physical = physical;
@@ -64,10 +70,22 @@ uint32_t HostPasses::memoryType(uint32_t bits, VkMemoryPropertyFlags flags) cons
   throw VK_ERROR_FEATURE_NOT_PRESENT;
 }
 
+bool HostPasses::ready() const { return m_device != VK_NULL_HANDLE; }
+
+bool HostPasses::createModule(Shader &shader) {
+  static_assert(formatRgba8 == VK_FORMAT_R8G8B8A8_UNORM && formatBgra8 == VK_FORMAT_B8G8R8A8_UNORM);
+  shader.stage = shader.vertex ? VK_SHADER_STAGE_VERTEX_BIT : VK_SHADER_STAGE_FRAGMENT_BIT;
+  const VkShaderModuleCreateInfo ci{.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+                                    .codeSize = shader.code.size() * 4,
+                                    .pCode = shader.code.data()};
+  return pipeline::createShaderModule(m_device, &ci, nullptr, &shader.module) == VK_SUCCESS;
+}
+#endif
+
 remixapi_ErrorCode HostPasses::registerShader(const remixapi_HostShaderInfoEXT &info,
                                               remixapi_HostShaderHandleEXT &out) {
   out = 0;
-  if (!m_device || !info.code || info.codeBytes < 20 || info.codeBytes % 4 || info.codeBytes > (64u << 20) ||
+  if (!ready() || !info.code || info.codeBytes < 20 || info.codeBytes % 4 || info.codeBytes > (64u << 20) ||
       (info.stage != REMIXAPI_HOST_SHADER_VERTEX_EXT && info.stage != REMIXAPI_HOST_SHADER_FRAGMENT_EXT) ||
       (info.bindingCount && !info.bindings) || info.bindingCount > 64 || info.pushConstantBytes > 128)
     return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
@@ -75,14 +93,11 @@ remixapi_ErrorCode HostPasses::registerShader(const remixapi_HostShaderInfoEXT &
     if (info.bindings[i].type > REMIXAPI_HOST_BINDING_SAMPLER_EXT || info.bindings[i].binding > 63)
       return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
   Shader shader;
-  shader.stage = info.stage == REMIXAPI_HOST_SHADER_VERTEX_EXT ? VK_SHADER_STAGE_VERTEX_BIT : VK_SHADER_STAGE_FRAGMENT_BIT;
+  shader.vertex = info.stage == REMIXAPI_HOST_SHADER_VERTEX_EXT;
   shader.code.assign(info.code, info.code + info.codeBytes / 4);
   shader.bindings.assign(info.bindings, info.bindings + info.bindingCount);
   shader.pushBytes = info.pushConstantBytes;
-  const VkShaderModuleCreateInfo ci{.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-                                    .codeSize = shader.code.size() * 4,
-                                    .pCode = shader.code.data()};
-  if (pipeline::createShaderModule(m_device, &ci, nullptr, &shader.module) != VK_SUCCESS)
+  if (!createModule(shader))
     return REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
   std::lock_guard lock(m_mutex);
   out = m_nextShader++;
@@ -192,11 +207,11 @@ remixapi_ErrorCode HostPasses::updateTarget(remixapi_HostTargetHandleEXT target,
                                             uint32_t format, const void *pixels, uint64_t bytes, uint32_t depth) {
   if (!target || target >= REMIXAPI_HOST_TARGET_RESERVED_EXT || !width || !height || !depth || width > 16384 ||
       height > 16384 || depth > 2048 || bytes != uint64_t(width) * height * depth * 4 ||
-      (format != VK_FORMAT_R8G8B8A8_UNORM && format != VK_FORMAT_B8G8R8A8_UNORM))
+      (format != formatRgba8 && format != formatBgra8))
     return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
   if (!m_enabled)
     return REMIXAPI_ERROR_CODE_SUCCESS; // the setting is off: dropped
-  Upload upload{target, VkFormat(format), {width, height}, depth, {}};
+  Upload upload{target, format, width, height, depth, {}};
   upload.pixels.assign(static_cast<const uint8_t *>(pixels), static_cast<const uint8_t *>(pixels) + bytes);
   std::lock_guard lock(m_mutex);
   for (auto &existing : m_uploads) // the latest contents count
@@ -218,6 +233,7 @@ remixapi_HostPassStatisticsEXT HostPasses::statistics() const {
   return m_stats;
 }
 
+#if !defined(REMIX_METAL)
 HostPasses::Target &HostPasses::target(remixapi_HostTargetHandleEXT handle, VkFormat format, VkExtent2D extent,
                                        uint32_t channels, uint32_t depth) {
   auto &t = m_targets[handle];
@@ -705,13 +721,13 @@ void HostPasses::record(VkCommandBuffer command, uint32_t slotIndex, VkImage ima
   slot.used = 0;
   // The host's texture contents first: into their targets, through staging.
   for (const auto &upload : uploads) {
-    auto &t = target(upload.target, upload.format, upload.extent, 0, upload.depth);
+    auto &t = target(upload.target, VkFormat(upload.format), {upload.width, upload.height}, 0, upload.depth);
     barrier(command, t.image, t.initialized ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_UNDEFINED,
             VK_IMAGE_LAYOUT_GENERAL, all, VK_ACCESS_TRANSFER_WRITE_BIT, everything, VK_PIPELINE_STAGE_TRANSFER_BIT);
     t.initialized = true;
     const VkBufferImageCopy region{.bufferOffset = stage(slot, upload.pixels.data(), upload.pixels.size(), 16),
                                    .imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
-                                   .imageExtent = {upload.extent.width, upload.extent.height, upload.depth}};
+                                   .imageExtent = {upload.width, upload.height, upload.depth}};
     vkCmdCopyBufferToImage(command, slot.buffer, t.image, VK_IMAGE_LAYOUT_GENERAL, 1, &region);
   }
   if (!slot.pool) {
@@ -1006,4 +1022,5 @@ void HostPasses::record(VkCommandBuffer command, uint32_t slotIndex, VkImage ima
   std::lock_guard lock(m_mutex);
   m_stats.targets = uint32_t(m_targets.size());
 }
+#endif
 } // namespace remix

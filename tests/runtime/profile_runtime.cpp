@@ -139,6 +139,9 @@ int main(int argc, char **argv) {
         focus.type = SDL_EVENT_WINDOW_FOCUS_GAINED;
         focus.window.windowID = id;
         SDL_PushEvent(&focus);
+        // ImGui's SDL3 backend takes the OS cursor's position while the
+        // focused window is not hovered (macOS, Windows, X11): put it there.
+        SDL_WarpMouseInWindow(SDL_GetWindowFromID(id), x, y);
         SDL_Event motion{};
         motion.type = SDL_EVENT_MOUSE_MOTION;
         motion.motion.windowID = id;

@@ -13,8 +13,10 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <algorithm>
 #include <cstring>
 #include <filesystem>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -153,6 +155,18 @@ int main(int argc, char **argv) {
     api.SetConfigVariable("rtx.native.pathtrace.bounces", "4");
     api.SetConfigVariable("rtx.native.pathtrace.emissiveLights", "1");
     api.SetConfigVariable("rtx.native.pathtrace.overrideLight", "0");
+    // SETTINGS=key=value,...: settings for a test run, over the profile's (as remix-sponza).
+    if (const char *settings = std::getenv("SETTINGS")) {
+      std::string list = settings;
+      for (size_t begin = 0; begin < list.size();) {
+        const size_t end = std::min(list.find(',', begin), list.size());
+        const std::string pair = list.substr(begin, end - begin);
+        if (const size_t equals = pair.find('='); equals != std::string::npos &&
+            api.SetConfigVariable(pair.substr(0, equals).c_str(), pair.substr(equals + 1).c_str()))
+          std::fprintf(stderr, "Setting rejected: %s\n", pair.c_str());
+        begin = end + 1;
+      }
+    }
   }
 
   // The box spans x -1..1, y -1..1, z 0..2, open towards the camera at z 0.
@@ -179,7 +193,11 @@ int main(int argc, char **argv) {
               {mesh(0xd4, panel, light), true}};
   }
   if (!status)
+#if defined(__APPLE__)
+    std::fprintf(stderr, "Cmd+X: settings panel (the runtime's shortcut; set it in the panel's header)\n");
+#else
     std::fprintf(stderr, "Alt+X: settings panel (the runtime's shortcut; set it in the panel's header)\n");
+#endif
 
   // One frame: camera, instances and presentation (with the capture request).
   auto drawFrame = [&](const remixapi_WindowState &state, bool capture = false) {

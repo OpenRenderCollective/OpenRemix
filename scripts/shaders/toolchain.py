@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the pinned shader tools (glslang, SPIRV-Tools; with --metal the SPIRV-Cross fork; with --slang slangc) once per machine.
+"""Build the pinned shader tools (glslang, SPIRV-Tools; with --metal SPIRV-Cross; with --slang slangc) once per machine.
 
 The renderer's SPIR-V and Metal libraries are generated at build time (generate.py, metal.py), so every
 build needs the same tools: pinned revisions give every machine the same output. They are built for the
@@ -65,8 +65,11 @@ def khronos(work, bin_dir):
 
 
 def spirv_cross(work, bin_dir):
-    """The SPIRV-Cross fork that translates SPIR-V for the Metal backend."""
-    fetch(LOCK['spirv-cross-msl'], work / 'spirv-cross')
+    """Upstream SPIRV-Cross with OpenRemix's MSL fixes (patches/), which translates SPIR-V for the Metal backend."""
+    entry = LOCK['spirv-cross-msl']
+    fetch(entry, work / 'spirv-cross')
+    subprocess.run(['git', '-C', str(work / 'spirv-cross'), 'apply', str(Path(__file__).parent / entry['patch'])],
+                   check=True)
     build(work / 'spirv-cross', work / 'spirv-cross-build', ['-DSPIRV_CROSS_ENABLE_TESTS=OFF',
                                                              '-DSPIRV_CROSS_SHARED=OFF'], ['spirv-cross'])
     # metal.py checks the revision in --version (git describe), so keep it with the source's history.
@@ -110,7 +113,10 @@ def remove_tree(path, ignore_errors=False):
 def toolset(cache, name, entries, make):
     """The cached toolset's bin directory, built on first use. Concurrent builds (several build
     directories) each build in a scratch directory and the first to finish publishes it."""
-    key = hashlib.sha256(json.dumps([LAYOUT, [LOCK[e] for e in entries]], sort_keys=True).encode()).hexdigest()[:16]
+    # An entry's patch is part of the toolset: editing it rebuilds the toolset.
+    patches = [(Path(__file__).parent / LOCK[e]['patch']).read_text() for e in entries if 'patch' in LOCK[e]]
+    keyed = [LAYOUT, [LOCK[e] for e in entries]] + ([patches] if patches else [])
+    key = hashlib.sha256(json.dumps(keyed, sort_keys=True).encode()).hexdigest()[:16]
     final = cache / f'{name}-{key}'
     if (final / 'complete').exists():
         return final / 'bin'
@@ -136,7 +142,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True, help='JSON record of the tools (generate.py --tools)')
     parser.add_argument('--cache', default='', help='Toolset cache (default: _work/tools/shader-toolchain)')
-    parser.add_argument('--metal', action='store_true', help='Also build the SPIRV-Cross fork')
+    parser.add_argument('--metal', action='store_true', help='Also build SPIRV-Cross for the Metal backend')
     parser.add_argument('--slang', action='store_true', help='Also fetch the pinned slangc release (NUMOS sky)')
     args = parser.parse_args()
     cache = Path(args.cache).resolve() if args.cache else ROOT / '_work/tools/shader-toolchain'

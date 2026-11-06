@@ -7,17 +7,25 @@
 #include <vector>
 
 namespace remix::config {
+  // The panel's and the screenshot shortcut's default modifier: Cmd on macOS,
+  // whose keyboards have Option rather than Alt; Alt elsewhere.
+#if defined(__APPLE__)
+  inline constexpr uint32_t defaultShortcutModifiers = 8;
+#else
+  inline constexpr uint32_t defaultShortcutModifiers = 1;
+#endif
   struct PanelState {
     bool right = false;
     float width = 520;
     int tab = 0;
     // The panel's shortcut (RemixSdlWindow::setMenuShortcut): a key and exactly
-    // the modifiers held with it (1 Alt, 2 Ctrl, 4 Shift, 8 Cmd/Win). Alt+X.
-    uint32_t menuKey = REMIXAPI_KEY_X, menuModifiers = 1;
+    // the modifiers held with it (1 Alt, 2 Ctrl, 4 Shift, 8 Cmd/Win). Alt+X
+    // (Cmd+X on macOS).
+    uint32_t menuKey = REMIXAPI_KEY_X, menuModifiers = defaultShortcutModifiers;
     // The USD scene capture shortcut, kept the same way (key 0: none).
     uint32_t sceneCaptureKey = 0, sceneCaptureModifiers = 0;
-    // The screenshot shortcut, the same way. Alt+F12.
-    uint32_t screenshotKey = REMIXAPI_KEY_F12, screenshotModifiers = 1;
+    // The screenshot shortcut, the same way. Alt+F12 (Cmd+F12 on macOS).
+    uint32_t screenshotKey = REMIXAPI_KEY_F12, screenshotModifiers = defaultShortcutModifiers;
     bool operator==(const PanelState &) const = default;
   };
 

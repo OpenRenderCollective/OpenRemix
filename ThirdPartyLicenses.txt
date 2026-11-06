@@ -39,6 +39,11 @@ Copyright (c) Microsoft Corp.
 BSD 2-Clause license: third_party/jxrlib/LICENSE; distributed as jxrlib.txt.
 Source and provenance: third_party/jxrlib/README.remix.md.
 
+SPIRV-Cross (MSL backend for host passes; macOS builds), commit 57e4efcc84112abcd426dc5ec248b5339bee04f2
+Copyright 2015-2021 Arm Limited and the SPIRV-Cross contributors.
+Apache License 2.0: third_party/spirv-cross/LICENSE; distributed as SPIRV-Cross.txt.
+Source and provenance (with OpenRemix's MSL fixes): third_party/spirv-cross/README.remix.md.
+
 AMD FidelityFX Super Resolution 3.1.4 (upscaler and frame generation, FidelityFX SDK v1.1.4;
 Linux builds)
 Copyright (C) 2024 Advanced Micro Devices, Inc.

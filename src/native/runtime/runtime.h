@@ -38,6 +38,7 @@
 #include "runtime/screenshot.h"
 #include "ui/menu_shortcut.h"
 #include "ui/profiles.h"
+#include "ui/status.h"
 #include "scene/free_camera.h"
 #include "scene/up_axis.h"
 #include <remix/remix_c.h>
@@ -309,10 +310,33 @@ private:
   void drawPostProcessingTab(config::Settings &settings);
   void drawDiagnosticsTab(config::Settings &settings);
   void drawTexturesTab(config::Settings &settings);
+  // The developer UI's view of the runtime (ui/status.h, runtime/ui_status.cpp):
+  // the shared tabs ask through these what differs from the Metal runtime.
+  bool reconstructionDenoises() const;
+  ui::ReconstructionStatus uiReconstruction() const;
+  ui::ReconstructionChoices uiReconstructionChoices() const;
+  ui::FrameGenerationStatus uiFrameGeneration() const;
+  ui::SkyStatus uiSky() const;
+  ui::PostStatus uiPost() const;
+  ui::HdrStatus uiHdr() const;
+  ui::ScreenshotStatus uiScreenshots() const;
+  void uiTakeScreenshot();
+  ui::DeviceStatus uiDevice() const;
+  ui::PreparationStatus uiPreparation() const;
+  ui::PresentStatus uiPresent() const;
+  ui::PathInspectionStatus uiPathInspection() const;
+  void uiInspectPixel(int x, int y);
+  bool gpuTimersSupported() const { return m_gpuTimers.supported(); }
+  bool hostPassesSupported() const { return true; }
+  bool textureCompressionSupported() const { return m_textureCompression; }
+  size_t pendingDrawCount() const { return renderer().pendingDrawCount(); }
+  auto rasterMemoryStatistics() const { return renderer().memoryStatistics(); }
   VkImageView textureView(const scene::Texture *texture) const {
     const VkImageView view = m_raster.textureView(texture);
     return view != VK_NULL_HANDLE ? view : (m_asyncActive && m_frameScene ? m_frameScene->textureView(texture) : VK_NULL_HANDLE);
   }
+  // A texture's image view for the developer UI (ui::addTexture), null when it has none.
+  const void *uiTextureView(const scene::Texture *texture) const { return textureView(texture); }
   const std::unordered_map<uint64_t, std::shared_ptr<scene::Texture>> &textures() const { return m_raster.textures(); }
   const std::unordered_map<std::filesystem::path, std::weak_ptr<scene::Texture>> &texturePaths() const { return m_raster.paths(); }
   void drawGpuPassTimings(bool enabled);

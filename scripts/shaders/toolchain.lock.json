@@ -23,9 +23,10 @@
     }
   },
   "spirv-cross-msl": {
-    "repository": "https://github.com/sambow23/SPIRV-Cross.git",
-    "branch": "openremix-macos-compat",
-    "revision": "9f9991c5454c262154e4918a263b60b5f26c75fc"
+    "repository": "https://github.com/KhronosGroup/SPIRV-Cross.git",
+    "branch": "main",
+    "revision": "57e4efcc84112abcd426dc5ec248b5339bee04f2",
+    "patch": "patches/spirv-cross-msl.patch"
   },
   "slang": {
     "release": "v2025.24",

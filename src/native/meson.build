@@ -11,7 +11,7 @@ shader_tools = custom_target('shader-tools',
   output : 'shader-tools.json',
   command : [shader_python, shader_scripts / 'toolchain.py', '--output', '@OUTPUT@',
              '--cache', get_option('shader_tools')] + (metal_backend ? ['--metal'] : []) +
-             (numos_enabled and not metal_backend ? ['--slang'] : []),
+             (numos_enabled ? ['--slang'] : []),
   depend_files : files('../../scripts/shaders/toolchain.py', '../../scripts/shaders/toolchain.lock.json'),
   env : shader_env, console : true)
 shader_generate = [shader_python, shader_scripts / 'generate.py', '--tools', shader_tools,
@@ -22,10 +22,8 @@ subdir('denoise/shaders')
 subdir('postfx/shaders')
 subdir('upscale/shaders')
 subdir('pathtrace/shaders')
-if not metal_backend
-  subdir('particles/shaders')
-endif
-if numos_enabled and not metal_backend
+subdir('particles/shaders')
+if numos_enabled
   subdir('sky/shaders')
 endif
 image_include = include_directories('../../third_party', is_system : true)
@@ -33,7 +31,8 @@ image_include = include_directories('../../third_party', is_system : true)
 # Vulkan runtime and renderers with src/native/metal (one backend per build).
 filesystem_dep = cpp.find_library('stdc++fs', required : false)
 if metal_backend
-  shell_deps = [sdl3_dep, threads_dep, imgui_dep, metal_frameworks, nrd_dep, numos_dep]
+  shell_deps = [sdl3_dep, threads_dep, imgui_dep, metal_frameworks, nrd_dep, numos_dep, jxrlib_dep,
+                spirv_cross_dep]
   shell_args = ['-DREMIX_LIBRARY_EXPORTS=1'] + cpp.get_supported_arguments('-Wno-missing-field-initializers', '-Wno-unused-parameter')
   subdir('platform')
   subdir('api')
@@ -47,7 +46,8 @@ if metal_backend
   remix = shared_library('remix',
     # The Metal sources include the Vulkan backends' generated headers too (pathtrace/gpu.h).
     api_sources + metal_shared_sources + metal_sources + [metal_shaders[0], metal_shaders[2]] +
-      [raster_shaders, denoise_shaders, postfx_shaders, upscale_shaders, pathtrace_shaders[0]],
+      [raster_shaders, denoise_shaders, postfx_shaders, upscale_shaders, pathtrace_shaders[0]] +
+      (numos_enabled ? [sky_shaders[0], sky_shaders[2], sky_shaders[3]] : []),
     name_prefix : 'lib',
     link_with : usd_libraries + [shell_platform, scene_library],
     dependencies : shell_deps + [xz_dep, filesystem_dep],

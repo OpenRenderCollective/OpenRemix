@@ -22,7 +22,7 @@ metal_backend = system == 'darwin'
 if metal_backend
   add_languages('objcpp', native : false)
   add_project_arguments('-DREMIX_METAL=1', language : ['c', 'cpp', 'objcpp'])
-  metal_frameworks = dependency('appleframeworks', modules : ['Metal', 'MetalFX', 'QuartzCore', 'Foundation'])
+  metal_frameworks = dependency('appleframeworks', modules : ['Metal', 'MetalFX', 'QuartzCore', 'Foundation', 'CoreGraphics'])
 endif
 add_project_arguments('-DREMIX_HAS_SHARC=' + (get_option('sharc') ? '1' : '0'),
   language : metal_backend ? ['c', 'cpp', 'objcpp'] : ['c', 'cpp'])
@@ -84,6 +84,9 @@ if not metal_backend
 endif
 subdir('third_party/xz-embedded')
 subdir('third_party/jxrlib')
+if metal_backend
+  subdir('third_party/spirv-cross')
+endif
 subdir('third_party/numos')
 subdir('src/native')
 subdir('samples/remix-native')

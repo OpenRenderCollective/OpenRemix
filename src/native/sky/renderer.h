@@ -2,10 +2,10 @@
 #include "runtime/settings.h"
 #include "runtime/sky_control.h"
 #include "scene/types.h"
+#include "sky/host.h"
 #include <chrono>
 #include <memory>
 #include <string>
-#include <vulkan/vulkan.h>
 
 namespace remix::sky {
   class Bridge;
@@ -21,7 +21,7 @@ namespace remix::sky {
     // The scene's TLAS, built this frame before record(), for the haze's
     // shadows and the ground probes: NUMOS traces its opaque world bit
     // (trace::skyOccluderInstanceMask). Null: unshadowed haze.
-    VkAccelerationStructureKHR scene = VK_NULL_HANDLE;
+    AccelerationStructure scene{};
   };
 
   // The distant light NUMOS puts in the scene (its sun, a moon or a lightning
@@ -40,7 +40,7 @@ namespace remix::sky {
   class Renderer {
   public:
     // rayQuery: the device traces rays (the scene TLAS may be given).
-    Renderer(VkPhysicalDevice physical, VkDevice device, bool rayQuery = true);
+    Renderer(PhysicalDevice physical, Device device, bool rayQuery = true);
     ~Renderer();
     Renderer(const Renderer &) = delete;
     Renderer &operator=(const Renderer &) = delete;
@@ -54,16 +54,16 @@ namespace remix::sky {
     const config::SkyState &state() const;
     // Records the frame's sky work; false (and nothing recorded) while its
     // pipelines compile or the frame cannot have a sky (status() says why).
-    bool record(VkCommandBuffer command, const FrameDescription &frame);
+    bool record(CommandBuffer command, const FrameDescription &frame);
     // After the scene's depth: NUMOS's screen-space clouds. `depthView` is the
     // linear view depth (R32 float, GENERAL, render resolution, 1e10 and
     // above where nothing was hit), or null for an all-sky frame.
-    void recordPostDepth(VkCommandBuffer command, VkImage depthImage, VkImageView depthView);
+    void recordPostDepth(CommandBuffer command, Image depthImage, ImageView depthView);
     // NUMOS over the composed frame before upscaling, in place: `color` is
     // RGBA16 float in GENERAL at render resolution, `depth` the view depth of
     // recordPostDepth. `scale` turns NUMOS radiance into the frame's.
-    void recordComposite(VkCommandBuffer command, VkImage colorImage, VkImageView colorView, VkImage depthImage,
-                         VkImageView depthView, float scale, config::SkySettings::GameSky gameSky);
+    void recordComposite(CommandBuffer command, Image colorImage, ImageView colorView, Image depthImage,
+                         ImageView depthView, float scale, config::SkySettings::GameSky gameSky);
 
     // The raster renderer's sky, after record() and the world's draws:
     // recordRasterPostDepth takes the target's depth (a depth-aspect view in
@@ -73,16 +73,16 @@ namespace remix::sky {
     // rasterAddition: RGBA16 float, GENERAL, render resolution). exposure
     // turns NUMOS radiance into the display's (gamma 2.2 encoded, as the
     // UNORM target blends).
-    void recordRasterPostDepth(VkCommandBuffer command, VkImage depthImage, VkImageView depthView,
+    void recordRasterPostDepth(CommandBuffer command, Image depthImage, ImageView depthView,
                                const scene::Matrix &projection, float clearDepth);
-    bool recordRasterComposite(VkCommandBuffer command, float exposure, config::SkySettings::GameSky gameSky);
-    VkDescriptorImageInfo rasterAddition() const;
-    VkDescriptorImageInfo rasterTransmittance() const;
+    bool recordRasterComposite(CommandBuffer command, float exposure, config::SkySettings::GameSky gameSky);
+    SampledImage rasterAddition() const;
+    SampledImage rasterTransmittance() const;
 
     // The environment as a dome: sampled in GENERAL layout, its texels scaled
     // by environmentScale(), looked up through domeTransform() (world to the
     // map's Y-up frame, rows).
-    VkDescriptorImageInfo environment() const;
+    SampledImage environment() const;
     float environmentScale() const { return m_environmentScale; }
     const float (&domeTransform() const)[3][3] { return m_domeTransform; }
     const Sun &sun() const { return m_sun; }
@@ -90,7 +90,7 @@ namespace remix::sky {
     // float texture in GENERAL layout holding cloudShadowSlices horizontal
     // slices side by side. cloudShadowTransform() rows take a world position
     // (w = 1) to (u, v, slice) in [0, 1]; null before the first bake.
-    VkDescriptorImageInfo cloudShadow() const;
+    SampledImage cloudShadow() const;
     const float (&cloudShadowTransform() const)[3][4] { return m_cloudShadowTransform; }
     static constexpr uint32_t cloudShadowSlices = 4;
     const std::string &status() const { return m_status; }

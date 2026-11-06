@@ -1,4 +1,4 @@
-#include "runtime/runtime.h"
+#include "ui/tabs.h"
 #include "ui/widgets.h"
 #include <algorithm>
 #include <cmath>
@@ -8,9 +8,8 @@
 namespace remix {
   void RemixNativeRuntime::drawPostProcessingTab(config::Settings &settings) {
     auto &options = settings.trace;
-    const bool rrActive =
-        m_pathTracer && m_pathTracer->upscalingStatistics().backend == upscale::Backend::DlssRr;
-    const auto fsr = m_pathTracer ? m_pathTracer->upscalingStatistics() : upscale::Statistics{};
+    const bool rrActive = reconstructionDenoises();
+    const auto reconstruction = uiReconstruction();
     if (ImGui::CollapsingHeader("Denoising and temporal filtering", ImGuiTreeNodeFlags_DefaultOpen)) {
       ImGui::BeginDisabled(rrActive);
       ui::Checkbox("REBLUR diffuse SH", &options.denoiser);
@@ -46,7 +45,7 @@ namespace remix {
                           "Higher: smoother, paler. Settles to normal over eight frames.");
       ImGui::EndDisabled();
       ImGui::EndDisabled();
-      ImGui::BeginDisabled(fsr.active);
+      ImGui::BeginDisabled(reconstruction.active);
       ui::Checkbox("Native resolution TAA", &options.taa);
       ImGui::EndDisabled();
     }
@@ -61,12 +60,15 @@ namespace remix {
       ui::Checkbox("Bloom", &options.bloom);
       ui::SliderFloat("Bloom blend", &options.bloomIntensity, 0, 1, "%.2f");
       ui::SliderFloat("Bloom spread", &options.bloomRadius, 0, 1, "%.2f");
-      const auto post = postProcessingStatistics();
-      ImGui::TextWrapped("Automatic %.4g | target %.4g | %s", post.exposure, post.target,
-        post.limit < 0 ? "minimum EV limit" : post.limit > 0 ? "maximum EV limit" : "within limits");
-      ImGui::TextWrapped("Active exposure %.4g", m_postOptions.exposure * (m_postOptions.autoExposure ? post.exposure : 1.f));
-      ImGui::TextWrapped("Exposure/bloom %.3f ms | %.1f MiB", post.milliseconds, double(post.memoryBytes) / (1024 * 1024));
-      if (!m_postFailure.empty()) ImGui::TextWrapped("%s", m_postFailure.c_str());
+      const auto post = uiPost();
+      if (post.available) {
+        ImGui::TextWrapped("Automatic %.4g | target %.4g | %s", post.exposure, post.target,
+          post.limit < 0 ? "minimum EV limit" : post.limit > 0 ? "maximum EV limit" : "within limits");
+        ImGui::TextWrapped("Active exposure %.4g", post.activeExposure);
+        ImGui::TextWrapped("Exposure/bloom %.3f ms | %.1f MiB", post.milliseconds, double(post.memoryBytes) / (1024 * 1024));
+      } else
+        ImGui::TextDisabled("%s", "Automatic exposure and bloom are not available on this backend (manual exposure applies).");
+      if (!post.failure.empty()) ImGui::TextWrapped("%s", post.failure.c_str());
       ui::Checkbox("Contrast before tonemapping", &options.contrast);
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Per-channel contrast around middle grey (0.18), applied after exposure:\n"
@@ -114,22 +116,23 @@ namespace remix {
                          denoising.gpuTaaMilliseconds, double(denoising.memoryBytes) / (1024 * 1024));
     }
     // Only while Windows has HDR on for the window's display: SDR has no HDR10 settings.
-    if (!m_headless && m_window.hdrEnabled() &&
-        ImGui::CollapsingHeader("HDR10 output", ImGuiTreeNodeFlags_DefaultOpen)) {
+    const auto hdr = uiHdr();
+    if (hdr.available && ImGui::CollapsingHeader("HDR10 output", ImGuiTreeNodeFlags_DefaultOpen)) {
       ui::Checkbox("HDR10 output", &settings.hdr);
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("BT.2020 primaries, ST.2084 PQ, 10-bit swapchain. Off: SDR.");
-      if (m_hdrOutput.active()) {
+      if (hdr.active) {
         ui::SliderFloat("Peak brightness (nits)", &settings.hdrPeakNits, 80, 10000, "%.0f", ImGuiSliderFlags_Logarithmic);
         ui::SliderFloat("Paper white (nits)", &settings.hdrPaperWhiteNits, 80, 1000, "%.0f");
         ui::SliderFloat("UI brightness (nits)", &settings.hdrUiNits, 80, 1000, "%.0f");
       } else {
-        ImGui::TextWrapped("HDR10 output inactive: %s", m_hdrStatus.c_str());
+        ImGui::TextWrapped("HDR10 output inactive: %s", hdr.inactive.c_str());
       }
     }
-    if (!m_headless && ImGui::CollapsingHeader("Screenshots")) {
+    const auto screenshots = uiScreenshots();
+    if (screenshots.available && ImGui::CollapsingHeader("Screenshots")) {
       if (ImGui::Button("Take screenshot"))
-        m_screenshotButton = true;
+        uiTakeScreenshot();
       ImGui::SameLine();
       // The shortcut: click, then press it (ui/menu_shortcut.cpp).
       const std::string label = (m_profileUi.capturingScreenshotShortcut ? std::string("Press a shortcut...")
@@ -146,8 +149,8 @@ namespace remix {
       ui::Checkbox("OpenEXR (linear scRGB)", &settings.screenshotExr);
       const auto folder = config::Profiles::defaultDirectory() / "screenshots";
       ImGui::TextWrapped("Folder: %s", folder.string().c_str());
-      if (const auto status = m_screenshot.status(); !status.empty())
-        ImGui::TextWrapped("%s", status.c_str());
+      if (!screenshots.status.empty())
+        ImGui::TextWrapped("%s", screenshots.status.c_str());
     }
   }
 } // namespace remix

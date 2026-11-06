@@ -1,9 +1,11 @@
 #pragma once
-// The Metal developer UI's view of the runtime. The tabs in metal/ui/ are the
-// Vulkan renderer's (ui/rendering.cpp, lighting.cpp, post_processing.cpp,
-// diagnostics.cpp, textures.cpp) with what is Vulkan's (device properties,
-// swapchain, NGX, FSR and DLSS) read through these queries, which
-// metal/ui.mm answers. Port upstream changes to those files here.
+// The developer panel's view of the runtime. The tabs (ui/rendering.cpp,
+// lighting.cpp, post_processing.cpp, diagnostics.cpp, textures.cpp) are shared
+// by the Vulkan and Metal runtimes and ask what differs between them (device,
+// swapchain or drawables, reconstruction, frame generation) through these
+// queries, which each runtime answers (runtime/ui_status.cpp, metal/ui.mm).
+#include "pathtrace/path_inspection.h"
+#include "ui/sky.h"
 #include "upscale/options.h"
 #include <imgui.h>
 #include <remix/remix_native_ext.h>
@@ -11,40 +13,12 @@
 #include <cstdint>
 #include <string>
 
-namespace remix::metal {
-  // The reconstruction a frame was rendered with. Values are the public
-  // numbering (remix_reconstruction_ext.h): MetalFX upscaling in the
-  // upscaler's slot, MetalFX denoising in Ray Reconstruction's.
-  enum class ReconstructionBackend : uint32_t { Native = 0, MetalFxUpscaling = 1, MetalFxDenoising = 3 };
-  inline const char *name(ReconstructionBackend backend) {
-    switch (backend) {
-    case ReconstructionBackend::MetalFxUpscaling: return "MetalFX upscaling";
-    case ReconstructionBackend::MetalFxDenoising: return "MetalFX denoising";
-    default: return "Native";
-    }
-  }
-  inline bool denoises(ReconstructionBackend backend) { return backend == ReconstructionBackend::MetalFxDenoising; }
-  struct Extent {
-    uint32_t width = 0, height = 0;
-  };
-  // upscale::Statistics' fields (upscale/renderer.h).
-  struct ReconstructionStatistics {
-    ReconstructionBackend backend{};
-    upscale::Mode requested{};
-    bool srSupported{}, rrSupported{}, sdkAvailable{}, failed{};
-    uint64_t failures{}, memoryBytes{};
-    bool active{};
-    Extent render{}, display{};
-    uint64_t frames{}, resets{};
-    float milliseconds{};
-    std::string failure;
-  };
-} // namespace remix::metal
-
 namespace remix::ui {
-  // The Metal ImGui renderer's textures (metal/ui.mm), for metal/ui/textures.cpp:
-  // updateTexture uploads or destroys a managed texture now; addTexture shows
-  // an id<MTLTexture> as an ImGui texture; removeTexture releases it.
+  // The ImGui renderer's textures, for ui/textures.cpp (ui/integration.cpp on
+  // Vulkan, metal/ui.mm on Metal): updateTexture uploads or destroys a managed
+  // texture now; addTexture shows a renderer image (RemixNativeRuntime::
+  // uiTextureView: a VkImageView or an id<MTLTexture>) as an ImGui texture;
+  // removeTexture releases it.
   void updateTexture(ImTextureData *texture);
   ImTextureID addTexture(const void *view);
   void removeTexture(ImTextureID texture);
@@ -80,21 +54,39 @@ namespace remix::ui {
 
   // The reconstruction features the backend offers, as the Rendering tab
   // labels them: the upscaler combo (indexed by upscale::Mode; vendorModes
-  // false: Off and one entry for every other mode), the denoising
-  // reconstruction's checkbox (dlssRayReconstruction), FSR's sharpening, and
-  // frame generation's backend combo (null: one generator) and frame counts.
+  // false: Off and one entry for every other mode, with neutral quality
+  // preset names), the denoising reconstruction's checkbox
+  // (dlssRayReconstruction) and whether it has DLSS Ray Reconstruction's
+  // model and preset choices, FSR's sharpening, and frame generation's backend
+  // combo (null: one generator) and frame counts.
   struct ReconstructionChoices {
-    const char *upscalers = "Off\0Auto\0FSR 3.1\0DLSS\0";
+    const char *upscalers = "Off\0Auto\0FSR\0DLSS\0";
     bool vendorModes = true;
     const char *denoiser = "DLSS Ray Reconstruction";
+    bool denoiserModels = true;
     bool sharpening = true;
-    const char *frameGenerationBackends = "Auto\0DLSS\0FSR 3.1\0";
+    const char *frameGenerationBackends = "Auto\0DLSS\0FSR\0";
     bool multiFrameGeneration = true;
     const char *frameGenerationTooltip =
         "Shows generated frames between each pair of rendered frames: DLSS Frame Generation\n"
-        "(2x to 4x, a supported RTX GPU) or FSR 3.1 frame generation (2x, any GPU).\n"
+        "(2x to 4x, a supported RTX GPU) or FSR frame generation (2x, any GPU).\n"
         "Needs the path tracer and an upscaler (DLSS or FSR; their native-resolution preset\n"
         "counts). Adds latency: the rendered frame is shown after its generated ones.";
+  };
+
+  // The reconstruction the last frame was rendered with (upscale::Statistics
+  // on Vulkan, metal::ReconstructionStatistics on Metal).
+  struct ReconstructionStatus {
+    std::string name = "Native"; // the backend, or the provider that ran it
+    bool active = false;         // an upscaler or denoising reconstruction ran (TAA stands down)
+    bool denoises = false;       // it replaces the denoisers (Ray Reconstruction, MetalFX denoising)
+    // DLSS Ray Reconstruction's model (CNN or transformer) and preset (1-6: A-F).
+    bool models = false, cnn = false;
+    uint32_t preset = 0;
+    std::string note; // why the requested model or preset is not the one running
+    uint32_t renderWidth = 0, renderHeight = 0, displayWidth = 0, displayHeight = 0;
+    float milliseconds = 0;
+    std::string failure;
   };
 
   // Automatic exposure and bloom (postfx).
@@ -106,6 +98,29 @@ namespace remix::ui {
     uint64_t memoryBytes = 0;
     float activeExposure = 1; // exposure applied to the frame
     std::string failure;
+  };
+
+  // HDR10 output: whether its settings apply (the display has HDR on and the
+  // backend can output it), and if so whether it is active or why not.
+  struct HdrStatus {
+    bool available = false, active = false;
+    std::string inactive;
+  };
+
+  // Screenshot sets (the panel's button and shortcut, PNG and HDR files in
+  // the profiles directory's screenshots folder), and the last one's outcome.
+  struct ScreenshotStatus {
+    bool available = false;
+    std::string status;
+  };
+
+  // The path inspector (Diagnostics): the last inspected pixel's paths, and
+  // the render size a click on the scene maps to. available: the backend
+  // records paths (the Vulkan path tracer).
+  struct PathInspectionStatus {
+    bool available = false;
+    uint32_t renderWidth = 0, renderHeight = 0;
+    PathInspection inspection;
   };
 
   // Asynchronous presentation, one side of a Present (runtime.h AsyncPresentStatistics).
