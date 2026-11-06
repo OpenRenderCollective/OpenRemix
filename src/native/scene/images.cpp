@@ -574,20 +574,7 @@ namespace remix::scene {
     return decodeTexture(info);
   }
 
-  Pixels loadTexture(const std::filesystem::path &path) {
-    std::ifstream file(path, std::ios::binary | std::ios::ate);
-    if (!file) {
-      throw REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
-    }
-    const auto length = file.tellg();
-    if (length <= 0 || length > 512 * 1024 * 1024) {
-      throw invalid;
-    }
-    std::vector<uint8_t> data(static_cast<size_t>(length));
-    file.seekg(0);
-    if (!file.read(reinterpret_cast<char *>(data.data()), length)) {
-      throw invalid;
-    }
+  static Pixels decodeTextureFile(const std::vector<uint8_t> &data) {
     if (data.size() >= 128 && word(data, 0) == 0x20534444) {
       if (word(data, 4) != 124 || word(data, 76) != 32 || word(data, 24) > 1 ||
           (word(data, 112) & 0x20fe00)) {
@@ -785,6 +772,116 @@ namespace remix::scene {
     }
     return decode(uint32_t(width), uint32_t(height), 1, true, 0, false, pixels.get(),
                   size_t(width) * height * 4);
+  }
+
+  Pixels loadTexture(const std::filesystem::path &path) {
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    if (!file) {
+      throw REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
+    }
+    const auto length = file.tellg();
+    if (length <= 0 || length > 512 * 1024 * 1024) {
+      throw invalid;
+    }
+    std::vector<uint8_t> data(static_cast<size_t>(length));
+    file.seekg(0);
+    if (!file.read(reinterpret_cast<char *>(data.data()), length)) {
+      throw invalid;
+    }
+    return decodeTextureFile(data);
+  }
+
+  Pixels loadTexturePreview(const std::filesystem::path &path, uint32_t maxEdge) {
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    if (!file) {
+      throw REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
+    }
+    const auto length = uint64_t(file.tellg());
+    // Bytes per block of a block-compressed DDS's header, else 0.
+    const auto blockBytes = [](const std::vector<uint8_t> &header) -> uint64_t {
+      if (word(header, 0) != 0x20534444 || !(word(header, 80) & 4))
+        return 0;
+      switch (word(header, 84)) {
+      case 0x31545844: // DXT1
+      case 0x31495441: // ATI1
+      case 0x55344342: // BC4U
+        return 8;
+      case 0x33545844: // DXT3
+      case 0x35545844: // DXT5
+      case 0x32495441: // ATI2
+      case 0x55354342: // BC5U
+        return 16;
+      case 0x30315844: // DX10
+        switch (header.size() >= 148 ? word(header, 128) : 0) {
+        case 71:
+        case 72:
+        case 80:
+          return 8;
+        case 74:
+        case 75:
+        case 77:
+        case 78:
+        case 83:
+        case 95:
+        case 96:
+        case 98:
+        case 99:
+          return 16;
+        }
+      }
+      return 0;
+    };
+    std::vector<uint8_t> header(size_t(std::min<uint64_t>(length, 148)));
+    file.seekg(0);
+    if (length >= 128 && file.read(reinterpret_cast<char *>(header.data()), std::streamsize(header.size()))) {
+      if (const uint64_t bytes = blockBytes(header)) {
+        const uint32_t levels = word(header, 28);
+        uint32_t width = word(header, 16), height = word(header, 12), level = 0;
+        const size_t headerSize = word(header, 84) == 0x30315844 ? 148 : 128;
+        uint64_t offset = headerSize;
+        while (std::max(width, height) > maxEdge && level + 1 < levels) {
+          offset += uint64_t((width + 3) / 4) * ((height + 3) / 4) * bytes;
+          width = std::max(1u, width / 2);
+          height = std::max(1u, height / 2);
+          ++level;
+        }
+        if (std::max(width, height) <= maxEdge && offset < length) {
+          std::vector<uint8_t> data(header.begin(), header.begin() + headerSize);
+          data.resize(headerSize + size_t(length - offset));
+          file.seekg(std::streamoff(offset));
+          if (file.read(reinterpret_cast<char *>(data.data() + headerSize), std::streamsize(length - offset))) {
+            const auto set = [&](size_t at, uint32_t value) { std::memcpy(data.data() + at, &value, 4); };
+            set(12, height);
+            set(16, width);
+            set(28, levels - level);
+            return decodeTextureFile(data);
+          }
+        }
+      }
+    }
+    file.close();
+    auto whole = loadTexture(path);
+    if (whole.compressed) {
+      const auto &c = *whole.compressed;
+      Pixels preview{c.previewWidth, c.previewHeight, whole.srgb, {c.preview}};
+      if (!c.hdrPreview.empty())
+        preview.hdrMips = {c.hdrPreview};
+      preview.twoChannel = whole.twoChannel;
+      return preview;
+    }
+    // HDR levels stay whole: a dome light's, loaded once.
+    if (!whole.hdrMips.empty() || std::max(whole.width, whole.height) <= maxEdge)
+      return whole;
+    if (whole.mips.size() < 2)
+      generateMips(whole);
+    size_t first = 0;
+    while (first + 1 < whole.mips.size() && std::max(whole.width >> first, whole.height >> first) > maxEdge)
+      ++first;
+    Pixels preview{std::max(1u, whole.width >> first), std::max(1u, whole.height >> first), whole.srgb};
+    preview.mips.assign(std::make_move_iterator(whole.mips.begin() + first),
+                        std::make_move_iterator(whole.mips.end()));
+    preview.twoChannel = whole.twoChannel;
+    return preview;
   }
 
   namespace {

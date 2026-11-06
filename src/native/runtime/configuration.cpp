@@ -552,6 +552,26 @@ namespace remix {
     return REMIXAPI_ERROR_CODE_SUCCESS;
   }
 
+  bool RemixNativeRuntime::videoMemoryShort() {
+    // Read a few times a second: over 90% of what the driver says this process
+    // may use (RTX Remix's textures start giving way at their own budget).
+    if (!m_memoryBudget || ++m_memoryShortFrames % 30)
+      return m_memoryShort;
+    VkPhysicalDeviceMemoryBudgetPropertiesEXT budget = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_BUDGET_PROPERTIES_EXT};
+    VkPhysicalDeviceMemoryProperties2 memory = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2,
+                                                .pNext = &budget};
+    vkGetPhysicalDeviceMemoryProperties2(m_physicalDevice, &memory);
+    VkDeviceSize used = 0, allowed = 0;
+    for (uint32_t i = 0; i < memory.memoryProperties.memoryHeapCount; ++i)
+      if (memory.memoryProperties.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) {
+        used += budget.heapUsage[i];
+        allowed += budget.heapBudget[i];
+      }
+    m_memoryShort = allowed && used > allowed / 10 * 9;
+    return m_memoryShort;
+  }
+
   void RemixNativeRuntime::publishState() {
     // Render thread idle: the last completed frame's values, for the getters
     // while the frame about to be handed over renders.

@@ -1,39 +1,51 @@
 #include "usd/mods.h"
+#include "usd/mod_cache.h"
 #include "usd/submission.h"
+#include <pxr/usd/sdf/layer.h>
+#include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <future>
 #include <optional>
 #include <utility>
-#include <unordered_set>
 
 namespace remix::usd {
   namespace {
     using Clock = std::chrono::steady_clock;
+    using Stamps = std::map<std::string, std::pair<std::filesystem::file_time_type, uintmax_t>>;
     struct Set {
+      Stamps stamps; // of the mods' files as this load ended
       std::vector<Snapshot> snapshots;
       std::vector<ModInfo> mods; // per snapshot
       // Replacements of the enabled mods (the first mod in path order wins).
       std::map<uint64_t, std::pair<size_t, Json>> meshes, lights, materials;
       std::set<std::string> dependencies;
+      std::vector<PreparedMod> prepared; // What Submission takes, per snapshot.
+      uint64_t geometryBytes = 0;
+      uint64_t partsVersion = 0; // of the toggles index applied
+      std::string undecodable;   // The first texture left out for not decoding.
+      bool fromCache = false;    // Every mod came from its cache file.
+      std::vector<std::future<void>> cacheWrites;
       // Parse failures travel in-band: an exception_ptr crossing threads is
       // destroyed early under mixed MSVC runtimes (Proton's builtin vcruntime).
       std::optional<std::string> error;
       bool loadError = false;
     };
-    using Stamps = std::map<std::string, std::pair<std::filesystem::file_time_type, uintmax_t>>;
     struct Scan {
       Stamps stamps;
       std::optional<std::string> error; // in-band, like Set::error
       uint64_t epoch = 0;
+      Clock::duration took{};
     };
-    // Replacement materials decoded off the Present thread once first drawn.
-    struct MaterialBatch {
+    // What of a loaded set is created on the Present thread, a little a frame.
+    struct Publishing {
+      Set set;
+      std::vector<std::unique_ptr<Submission>> submissions;
       uint64_t generation = 0;
-      std::vector<uint64_t> hashes;
-      std::vector<std::string> paths;
-      std::vector<std::shared_ptr<scene::Texture>> textures;
+      size_t next = 0;
     };
     struct State {
       bool enabled = false, watch = true;
@@ -43,16 +55,31 @@ namespace remix::usd {
       // (scene::sceneUpAxis), the mods loading again when it changes.
       bool hostAxis = false;
       std::map<std::string, ModParts> modParts; // by mod name; absent: defaults
+      std::map<std::string, float> lightScales; // the Mods tab's, by mod name; absent: authored
       Options options;
       std::string directory, diagnostic;
       std::future<Set> pending;
+      std::shared_ptr<Progress> progress;
+      std::unique_ptr<Publishing> publishing;
+      Clock::time_point loadStarted{};
+      double loadSeconds = 0;
+      bool pressure = false;
+      uint64_t partsVersion = 0; // Bumped by the toggles.
+      std::future<void> retiring; // A previous set going, off the Present thread.
+      std::vector<std::future<void>> cacheWrites;
+      std::shared_ptr<std::atomic<bool>> cacheCancel = std::make_shared<std::atomic<bool>>(false);
       Set active;
       std::set<std::string> failedDependencies;
       std::set<remixapi_LightHandle> overriddenLights;
+      // Replaced instances without an identity of the host's, by the mesh they
+      // replace: this frame's, and the last frame's not yet matched.
+      struct PlacedInstance {
+        remixapi_Transform transform;
+        uint64_t id;
+      };
+      std::map<uint64_t, std::vector<PlacedInstance>> placed, placedBefore;
       uint64_t generation = 0;
       std::vector<std::unique_ptr<Submission>> submissions;
-      std::future<MaterialBatch> materialBatch;
-      std::vector<uint64_t> materialQueue;
       Stamps stamps;
       // Watch scans run off the Present thread: walking a large mod tree takes
       // far longer than a frame (notably under Wine). A scan started before
@@ -94,15 +121,16 @@ namespace remix::usd {
       return name.empty() || name == "." ? std::filesystem::path(path).filename().generic_string() : name;
     }
     // Rebuilds the replacement tables from the enabled mods' snapshots.
-    void index(Set &set) {
+    void index(Set &set, const std::map<std::string, ModParts> &modParts, bool modsEnabled, uint64_t version) {
+      set.partsVersion = version;
       set.meshes.clear();
       set.lights.clear();
       set.materials.clear();
       for (size_t i = 0; i < set.snapshots.size(); ++i) {
         auto &parts = set.mods[i].parts;
-        auto it = state.modParts.find(set.mods[i].name);
-        parts = it == state.modParts.end() ? ModParts{} : it->second;
-        if (!state.modsEnabled || !parts.enabled)
+        auto it = modParts.find(set.mods[i].name);
+        parts = it == modParts.end() ? ModParts{} : it->second;
+        if (!modsEnabled || !parts.enabled)
           continue;
         // A mod leaves out what it does not apply, so the next mod replacing
         // the same asset takes over.
@@ -119,25 +147,151 @@ namespace remix::usd {
             set.materials.try_emplace(entry["hash"].get<uint64_t>(), i, entry);
       }
     }
-    void offerMaterials(NativeResources &resources) {
-      std::unordered_set<uint64_t> candidates;
-      for (const auto &[hash, entry] : state.active.materials)
-        candidates.insert(hash);
-      resources.setModMaterialCandidates(std::move(candidates));
-      state.materialQueue.clear();
+    // The mod materials of the active set, all at once: from now on what they
+    // replace draws them. The next frame's streaming pulls in their files.
+    void applyMaterials(NativeResources &resources) {
+      resources.clearModMaterials();
+      std::vector<std::map<std::string, std::vector<uint64_t>>> keys(state.submissions.size());
+      for (const auto &[hash, entry] : state.active.materials) {
+        const auto &[index, source] = entry;
+        const auto &path = source["path"].get_ref<const std::string &>();
+        try {
+          resources.addModMaterial(hash, state.submissions[index]->materialHandle(path),
+                                   source.value("authored", scene::ModParts::all));
+          keys[index][path].push_back(hash);
+        } catch (const std::exception &e) {
+          state.diagnostic = e.what();
+        }
+      }
+      for (size_t i = 0; i < keys.size(); ++i)
+        state.submissions[i]->setMaterialKeys(std::move(keys[i]));
     }
-    Set parse(std::string directory, Options options) {
+    // Reads each file's low levels and the textures lights use whole; the rest
+    // comes when drawn (Submission::service). A file that cannot be read is left
+    // out where it is used, as RTX Remix leaves it.
+    PreparedTextures prepareTextures(Snapshot &snapshot, Progress &progress) {
+      PreparedTextures prepared;
+      auto &scene = snapshot.scene;
+      std::set<std::string> streamed, lit;
+      for (const auto &material : scene["materials"])
+        for (auto &path : materialTextureFiles(material))
+          streamed.insert(std::move(path));
+      for (const auto &light : scene["lights"])
+        for (const char *key : {"texture", "cookie"})
+          if (auto path = light.value(key, std::string()); !path.empty())
+            lit.insert(std::move(path));
+      for (const auto &light : scene["replacements"]["lights"])
+        if (auto path = light["overrides"].value("texture", std::string()); !path.empty())
+          lit.insert(std::move(path));
+      const std::vector<std::string> previews(streamed.begin(), streamed.end()), whole(lit.begin(), lit.end());
+      progress.enter(LoadStage::Textures, uint32_t(previews.size() + whole.size()));
+      auto low = decodeTextures(previews, previewEdge, &progress.done);
+      auto full = decodeTextures(whole, 0, &progress.done);
+      std::set<std::string> failed;
+      for (size_t i = 0; i < previews.size(); ++i)
+        if (low[i])
+          prepared.previews.emplace(previews[i], std::move(low[i]));
+        else
+          failed.insert(previews[i]);
+      for (size_t i = 0; i < whole.size(); ++i)
+        if (full[i])
+          prepared.whole.emplace(whole[i], std::move(full[i]));
+        else
+          failed.insert(whole[i]);
+      if (failed.empty())
+        return prepared;
+      auto drop = [&](Json &object, const std::string &key) {
+        if (object.is_object() && object.contains(key) && object[key].is_string() &&
+            failed.contains(object[key].get<std::string>()))
+          object[key] = "";
+      };
+      for (const auto &path : failed)
+        scene["warnings"].push_back("Undecodable texture " + path);
+      for (auto &material : scene["materials"]) {
+        std::vector<std::string> keys;
+        for (auto it = material.begin(); it != material.end(); ++it)
+          if (it.key().ends_with("_texture"))
+            keys.push_back(it.key());
+        for (const auto &key : keys)
+          drop(material, key);
+        if (material.contains("iridescence"))
+          drop(material["iridescence"], "texture");
+        if (material.contains("subsurface"))
+          for (const char *key : subsurfaceTextureKeys)
+            drop(material["subsurface"], key);
+      }
+      for (auto &light : scene["lights"]) {
+        drop(light, "texture");
+        drop(light, "cookie");
+      }
+      for (auto &light : scene["replacements"]["lights"])
+        if (light.contains("overrides"))
+          drop(light["overrides"], "texture");
+      return prepared;
+    }
+    Stamps scanStamps(const std::string &directory, std::set<std::string> deps);
+    struct Toggles {
+      std::map<std::string, ModParts> modParts;
+      bool modsEnabled = true;
+      uint64_t version = 0;
+    };
+    Set parse(std::string directory, Options options, std::shared_ptr<Progress> progress, Toggles toggles,
+              bool edited, std::shared_ptr<std::atomic<bool>> cacheCancel) {
       Set result;
-      options.preloadTextures = true;
+      result.fromCache = true;
+      const char *cacheSetting = std::getenv("OPENREMIX_USD_CACHE");
+      const bool cacheAlways = cacheSetting && std::strcmp(cacheSetting, "always") == 0;
+      // RTX Remix's mod load: every replacement's geometry and material now, off
+      // the Present thread, and from when they are all ready each draws from its
+      // first frame. Geometry stays in host memory in its compact form, not as
+      // JSON and not as USD (the stage goes with this load); textures stream.
+      options.preloadTextures = false;
+      // One missing texture in a large mod must not cost every replacement.
+      options.strictAssets = false;
+      options.progress = progress.get();
       for (const auto &path : paths(directory)) {
         options.path = path;
         Snapshot snapshot;
-        try {
-          snapshot = load(options);
-        } catch (const LoadError &error) {
-          result.dependencies.insert(error.dependencies.begin(), error.dependencies.end());
-          throw LoadError(error.what(), std::move(result.dependencies));
+        PreparedMeshes prepared;
+        std::mutex preparing;
+        const auto cacheFile = modCacheFile(path);
+        if (auto cached = readModCache(cacheFile, options.meters, options.axis, *progress)) {
+          snapshot = std::move(cached->snapshot);
+          prepared = std::move(cached->meshes);
+        } else {
+          result.fromCache = false;
+          const auto loadStarted = Clock::now();
+          const auto fileLoadStarted = std::filesystem::file_time_type::clock::now();
+          options.meshSink = [&](ComposedMesh &&mesh) {
+            const auto id = mesh.id;
+            try {
+              prepared.add(std::move(mesh), preparing);
+            } catch (...) {
+              // Its replacement stays the game's mesh.
+              std::lock_guard lock(preparing);
+              prepared.failed.insert(id.substr(0, id.find('/', sizeof("/RootNode/meshes/") - 1)));
+            }
+          };
+          try {
+            snapshot = load(options);
+          } catch (const LoadError &error) {
+            result.dependencies.insert(error.dependencies.begin(), error.dependencies.end());
+            throw LoadError(error.what(), std::move(result.dependencies));
+          }
+          // Worth a file when it saves a wait, and not at every save while a mod is
+          // being edited.
+          if (cacheAlways || (!edited && Clock::now() - loadStarted >= std::chrono::seconds(2)))
+            if (auto write = prepareModCacheWrite(cacheFile, snapshot, prepared, options.meters, options.axis,
+                                                  fileLoadStarted))
+              result.cacheWrites.push_back(std::async(std::launch::async,
+                                                      [write = std::move(*write), cacheCancel]() mutable {
+                                                        writeModCache(std::move(write), *cacheCancel);
+                                                      }));
         }
+        auto textures = prepareTextures(snapshot, *progress);
+        result.geometryBytes += prepared.bytes;
+        result.prepared.push_back(prepareMod(snapshot, std::move(prepared), std::move(textures)));
+        snapshot.scene.erase("materials");
         const auto &replacements = snapshot.scene["replacements"];
         auto count = [&](const char *group) { return replacements.contains(group) ? replacements[group].size() : 0; };
         // Lights authored under mesh replacements (game light overrides are
@@ -145,11 +299,22 @@ namespace remix::usd {
         size_t attached = 0;
         for (const auto &light : snapshot.scene["lights"])
           attached += light.value("id", std::string()).starts_with("/RootNode/meshes/");
-        result.mods.push_back(
-            {modName(directory, path), count("meshes"), attached, count("lights"), count("materials")});
+        size_t missing = 0;
+        for (const auto &warning : snapshot.scene["warnings"]) {
+          const auto &text = warning.get_ref<const std::string &>();
+          missing += text.starts_with("Unresolved texture ") || text.starts_with("Undecodable texture ");
+          if (result.undecodable.empty() && text.starts_with("Undecodable texture "))
+            result.undecodable = text;
+        }
+        const float scale = snapshot.scene.value("light_scale", 1.0);
+        result.mods.push_back({modName(directory, path), count("meshes"), attached, count("lights"),
+                               count("materials"), missing, path, scale, scale});
+        snapshot.scene.erase("lights");
         result.dependencies.insert(snapshot.dependencies.begin(), snapshot.dependencies.end());
         result.snapshots.push_back(std::move(snapshot));
       }
+      index(result, toggles.modParts, toggles.modsEnabled, toggles.version);
+      result.stamps = scanStamps(directory, result.dependencies);
       return result;
     }
     std::set<std::string> watchedDependencies() {
@@ -181,12 +346,19 @@ namespace remix::usd {
         state.changed = Clock::now();
       state.stamps = std::move(current);
     }
-    void launch() {
+    // edited: the mods' files changed under a running game.
+    void launch(bool edited = false) {
       if (!state.hostAxis)
         state.options.axis = scene::sceneUpAxis.load();
-      state.pending = std::async(std::launch::async, [directory = state.directory, options = state.options] {
+      state.progress = std::make_shared<Progress>();
+      state.loadStarted = Clock::now();
+      state.pending = std::async(std::launch::async, [directory = state.directory, options = state.options,
+                                                      progress = state.progress,
+                                                      toggles = Toggles{state.modParts, state.modsEnabled,
+                                                                        state.partsVersion},
+                                                      edited, cancel = state.cacheCancel] {
         try {
-          return parse(directory, options);
+          return parse(directory, options, progress, toggles, edited, cancel);
         } catch (const LoadError &e) {
           Set failed;
           failed.error = e.what();
@@ -200,51 +372,129 @@ namespace remix::usd {
         }
       });
     }
-    // Requested replacement materials: their textures decode in a background
-    // batch; the materials are created (from the cached textures) when it
-    // lands. The original materials draw meanwhile.
-    void serviceMaterials(NativeResources &resources) {
-      for (auto hash : resources.takeModMaterialRequests())
-        state.materialQueue.push_back(hash);
-      if (state.materialBatch.valid()) {
-        if (state.materialBatch.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
-          return;
-        auto batch = state.materialBatch.get();
-        if (batch.generation == state.generation) {
-          for (size_t i = 0; i < batch.paths.size(); ++i)
-            if (batch.textures[i])
-              resources.cacheTexturePath(batch.paths[i], batch.textures[i]);
-          for (auto hash : batch.hashes) {
-            auto it = state.active.materials.find(hash);
-            if (it == state.active.materials.end())
-              continue;
-            const auto &[index, entry] = it->second;
-            try {
-              resources.addModMaterial(hash, state.submissions[index]->materialHandle(entry["path"]),
-                                       entry.value("authored", scene::ModParts::all));
-            } catch (const std::exception &e) {
-              state.diagnostic = e.what();
-            } catch (...) {
-              state.diagnostic = "Could not create mod material " + entry["path"].get<std::string>();
-            }
+    float lightScale(size_t index);
+    // A slice of a frame: the Present thread stays smooth while thousands of
+    // materials are created.
+    constexpr auto publishSlice = std::chrono::milliseconds(3);
+    void activate(NativeResources &resources) {
+      auto published = std::exchange(state.publishing, nullptr);
+      for (auto light : state.overriddenLights)
+        resources.destroyLight(light);
+      state.overriddenLights.clear();
+      state.submissions = std::move(published->submissions);
+      // A set's tables and JSON are large: the Present thread does not free them.
+      state.retiring = std::async(std::launch::async, [old = std::move(state.active)] {});
+      state.active = std::move(published->set);
+      state.generation = published->generation;
+      // A toggle during the load is not in this set's tables.
+      state.reindex = state.active.partsVersion != state.partsVersion;
+      state.loadSeconds = std::chrono::duration<double>(Clock::now() - state.loadStarted).count();
+      applyMaterials(resources);
+      // This frame already draws them.
+      for (size_t i = 0; i < state.submissions.size(); ++i)
+        state.submissions[i]->setLightScale(lightScale(i));
+      state.diagnostic = state.active.undecodable;
+      state.failedDependencies.clear();
+      // Do not swallow edits made while the load was in flight.
+      ++state.scanEpoch;
+      if (state.active.stamps != state.stamps)
+        state.changed = Clock::now();
+      state.stamps = state.active.stamps;
+    }
+    // What the lights mod `index` authors are scaled by.
+    float lightScale(size_t index) {
+      if (index >= state.active.mods.size())
+        return 1;
+      const auto &mod = state.active.mods[index];
+      auto it = state.lightScales.find(mod.name);
+      return it == state.lightScales.end() ? mod.authoredLightScale : it->second;
+    }
+    // The identity of a replaced instance the host gave none. It is the one of
+    // the last frame's instance at the same transform, else of the nearest one
+    // within 3 m (dxvk-remix's rtx.uniqueObjectDistance), so what hangs under
+    // the replacement stays the same when the instance moves. Draws sharing a
+    // transform share an identity, as they would a hash of it.
+    // again: an instance of the mesh already drew there this frame.
+    uint64_t instanceIdentity(uint64_t mesh, const remixapi_Transform &transform, bool &again) {
+      const auto same = [&](const auto &placed) {
+        return std::memcmp(&placed.transform, &transform, sizeof(transform)) == 0;
+      };
+      auto &now = state.placed[mesh];
+      if (const auto found = std::find_if(now.begin(), now.end(), same); found != now.end()) {
+        again = true;
+        return found->id;
+      }
+      auto &before = state.placedBefore[mesh];
+      auto match = std::find_if(before.begin(), before.end(), same);
+      if (match == before.end()) {
+        const float reach = 3 / float(state.options.meters > 0 ? state.options.meters : .01);
+        float nearest = reach * reach;
+        for (auto candidate = before.begin(); candidate != before.end(); ++candidate) {
+          float distance = 0;
+          for (int r = 0; r < 3; ++r) {
+            const float delta = candidate->transform.matrix[r][3] - transform.matrix[r][3];
+            distance += delta * delta;
+          }
+          if (distance <= nearest) {
+            nearest = distance;
+            match = candidate;
           }
         }
       }
-      if (state.materialQueue.empty())
-        return;
-      MaterialBatch batch;
-      batch.generation = state.generation;
-      batch.hashes = std::exchange(state.materialQueue, {});
-      std::set<std::string> seen;
-      for (auto hash : batch.hashes)
-        if (auto it = state.active.materials.find(hash); it != state.active.materials.end())
-          for (auto &path : state.submissions[it->second.first]->materialTextures(it->second.second["path"]))
-            if (seen.insert(path).second)
-              batch.paths.push_back(path);
-      state.materialBatch = std::async(std::launch::async, [batch = std::move(batch)]() mutable {
-        batch.textures = decodeTextures(batch.paths);
-        return batch;
-      });
+      uint64_t id;
+      if (match != before.end()) {
+        id = match->id;
+        before.erase(match);
+      } else {
+        // A hash of the transform: an instance back in view is the one it was.
+        // Unless a moved instance took that identity along with it.
+        id = scene::hashBytes(&transform, sizeof(transform));
+        const auto taken = [&](const auto &placed) { return placed.id == id; };
+        while (std::any_of(now.begin(), now.end(), taken) || std::any_of(before.begin(), before.end(), taken))
+          id = scene::hashBytes(&id, sizeof(id));
+      }
+      now.push_back({transform, id});
+      return id;
+    }
+    // The frame a game light's replacement lights are authored in (dxvk-remix
+    // LightUtils::getLightTransform): at its position, its -Z along its
+    // direction (spot and distant lights).
+    remixapi_Transform gameLightTransform(const NativeResources::LightSource &source) {
+      remixapi_Transform result{};
+      for (int i = 0; i < 3; ++i)
+        result.matrix[i][i] = 1;
+      const bool distant = source.type == REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DISTANT_EXT;
+      const bool spot = !distant && source.cone < 3.1415f;
+      if (!distant)
+        for (int r = 0; r < 3; ++r)
+          result.matrix[r][3] = source.transform.matrix[r][3];
+      if (!distant && !spot)
+        return result;
+      // The rotation taking (0, 0, -1) to the direction (Rodrigues).
+      float to[3] = {source.direction.x, source.direction.y, source.direction.z};
+      const float length = std::sqrt(to[0] * to[0] + to[1] * to[1] + to[2] * to[2]);
+      if (length < 1e-6f)
+        return result;
+      for (float &v : to)
+        v /= length;
+      const float from[3] = {0, 0, -1};
+      const float axis[3] = {from[1] * to[2] - from[2] * to[1], from[2] * to[0] - from[0] * to[2],
+                             from[0] * to[1] - from[1] * to[0]};
+      const float c = from[0] * to[0] + from[1] * to[1] + from[2] * to[2];
+      if (c < -0.9999f) {
+        // Opposite: half a turn about X.
+        result.matrix[1][1] = result.matrix[2][2] = -1;
+        return result;
+      }
+      const float k[3][3] = {{0, -axis[2], axis[1]}, {axis[2], 0, -axis[0]}, {-axis[1], axis[0], 0}};
+      for (int r = 0; r < 3; ++r)
+        for (int col = 0; col < 3; ++col) {
+          float k2 = 0;
+          for (int i = 0; i < 3; ++i)
+            k2 += k[r][i] * k[i][col];
+          result.matrix[r][col] = (r == col ? 1.f : 0.f) + k[r][col] + k2 / (1 + c);
+        }
+      return result;
     }
   } // namespace
   void startMods(bool disabled) {
@@ -261,6 +511,9 @@ namespace remix::usd {
     launch();
   }
   void stopMods(NativeResources &resources) {
+    // A cache write in flight stops where it is; its file was never in place.
+    *state.cacheCancel = true;
+    state.cacheWrites.clear();
     resources.clearModMaterials();
     for (auto light : state.overriddenLights)
       resources.destroyLight(light);
@@ -273,6 +526,7 @@ namespace remix::usd {
     if (state.pending.valid())
       state.pending.wait();
     state.pending = {};
+    state.publishing.reset();
     state.directory = directory;
     state.options.meters = meters;
     state.options.axis = axis;
@@ -295,36 +549,52 @@ namespace remix::usd {
   void modBoundary(NativeResources &resources) {
     if (!state.enabled)
       return;
-    for (auto &submission : state.submissions)
-      submission->retireAttachments();
+    state.placedBefore.swap(state.placed);
+    state.placed.clear();
+    for (size_t i = 0; i < state.submissions.size(); ++i) {
+      state.submissions[i]->retireAttachments();
+      state.submissions[i]->service(state.pressure);
+      state.submissions[i]->setLightScale(lightScale(i));
+    }
+    if (state.publishing) {
+      try {
+        const auto deadline = Clock::now() + publishSlice;
+        auto &publishing = *state.publishing;
+        while (publishing.next < publishing.submissions.size() &&
+               publishing.submissions[publishing.next]->publish(deadline))
+          ++publishing.next;
+        if (publishing.next == publishing.submissions.size())
+          activate(resources);
+      } catch (const std::exception &e) {
+        state.diagnostic = e.what();
+        state.publishing.reset();
+      } catch (...) {
+        state.diagnostic = "Mod resources could not be created; retaining previous replacements";
+        state.publishing.reset();
+      }
+    }
     if (state.pending.valid() &&
         state.pending.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
       try {
         auto next = state.pending.get();
+        for (auto &write : next.cacheWrites)
+          state.cacheWrites.push_back(std::move(write));
+        next.cacheWrites.clear();
         if (next.error && next.loadError)
           throw LoadError(*next.error, std::move(next.dependencies));
         if (next.error)
           throw std::runtime_error(*next.error);
-        std::vector<std::unique_ptr<Submission>> submissions;
+        auto publishing = std::make_unique<Publishing>();
         state.failedDependencies = next.dependencies;
         resources.invalidateTexturePaths();
-        const auto generation = state.generation + 1;
-        for (size_t i = 0; i < next.snapshots.size(); ++i)
-          submissions.push_back(std::make_unique<Submission>(
-              resources, next.snapshots[i], 0x4d4f440000000000ull + (generation << 20) + i, false));
-        index(next);
-        for (auto light : state.overriddenLights)
-          resources.destroyLight(light);
-        state.overriddenLights.clear();
-        state.submissions = std::move(submissions);
-        state.active = std::move(next);
-        state.generation = generation;
-        state.reindex = false;
-        // Material replacements are created as draws first use them.
-        offerMaterials(resources);
-        state.diagnostic.clear();
-        state.failedDependencies.clear();
-        refreshDependencies();
+        publishing->generation = state.generation + 1;
+        state.progress->enter(LoadStage::Finishing, 0);
+        for (size_t i = 0; i < next.prepared.size(); ++i)
+          publishing->submissions.push_back(std::make_unique<Submission>(
+              resources, std::move(next.prepared[i]), 0x4d4f440000000000ull + (publishing->generation << 20) + i));
+        next.prepared.clear();
+        publishing->set = std::move(next);
+        state.publishing = std::move(publishing);
       } catch (const LoadError &e) {
         state.diagnostic = e.what();
         state.failedDependencies = e.dependencies;
@@ -337,29 +607,30 @@ namespace remix::usd {
     }
     if (state.reindex) {
       state.reindex = false;
-      index(state.active);
-      offerMaterials(resources);
+      index(state.active, state.modParts, state.modsEnabled, state.partsVersion);
+      applyMaterials(resources);
     }
     if (!state.hostAxis && state.options.axis != scene::sceneUpAxis.load())
       state.reload = true;
-    if (state.reload && !state.pending.valid()) {
+    if (state.reload && !state.pending.valid() && !state.publishing) {
       state.reload = false;
       state.stamps = stamps();
       launch();
     }
-    serviceMaterials(resources);
     auto now = Clock::now();
-    if (!state.watch || state.pending.valid() || now < state.next)
+    if (!state.watch || state.pending.valid() || state.publishing || now < state.next)
       return;
     if (!state.scan.valid()) {
       state.scan = std::async(std::launch::async, [directory = state.directory, deps = watchedDependencies(),
                                                    epoch = state.scanEpoch] {
         Scan scan{.epoch = epoch};
+        const auto started = Clock::now();
         try {
           scan.stamps = scanStamps(directory, std::move(deps));
         } catch (const std::exception &e) {
           scan.error = e.what();
         }
+        scan.took = Clock::now() - started;
         return scan;
       });
       return;
@@ -367,7 +638,10 @@ namespace remix::usd {
     if (state.scan.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
       return;
     auto scan = state.scan.get();
-    state.next = now + std::chrono::milliseconds(100);
+    // A large mod's files take a while to look at: the scans leave most of the
+    // time to the game.
+    state.next = now + std::clamp(20 * scan.took, Clock::duration(std::chrono::milliseconds(100)),
+                                  Clock::duration(std::chrono::seconds(5)));
     if (scan.error) {
       state.diagnostic = *scan.error;
       return;
@@ -378,7 +652,7 @@ namespace remix::usd {
     }
     if (state.changed != Clock::time_point{} && now - state.changed >= std::chrono::milliseconds(250)) {
       state.changed = {};
-      launch();
+      launch(true);
     }
   }
   bool modInstance(NativeResources &resources, const remixapi_InstanceInfo &info, uint64_t originalHash) {
@@ -387,9 +661,36 @@ namespace remix::usd {
     if (it == state.active.meshes.end())
       return false;
     auto &[index, entry] = it->second;
+    const auto &root = entry["path"].get_ref<const std::string &>();
+    // A replacement that could not be made leaves the game's mesh.
+    if (!state.submissions[index]->ready(root))
+      return false;
     const auto &parts = state.active.mods[index].parts;
-    if (parts.meshes || parts.lights)
-      state.submissions[index]->draw(false, 1, &info, entry["path"], parts.meshes, parts.lights);
+    if (parts.meshes || parts.lights) {
+      auto parent = info;
+      const auto *own = static_cast<const remixapi_InstanceIdentityEXT *>(
+          scene::extension(info.pNext, REMIXAPI_STRUCT_TYPE_INSTANCE_IDENTITY_EXT));
+      remixapi_InstanceIdentityEXT identity{};
+      // A draw repeated where it already drew (a game's second pass over a
+      // mesh) is the same instance: its replacement draws once (dxvk-remix
+      // merges them).
+      bool again = false;
+      if (!own || !own->instanceId) {
+        identity.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_IDENTITY_EXT;
+        identity.pNext = info.pNext;
+        // A skinned draw's bones carry where it is: instances of a mesh can
+        // share their transform. The last bone is one the draw uses.
+        auto placed = info.transform;
+        if (const auto *bones = static_cast<const remixapi_InstanceInfoBoneTransformsEXT *>(
+                scene::extension(info.pNext, REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_BONE_TRANSFORMS_EXT));
+            bones && bones->boneTransforms_count)
+          placed = transformed(info.transform, bones->boneTransforms_values[bones->boneTransforms_count - 1]);
+        identity.instanceId = instanceIdentity(it->first, placed, again);
+        parent.pNext = &identity;
+      }
+      if (!again)
+        state.submissions[index]->draw(false, 1, &parent, root, parts.meshes, parts.lights);
+    }
     if (entry.value("preserve", false)) {
       if (!parts.materials || !entry.contains("material"))
         return false;
@@ -407,6 +708,24 @@ namespace remix::usd {
     auto &[index, entry] = it->second;
     if (entry.value("hidden", false))
       return true;
+    // Lights authored under the replacement (dxvk-remix processLight): in
+    // the game light's frame, or as authored when the replacement places
+    // itself (its transform authored).
+    if (const auto *source = resources.lightSource(original);
+        source && state.submissions[index]->ready(entry["path"])) {
+      remixapi_InstanceInfo parent{};
+      parent.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO;
+      if (entry["overrides"].contains("transform"))
+        for (int i = 0; i < 3; ++i)
+          parent.transform.matrix[i][i] = 1;
+      else
+        parent.transform = gameLightTransform(*source);
+      remixapi_InstanceIdentityEXT identity{};
+      identity.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_IDENTITY_EXT;
+      identity.instanceId = original ? original : 1;
+      parent.pNext = &identity;
+      state.submissions[index]->draw(false, 1, &parent, entry["path"], false, true);
+    }
     const auto &o = entry["overrides"];
     const std::map<std::string, remixapi_StructType> types{
         {"SphereLight", REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT},
@@ -427,6 +746,8 @@ namespace remix::usd {
       return &value;
     };
     usd.pIntensity = number("intensity");
+    if (usd.pIntensity)
+      values["intensity"] *= lightScale(index);
     usd.pExposure = number("exposure");
     usd.pRadius = number("radius");
     usd.pWidth = number("width");
@@ -460,26 +781,97 @@ namespace remix::usd {
     return true;
   }
   const char *modDiagnostic() { return state.diagnostic.c_str(); }
+  std::string modLoadText() {
+    const auto progress = state.progress;
+    if (!progress || !(state.pending.valid() || state.publishing))
+      return {};
+    const uint32_t done = progress->done, total = progress->total;
+    const char *what = "Waiting";
+    switch (progress->stage.load()) {
+    case LoadStage::Waiting:
+      break;
+    case LoadStage::Opening:
+      what = "Opening USD";
+      break;
+    case LoadStage::Meshes:
+      what = "Processing meshes";
+      break;
+    case LoadStage::Materials:
+      what = "Processing materials";
+      break;
+    case LoadStage::Cache:
+      what = "Reading cache";
+      break;
+    case LoadStage::Textures:
+      what = "Reading textures";
+      break;
+    case LoadStage::Finishing:
+      what = "Finishing";
+      break;
+    }
+    std::string text = std::string("Loading mods: ") + what;
+    if (total)
+      text += " (" + std::to_string(std::min(done, total)) + " / " + std::to_string(total) + ")";
+    return text;
+  }
+  void setModMemoryPressure(bool pressure) { state.pressure = pressure; }
   ModStatus modStatus() {
     ModStatus status;
     status.active = state.enabled;
     status.enabled = state.modsEnabled;
-    status.loading = state.pending.valid();
+    status.loading = state.pending.valid() || state.publishing;
+    status.loadSeconds = state.loadSeconds;
+    status.fromCache = state.active.fromCache && !state.active.snapshots.empty();
+    for (const auto &write : state.cacheWrites)
+      status.cacheWriting |= write.valid() && write.wait_for(std::chrono::seconds(0)) != std::future_status::ready;
+    status.geometryBytes = state.active.geometryBytes;
+    for (const auto &submission : state.submissions) {
+      status.materials += submission->materialCount();
+      status.materialsInFull += submission->materialsInFull();
+    }
     status.directory = state.directory;
     status.diagnostic = state.diagnostic;
     status.mods = state.active.mods;
     // Pending toggles show at once.
-    for (auto &mod : status.mods) {
+    for (size_t i = 0; i < status.mods.size(); ++i) {
+      auto &mod = status.mods[i];
       auto it = state.modParts.find(mod.name);
       mod.parts = it == state.modParts.end() ? ModParts{} : it->second;
+      mod.lightScale = lightScale(i);
     }
     return status;
+  }
+  void setModLightScale(const std::string &name, float scale) {
+    if (std::isfinite(scale) && scale >= 0)
+      state.lightScales[name] = scale;
+  }
+  std::string saveModLightScale(const std::string &name) {
+    for (size_t i = 0; i < state.active.mods.size(); ++i) {
+      const auto &mod = state.active.mods[i];
+      if (mod.name != name)
+        continue;
+      const float scale = lightScale(i);
+      auto layer = pxr::SdfLayer::FindOrOpen(mod.path);
+      if (!layer)
+        return "Could not open " + mod.path;
+      auto custom = layer->GetCustomLayerData();
+      custom[lightScaleKey] = pxr::VtValue(double(scale));
+      layer->SetCustomLayerData(custom);
+      if (!layer->Save())
+        return "Could not save " + mod.path;
+      // The watch reloads the mod with it authored.
+      state.active.mods[i].authoredLightScale = scale;
+      state.lightScales.erase(name);
+      return {};
+    }
+    return "No mod " + name;
   }
   void setModsEnabled(bool enabled) {
     if (state.modsEnabled == enabled)
       return;
     state.modsEnabled = enabled;
     state.reindex = true;
+    ++state.partsVersion;
   }
   void setModParts(const std::string &name, const ModParts &parts) {
     auto it = state.modParts.find(name);
@@ -490,6 +882,7 @@ namespace remix::usd {
     else
       state.modParts[name] = parts;
     state.reindex = true;
+    ++state.partsVersion;
   }
   void setModEnabled(const std::string &name, bool enabled) {
     auto it = state.modParts.find(name);

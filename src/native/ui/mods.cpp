@@ -106,7 +106,11 @@ namespace remix::ui {
       ImGui::SetTooltip("Parse the mods directory again");
     ImGui::TextWrapped("%s", status.directory.c_str());
     if (status.loading)
-      ImGui::TextUnformatted("Loading...");
+      ImGui::TextUnformatted(usd::modLoadText().c_str());
+    else if (!status.mods.empty())
+      ImGui::Text("Loaded in %.1f s%s: geometry %.2f GB; %zu of %zu replacement materials in full", status.loadSeconds,
+                  status.fromCache ? " from its cache" : "", double(status.geometryBytes) / 1e9,
+                  status.materialsInFull, status.materials);
     if (!status.diagnostic.empty())
       ImGui::TextColored(ImVec4(1, .55f, .4f, 1), "%s", status.diagnostic.c_str());
     ImGui::Separator();
@@ -143,6 +147,12 @@ namespace remix::ui {
         ImGui::SameLine();
         ImGui::TextDisabled("(partial)");
       }
+      if (mod.missingTextures) {
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(1, .55f, .4f, 1), "%zu textures missing", mod.missingTextures);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("Not found or not decodable: the materials using them draw without them");
+      }
       if (open) {
         ImGui::BeginDisabled(!parts.enabled);
         changed |= part("Meshes", &parts.meshes, mod.meshes,
@@ -153,6 +163,24 @@ namespace remix::ui {
         changed |= part("Materials", &parts.materials, mod.materials, "Material (texture) replacements");
         changed |= part("Keep original draws", &parts.keepOriginal, size_t(-1),
                         "Draw the game's mesh beside its replacement instead of hiding it");
+        float scale = mod.lightScale;
+        ImGui::SetNextItemWidth(ImGui::GetFontSize() * 10);
+        if (ImGui::SliderFloat("Light scale", &scale, 0.001f, 1000.f, "%.3g", ImGuiSliderFlags_Logarithmic))
+          usd::setModLightScale(mod.name, scale);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("Multiplies the intensity of the lights this mod authors. Lights made for RTX Remix\n"
+                            "can read brighter here. Saved in the mod's mod.usda (customLayerData\n"
+                            "openremix:lightScale).");
+        ImGui::SameLine();
+        static std::string saveError;
+        ImGui::BeginDisabled(mod.lightScale == mod.authoredLightScale);
+        if (ImGui::SmallButton("Save"))
+          saveError = usd::saveModLightScale(mod.name);
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+          ImGui::SetTooltip("Write this light scale into the mod's mod.usda");
+        if (!saveError.empty())
+          ImGui::TextColored(ImVec4(1, .55f, .4f, 1), "%s", saveError.c_str());
         ImGui::EndDisabled();
         ImGui::TreePop();
       }

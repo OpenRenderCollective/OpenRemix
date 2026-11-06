@@ -33,18 +33,39 @@ namespace remix::usd {
   struct ModInfo {
     std::string name; // mod directory relative to the mods directory
     size_t meshes = 0, lights = 0, lightOverrides = 0, materials = 0;
+    size_t missingTextures = 0; // left out of their materials (not found or not decodable)
+    std::string path;           // its mod.usda (.usdc, .usd)
+    // What the intensity of the lights the mod authors is multiplied by: its
+    // mod.usda's customLayerData openremix:lightScale (RTX Remix's lights
+    // read brighter here), or the Mods tab's (lightScale).
+    float authoredLightScale = 1, lightScale = 1;
     ModParts parts;
   };
   struct ModStatus {
     bool active = false;  // mod loading started
     bool enabled = true;  // replacements applied at all
-    bool loading = false; // a parse is in flight
+    bool loading = false; // a load is in flight
     std::string directory, diagnostic;
     std::vector<ModInfo> mods;
+    // The loaded mods: seconds the load took, and their geometry in memory.
+    double loadSeconds = 0;
+    bool fromCache = false; // Every mod came from its cache file (usd/mod_cache.h).
+    bool cacheWriting = false; // A cache file is still being written.
+    uint64_t geometryBytes = 0;
+    size_t materials = 0, materialsInFull = 0;
   };
   ModStatus modStatus();
+  // What a load in flight is doing, as the corner of the screen says it ("":
+  // none is).
+  std::string modLoadText();
+  // Whether video memory is short: streamed mod textures not in use go.
+  void setModMemoryPressure(bool pressure);
   void setModsEnabled(bool enabled);
   void setModEnabled(const std::string &name, bool enabled);
   void setModParts(const std::string &name, const ModParts &parts);
   void reloadMods();
+  // The Mods tab's light scale for a mod (until saved or reloaded).
+  void setModLightScale(const std::string &name, float scale);
+  // Writes a mod's light scale into its mod.usda. Empty, or why it could not.
+  std::string saveModLightScale(const std::string &name);
 } // namespace remix::usd

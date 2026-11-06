@@ -1,5 +1,8 @@
 #include <cstdio>
 #include "runtime/runtime.h"
+#if REMIX_HAS_USD
+#include "usd/mods.h"
+#endif
 #include "ui/context.h"
 #include "api/imgui_compat.h"
 #include <algorithm>
@@ -68,6 +71,19 @@ namespace remix {
       ImGui::Text("%s: settings and diagnostics", m_profileUi.menuShortcut.c_str());
       ImGui::End();
     }
+#if REMIX_HAS_USD
+    // RTX Remix's corner text: a mod's replacements apply once all are ready.
+    if (const auto loading = usd::modLoadText(); !loading.empty()) {
+      const auto &io = ImGui::GetIO();
+      ImGui::SetNextWindowPos(ImVec2(16, io.DisplaySize.y - 16), ImGuiCond_Always, ImVec2(0, 1));
+      ImGui::SetNextWindowBgAlpha(.6f);
+      ImGui::Begin("Mod loading", nullptr,
+                   ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs |
+                       ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing);
+      ImGui::TextUnformatted(loading.c_str());
+      ImGui::End();
+    }
+#endif
     if (m_uiState != REMIXAPI_UI_STATE_NONE) {
       const bool open =
           ui::drawPanel(m_profiles, m_profileUi, this, [](void *user, int tab, config::Settings &settings) {
