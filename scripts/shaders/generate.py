@@ -50,7 +50,7 @@ BACKENDS = {
     'live_ray': ('forward::ray', 'vulkan1.2', ('launch', 'merge')),
     'bake': ('forward::bake', 'vulkan1.2', ('atlas', 'transport', 'parallel', 'visibility', 'aggregate', 'aggregateParallel', 'receiverDirect', 'receiverDirectParallel', 'depth')),
     'forward_test': ('forward::test', 'vulkan1.2', ('comp', 'probes', 'water', 'coarseTransfer')),
-    'forward': ('forward', 'vulkan1.1', ('vert', 'lightmapVert', 'frag', 'prepassedFrag', 'viewModelFrag', 'viewModelEarlyFrag', 'cluster', 'shadowVert', 'shadowFrag', 'opaqueDepthFrag', 'localShadowVert', 'localShadowFrag', 'depthBatchVert', 'depthBatchFrag', 'compositeVert', 'compositeFrag', 'compositeSingle', 'ssrFrag', 'prepassedSsrFrag', 'zeroDiffuseFrag', 'zeroDiffuseSsrFrag', 'zeroDiffusePrepassedFrag', 'zeroDiffusePrepassedSsrFrag', 'ssrResolve', 'ssrResolveSingle', 'ssrReduce', 'ssrTrace', 'ssrFilter')),
+    'forward': ('forward', 'vulkan1.1', ('vert', 'lightmapVert', 'frag', 'prepassedFrag', 'viewModelFrag', 'viewModelEarlyFrag', 'cluster', 'shadowVert', 'shadowFrag', 'opaqueDepthFrag', 'localShadowVert', 'localShadowFrag', 'depthBatchVert', 'depthBatchFrag', 'compositeVert', 'compositeFrag', 'compositeSingle', 'ssrFrag', 'prepassedSsrFrag', 'zeroDiffuseFrag', 'zeroDiffuseSsrFrag', 'zeroDiffusePrepassedFrag', 'zeroDiffusePrepassedSsrFrag', 'ssrResolve', 'ssrResolveSingle', 'ssrReduce', 'ssrTrace', 'ssrFilter', 'opaqueCull', 'opaqueTiles', 'opaqueTilesSingle')),
     # Shared with the raster fallback, which supports Vulkan 1.1 devices.
     'postfx': ('postfx', 'vulkan1.1', ('meter', 'resolve', 'down', 'up')),
     'upscale': ('upscale', 'vulkan1.2', ('comp', 'vert', 'frag', 'hdr10', 'hdrUi')),
@@ -210,6 +210,8 @@ def defines_for(backend, stage, stages):
             'prepassedSsrFrag': 'forward.frag', 'viewModelFrag': 'forward.frag', 'viewModelEarlyFrag': 'forward.frag', 'ssrResolve': 'reflections.comp',
             'ssrResolveSingle': 'reflections.comp', 'ssrReduce': 'reflections.comp',
             'ssrTrace': 'reflections.comp', 'ssrFilter': 'reflections.comp',
+            'opaqueCull': 'opaque-visibility.comp', 'opaqueTiles': 'opaque-visibility.comp',
+            'opaqueTilesSingle': 'opaque-visibility.comp',
         }[stage]
         if stage == 'lightmapVert': defines = ['-DSURFACE_LIGHTMAP=1']
         if stage in ('shadowVert', 'shadowFrag'): defines = ['-DSHADOW_PASS=1']
@@ -225,6 +227,8 @@ def defines_for(backend, stage, stages):
         if stage == 'ssrReduce': defines = ['-DSSR_REDUCE=1']
         if stage == 'ssrTrace': defines = ['-DSSR_TRACE=1']
         if stage == 'ssrFilter': defines = ['-DSSR_FILTER=1']
+        if stage.startswith('opaqueTiles'): defines = ['-DREDUCE_DEPTH=1']
+        if stage == 'opaqueTilesSingle': defines += ['-DSINGLE_SAMPLE=1']
     if backend == 'postfx':
         source = directory / 'postfx.comp'
         defines += ['-DPOST_PASS=' + str(stages.index(stage))]

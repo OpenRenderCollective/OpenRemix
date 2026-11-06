@@ -130,7 +130,8 @@ namespace remix::forward {
          .srcAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
                           VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
          .dstAccessMask =
-             VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT},
+             VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT |
+             VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT},
         {.srcSubpass = 0,
          .dstSubpass = 1,
          .srcStageMask = attachmentStages,
@@ -160,6 +161,11 @@ namespace remix::forward {
                                       .dependencyCount = 4,
                                       .pDependencies = dependencies};
     check(pipeline::createRenderPass(device, &info, nullptr, &worldPass));
+    if (options.depthPrepass && options.opaqueOcclusionCulling) {
+      attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+      attachments[1].initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+      check(pipeline::createRenderPass(device, &info, nullptr, &opaqueResumePass));
+    }
     VkImageView views[7] = {color->view, depth->view};
     if (techniquePlan.reflectionResolve) {
       views[2] = normalGuide->view;

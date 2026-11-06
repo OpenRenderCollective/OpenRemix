@@ -44,6 +44,7 @@ namespace remix::forward {
       began = now;
     };
     auto &frame = frames[slot];
+    const auto camera = resources.camera();
     statistics.boundReflectionDraws = statistics.unresolvedReflectionDraws = 0;
     const auto sun = resources.light();
     frame.commands.clear();
@@ -147,6 +148,7 @@ namespace remix::forward {
       out.index = uint32_t(draws.size());
       out.count = count;
       out.worldBounds = transformBounds(out.geometry->bounds, draw.model);
+      out.cameraVisible = !staticOnly && draw.rasterVisible && intersectsClip(out.worldBounds, camera);
       if (!liquid && !draw.viewModel) casters.merge(out.worldBounds);
       if (liquid) {
         out.waterIndex = uint32_t(waterMaterials.size());
@@ -180,16 +182,21 @@ namespace remix::forward {
     auto emptyMovingShadows = shadowSelection.active;
     std::array<shadows::Coverage, shadows::maximumLights> movingCoverage;
     movingCoverage.fill(shadows::emptyCoverage());
-    // The common frozen-only scene needs no additional caster traversal. With
-    // actors present, use the same conservative light-volume test as drawing.
+    // Keep moving caster selection independent of camera visibility. Reuse
+    // the ordered radial candidates for coverage, cache keys and all six faces.
+    for (auto &casters : frame.movingLocalCasters) casters.clear();
     if (capturedCasters != frame.commands.size())
-      for (uint32_t lightSlot = 0; lightSlot < shadows::maximumLights; ++lightSlot)
-        if (shadowSelection.active[lightSlot])
-          for (const auto &draw : frame.commands)
-            if (castsLocalShadow(draw, lightSlot, false)) {
-              emptyMovingShadows[lightSlot] = false;
-              shadows::includeCoverage(movingCoverage[lightSlot], draw.worldBounds, shadowSelection.views[lightSlot]);
-            }
+      for (uint32_t i = 0; i < frame.commands.size(); ++i) {
+        const auto &draw = frame.commands[i];
+        if (draw.captured) continue;
+        for (uint32_t lightSlot = 0; lightSlot < shadows::maximumLights; ++lightSlot) {
+          const auto &view = shadowSelection.views[lightSlot];
+          if (!shadowSelection.active[lightSlot] || !shadows::intersects(draw.worldBounds, view)) continue;
+          frame.movingLocalCasters[lightSlot].push_back(i);
+          emptyMovingShadows[lightSlot] = false;
+          shadows::includeCoverage(movingCoverage[lightSlot], draw.worldBounds, view);
+        }
+      }
     // Complete frozen bounds still fit the cascades even when no static draw
     // descriptors or material records need preparing for this frame.
     if (options.shadows && sun.isDistant)
@@ -210,7 +217,7 @@ namespace remix::forward {
       data.occlusion = baking->volume()->occlusionParameters;
       data.clusterInfo[2] = baking->volume()->surfaceDirectOffset;
     }
-    data.camera = resources.camera();
+    data.camera = camera;
     data.view = resources.view();
     // The shared camera already includes Vulkan framebuffer Y. Reconstruction
     // from gl_FragCoord must invert that same projection, without flipping it
@@ -527,8 +534,8 @@ namespace remix::forward {
                  .pImageInfo = &surfaceAtlas};
     vkUpdateDescriptorSets(device, 1, &writes[9], 0, nullptr);
     const VkDescriptorImageInfo localImages[] = {
-        {shadowSampler, localMaps->staticView(), VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL},
-        {shadowSampler, localMaps->dynamicView(), VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL}};
+        {sampler, localMaps->staticView(), VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL},
+        {sampler, localMaps->dynamicView(), VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL}};
     for (uint32_t i = 0; i < 2; ++i)
       writes[10 + i] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                         .dstSet = frame.scene,
@@ -581,6 +588,11 @@ namespace remix::forward {
     for (auto *commands : {&frame.commands, &frame.staticCommands, &frame.terrainCommands,
                            &frame.waterCommands, &frame.viewModelCommands, &frame.viewModelCasters})
       for (auto &draw : *commands) {
+        // Frozen shadow passes have separate draw records. Hidden captured
+        // world draws and camera-only layers never bind a material this frame.
+        if (!draw.cameraVisible &&
+            ((commands == &frame.commands && draw.captured) ||
+             commands == &frame.terrainCommands || commands == &frame.waterCommands)) continue;
         const auto &material = draw.source.material;
         if (auto found = materials.find(material.get()); found != materials.end()) {
           draw.material = found->second.first;

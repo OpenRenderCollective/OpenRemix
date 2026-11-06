@@ -28,24 +28,29 @@ namespace remix::forward {
     std::vector<HighlightWeight> update(std::span<const HighlightCandidate> input, uint32_t budget,
                                         double seconds, float fadeSeconds) {
       std::vector<HighlightCandidate> candidates;
+      candidates.reserve(input.size());
       for (const auto &candidate : input)
         if (std::isfinite(candidate.priority) && candidate.priority > 0)
           candidates.push_back(candidate);
-      std::sort(candidates.begin(), candidates.end(), [](const auto &a, const auto &b) {
+      const auto byKey = [](const auto &a, const auto &b) {
         return a.key < b.key;
-      });
+      };
+      if (!std::is_sorted(candidates.begin(), candidates.end(), byKey))
+        std::sort(candidates.begin(), candidates.end(), byKey);
       for (size_t i = 1; i < candidates.size(); ++i)
         if (candidates[i - 1].key == candidates[i].key)
           throw std::invalid_argument("Highlight candidates must identify distinct captured emitters");
-      std::sort(candidates.begin(), candidates.end(), [](const auto &a, const auto &b) {
-        return a.priority != b.priority ? a.priority > b.priority : a.key < b.key;
-      });
       budget = std::min(budget, maximum);
+      std::array<bool, maximum> present{};
+      for (uint32_t i = 0; i < budget; ++i)
+        if (slots[i].used)
+          present[i] = std::binary_search(candidates.begin(), candidates.end(),
+                                          HighlightCandidate{slots[i].key, 0}, byKey);
       const size_t wantedCount = std::min(size_t(budget), candidates.size());
-      const auto present = [&](uint64_t key) {
-        return std::any_of(candidates.begin(), candidates.end(),
-                           [&](const auto &candidate) { return candidate.key == key; });
-      };
+      std::partial_sort(candidates.begin(), candidates.begin() + wantedCount, candidates.end(),
+                        [](const auto &a, const auto &b) {
+                          return a.priority != b.priority ? a.priority > b.priority : a.key < b.key;
+                        });
       const auto wanted = [&](uint64_t key) {
         return std::any_of(candidates.begin(), candidates.begin() + wantedCount,
                            [&](const auto &candidate) { return candidate.key == key; });
@@ -61,7 +66,7 @@ namespace remix::forward {
       for (uint32_t i = 0; i < maximum; ++i) {
         auto &slot = slots[i];
         // A reduced budget is an explicit policy change, with a hard cost cap.
-        if (i >= budget || (slot.used && !present(slot.key))) slot = {};
+        if (i >= budget || (slot.used && !present[i])) slot = {};
         if (!slot.used) continue;
         const bool keep = wanted(slot.key);
         slot.weight = std::clamp(slot.weight + (keep ? step : -step), 0.f, 1.f);

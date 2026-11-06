@@ -110,7 +110,7 @@ namespace remix::forward {
             .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &guides[i]};
       vkUpdateDescriptorSets(device, 3, screenImages, 0, nullptr);
       if (localShadows) {
-        const VkDescriptorImageInfo self{shadowSampler, viewModelLocalMaps->dynamicView(),
+        const VkDescriptorImageInfo self{sampler, viewModelLocalMaps->dynamicView(),
             VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL};
         const VkWriteDescriptorSet write{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
             .dstSet = frame.viewModelScene, .dstBinding = 11, .descriptorCount = 1,

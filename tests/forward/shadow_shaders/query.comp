@@ -13,6 +13,7 @@ layout(set = 0, binding = 0, std140) uniform Parameters {
 } frame;
 struct Light { vec4 corners[3]; vec4 responseWeights; vec4 positionRadius, shaping, directionCone, radiance; };
 #define SUN_SHADOW_BINDING 3
+#define VIEWMODEL_PASS
 #include "../../../src/native/forward/shaders/local-shadows.glsl"
 #include "../../../src/native/forward/shaders/sun-shadows.glsl"
 #include "../../../src/native/forward/shaders/brdf.glsl"
@@ -78,5 +79,8 @@ void main() {
   light.responseWeights.w = 1;
   float reference = localShadowVisibility(light, query.position.xyz, query.normal.xyz, false);
   bool needed = movingLocalShadowRequired(light, query.position.xyz);
-  answers[index + 6u * inputData.count] = vec4(reference, needed ? reference : 1, needed ? 1 : 0, 0);
+  float scalar = localShadowVisibility(light, query.position.xyz, query.normal.xyz, fixedVisibility, false);
+  float gathered = localShadowVisibility(light, query.position.xyz, query.normal.xyz, fixedVisibility, true);
+  answers[index + 6u * inputData.count] = vec4(reference, needed ? reference : 1, needed ? 1 : 0,
+      abs(scalar - gathered));
 }

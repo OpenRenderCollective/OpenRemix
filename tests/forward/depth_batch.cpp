@@ -30,6 +30,10 @@ int main() try {
   ordinary.staticDepthBatch = false;
   require(defaults.staticDepthBatch && !defaults.sameTargets(ordinary),
           "Disabling default batching recreates the matching pipeline targets");
+  ordinary = defaults;
+  ordinary.opaqueOcclusionCulling = false;
+  require(defaults.opaqueOcclusionCulling && !defaults.sameTargets(ordinary),
+          "Changing opaque culling recreates the depth-prepass targets");
   Fixture fixture(false, true);
   const uint32_t aIndices[]{99, 0, 2, 1, 2, 3, 1, 99}, bIndices[]{2, 1, 0};
   auto a = std::make_shared<Mesh>(fixture, 48, aIndices);

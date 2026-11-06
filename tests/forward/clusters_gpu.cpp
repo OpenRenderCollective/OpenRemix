@@ -59,7 +59,7 @@ int main() try {
   gpu.build = pipeline(gpu, clusterShader, sizeof(clusterShader));
   gpu.query = pipeline(gpu, cluster_input::queryShader, sizeof(cluster_input::queryShader));
   gpu.frame.create(fixture.physical, gpu.device, sizeof(FrameData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
-  gpu.lights.create(fixture.physical, gpu.device, 128 * sizeof(LightData), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+  gpu.lights.create(fixture.physical, gpu.device, 513 * sizeof(LightData), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
   gpu.clusters.create(fixture.physical, gpu.device, maximumCells * (64 + clusterHeaderWords) * sizeof(uint32_t),
                        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
   gpu.results.create(fixture.physical, gpu.device, maximumCells * 2 * sizeof(UInt4), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
@@ -199,6 +199,17 @@ int main() try {
         run(std::span(lights).first(size), 1, 64, clustered, 1, columns);
     lights[size - 1].positionRadius[0] = 1000;
   }
+  // Check the broad phase with one late hit, both sides of the gate, and a
+  // workgroup containing cells from different depth slices.
+  lights.resize(513, lights.front());
+  for (uint32_t size : {511u, 512u, 513u}) {
+    lights[size - 1].positionRadius[0] = 0;
+    run(std::span(lights).first(size), 1, 64, true, 1, 17);
+    run(std::span(lights).first(size), 1, 64, true, -1, 17);
+    lights[size - 1].positionRadius[0] = 1000;
+  }
+  for (auto &light : lights) light.positionRadius[0] = 0;
+  run(lights, 1, 64, true, 1, 17);
   require(validationErrors.load() == 0, "Cluster dispatch and receiver queries remain validation-clean");
   std::printf("Clustered baked-tail GPU membership and independent overflow passed (%u cases)\n", cases);
   return 0;

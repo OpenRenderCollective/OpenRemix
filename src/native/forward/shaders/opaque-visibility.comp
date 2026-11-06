@@ -1,0 +1,116 @@
+#version 450
+
+// Maximum depth per tile for conservative occlusion in conventional Z.
+// Keep this separate from SSR's minimum-depth pyramid.
+layout(push_constant) uniform VisibilitySettings {
+  mat4 camera;
+  uvec2 extent;
+  uint drawCount;
+};
+const uint TileSize = 32u;
+const uint GroupWidth = 8u;
+
+#ifdef REDUCE_DEPTH
+layout(local_size_x = 8, local_size_y = 8) in;
+#ifdef SINGLE_SAMPLE
+layout(set = 0, binding = 0) uniform sampler2D prepassDepth;
+#else
+layout(set = 0, binding = 0) uniform sampler2DMS prepassDepth;
+layout(constant_id = 0) const int DepthSamples = 4;
+#endif
+layout(set = 0, binding = 1, std430) writeonly buffer TileDepth {
+  float tileDepth[];
+};
+shared float depthMaxima[64];
+
+float farthestSample(uvec2 pixel) {
+  if (any(greaterThanEqual(pixel, extent))) return 1;
+#ifdef SINGLE_SAMPLE
+  return texelFetch(prepassDepth, ivec2(pixel), 0).r;
+#else
+  float farthest = 0;
+  for (int sampleIndex = 0; sampleIndex < DepthSamples; ++sampleIndex)
+    farthest = max(farthest, texelFetch(prepassDepth, ivec2(pixel), sampleIndex).r);
+  return farthest;
+#endif
+}
+
+void main() {
+  uvec2 origin = gl_WorkGroupID.xy * TileSize + gl_LocalInvocationID.xy;
+  float farthest = 0;
+  for (uint y = 0u; y < TileSize; y += GroupWidth)
+    for (uint x = 0u; x < TileSize; x += GroupWidth)
+      farthest = max(farthest, farthestSample(origin + uvec2(x, y)));
+  uint lane = gl_LocalInvocationIndex;
+  depthMaxima[lane] = farthest;
+  barrier();
+  for (uint stride = 32u; stride > 0u; stride >>= 1u) {
+    if (lane < stride)
+      depthMaxima[lane] = max(depthMaxima[lane], depthMaxima[lane + stride]);
+    barrier();
+  }
+  if (lane == 0u)
+    tileDepth[gl_WorkGroupID.y * gl_NumWorkGroups.x + gl_WorkGroupID.x] = depthMaxima[0];
+}
+#else
+layout(local_size_x = 64) in;
+layout(set = 0, binding = 1, std430) readonly buffer TileDepth {
+  float tileDepth[];
+};
+struct DrawBounds {
+  vec4 minimum; // w is one for a valid conservative bound
+  vec4 maximum;
+};
+layout(set = 0, binding = 2, std430) readonly buffer Bounds {
+  DrawBounds bounds[];
+};
+// Matches VkDrawIndexedIndirectCommand. The host seeds each command before
+// dispatch so the visibility pass only needs to suppress rejected draws.
+struct IndexedDraw {
+  uint indexCount;
+  uint instanceCount;
+  uint firstIndex;
+  int vertexOffset;
+  uint firstInstance;
+};
+layout(set = 0, binding = 3, std430) buffer IndirectDraws {
+  IndexedDraw draws[];
+};
+
+bool canReject(DrawBounds box) {
+  if (box.minimum.w == 0) return false;
+  vec2 low = vec2(1), high = vec2(0);
+  float nearest = 1;
+  for (uint corner = 0u; corner < 8u; ++corner) {
+    bvec3 upper = notEqual(uvec3(corner) & uvec3(1u, 2u, 4u), uvec3(0));
+    vec4 clip = camera * vec4(mix(box.minimum.xyz, box.maximum.xyz, upper), 1);
+    // Near-plane intersections and invalid projections remain visible.
+    if (clip.w <= 0 || clip.z <= 0 || any(isnan(clip)) || any(isinf(clip)))
+      return false;
+    vec3 projected = clip.xyz / clip.w;
+    if (any(isnan(projected)) || any(isinf(projected))) return false;
+    low = min(low, projected.xy * .5 + .5);
+    high = max(high, projected.xy * .5 + .5);
+    nearest = min(nearest, projected.z);
+  }
+  vec2 pixels = vec2(extent);
+  // Expand by one pixel for raster edges and projection rounding.
+  vec2 first = clamp(floor(low * pixels) - 1, vec2(0), pixels);
+  vec2 end = clamp(ceil(high * pixels) + 1, vec2(0), pixels);
+  if (any(lessThanEqual(end, first))) return false;
+  uvec2 firstTile = uvec2(first) / TileSize;
+  uvec2 lastTile = (uvec2(end) - 1u) / TileSize;
+  uint columns = (extent.x + TileSize - 1u) / TileSize;
+  for (uint y = firstTile.y; y <= lastTile.y; ++y)
+    for (uint x = firstTile.x; x <= lastTile.x; ++x)
+      if (nearest <= tileDepth[y * columns + x] + 1e-5)
+        return false;
+  return true;
+}
+
+void main() {
+  uint draw = gl_GlobalInvocationID.x;
+  if (draw < drawCount && canReject(bounds[draw]))
+    draws[draw].indexCount = 0u;
+}
+#endif

@@ -130,7 +130,12 @@ namespace remix::forward {
     if (worldFramebuffer)
       vkDestroyFramebuffer(device, worldFramebuffer, nullptr);
     sunMaps.reset();
-    for (auto handle : {worldPass, shadowPass})
+    if (visibilityPool) vkDestroyDescriptorPool(device, visibilityPool, nullptr);
+    for (auto handle : {tileDepthPipeline, visibilityPipeline})
+      if (handle) pipeline::destroyPipeline(device, handle, nullptr);
+    if (visibilityLayout) pipeline::destroyPipelineLayout(device, visibilityLayout, nullptr);
+    if (visibilitySetLayout) pipeline::destroyDescriptorSetLayout(device, visibilitySetLayout, nullptr);
+    for (auto handle : {worldPass, shadowPass, opaqueResumePass})
       if (handle)
         pipeline::destroyRenderPass(device, handle, nullptr);
     for (auto handle : {sampler, shadowSampler, surfaceSampler, skySampler})
@@ -192,6 +197,7 @@ namespace remix::forward {
       next->probeVisibility->prepare();
     }
     next->createPipelines(output);
+    if (next->opaqueResumePass) next->createOpaqueVisibility();
     // Completed derived data reuses the ordinary lighting bindings. Changing
     // styles retain their original reconstruction until a matching output is ready.
     if (!std::getenv("REMIX_DEBUG_DISABLE_STYLE_COMPOSITION")) {

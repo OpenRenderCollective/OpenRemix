@@ -26,6 +26,7 @@ namespace remix::forward {
     bool shadows = true;
     bool localShadows = true;
     bool depthPrepass = true; // reject hidden opaque fragments before expensive lighting
+    bool opaqueOcclusionCulling = true; // use prepass depth to reject opaque draws in larger views
     bool staticDepthBatch = true; // bounded per-slot aggregation; unsupported sets use ordinary draws
     bool bicubicLightmaps = true; // chart-safe cubic B-spline reconstruction
     uint32_t localShadowLights = 4;
@@ -74,7 +75,9 @@ namespace remix::forward {
     bool reflections() const { return ssr || rtReflections || baking.reflectionProbes != 0; }
     bool sameTargets(const Options &other) const {
       return debugView == other.debugView && staticDepthBatch == other.staticDepthBatch &&
-             depthPrepass == other.depthPrepass && bicubicLightmaps == other.bicubicLightmaps &&
+             depthPrepass == other.depthPrepass &&
+             (!depthPrepass || opaqueOcclusionCulling == other.opaqueOcclusionCulling) &&
+             bicubicLightmaps == other.bicubicLightmaps &&
              autoExposure == other.autoExposure &&
              water == other.water && rtGI == other.rtGI && rtReflections == other.rtReflections &&
              (!rtGI || lightingPlan(true).bakedReceivers == other.lightingPlan(true).bakedReceivers) &&

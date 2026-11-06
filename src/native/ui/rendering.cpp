@@ -96,6 +96,9 @@ namespace remix {
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Combines static opaque depth draws with a bounded buffer per frame slot.\n"
                           "Cutout and dynamic draws keep their normal paths; does not rebake lighting.");
+      ui::Checkbox("GPU opaque occlusion culling", &forward.opaqueOcclusionCulling);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Uses depth prepass coverage to skip hidden opaque draws in larger views.");
       ui::Checkbox("Bicubic lightmaps", &forward.bicubicLightmaps);
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Smooth baked texel transitions with chart-safe cubic B-spline filtering.\n"

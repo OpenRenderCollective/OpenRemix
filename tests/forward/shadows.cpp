@@ -360,6 +360,24 @@ int main() {
     require(!frame.active[0], "Removed or zero-influence lights cannot retain a stale shadow assignment");
   }
   {
+    s::Planner fading;
+    scene::SphereLight lights[] = {light, light, light};
+    lights[0].id = lights[1].id = 301;
+    lights[2].id = 302;
+    lights[2].position[0] += 10;
+    const Vec3 eye{lights[0].position[0], lights[0].position[1], lights[0].position[2]};
+    const Vec3 moved{eye[0] + 10, eye[1], eye[2]};
+    auto frame = fading.update(lights, eye, 1, .001f, 100, 1, source, 0, 2);
+    require(frame.slots[0] == 0 && frame.slots[1] == UINT32_MAX,
+            "Equal shadow candidates sharing an ID retain their input order");
+    fading.update(lights, eye, 1, .001f, 100, 1, source, 2, 2);
+    lights[1].radiance[0] *= 2;
+    frame = fading.update(lights, moved, 1, .001f, 100, 1, source, 3, 2);
+    require(frame.slots[1] == 0 && frame.slots[0] == UINT32_MAX && frame.slots[2] == UINT32_MAX &&
+                frame.strength[0] == .5f,
+            "An outgoing slot retains the best occurrence of its ID outside the ranked prefix");
+  }
+  {
     scene::SphereLight lights[] = {light, light};
     lights[0].id = 201;
     lights[0].radiance[0] = 100;

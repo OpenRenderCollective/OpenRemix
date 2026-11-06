@@ -76,7 +76,7 @@ namespace remix::forward {
         if (gi)
           vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, drawLayout, 2, 1, &frame.rayInputs.diffuse, 0, nullptr);
         for (const auto &draw : frame.viewModelCommands) {
-          if (!draw.source.rasterVisible || !intersectsClip(draw.worldBounds, frame.data.camera)) continue;
+          if (!draw.cameraVisible) continue;
           const auto pipeline = depthOnly ? viewModelDepthPipeline
               : earlyPipeline && draw.unconditionalCoverage ? earlyPipeline : colorPipeline;
           if (!depthOnly)

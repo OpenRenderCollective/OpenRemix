@@ -68,8 +68,10 @@ int main(int argc, char **argv) try {
     VkPipelineLayout layout{};
     VkPipeline pipeline{};
     VkDescriptorPool pool{};
-    VkSampler sampler{};
+    VkSampler sampler{}, pointSampler{};
     ~Gpu() {
+      if (pointSampler)
+        vkDestroySampler(device, pointSampler, nullptr);
       if (pool)
         vkDestroyDescriptorPool(device, pool, nullptr);
       if (pipeline)
@@ -96,6 +98,8 @@ int main(int argc, char **argv) try {
         moving[6 * resolution * resolution + index] =
             direction[2] > 0 ? std::min(1.f, 4 / (direction[2] * 100)) : 1;
         fixed[12 * resolution * resolution + index] = .01f;
+        if (face == 0)
+          moving[12 * resolution * resolution + index] = (x + 2 * y) % 3 == 0 ? .01f : 1;
       }
   for (uint32_t layer = 0; layer < 8; ++layer)
     for (uint32_t y = 0; y < resolution; ++y)
@@ -143,6 +147,9 @@ int main(int argc, char **argv) try {
         const auto normal = normalized(point);
         queries.push_back({{point[0], point[1], point[2], 0}, {normal[0], normal[1], normal[2], 0}, {0, 0, 0, 0}});
       }
+  for (float y : {-3.91f, -1.11f, .031f, 1.09f, 3.89f})
+    for (float z : {-3.92f, -.71f, .097f, 1.35f, 3.87f})
+      queries.push_back({{4, y, z, 0}, {1, 0, 0, 0}, {2, 0, 0, 0}});
   const auto planeFirst = queries.size();
   for (float x : {0.f, 3.9f, 4.f, 4.1f, 12.f, 30.f, 60.f})
     for (float y : {0.f, 3.9f, 4.f, 4.1f})
@@ -178,13 +185,17 @@ int main(int argc, char **argv) try {
                                     .compareEnable = VK_TRUE,
                                     .compareOp = VK_COMPARE_OP_LESS_OR_EQUAL};
   check(vkCreateSampler(fixture.device, &sampler, nullptr, &gpu.sampler));
+  auto pointSampler = sampler;
+  pointSampler.compareEnable = VK_FALSE;
+  check(vkCreateSampler(fixture.device, &pointSampler, nullptr, &gpu.pointSampler));
   const VkDescriptorSetLayoutBinding bindings[] = {
       {0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
       {1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
       {2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
       {3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
       {7, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
-      {8, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr}};
+      {8, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
+      {11, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr}};
   const VkDescriptorSetLayoutCreateInfo setInfo{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
                                                 .bindingCount = uint32_t(std::size(bindings)),
                                                 .pBindings = bindings};
@@ -215,7 +226,7 @@ int main(int argc, char **argv) try {
   check(pipelineResult);
   const VkDescriptorPoolSize pools[] = {{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1},
                                         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2},
-                                        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3}};
+                                        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4}};
   const VkDescriptorPoolCreateInfo poolInfo{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
                                             .maxSets = 1,
                                             .poolSizeCount = 3,
@@ -231,10 +242,11 @@ int main(int argc, char **argv) try {
                                             gpu.output.descriptor()};
   const VkDescriptorImageInfo images[] = {
       {gpu.sampler, gpu.sun.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
-      {gpu.sampler, gpu.fixed.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
-      {gpu.sampler, gpu.moving.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}};
-  VkWriteDescriptorSet writes[6];
-  for (uint32_t i = 0; i < 6; ++i)
+      {gpu.pointSampler, gpu.fixed.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+      {gpu.pointSampler, gpu.moving.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+      {gpu.pointSampler, gpu.fixed.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}};
+  VkWriteDescriptorSet writes[std::size(bindings)];
+  for (uint32_t i = 0; i < std::size(writes); ++i)
     writes[i] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                  .dstSet = set,
                  .dstBinding = bindings[i].binding,
@@ -242,7 +254,7 @@ int main(int argc, char **argv) try {
                  .descriptorType = bindings[i].descriptorType,
                  .pImageInfo = i >= 3 ? &images[i - 3] : nullptr,
                  .pBufferInfo = i < 3 ? &buffers[i] : nullptr};
-  vkUpdateDescriptorSets(fixture.device, 6, writes, 0, nullptr);
+  vkUpdateDescriptorSets(fixture.device, uint32_t(std::size(writes)), writes, 0, nullptr);
   auto render = [&] {
     fixture.begin();
     vkCmdBindPipeline(fixture.command, VK_PIPELINE_BIND_POINT_COMPUTE, gpu.pipeline);
@@ -277,6 +289,7 @@ int main(int argc, char **argv) try {
     const auto &coverage = values[i + 6 * queries.size()];
     require(std::abs(coverage[0] - coverage[1]) < 1e-5f,
             "Conservative moving-caster coverage preserves filtered visibility at boundaries and cube seams");
+    require(coverage[3] < 1e-5f, "Gathered depths match individual receiver-plane comparisons");
     if (i >= coverageFirst && i < planeFirst) skipped += coverage[2] == 0;
   }
   require(skipped > 0 && skipped < planeFirst - coverageFirst,
@@ -345,6 +358,14 @@ int main(int argc, char **argv) try {
             "Bright receivers never amplify captures and dark/unknown/incompatible references remain neutral");
 
   }
+  parameters.cluster[3] |= 1u;
+  gpu.parameters.write(&parameters, sizeof(parameters));
+  const auto selfShadowed = render();
+  require(selfShadowed[exclusionFirst][0] < .001f,
+          "Viewmodel self shadows remain visible when baked coverage excludes frozen shadows");
+  for (size_t i = 0; i < queries.size(); ++i)
+    require(selfShadowed[i + 6 * queries.size()][3] < 1e-5f,
+            "Gather and scalar comparisons match with viewmodel self shadows");
   require(validationErrors == 0, "Shadow filter readback is Vulkan validation clean");
 } catch (VkResult error) {
   std::fprintf(stderr, "Shadow filtering GPU test failed: %d\n", int(error));

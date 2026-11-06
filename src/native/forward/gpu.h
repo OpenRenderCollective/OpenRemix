@@ -55,6 +55,11 @@ namespace remix::forward {
     VkSampler sampler = VK_NULL_HANDLE, shadowSampler = VK_NULL_HANDLE, surfaceSampler = VK_NULL_HANDLE,
               skySampler = VK_NULL_HANDLE;
     VkRenderPass worldPass = VK_NULL_HANDLE, shadowPass = VK_NULL_HANDLE;
+    VkRenderPass opaqueResumePass = VK_NULL_HANDLE;
+    VkDescriptorSetLayout visibilitySetLayout = VK_NULL_HANDLE;
+    VkPipelineLayout visibilityLayout = VK_NULL_HANDLE;
+    VkPipeline tileDepthPipeline = VK_NULL_HANDLE, visibilityPipeline = VK_NULL_HANDLE;
+    VkDescriptorPool visibilityPool = VK_NULL_HANDLE;
     VkFramebuffer worldFramebuffer = VK_NULL_HANDLE;
     std::unique_ptr<Image> color, depth, resolved;
     std::unique_ptr<shadows::SunMaps> sunMaps;
@@ -125,6 +130,7 @@ namespace remix::forward {
       const lightmap::Geometry::Entry *lightmap = nullptr;
       Bounds worldBounds;
       bool captured = false;
+      bool cameraVisible = false;
       bool unconditionalCoverage = false;
       bool opaqueDepth = false, depthBatched = false;
       scene::Draw source; // material, mesh and texture owners live through the fence
@@ -142,6 +148,8 @@ namespace remix::forward {
       // One binding snapshot after provider publication, shared by all passes.
       // Provider frame owners retain the referenced images through this fence.
       probes::Descriptors reflectionProbes;
+      VkDescriptorSet visibilitySet = VK_NULL_HANDLE;
+      std::unique_ptr<Buffer> visibilityTiles, visibilityBounds, indirectDraws;
       std::unique_ptr<Buffer> constants, lights, draws, clusters, skyConstants;
       std::shared_ptr<const probe_batch::Field> probeVisibility;
       std::shared_ptr<const styled_lighting::Publication> styledLighting;
@@ -156,6 +164,7 @@ namespace remix::forward {
       std::vector<Command> waterCommands;
       std::vector<Command> viewModelCommands;
       std::vector<Command> viewModelCasters;
+      std::array<std::vector<uint32_t>, shadows::maximumLights> movingLocalCasters;
       // Rewritten only after this slot's fence. Poses remain fresh every draw;
       // the buffers, rather than the animated vertex data, survive slot reuse.
       std::vector<std::shared_ptr<Geometry>> posedGeometry;
@@ -170,6 +179,8 @@ namespace remix::forward {
     // copies these records before returning; no submitted frame retains them.
     // Reuse capacity rather than reallocating/copying the draw table every frame.
     std::vector<DrawData> drawScratch;
+    std::vector<std::array<Vec4, 2>> visibilityBoundsScratch;
+    std::vector<VkDrawIndexedIndirectCommand> indirectDrawScratch;
     std::unordered_map<const scene::Surface *, std::shared_ptr<Geometry>> geometries;
     // Finished immutable uploads can back a later transient mesh. Commands keep
     // their own references until their frame fence has completed.
@@ -185,14 +196,16 @@ namespace remix::forward {
     void prepareFrame(VkCommandBuffer command, RasterRenderer &resources, double seconds,
                       const lighting::Plan &lightingPlan);
     void recordWorld(VkCommandBuffer command);
+    void createOpaqueVisibility();
+    uint32_t prepareOpaqueVisibility();
+    void recordOpaqueVisibility(VkCommandBuffer command, uint32_t drawCount);
     void recordWater(VkCommandBuffer command);
     void recordViewModels(VkCommandBuffer command);
     void prepareViewModelDescriptors();
     void prepareDepthBatch(std::shared_ptr<const bake::Volume> source);
     void recordExposure(VkCommandBuffer command, RasterRenderer &resources, float seconds);
-    bool castsLocalShadow(const Command &draw, uint32_t slot, bool staticCasters) const;
     void drawLocalCasters(VkCommandBuffer command, uint32_t slot, uint32_t face, bool staticCasters);
-    void drawGeometry(VkCommandBuffer command, bool terrain = false, bool depthOnly = false);
+    void drawGeometry(VkCommandBuffer command, bool terrain = false, bool depthOnly = false, bool indirect = false);
     void drawSunCasters(VkCommandBuffer command, uint32_t cascade, bool staticCasters);
     void prepareSky(VkCommandBuffer command, RasterRenderer &resources);
     void display(VkCommandBuffer command, bool background);

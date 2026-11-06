@@ -114,6 +114,7 @@ namespace remix::forward::shadows {
       bool fallback;
     };
     std::vector<Candidate> candidates;
+    candidates.reserve(lights.size());
     for (uint32_t i = 0; i < lights.size(); ++i) {
       const float range = influenceRadius(lights[i], cutoff);
       if (!std::isfinite(range) || range <= 0)
@@ -124,18 +125,29 @@ namespace remix::forward::shadows {
       candidates.push_back({lights[i].id, i, range, range * range / std::max(dot(delta, delta), 1e-6f),
                             !fallbackLights.empty() && fallbackLights[i] != 0});
     }
-    std::stable_sort(candidates.begin(), candidates.end(), [](const Candidate &a, const Candidate &b) {
+    const auto ranksBefore = [](const Candidate &a, const Candidate &b) {
       if (a.fallback != b.fallback)
         return !a.fallback;
       if (a.priority != b.priority)
         return a.priority > b.priority;
-      return a.id < b.id;
-    });
+      return a.id != b.id ? a.id < b.id : a.index < b.index;
+    };
     Selection result;
     result.slots.resize(lights.size(), UINT32_MAX);
     budget = std::min(budget, maximumLights);
     result.overflow = uint32_t(candidates.size()) - std::min(uint32_t(candidates.size()), budget);
     const size_t desiredCount = std::min(size_t(budget), candidates.size());
+    auto desiredEnd = candidates.begin() + desiredCount;
+    std::partial_sort(candidates.begin(), desiredEnd, candidates.end(), ranksBefore);
+    // The only other candidates that can get a map already own a slot and
+    // may be fading out. Keep every occurrence of those IDs in ranked order.
+    const auto retainedEnd = std::partition(desiredEnd, candidates.end(), [&](const Candidate &candidate) {
+      for (uint32_t slot = 0; slot < budget; ++slot)
+        if (m_assigned[slot] && m_views[slot].id == candidate.id) return true;
+      return false;
+    });
+    std::sort(desiredEnd, retainedEnd, ranksBefore);
+    candidates.erase(retainedEnd, candidates.end());
     const auto desired = [&](uint64_t id) {
       return std::any_of(candidates.begin(), candidates.begin() + desiredCount,
                          [&](const Candidate &candidate) { return candidate.id == id; });

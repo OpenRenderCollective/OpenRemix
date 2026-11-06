@@ -15,7 +15,7 @@ namespace remix::forward {
       vkCmdSetScissor(command, 0, 1, &scissor);
     }
   } // namespace
-  void Renderer::Gpu::drawGeometry(VkCommandBuffer command, bool terrain, bool depthOnly) {
+  void Renderer::Gpu::drawGeometry(VkCommandBuffer command, bool terrain, bool depthOnly, bool indirect) {
     const auto &frame = frames[slot];
     const bool gi = !depthOnly && bool(frame.rayInputs.diffuse);
     if (depthOnly && frame.depthBatch && frame.depthBatch->indexCount()) {
@@ -38,7 +38,7 @@ namespace remix::forward {
     if (debugDraws && !depthOnly && !terrain && baking->volume() && baking->volume()->hash != reported) {
       std::array<uint64_t, 3> counts{}, indices{}, receiverRuns{};
       for (const auto &draw : frame.commands) {
-        if (!draw.source.rasterVisible || !intersectsClip(draw.worldBounds, frame.data.camera)) continue;
+        if (!draw.cameraVisible) continue;
         const uint32_t kind = !draw.lightmap ? 0 : draw.lightmap->fullyMapped ? 1 : 2;
         ++counts[kind];
         indices[kind] += draw.lightmap ? draw.lightmap->count : draw.count;
@@ -88,12 +88,19 @@ namespace remix::forward {
       if (receiverTimings) receiverTime.emplace(command, names[kind], extent);
       receiverKind = kind;
     };
+    VkDeviceSize indirectOffset = 0;
+    auto drawIndexed = [&](uint32_t count, uint32_t first, int32_t offset) {
+      if (indirect) {
+        vkCmdDrawIndexedIndirect(command, frame.indirectDraws->handle, indirectOffset, 1,
+                                 sizeof(VkDrawIndexedIndirectCommand));
+        indirectOffset += sizeof(VkDrawIndexedIndirectCommand);
+      } else {
+        vkCmdDrawIndexed(command, count, 1, first, offset, 0);
+      }
+    };
     auto drawCommand = [&](const Command &draw) {
       if (depthOnly && draw.depthBatched) return;
-      if (!draw.source.rasterVisible)
-        return;
-      if (!intersectsClip(draw.worldBounds, frame.data.camera))
-        return;
+      if (!draw.cameraVisible) return;
       const auto *mapped = draw.lightmap;
       VkPipeline selected;
       if (depthOnly) selected = mapped ? depthLightmapPipeline : depthPipeline;
@@ -137,12 +144,12 @@ namespace remix::forward {
           bindPipeline(run.coverage == lightmap::ReceiverCoverage::Mapped ? lightmapPipeline
                      : run.coverage == lightmap::ReceiverCoverage::Unmapped ? unmappedLightmapPipeline
                                                                           : partialLightmapPipeline);
-          vkCmdDrawIndexed(command, run.indexCount, 1, run.firstIndex, 0, 0);
+          drawIndexed(run.indexCount, run.firstIndex, 0);
           ++statistics.drawCalls.worldColor;
         }
       } else {
-        vkCmdDrawIndexed(command, mapped ? mapped->count : draw.count, 1, mapped ? 0 : draw.source.firstIndex,
-                         mapped ? 0 : draw.source.vertexOffset, 0);
+        drawIndexed(mapped ? mapped->count : draw.count, mapped ? 0 : draw.source.firstIndex,
+                    mapped ? 0 : draw.source.vertexOffset);
         auto &calls = statistics.drawCalls;
         ++(depthOnly ? calls.worldDepth : terrain ? calls.terrain : calls.worldColor);
         if (depthOnly && draw.captured) {
@@ -188,22 +195,15 @@ namespace remix::forward {
       statistics.movingSunDraws[cascade] = draws;
     }
   }
-  bool Renderer::Gpu::castsLocalShadow(const Command &draw, uint32_t lightSlot, bool staticCasters) const {
-    return (staticCasters || !draw.captured) &&
-           shadows::intersects(draw.worldBounds, shadowSelection.views[lightSlot]);
-  }
   void Renderer::Gpu::drawLocalCasters(VkCommandBuffer command, uint32_t lightSlot, uint32_t face,
                                        bool staticCasters) {
     const auto &frame = frames[slot];
-    const auto &commands = staticCasters ? frame.staticCommands : frame.commands;
+    const auto &view = shadowSelection.views[lightSlot];
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, localShadowPipeline);
     vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &frame.scene, 0, nullptr);
-    for (const auto &draw : commands) {
-      // Radial overlap alone submits every caster to all six faces. Keep
-      // seam-crossing bounds on each touched face, including offscreen actors.
-      if (!castsLocalShadow(draw, lightSlot, staticCasters) ||
-          !intersectsClip(draw.worldBounds, shadowSelection.views[lightSlot].matrices[face]))
-        continue;
+    auto submit = [&](const Command &draw) {
+      // Keep seam-crossing bounds on each touched face, including offscreen actors.
+      if (!intersectsClip(draw.worldBounds, view.matrices[face])) return;
       auto &counts = statistics.localShadowDraws[lightSlot];
       ++(staticCasters ? counts.frozen : counts.moving)[face];
       vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 1, 1, &draw.material, 0,
@@ -216,6 +216,12 @@ namespace remix::forward {
       vkCmdBindIndexBuffer(command, draw.geometry->indices->handle, 0, VK_INDEX_TYPE_UINT32);
       vkCmdDrawIndexed(command, draw.count, 1, draw.source.firstIndex, draw.source.vertexOffset, 0);
       ++(staticCasters ? statistics.drawCalls.staticLocalShadow : statistics.drawCalls.movingLocalShadow);
+    };
+    if (staticCasters) {
+      for (const auto &draw : frame.staticCommands)
+        if (shadows::intersects(draw.worldBounds, view)) submit(draw);
+    } else {
+      for (uint32_t index : frame.movingLocalCasters[lightSlot]) submit(frame.commands[index]);
     }
   }
   void Renderer::Gpu::recordWorld(VkCommandBuffer command) {
@@ -273,8 +279,8 @@ namespace remix::forward {
       auto &cache = movingShadowCache[lightSlot];
       if (!shadowSelection.active[lightSlot]) { cache.reset(); continue; }
       movingCasterScratch.clear();
-      for (const auto &draw : frame.commands) {
-        if (!castsLocalShadow(draw, lightSlot, false)) continue;
+      for (uint32_t index : frame.movingLocalCasters[lightSlot]) {
+        const auto &draw = frame.commands[index];
         movingCasterScratch.push_back({draw.source.surface, draw.source.bones, draw.source.model,
             draw.source.firstIndex, draw.count, draw.source.vertexOffset, draw.opaqueDepth,
             draw.opaqueDepth ? shadows::AlphaCoverage{} :
@@ -290,6 +296,7 @@ namespace remix::forward {
       drawLocalCasters(command, lightSlot, face, staticCasters);
     }, movingDirty);
     localTime.close();
+    const uint32_t visibilityDrawCount = prepareOpaqueVisibility();
     fragmentStatistics->reset(command, extent, samples, baking->volume() ? baking->volume()->hash : 0);
     gpu::GpuScope worldTime(command, "Forward+ opaque world shading", extent);
     const VkClearValue clear[] = {{.color = {{0, 0, 0, 0}}},
@@ -309,7 +316,25 @@ namespace remix::forward {
       gpu::GpuScope depthTime(command, "Forward+ opaque depth prepass", extent);
       drawGeometry(command, false, true);
     }
-    drawGeometry(command);
+    const bool useVisibility = visibilityDrawCount != 0;
+    static const bool reportVisibility = std::getenv("REMIX_DEBUG_FORWARD_DRAW_COUNTS") != nullptr;
+    if (opaqueResumePass && reportVisibility) {
+      static thread_local std::optional<bool> previous;
+      if (previous != useVisibility) {
+        std::fprintf(stderr, "Forward opaque GPU visibility: %s\n", useVisibility ? "active" : "bypassed");
+        previous = useVisibility;
+      }
+    }
+    if (useVisibility) {
+      vkCmdNextSubpass(command, VK_SUBPASS_CONTENTS_INLINE);
+      vkCmdEndRenderPass(command);
+      recordOpaqueVisibility(command, visibilityDrawCount);
+      auto resume = pass;
+      resume.renderPass = opaqueResumePass;
+      vkCmdBeginRenderPass(command, &resume, VK_SUBPASS_CONTENTS_INLINE);
+      viewport(command, extent);
+    }
+    drawGeometry(command, false, false, useVisibility);
     vkCmdNextSubpass(command, VK_SUBPASS_CONTENTS_INLINE);
     drawGeometry(command, true);
     vkCmdEndRenderPass(command);
@@ -318,8 +343,8 @@ namespace remix::forward {
   void Renderer::Gpu::recordWater(VkCommandBuffer command) {
     auto &frame = frames[slot];
     frame.waterComposed = false;
-    if (!waterPass || !std::any_of(frame.waterCommands.begin(), frame.waterCommands.end(), [&](const auto &draw) {
-          return draw.source.rasterVisible && intersectsClip(draw.worldBounds, frame.data.camera);
+    if (!waterPass || !std::any_of(frame.waterCommands.begin(), frame.waterCommands.end(), [](const auto &draw) {
+          return draw.cameraVisible;
         })) return;
     gpu::GpuScope time(command, "Forward+ measured water", extent);
     // This pass also overlays opaque reflections, even when water is occluded.
@@ -332,7 +357,7 @@ namespace remix::forward {
           vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, waterLayout, 0, 1,
                                   &frame.scene, 0, nullptr);
           for (const auto &draw : frame.waterCommands) {
-            if (!draw.source.rasterVisible || !intersectsClip(draw.worldBounds, frame.data.camera)) continue;
+            if (!draw.cameraVisible) continue;
             vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, waterLayout, 1, 1,
                                     &draw.material, 0, nullptr);
             const uint32_t push[] = {draw.index, draw.waterIndex};
