@@ -6,7 +6,10 @@ layout(push_constant) uniform Extent { uvec2 extent; };
 uvec4 target;
 uint mode;
 vec2 slope;
+// Exercise both production specialization values in one dispatch.
+#define DepthSamples (target.z)
 #include "../../../src/native/forward/water/shaders/depth.glsl"
+#undef DepthSamples
 vec4 waterDepthSamples(ivec2 pixel) {
   vec4 values = vec4(1);
   const vec2 locations[4] = vec2[4](vec2(.375, .125), vec2(.875, .375),
