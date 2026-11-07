@@ -285,8 +285,13 @@ HostPasses::Target &HostPasses::target(remixapi_HostTargetHandleEXT handle, VkFo
     else if (channels == REMIXAPI_HOST_CHANNELS_NO_ALPHA_EXT)
       sampledView.components = {same, same, same, one};
     check(vkCreateImageView(m_device, &sampledView, nullptr, &t.sampled));
-    if (volume)
-      return t; // sampled only: no render pass or framebuffer
+    if (volume) {
+      // Sampled only: no render pass or framebuffer. Its use counts from now, or
+      // the end of this frame's record would take it as stale and destroy it
+      // under the upload just recorded.
+      t.lastFrame = m_frame;
+      return t;
+    }
     // Its render pass: load and keep, in GENERAL layout throughout.
     const VkAttachmentDescription attachment{.format = format,
                                              .samples = VK_SAMPLE_COUNT_1_BIT,
