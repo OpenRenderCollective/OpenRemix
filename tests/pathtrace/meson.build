@@ -409,3 +409,9 @@ if get_option('gpu_tests') and get_option('nrd')
       env : primary == 'ray' ? ['REMIX_TEST_RAY_PRIMARY=1'] : [], timeout : 600, is_parallel : false)
   endforeach
 endif
+if get_option('gpu_tests')
+  opacity_micromap_test = executable('remix-opacity-micromap-test', 'opacity_micromap.cpp',
+    include_directories : test_includes, dependencies : [sdl3_dep, filesystem_dep] + [runtime_test_dep])
+  test('Opacity micromaps render the same image with fewer alpha tests', opacity_micromap_test,
+    args : [meson.current_build_dir() / 'opacity-micromap'], timeout : 300)
+endif

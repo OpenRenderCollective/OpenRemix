@@ -1710,6 +1710,14 @@ namespace remix {
       g.opacityCache.setOneSidedOpaque(options.hardwareFaceCulling);
       g.statics.invalidate();
     }
+    // Opacity micromaps likewise, up to the device's subdivision limit.
+    const uint32_t micromapLevel = options.opacityMicromaps && g.micromapLevelLimit
+                                       ? std::clamp(options.opacityMicromapLevel, 1u, g.micromapLevelLimit)
+                                       : 0u;
+    if (micromapLevel != g.opacityCache.micromapLevelEnabled()) {
+      g.opacityCache.setMicromapLevel(micromapLevel);
+      g.statics.invalidate();
+    }
     // View models move into the world camera's view (Draw::viewModel) before
     // the tracer and the raster overlays see the frame's draws.
     if (options.viewModel)

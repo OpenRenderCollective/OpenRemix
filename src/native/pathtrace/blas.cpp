@@ -89,6 +89,7 @@ namespace remix {
         if (!sizes[i] || sizes[i] >= geometry.accel->size)
           continue;
         auto compact = acceleration(sizes[i], VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR);
+        compact->micromap = geometry.accel->micromap;
         VkCopyAccelerationStructureInfoKHR copy = {.sType = VK_STRUCTURE_TYPE_COPY_ACCELERATION_STRUCTURE_INFO_KHR,
                                                    .src = geometry.accel->handle,
                                                    .dst = compact->handle,
@@ -123,6 +124,61 @@ namespace remix {
     }
   }
 
+  void PathTracer::Gpu::buildMicromaps(VkCommandBuffer command, const std::vector<std::shared_ptr<Geometry>> &work) {
+    std::vector<Micromap *> pending;
+    for (const auto &geometry : work)
+      if (geometry->micromap && geometry->micromap->pending)
+        pending.push_back(geometry->micromap.get());
+    if (pending.empty())
+      return;
+    const VkDeviceSize alignment =
+        std::max<VkDeviceSize>(asProperties.minAccelerationStructureScratchOffsetAlignment, 256);
+    VkDeviceSize scratchBytes = 0;
+    for (const auto *micromap : pending)
+      scratchBytes += align(micromap->sizes.buildScratchSize, alignment);
+    if (!micromapScratch || micromapScratch->size < scratchBytes + alignment) {
+      if (micromapScratch)
+        retiredBuffers.push_back(std::move(micromapScratch)); // Earlier frames' builds may still use it.
+      micromapScratch = buffer(scratchBytes + alignment, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    }
+    VkDeviceAddress address = align(micromapScratch->address, alignment);
+    std::vector<VkMicromapBuildInfoEXT> builds;
+    for (auto *micromap : pending) {
+      builds.push_back({.sType = VK_STRUCTURE_TYPE_MICROMAP_BUILD_INFO_EXT,
+                        .type = VK_MICROMAP_TYPE_OPACITY_MICROMAP_EXT,
+                        .flags = VK_BUILD_MICROMAP_PREFER_FAST_TRACE_BIT_EXT,
+                        .mode = VK_BUILD_MICROMAP_MODE_BUILD_EXT,
+                        .dstMicromap = micromap->handle,
+                        .usageCountsCount = uint32_t(micromap->usage.size()),
+                        .pUsageCounts = micromap->usage.data(),
+                        .data = {.deviceAddress = micromap->data},
+                        .scratchData = {.deviceAddress = address},
+                        .triangleArray = {.deviceAddress = micromap->triangles},
+                        .triangleArrayStride = sizeof(scene::OpacityMicromap::Triangle)});
+      address += align(micromap->sizes.buildScratchSize, alignment);
+      micromap->pending = false;
+    }
+    // Inputs uploaded this frame and scratch reused from earlier builds; then
+    // the micromaps are read by the BLAS builds.
+    auto memoryBarrier = [&](VkPipelineStageFlags2 sourceStage, VkAccessFlags2 source,
+                             VkPipelineStageFlags2 destinationStage, VkAccessFlags2 destination) {
+      const VkMemoryBarrier2 barrier = {.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+                                        .srcStageMask = sourceStage,
+                                        .srcAccessMask = source,
+                                        .dstStageMask = destinationStage,
+                                        .dstAccessMask = destination};
+      const VkDependencyInfo dependency = {
+          .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO, .memoryBarrierCount = 1, .pMemoryBarriers = &barrier};
+      pipelineBarrier2(command, &dependency);
+    };
+    memoryBarrier(VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT,
+                  VK_PIPELINE_STAGE_2_MICROMAP_BUILD_BIT_EXT,
+                  VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT);
+    cmdBuildMicromaps(command, uint32_t(builds.size()), builds.data());
+    memoryBarrier(VK_PIPELINE_STAGE_2_MICROMAP_BUILD_BIT_EXT, VK_ACCESS_2_MICROMAP_WRITE_BIT_EXT,
+                  VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, VK_ACCESS_2_MICROMAP_READ_BIT_EXT);
+  }
+
   void PathTracer::Gpu::buildBottom(VkCommandBuffer command) {
     ScopedMilliseconds time{performance.accelerationMilliseconds};
     ScopedMilliseconds whole{trace::g_accelNow.bottom};
@@ -143,6 +199,7 @@ namespace remix {
       scratch = buffer(scratchBytes + asProperties.minAccelerationStructureScratchOffsetAlignment,
                        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     VkDeviceAddress address = align(scratch->address, asProperties.minAccelerationStructureScratchOffsetAlignment);
+    buildMicromaps(command, work);
     std::vector<VkAccelerationStructureBuildGeometryInfoKHR> builds;
     std::vector<const VkAccelerationStructureBuildRangeInfoKHR *> ranges;
     for (auto &g : work) {

@@ -82,6 +82,8 @@ namespace remix {
     void uiInspectPixel(int x, int y);
     bool hostPassesSupported() const { return true; } // metal/host_passes.mm
     bool textureCompressionSupported() const;
+    // Metal has no opacity micromaps (rtx.native.pathtrace.opacityMicromaps).
+    bool opacityMicromapsSupported() const { return false; }
     bool gpuTimersSupported() const;
     metal::Raster::MemoryStatistics rasterMemoryStatistics() const {
       return busyState() ? busyState()->memory : renderer().memoryStatistics();

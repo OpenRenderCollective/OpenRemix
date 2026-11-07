@@ -7,6 +7,7 @@
 #include "api/exports.h"
 #include "runtime/prepared.h"
 #include <SDL3/SDL.h>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -15,6 +16,7 @@
 #include <remix/remix_native_ext.h>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_ONLY_PNG
@@ -95,6 +97,12 @@ int main(int argc, char **argv) {
   caps.structSize = sizeof(caps);
   ok(remixapi_GetBackendCapabilitiesEXT(&caps));
   if (!(caps.supportedBackends & 2)) {
+    ok(api.Shutdown());
+    return 77;
+  }
+  // Skipped where the device cannot build micromaps (the setting does nothing).
+  if (!remix::api::g_runtime.opacityMicromapsSupported()) {
+    std::puts("SKIP: VK_EXT_opacity_micromap unavailable");
     ok(api.Shutdown());
     return 77;
   }
@@ -285,8 +293,14 @@ int main(int argc, char **argv) {
     ok(remix::test::requestScreenshot(api, file.c_str(), frame));
     frame();
     frame();
-    int w, h, channels;
-    auto *data = stbi_load(file.c_str(), &w, &h, &channels, 4);
+    // The PNG is encoded on a worker thread: wait for it.
+    int w = 0, h = 0, channels = 0;
+    stbi_uc *data = nullptr;
+    for (unsigned attempt = 0; attempt < 1000 && !data; ++attempt) {
+      data = stbi_load(file.c_str(), &w, &h, &channels, 4);
+      if (!data)
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
     require(data && w == int(width) && h == int(height), "Opacity micromap capture unavailable");
     Capture result{{data, data + size_t(w) * h * 4}, lastProfile(profile)};
     stbi_image_free(data);

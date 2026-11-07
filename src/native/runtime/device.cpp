@@ -380,6 +380,33 @@ namespace remix {
         features.pNext = &metering;
       }
     }
+    // Opacity micromaps (rtx.native.pathtrace.opacityMicromaps): optional;
+    // their builds synchronize with synchronization2 stages.
+    VkPhysicalDeviceOpacityMicromapFeaturesEXT micromap = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPACITY_MICROMAP_FEATURES_EXT};
+    VkPhysicalDeviceSynchronization2Features synchronization2 = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES, .pNext = &micromap};
+    m_opacityMicromaps = false;
+    if (m_traceSupported && supportsDeviceExtension(selection.physicalDevice, VK_EXT_OPACITY_MICROMAP_EXTENSION_NAME) &&
+        supportsDeviceExtension(selection.physicalDevice, VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME)) {
+      VkPhysicalDeviceFeatures2 available = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+                                             .pNext = &synchronization2};
+      vkGetPhysicalDeviceFeatures2(selection.physicalDevice, &available);
+      if (micromap.micromap && synchronization2.synchronization2) {
+        m_opacityMicromaps = true;
+        micromap = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPACITY_MICROMAP_FEATURES_EXT,
+                    .pNext = features.pNext,
+                    .micromap = VK_TRUE};
+        synchronization2 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES,
+                            .pNext = &micromap,
+                            .synchronization2 = VK_TRUE};
+        features.pNext = &synchronization2;
+        for (const char *extension : {VK_EXT_OPACITY_MICROMAP_EXTENSION_NAME, VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME})
+          if (std::none_of(extensions.begin(), extensions.end(),
+                           [&](auto p) { return std::strcmp(p, extension) == 0; }))
+            extensions.push_back(extension);
+      }
+    }
     // Last: libxess sets fields of the finished chain and links its own
     // structures (upscale/xess.h).
     void *featureChain = &features;

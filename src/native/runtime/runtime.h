@@ -75,6 +75,8 @@ namespace remix {
     const std::string &postProcessingFailure() const { return m_postFailure; }
     remixapi_ErrorCode present(const remixapi_PresentInfo *info);
     bool lowLatencySupported() const { return m_lowLatencySupported; }
+    // The device builds opacity micromaps (rtx.native.pathtrace.opacityMicromaps).
+    bool opacityMicromapsSupported() const { return m_opacityMicromaps; }
     remixapi_ErrorCode requestScreenshot(const char *path);
     // A screenshot set (PresentedScreenshot::requestSet) in the profiles
     // directory's screenshots folder, named by the local time.
@@ -495,6 +497,7 @@ namespace remix {
     uint32_t m_backend = 0, m_requestedBackend = 0, m_instanceApiVersion = VK_API_VERSION_1_1;
     bool m_traceSupported = false;
     bool m_textureCompression = false; // textureCompressionBC enabled on m_device.
+    bool m_opacityMicromaps = false;   // VK_EXT_opacity_micromap enabled on m_device.
     bool m_memoryBudget = false;       // VK_EXT_memory_budget queries available.
     uint32_t m_memoryShortFrames = 0;
     bool m_memoryShort = false;

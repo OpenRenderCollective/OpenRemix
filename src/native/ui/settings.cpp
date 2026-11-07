@@ -1119,6 +1119,28 @@ namespace remix {
                           "in, as before. SIGMA's sun shadow ray keeps its nearest-blocker search. Same image.\n"
                           "Applies at the next frame (the specialized shaders compile in the background).\n"
                           "rtx.native.pathtrace.shadowEarlyOut");
+      const bool micromaps = opacityMicromapsSupported();
+      ImGui::BeginDisabled(!micromaps);
+      ui::Checkbox("Opacity micromaps", &options.opacityMicromaps);
+      ImGui::EndDisabled();
+      if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip("%s", micromaps
+                                    ? "Alpha-tested surfaces (foliage, fences, grates) carry opacity micromaps:\n"
+                                      "traversal skips the parts proven cut out and accepts the parts proven\n"
+                                      "solid, so fewer rays run the shader's alpha test. Same image. Applies at\n"
+                                      "the next frame: alpha-tested meshes are proved again and rebuild their BLAS.\n"
+                                      "rtx.native.pathtrace.opacityMicromaps"
+                                    : "This GPU or driver does not support VK_EXT_opacity_micromap.\n"
+                                      "rtx.native.pathtrace.opacityMicromaps");
+      if (micromaps && options.opacityMicromaps) {
+        int level = int(options.opacityMicromapLevel);
+        if (ui::SliderInt("Micromap detail", &level, 1, 8))
+          options.opacityMicromapLevel = uint32_t(level);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("The deepest subdivision of a triangle: up to 4^level micro-triangles, about two\n"
+                            "per texel. Higher proves more of large triangles at more memory and baking time.\n"
+                            "Limited by the device. rtx.native.pathtrace.opacityMicromapLevel");
+      }
     }
   }
 

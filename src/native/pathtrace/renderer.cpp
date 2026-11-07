@@ -537,7 +537,7 @@ namespace remix {
   PathTracer::~PathTracer() = default;
 
   void PathTracer::initialize(VkPhysicalDevice physical, VkDevice device, uint32_t queueFamily, bool preparing,
-                              bool rasterPrimary, std::shared_ptr<postfx::State> exposureState) {
+                              bool rasterPrimary, std::shared_ptr<postfx::State> exposureState, bool opacityMicromaps) {
     m_gpu = std::make_unique<Gpu>();
     auto &g = *m_gpu;
     g.physical = physical;
@@ -575,6 +575,19 @@ namespace remix {
     LOAD(buildAs, vkCmdBuildAccelerationStructuresKHR);
     LOAD(copyAs, vkCmdCopyAccelerationStructureKHR);
     LOAD(writeAsProperties, vkCmdWriteAccelerationStructuresPropertiesKHR);
+    if (opacityMicromaps) {
+      LOAD(createMicromap, vkCreateMicromapEXT);
+      LOAD(destroyMicromap, vkDestroyMicromapEXT);
+      LOAD(micromapBuildSizes, vkGetMicromapBuildSizesEXT);
+      LOAD(cmdBuildMicromaps, vkCmdBuildMicromapsEXT);
+      LOAD(pipelineBarrier2, vkCmdPipelineBarrier2KHR);
+      VkPhysicalDeviceOpacityMicromapPropertiesEXT micromap = {
+          .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPACITY_MICROMAP_PROPERTIES_EXT};
+      VkPhysicalDeviceProperties2 limits = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+                                            .pNext = &micromap};
+      vkGetPhysicalDeviceProperties2(physical, &limits);
+      g.micromapLevelLimit = std::min(micromap.maxOpacity4StateSubdivisionLevel, scene::OpacityMicromap::maxLevel);
+    }
 #undef LOAD
     VkDescriptorSetLayoutBinding bindings[16] = {};
     for (unsigned i = 0; i < 16; ++i) {

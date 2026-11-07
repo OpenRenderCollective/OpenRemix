@@ -88,10 +88,27 @@ namespace remix::trace::detail {
       free.emplace(offset, size);
     }
   };
+  // A VK_EXT_opacity_micromap object, its storage and its build input (the
+  // micro-triangle data and triangle array). Every BLAS built with it holds it.
+  struct Micromap {
+    VkDevice device = VK_NULL_HANDLE;
+    PFN_vkDestroyMicromapEXT destroy = nullptr;
+    std::unique_ptr<Buffer> storage, input;
+    VkMicromapEXT handle = VK_NULL_HANDLE;
+    VkDeviceAddress data = 0, triangles = 0; // In input, 256-byte aligned.
+    std::vector<VkMicromapUsageEXT> usage;   // Of the whole triangle array.
+    VkMicromapBuildSizesInfoEXT sizes = {.sType = VK_STRUCTURE_TYPE_MICROMAP_BUILD_SIZES_INFO_EXT};
+    bool pending = true; // Not built yet (PathTracer::Gpu::buildBottom).
+    ~Micromap() {
+      if (handle)
+        destroy(device, handle, nullptr);
+    }
+  };
   struct Accel {
     VkDevice device;
     PFN_vkDestroyAccelerationStructureKHR destroy;
     std::shared_ptr<Arena> arena;
+    std::shared_ptr<const Micromap> micromap; // Referenced by this BLAS's geometries.
     VkDeviceSize offset = 0, size = 0;
     VkAccelerationStructureKHR handle = VK_NULL_HANDLE;
     VkDeviceAddress address = 0;
@@ -311,6 +328,7 @@ namespace remix {
     using Image = trace::detail::Image;
     using Arena = trace::detail::Arena;
     using Accel = trace::detail::Accel;
+    using Micromap = trace::detail::Micromap;
     using TraceVertex = trace::detail::TraceVertex;
     using TraceSurface = trace::detail::TraceSurface;
     using Frame = trace::detail::Frame;
@@ -329,6 +347,15 @@ namespace remix {
     PFN_vkCmdBuildAccelerationStructuresKHR buildAs = nullptr;
     PFN_vkCmdCopyAccelerationStructureKHR copyAs = nullptr;
     PFN_vkCmdWriteAccelerationStructuresPropertiesKHR writeAsProperties = nullptr;
+    // VK_EXT_opacity_micromap (null without device support).
+    PFN_vkCreateMicromapEXT createMicromap = nullptr;
+    PFN_vkDestroyMicromapEXT destroyMicromap = nullptr;
+    PFN_vkGetMicromapBuildSizesEXT micromapBuildSizes = nullptr;
+    PFN_vkCmdBuildMicromapsEXT cmdBuildMicromaps = nullptr;
+    PFN_vkCmdPipelineBarrier2KHR pipelineBarrier2 = nullptr;
+    // The deepest 4-state subdivision the device builds (0: no micromaps).
+    uint32_t micromapLevelLimit = 0;
+    std::unique_ptr<Buffer> micromapScratch;
     VkDescriptorSetLayout setLayout = VK_NULL_HANDLE;
     VkDescriptorPool pool = VK_NULL_HANDLE;
     VkDescriptorSet set = VK_NULL_HANDLE;
@@ -786,6 +813,10 @@ namespace remix {
       uint32_t surface = 0, count = 0;
       VkDeviceSize indices = 0, triangleMap = 0;
       bool opaque = false;
+      // Opacity micromap: the content offset of this group's micromap index
+      // per triangle (0: none), and its stored triangles per subdivision level.
+      VkDeviceSize micromapIndices = 0;
+      std::array<uint32_t, scene::OpacityMicromap::maxLevel + 1> micromapUsage{};
     };
     struct Geometry {
       std::unique_ptr<Buffer> input;
@@ -795,6 +826,12 @@ namespace remix {
       std::vector<VkDeviceSize> indexOffsets;
       std::vector<GeometryGroup> groups;
       std::shared_ptr<Accel> accel;
+      // Opacity micromap of the groups with micromapIndices, and what their
+      // geometries' pNext chains point to.
+      std::shared_ptr<Micromap> micromap;
+      uint64_t micromapHash = 0;
+      std::vector<VkAccelerationStructureTrianglesOpacityMicromapEXT> micromapGeometries;
+      std::vector<std::vector<VkMicromapUsageEXT>> micromapUsage;
       uint64_t fingerprint = 0, revision = 0;
       uint64_t topologyHash = 0; // GeometryScratch::topologyHash of input
       float diagonal = 0;
@@ -843,6 +880,11 @@ namespace remix {
       std::vector<float> attributeScratch, normalScratch; // Per-surface gathers, reused
       uint64_t topologyHash = 0;
       float low[3] = {}, high[3] = {};
+      // Every surface's opacity micromap, concatenated (micromapIndices refer
+      // to these triangles), and the identity of both.
+      std::vector<uint8_t> micromapData;
+      std::vector<scene::OpacityMicromap::Triangle> micromapTriangles;
+      uint64_t micromapHash = 0;
       size_t bytes() const {
         size_t size = content.capacity() + shading.capacity() * sizeof(std::vector<TraceVertex>) +
                       (vertexOffsets.capacity() + indexOffsets.capacity()) * sizeof(VkDeviceSize) +
@@ -851,7 +893,8 @@ namespace remix {
                       (shadingHashes.capacity() + positionHashes.capacity() + attributeHashes.capacity() +
                        normalHashes.capacity()) *
                           sizeof(uint64_t) +
-                      (attributeScratch.capacity() + normalScratch.capacity()) * sizeof(float);
+                      (attributeScratch.capacity() + normalScratch.capacity()) * sizeof(float) +
+                      micromapData.capacity() + micromapTriangles.capacity() * sizeof(scene::OpacityMicromap::Triangle);
         for (const auto &vertices : shading)
           size += vertices.capacity() * sizeof(TraceVertex);
         return size;
@@ -890,6 +933,8 @@ namespace remix {
                        size_t partitionCount);
     std::vector<size_t> partitionOffsets;
     static void convertMesh(MeshConversion &conversion);
+    // Creates the micromap of a conversion's BLAS input (built by buildBottom).
+    std::shared_ptr<Micromap> micromap(VkCommandBuffer command, const GeometryScratch &data);
     void commitMesh(VkCommandBuffer command, MeshConversion &conversion);
     std::vector<MeshConversion> conversions; // reused storage; see Gpu::prepare
     std::unique_ptr<WorkerPool> workers;
@@ -1147,6 +1192,8 @@ namespace remix {
     uint64_t geometryTicks = 0; // FramePerformanceEXT geometry time, per-instance timer.
     void complete(VkCommandBuffer command);
     void buildBottom(VkCommandBuffer command);
+    // Records the builds of these BLASes' unbuilt micromaps, before the BLAS builds.
+    void buildMicromaps(VkCommandBuffer command, const std::vector<std::shared_ptr<Geometry>> &work);
     std::unique_ptr<Buffer> topScratch;
     // staticGeneration: nonzero when staticInputs are the frame tables' static
     // prefix of that generation; one the static TLAS was built from (or found

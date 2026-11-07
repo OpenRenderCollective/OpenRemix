@@ -86,8 +86,11 @@ namespace remix {
     static constexpr uint32_t textureLimit = 4096;
     PathTracer();
     ~PathTracer();
+    // opacityMicromaps: VK_EXT_opacity_micromap and synchronization2 are
+    // enabled on the device.
     void initialize(VkPhysicalDevice physical, VkDevice device, uint32_t queueFamily, bool preparing = false,
-                    bool rasterPrimary = true, std::shared_ptr<postfx::State> exposureState = {});
+                    bool rasterPrimary = true, std::shared_ptr<postfx::State> exposureState = {},
+                    bool opacityMicromaps = false);
     std::shared_ptr<postfx::State> exposureState() const;
     VkExtent2D renderExtent() const;
     void setPostProcessing(postfx::Renderer *renderer, bool retainExposure = false);
