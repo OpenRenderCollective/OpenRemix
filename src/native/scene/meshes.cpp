@@ -57,7 +57,13 @@ namespace remix {
         finite(sprite.frame, 3);
         finite(values, 5);
       } else if (std::isfinite(src.normal[0]) && std::isfinite(src.normal[1]) && std::isfinite(src.normal[2])) {
-        const float length = std::hypot(src.normal[0], src.normal[1], src.normal[2]);
+        // sqrt where the squares cannot overflow or underflow (std::hypot is
+        // far slower and only needed outside that range).
+        const float squares =
+            src.normal[0] * src.normal[0] + src.normal[1] * src.normal[1] + src.normal[2] * src.normal[2];
+        const float length = squares > 1e-30f && squares < 1e30f
+                                 ? std::sqrt(squares)
+                                 : std::hypot(src.normal[0], src.normal[1], src.normal[2]);
         if (length > 1e-12f)
           for (int c = 0; c < 3; ++c)
             dst.normal[c] = src.normal[c] / length;
