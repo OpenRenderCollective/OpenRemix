@@ -193,6 +193,14 @@ REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_UpdateLightDefinition(remixap
   return resourceCall([&](auto &resources) { resources.updateLight(handle, *info); });
 }
 
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_UpdateMeshVerticesEXT(remixapi_MeshHandle mesh,
+                                                                         uint32_t surfaceCount,
+                                                                         const remixapi_MeshVerticesEXT *surfaces) {
+  if (!mesh || !surfaceCount || !surfaces)
+    return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
+  return resourceCall([&](auto &resources) { resources.updateMeshVertices(mesh, surfaceCount, surfaces); });
+}
+
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_UpdateTextureEXT(remixapi_TextureHandle handle, uint32_t x,
                                                                     uint32_t y, uint32_t width, uint32_t height,
                                                                     remixapi_Format format, const void *pixels,
