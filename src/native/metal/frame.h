@@ -6,6 +6,7 @@
 // are checked against the translated shaders' reflection (shaders/embedded.h
 // layout constants) so a field added upstream fails the build here.
 #include "metal/shaders/embedded.h"
+#include "scene/portals.h"
 #include "scene/types.h"
 #include <cstddef>
 #include <cstdint>
@@ -123,8 +124,14 @@ namespace remix::metal::trace {
     // radius (rtx.subsurface.diffusionProfileScale in them) and the thickness scale.
     uint64_t woundVertices = 0;
     float subsurfaceUnits = 0, subsurfaceThickness = 1;
+    // remixapi_MaterialInfoPortalEXT (pathtrace/gpu.h): the Metal backend
+    // writes none, so every pair stays closed.
+    float rayPortals[scene::rayPortalSlots][4][4] = {};
+    uint32_t rayPortalConfig[4] = {};
+    float rayPortalPlanes[scene::rayPortalSlots] = {};
   };
-  static_assert(sizeof(Frame) == 2336 && offsetof(Frame, woundVertices) == 2320 &&
+  static_assert(sizeof(Frame) == 2896 && offsetof(Frame, rayPortalPlanes) == 2864 &&
+                offsetof(Frame, rayPortals) == 2336 && offsetof(Frame, woundVertices) == 2320 &&
                 offsetof(Frame, screenCameras) == 1808 && offsetof(Frame, srgbTextures) == 1280 &&
                 offsetof(Frame, pathDebug) == 1792 && offsetof(Frame, localProbeRead) == 1168 &&
                 offsetof(Frame, localProbeParams) == 1184 && offsetof(Frame, volumeLightScales) == 1200 &&
