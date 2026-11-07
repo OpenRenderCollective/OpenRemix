@@ -17,10 +17,10 @@ namespace remix {
     auto &h = g.hdr;
     const auto &settings = m_profiles.current();
     const bool wanted = settings.hdr && m_window.hdrEnabled() && !settings.frameGeneration;
-    h.status = wanted                       ? std::string()
-               : !settings.hdr              ? "turned off"
-               : !m_window.hdrEnabled()     ? "the display has no extended dynamic range"
-                                            : "frame generation is on (Metal presents it in SDR)";
+    h.status = wanted                   ? std::string()
+               : !settings.hdr          ? "turned off"
+               : !m_window.hdrEnabled() ? "the display has no extended dynamic range"
+                                        : "frame generation is on (Metal presents it in SDR)";
     if (wanted != h.active) {
       // The frames in flight finish with the formats they were recorded for.
       id<MTLCommandBuffer> drain = [g.queue commandBuffer];
@@ -114,7 +114,8 @@ namespace remix {
     pass.colorAttachments[0].texture = (__bridge id<MTLTexture>)drawableTexture;
     pass.colorAttachments[0].loadAction = MTLLoadActionDontCare;
     pass.colorAttachments[0].storeAction = MTLStoreActionStore;
-    id<MTLRenderCommandEncoder> encoder = metal::renderEncoder(command, pass, @"HDR10 encode (BT.2020 PQ)", g.width, g.height);
+    id<MTLRenderCommandEncoder> encoder =
+        metal::renderEncoder(command, pass, @"HDR10 encode (BT.2020 PQ)", g.width, g.height);
     id<MTLTexture> backBuffer = h.backBuffers[g.frameIndex];
     h.set.begin(g.frameIndex);
     h.set.texture(0, backBuffer, h.sampler);
@@ -123,7 +124,8 @@ namespace remix {
     [encoder setFragmentBuffer:h.set.current() offset:h.set.offset() atIndex:0];
     [encoder useResource:backBuffer usage:MTLResourceUsageRead stages:MTLRenderStageFragment];
     const auto &settings = frameSettings();
-    const float paperWhite = HdrNits{settings.hdrPeakNits, settings.hdrPaperWhiteNits, settings.hdrUiNits}.clamped().paperWhite;
+    const float paperWhite =
+        HdrNits{settings.hdrPeakNits, settings.hdrPaperWhiteNits, settings.hdrUiNits}.clamped().paperWhite;
     const auto &source = metal::library(metal::shaders::Stage::hdr10);
     if (source.push != 0xff)
       [encoder setFragmentBytes:&paperWhite length:sizeof(paperWhite) atIndex:source.push];

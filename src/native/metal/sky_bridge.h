@@ -103,8 +103,7 @@ namespace remix::sky {
     const Resource &get(numos::GpuHandle handle) const;
     id<MTLTexture> view(Resource &texture, uint32_t mip, uint32_t count, bool storage);
     // Room in one of the slot's rings (staging or arguments), growing it as needed.
-    std::pair<id<MTLBuffer>, size_t> allocate(std::vector<Ring> &rings, size_t size, size_t alignment,
-                                             size_t chunk);
+    std::pair<id<MTLBuffer>, size_t> allocate(std::vector<Ring> &rings, size_t size, size_t alignment, size_t chunk);
     std::pair<id<MTLBuffer>, size_t> stage(const void *data, size_t size);
     // Copies a buffer holding one texel image per (mip, layer) or depth slice into the texture.
     void copyToTexture(id<MTLBuffer> source, size_t offset, size_t rowBytes, Resource &target, uint32_t mip);

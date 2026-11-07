@@ -58,21 +58,17 @@ namespace remix {
     }
     rendered = false;
     pendingTime = std::chrono::steady_clock::now();
-    rouletteActive =
-        options.russianRoulette && options.rouletteMinBounces < options.bounces && !rouletteFailed;
-    const uint64_t integrator =
-        options.samples | uint64_t(options.bounces) << 8 | uint64_t(options.accumulate) << 16 |
-        uint64_t(bool(denoiser) && postReblur) << 17 | uint64_t(bool(denoiser) && postTaa) << 18 |
-        uint64_t(options.rasterPrimary) << 19 | uint64_t(bool(sharc.stats.active)) << 20 |
-        uint64_t(options.sharcDebug) << 21 | uint64_t(options.pbrLocalReuse) << 22 |
-        uint64_t(options.russianRoulette) << 23 | uint64_t(options.rouletteMinBounces) << 24 |
-        uint64_t(rouletteFailed) << 27;
+    rouletteActive = options.russianRoulette && options.rouletteMinBounces < options.bounces && !rouletteFailed;
+    const uint64_t integrator = options.samples | uint64_t(options.bounces) << 8 | uint64_t(options.accumulate) << 16 |
+                                uint64_t(bool(denoiser) && postReblur) << 17 |
+                                uint64_t(bool(denoiser) && postTaa) << 18 | uint64_t(options.rasterPrimary) << 19 |
+                                uint64_t(bool(sharc.stats.active)) << 20 | uint64_t(options.sharcDebug) << 21 |
+                                uint64_t(options.pbrLocalReuse) << 22 | uint64_t(options.russianRoulette) << 23 |
+                                uint64_t(options.rouletteMinBounces) << 24 | uint64_t(rouletteFailed) << 27;
     history.begin(resources.temporalEpoch(), integrator, extent.width, extent.height);
     pendingVertices.clear();
     pendingVertices.reserve(previousVertices.size());
-    const auto emissionMode = options.freezeEmissiveRadiance      ? 2u
-                              : options.stabilizeEmissiveLighting ? 1u
-                                                                  : 0u;
+    const auto emissionMode = options.freezeEmissiveRadiance ? 2u : options.stabilizeEmissiveLighting ? 1u : 0u;
     std::vector<VkDescriptorImageInfo> textures;
     // The slots of textures holding sRGB-encoded texels (frame.srgbTextures).
     std::vector<uint32_t> srgbSlots;
@@ -127,18 +123,12 @@ namespace remix {
     gpu::GpuScope uploadTime(command, "Scene uploads (geometry, textures)");
     assembleJobs.clear(); // Only this command buffer's copies feed its jobs.
     TableViews views{this, command};
-    const trace::FrameTables<TableViews>::Inputs tableInputs{prepared,
-                                                             &statics,
-                                                             history,
-                                                             previousVertices,
-                                                             pendingVertices,
-                                                             *workers,
-                                                             ++prepareSerial,
-                                                             options.pbrLocalReuse,
-                                                             digestEnabled,
-                                                             PathTracer::textureLimit,
-                                                             &materialTicks,
-                                                             &temporalTicks,
+    const trace::FrameTables<TableViews>::Inputs tableInputs{prepared,        &statics,
+                                                             history,         previousVertices,
+                                                             pendingVertices, *workers,
+                                                             ++prepareSerial, options.pbrLocalReuse,
+                                                             digestEnabled,   PathTracer::textureLimit,
+                                                             &materialTicks,  &temporalTicks,
                                                              rrActive()};
     tables.build(views, tableInputs);
     {
@@ -162,8 +152,7 @@ namespace remix {
           std::snprintf(out.mismatch, sizeof(out.mismatch), "%s", mismatch.c_str());
           if (!staticMismatchLogged) {
             staticMismatchLogged = true;
-            std::fprintf(stderr, "Persistent static set: kept tables differ from a rebuild: %s\n",
-                         mismatch.c_str());
+            std::fprintf(stderr, "Persistent static set: kept tables differ from a rebuild: %s\n", mismatch.c_str());
           }
         }
       }
@@ -196,7 +185,7 @@ namespace remix {
         const auto &material = *request.material;
         return resources.textureSrgb(request.kind == trace::DescriptorRequest::Albedo ? material.texture.get()
                                      : request.kind == trace::DescriptorRequest::Map  ? request.texture->get()
-                                                                                       : material.emissionTexture.get());
+                                                                                      : material.emissionTexture.get());
       };
       textures.reserve(tables.requestCount() + 1);
       if (const auto *prefix = tables.prefix()) {
@@ -281,8 +270,8 @@ namespace remix {
     }
     {
       gpu::GpuScope scope(command, "TLAS builds");
-      buildTop(command, tables.staticInputs(), tables.dynamicInputs(), options.forceRebuild,
-               tables.staticGeneration(), faceCulling, options.combinedTlas);
+      buildTop(command, tables.staticInputs(), tables.dynamicInputs(), options.forceRebuild, tables.staticGeneration(),
+               faceCulling, options.combinedTlas);
       barrier(command, buildStage, asWrite, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, asRead);
     }
     if (timestamps)
@@ -360,8 +349,8 @@ namespace remix {
         ++tableCosts.grown;
       }
       if (!table || table->size < tableBytes) {
-        table = buffer(tableCapacity, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, false,
-                       true);
+        table =
+            buffer(tableCapacity, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, false, true);
         tableShadow.clear(); // a new buffer holds nothing yet
         ++tableCosts.grown;
       }
@@ -482,13 +471,15 @@ namespace remix {
           hostBuffer(out, data, size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
         }
       };
-      if (visibilityPartitionVersion != partition.version || (visibilityNodes && visibilityNodes->host == deviceLocalScene)) {
+      if (visibilityPartitionVersion != partition.version ||
+          (visibilityNodes && visibilityNodes->host == deviceLocalScene)) {
         visibilityPartitionVersion = partition.version;
         place(visibilityNodes, partition.nodes.data(), partition.nodes.size() * sizeof(partition.nodes[0]));
         place(visibilityLeaves, partition.leafClusters.data(),
               std::max<size_t>(1, partition.leafClusters.size()) * sizeof(int32_t));
       }
-      if (visibilityTableVersion != lightVisibility.version() || (visibilityTable && visibilityTable->host == deviceLocalScene)) {
+      if (visibilityTableVersion != lightVisibility.version() ||
+          (visibilityTable && visibilityTable->host == deviceLocalScene)) {
         visibilityTableVersion = lightVisibility.version();
         const auto &table = *lightVisibility.table();
         place(visibilityTable, table.data(), std::max<size_t>(1, table.size()) * sizeof(uint32_t));
@@ -597,9 +588,9 @@ namespace remix {
     frame.splitLocal[3] = debugView;
     frame.localConfig[1] = options.localSamples;
     frame.localConfig[2] = uint32_t(lightBvh.lightingGeneration);
-    frame.localConfig[3] =
-        uint32_t(lightBvh.lightingGeneration >> 32) | (options.adaptiveLocalSampling ? 0x80000000u : 0u) |
-        (hasEmissiveLights ? 0u : 0x40000000u); // sphere-only set: guide sphere lights too
+    frame.localConfig[3] = uint32_t(lightBvh.lightingGeneration >> 32) |
+                           (options.adaptiveLocalSampling ? 0x80000000u : 0u) |
+                           (hasEmissiveLights ? 0u : 0x40000000u); // sphere-only set: guide sphere lights too
     frame.localScale[0] = options.localIntensity;
     frame.localScale[1] = options.localRange;
     // Private, previously unused shader word: bounded candidate count. Keep
@@ -612,8 +603,8 @@ namespace remix {
                          options.emissiveCandidates)
             : options.emissiveCandidates;
     frame.localScale[2] = lightBvh.emitters().size() <= 4 ? 1.f
-                          : hasEmissiveLights           ? float(emissiveCandidates)
-                                                        : float(options.sphereCandidates);
+                          : hasEmissiveLights             ? float(emissiveCandidates)
+                                                          : float(options.sphereCandidates);
     localResamplingActive = localIlluminationActive && frame.localScale[2] > 1;
     frame.localScale[3] = options.localRange > 0 ? 1.f / (options.localRange * options.localRange) : 0;
     frame.camera = resources.camera();
@@ -675,16 +666,14 @@ namespace remix {
     }
 #endif
     if (options.overrideLight) {
-      float norm =
-          std::hypot(options.lightDirection[0], options.lightDirection[1], options.lightDirection[2]);
+      float norm = std::hypot(options.lightDirection[0], options.lightDirection[1], options.lightDirection[2]);
       if (norm > 1e-6f)
         for (int i = 0; i < 3; ++i)
           light.direction[i] = options.lightDirection[i] / norm;
       for (int i = 0; i < 3; ++i)
         light.radiance[i] = options.lightColor[i] * options.lightIntensity;
     }
-    const float diameter =
-        options.sunAngularDiameter >= 0 ? options.sunAngularDiameter : light.angularDiameterDegrees;
+    const float diameter = options.sunAngularDiameter >= 0 ? options.sunAngularDiameter : light.angularDiameterDegrees;
     frame.sun[0] = std::tan(diameter * (3.14159265359f / 360.f));
     frame.sun[1] = denoiser && postSigma;
     configureBlueNoise(command, frame, options);
@@ -767,9 +756,9 @@ namespace remix {
     overlay.environment = frame.skyRadiance[3] > 0 && size_t(frame.skyRadiance[3]) <= textures.size()
                               ? textures[size_t(frame.skyRadiance[3]) - 1]
                               : VkDescriptorImageInfo{};
-    overlay.environmentSrgb = frame.skyRadiance[3] > 0 &&
-                              std::find(srgbSlots.begin(), srgbSlots.end(), uint32_t(frame.skyRadiance[3]) - 1) !=
-                                  srgbSlots.end();
+    overlay.environmentSrgb =
+        frame.skyRadiance[3] > 0 &&
+        std::find(srgbSlots.begin(), srgbSlots.end(), uint32_t(frame.skyRadiance[3]) - 1) != srgbSlots.end();
     for (unsigned row = 0; row < 3; ++row)
       for (unsigned col = 0; col < 3; ++col)
         overlay.domeTransform[row][col] = frame.domeTransform[row][col];
@@ -820,7 +809,8 @@ namespace remix {
       for (uint32_t index = 0; index < scene::rayPortalSlots; ++index) {
         const auto &slot = portals.slots[index];
         std::copy_n(slot.data(), 16, &frame.rayPortals[index][0][0]);
-        if (slot[15] != 0 && (slot != lastRayPortals.slots[index] || portals.slots[index ^ 1] != lastRayPortals.slots[index ^ 1]))
+        if (slot[15] != 0 &&
+            (slot != lastRayPortals.slots[index] || portals.slots[index ^ 1] != lastRayPortals.slots[index ^ 1]))
           frame.rayPortals[index][3][3] += 2;
       }
       frame.rayPortalConfig[0] = std::min(options.rayPortalTeleports, 8u);
@@ -860,9 +850,8 @@ namespace remix {
     frame.target[3] = options.rasterPrimary;
     // Reserved private word; included in scene-change detection. Raw/reference
     // and multi-sample rendering retain one estimator at every surface pixel.
-    frame.jitter[2] = options.waterIndirectReuse && options.indirectClamp == 0 && denoiser &&
-                      (postTaa || upscaler) && !options.accumulate && options.samples == 1 &&
-                      options.bounces > 0;
+    frame.jitter[2] = options.waterIndirectReuse && options.indirectClamp == 0 && denoiser && (postTaa || upscaler) &&
+                      !options.accumulate && options.samples == 1 && options.bounces > 0;
     frame.firefly[0] = options.localDirectClamp;
     frame.firefly[1] = options.indirectClamp;
     frame.subsurfaceUnits = options.subsurfaceProfileScale / options.sceneScale;
@@ -919,9 +908,9 @@ namespace remix {
     append(&options.neuralUpliftFeatureId, sizeof(options.neuralUpliftFeatureId));
     currentTraceOptions = options;
     const uint64_t cacheSettings[] = {
-        options.sharcReset,     options.sharcCapacityLog2,       options.sharcSceneScale,
-        options.sharcDownscale, options.sharcAccumulationFrames, options.sharcStaleFrames,
-        options.sharcMotionFrames, options.sharcMaxUpdatePaths, options.sharcDynamicSurfaces,
+        options.sharcReset,          options.sharcCapacityLog2,       options.sharcSceneScale,
+        options.sharcDownscale,      options.sharcAccumulationFrames, options.sharcStaleFrames,
+        options.sharcMotionFrames,   options.sharcMaxUpdatePaths,     options.sharcDynamicSurfaces,
         options.sharcGlossySurfaces, options.sharcFootprintTest};
     append(cacheSettings, sizeof(cacheSettings));
     append(&options.sharcFireflyClamp, sizeof(options.sharcFireflyClamp));
@@ -938,8 +927,8 @@ namespace remix {
     if (sceneChanged || history.reset())
       reconstructionWarmFrames = 0;
     // An unchanged world can reuse its cached output once both histories are warm.
-    if (!sceneChanged && !profileEveryFrame && !std::getenv("REMIX_PATH_LINEAR_CAPTURE") &&
-        !options.accumulate && !debugView && !postProcessing->needsGuide() && denoiser && !denoiser->statistics().redrawRequested &&
+    if (!sceneChanged && !profileEveryFrame && !std::getenv("REMIX_PATH_LINEAR_CAPTURE") && !options.accumulate &&
+        !debugView && !postProcessing->needsGuide() && denoiser && !denoiser->statistics().redrawRequested &&
         !history.reset() && !((upscaler || options.neuralUplift) && reconstructionWarmFrames < 128) &&
         !(sharc.stats.active && sharc.hasReceivers && sharc.warmFrames < 2 * options.sharcAccumulationFrames))
       return;
@@ -973,20 +962,20 @@ namespace remix {
     temporalFrame.hitDistance[0] = 3.f / options.sceneScale;
     // The frame's draws, and the static set's when it is traced from its units.
     const bool staticUnits = prepared.staticUnits;
-    temporalFrame.shadow[2] =
-        (staticUnits && statics.livePbrSurfaces()) ||
-        std::any_of(resources.draws().begin(), resources.draws().end(),
-                    [](const auto &draw) { return draw.traced() && draw.material->pbr; });
-    temporalFrame.shadow[3] =
-        (staticUnits && statics.liveSurfaces() > statics.livePbrSurfaces()) ||
-        std::any_of(resources.draws().begin(), resources.draws().end(),
-                    [](const auto &draw) { return draw.traced() && !draw.material->pbr; });
+    temporalFrame.shadow[2] = (staticUnits && statics.livePbrSurfaces()) ||
+                              std::any_of(resources.draws().begin(), resources.draws().end(),
+                                          [](const auto &draw) { return draw.traced() && draw.material->pbr; });
+    temporalFrame.shadow[3] = (staticUnits && statics.liveSurfaces() > statics.livePbrSurfaces()) ||
+                              std::any_of(resources.draws().begin(), resources.draws().end(),
+                                          [](const auto &draw) { return draw.traced() && !draw.material->pbr; });
     // Table entries with blending enabled (state[3] bit 1): blended geometry.
-    temporalFrame.translucency[0] = denoiser && (postReblur || (rrActive() && postCapabilities.reblurShSupported)) && options.translucencyDenoiser &&
-        hasBlendedGeometry;
+    temporalFrame.translucency[0] = denoiser && (postReblur || (rrActive() && postCapabilities.reblurShSupported)) &&
+                                    options.translucencyDenoiser && hasBlendedGeometry;
     temporalFrame.translucency[1] = denoiser && postReblur && !rrActive() && options.translucencyReuse &&
-        options.bounces > 0 && options.indirectClamp == 0 && !debugView && hasBlendedGeometry;
-    temporalFrame.translucency[2] = denoiser && psrCompute && options.rasterPrimary && options.primarySurfaceReplacement;
+                                    options.bounces > 0 && options.indirectClamp == 0 && !debugView &&
+                                    hasBlendedGeometry;
+    temporalFrame.translucency[2] =
+        denoiser && psrCompute && options.rasterPrimary && options.primarySurfaceReplacement;
     temporalFrame.local[0] = denoiser && postLocalDenoise;
     temporalFrame.local[1] = frame.localConfig[0];
     temporalFrame.local[2] = localResponsiveFrames;
@@ -994,9 +983,8 @@ namespace remix {
       std::fprintf(stderr,
                    "EMISSION mode=%u sources=%zu raw_delta=%.6f filtered_delta=%.6f response=%u "
                    "generation=%llu visibility=%llu\n",
-                   emissionMode, emissionHistory.size(), emissionHistory.rawChange,
-                   emissionHistory.filteredChange, localResponsiveFrames,
-                   static_cast<unsigned long long>(lightBvh.lightingGeneration),
+                   emissionMode, emissionHistory.size(), emissionHistory.rawChange, emissionHistory.filteredChange,
+                   localResponsiveFrames, static_cast<unsigned long long>(lightBvh.lightingGeneration),
                    static_cast<unsigned long long>(lightBvh.visibilityGeneration));
     temporalFrame.local[3] = frame.splitLocal[0];
     for (unsigned i = 0; i < 2; ++i) {
@@ -1104,8 +1092,8 @@ namespace remix {
     temporalFrame.target[3] = options.samples;
     temporalFrame.timing[0] =
         previousTime.time_since_epoch().count()
-            ? std::clamp(float(std::chrono::duration<double, std::milli>(pendingTime - previousTime).count()),
-                         1.f, 1000.f)
+            ? std::clamp(float(std::chrono::duration<double, std::milli>(pendingTime - previousTime).count()), 1.f,
+                         1000.f)
             : 16.6667f;
     temporalFrame.timing[1] = options.validation;
     temporalFrame.timing[2] = sceneChanged;
@@ -1127,8 +1115,7 @@ namespace remix {
       radianceDelta += std::abs(pendingSun[i + 3] - previousSun[i + 3]);
       previousRadiance += previousSun[i + 3];
     }
-    temporalFrame.shadow[0] = directionDelta > .01f ||
-                              radianceDelta > std::max(.1f, previousRadiance * .5f) ||
+    temporalFrame.shadow[0] = directionDelta > .01f || radianceDelta > std::max(.1f, previousRadiance * .5f) ||
                               diameter != previousSun[6] || pendingSun[8] != previousSun[8];
     temporalFrame.shadow[1] = uint32_t(frame.sun[2]);
     frame.lightNodes = lightNodes ? lightNodes->address : 0;
@@ -1147,7 +1134,8 @@ namespace remix {
       if (movedLights)
         retiredBuffers.push_back(std::move(movedLights));
       if (!moved.empty() && deviceLocalScene)
-        movedLights = upload(command, moved.data(), moved.size() * sizeof(moved[0]), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+        movedLights =
+            upload(command, moved.data(), moved.size() * sizeof(moved[0]), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
       else if (!moved.empty())
         hostBuffer(movedLights, moved.data(), moved.size() * sizeof(moved[0]), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
       frame.movedLights = movedLights ? movedLights->address : 0;
@@ -1209,7 +1197,8 @@ namespace remix {
       const VkDeviceSize bytes = VkDeviceSize(extent.width) * extent.height * 16;
       if (!sheetResults || sheetResults->size < bytes) {
         auto next = buffer(bytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, false);
-        if (sheetResults) retiredBuffers.push_back(std::move(sheetResults));
+        if (sheetResults)
+          retiredBuffers.push_back(std::move(sheetResults));
         sheetResults = std::move(next);
       }
       frame.sheetResults = sheetResults->address;
@@ -1262,26 +1251,25 @@ namespace remix {
       textures.push_back(resources.sampledMaterial(resources.defaultMaterial(), command));
     breakdown.textureDescriptors += textures.size();
     textures.resize(PathTracer::textureLimit, textures.front());
-    VkDescriptorBufferInfo buffers[] = {{table->handle, 0, tableBytes},
-                                        {uniform->handle, 0, sizeof(frame)}};
-    VkDescriptorImageInfo images[] = {{VK_NULL_HANDLE, world->view, VK_IMAGE_LAYOUT_GENERAL},
-                                      {VK_NULL_HANDLE, transmission->view, VK_IMAGE_LAYOUT_GENERAL},
-                                      {VK_NULL_HANDLE, sky->view, VK_IMAGE_LAYOUT_GENERAL},
-                                      {VK_NULL_HANDLE, primary[0]->view, VK_IMAGE_LAYOUT_GENERAL},
-                                      {VK_NULL_HANDLE, primary[1]->view, VK_IMAGE_LAYOUT_GENERAL},
-                                      {VK_NULL_HANDLE, primary[2]->view, VK_IMAGE_LAYOUT_GENERAL},
-                                      {VK_NULL_HANDLE, primary[3]->view, VK_IMAGE_LAYOUT_GENERAL},
-                                      {VK_NULL_HANDLE, primary[4]->view, VK_IMAGE_LAYOUT_GENERAL},
-                                      {VK_NULL_HANDLE, primary[5]->view, VK_IMAGE_LAYOUT_GENERAL},
-                                      {VK_NULL_HANDLE, primary[6]->view, VK_IMAGE_LAYOUT_GENERAL},
-                                      {VK_NULL_HANDLE, postProcessing->materialGuide() ? postProcessing->materialGuide() : primary[6]->view, VK_IMAGE_LAYOUT_GENERAL}};
+    VkDescriptorBufferInfo buffers[] = {{table->handle, 0, tableBytes}, {uniform->handle, 0, sizeof(frame)}};
+    VkDescriptorImageInfo images[] = {
+        {VK_NULL_HANDLE, world->view, VK_IMAGE_LAYOUT_GENERAL},
+        {VK_NULL_HANDLE, transmission->view, VK_IMAGE_LAYOUT_GENERAL},
+        {VK_NULL_HANDLE, sky->view, VK_IMAGE_LAYOUT_GENERAL},
+        {VK_NULL_HANDLE, primary[0]->view, VK_IMAGE_LAYOUT_GENERAL},
+        {VK_NULL_HANDLE, primary[1]->view, VK_IMAGE_LAYOUT_GENERAL},
+        {VK_NULL_HANDLE, primary[2]->view, VK_IMAGE_LAYOUT_GENERAL},
+        {VK_NULL_HANDLE, primary[3]->view, VK_IMAGE_LAYOUT_GENERAL},
+        {VK_NULL_HANDLE, primary[4]->view, VK_IMAGE_LAYOUT_GENERAL},
+        {VK_NULL_HANDLE, primary[5]->view, VK_IMAGE_LAYOUT_GENERAL},
+        {VK_NULL_HANDLE, primary[6]->view, VK_IMAGE_LAYOUT_GENERAL},
+        {VK_NULL_HANDLE, postProcessing->materialGuide() ? postProcessing->materialGuide() : primary[6]->view,
+         VK_IMAGE_LAYOUT_GENERAL}};
     VkWriteDescriptorSetAccelerationStructureKHR structures[2] = {};
     VkWriteDescriptorSet writes[16] = {};
     for (unsigned i = 0; i < 16; ++i) {
-      writes[i] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-                   .dstSet = set,
-                   .dstBinding = i,
-                   .descriptorCount = 1};
+      writes[i] = {
+          .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = i, .descriptorCount = 1};
       if (i < 2) {
         structures[i] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR,
                          .accelerationStructureCount = 1,
@@ -1289,8 +1277,7 @@ namespace remix {
         writes[i].pNext = &structures[i];
         writes[i].descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
       } else if (i < 4) {
-        writes[i].descriptorType =
-            i == 2 ? VK_DESCRIPTOR_TYPE_STORAGE_BUFFER : VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        writes[i].descriptorType = i == 2 ? VK_DESCRIPTOR_TYPE_STORAGE_BUFFER : VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         writes[i].pBufferInfo = &buffers[i - 2];
       } else {
         writes[i].descriptorType =
@@ -1312,8 +1299,8 @@ namespace remix {
                        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                        .image = i ? transmission->handle : world->handle,
                        .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}};
-      vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                           0, 0, nullptr, 0, nullptr, 2, barriers);
+      vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0,
+                           nullptr, 0, nullptr, 2, barriers);
       imagesInitialized = true;
     } else
       barrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
@@ -1424,12 +1411,11 @@ namespace remix {
                                                     : "its lighting variants are compiling"};
     VkPipeline indirectPipeline = VK_NULL_HANDLE;
     uint32_t indirectKey = UINT32_MAX;
-    vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, denoiser ? temporalLayout : layout, 0, 1,
-                            &set, 0, nullptr);
+    vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, denoiser ? temporalLayout : layout, 0, 1, &set, 0,
+                            nullptr);
     if (denoiser) {
       auto inputs = denoiser->inputs();
-      vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, temporalLayout, 1, 1, &inputs, 0,
-                              nullptr);
+      vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, temporalLayout, 1, 1, &inputs, 0, nullptr);
     }
     // Also with mirrors off: it resolves painted raster pixels once (replaceMirror).
     if (denoiser && psrCompute && options.rasterPrimary) {
@@ -1449,13 +1435,12 @@ namespace remix {
     if (indirectPass.active) {
       // Scratch is queue-ordered across frame slots. Publish last frame's reads
       // before overwriting, then publish this producer to the opaque consumer.
-      barrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-              VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-              VK_ACCESS_SHADER_WRITE_BIT);
+      barrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+              VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT);
       indirectPipeline = selectLightingPipeline(indirectPass.pipeline);
       indirectKey = selectedLightingKey;
-      gpu::GpuScope scope(command, querySharc ? "Trace indirect (separate pass, SHARC query)"
-                                              : "Trace indirect (separate pass)",
+      gpu::GpuScope scope(command,
+                          querySharc ? "Trace indirect (separate pass, SHARC query)" : "Trace indirect (separate pass)",
                           extent);
       bindSelected(command, indirectPipeline);
       vkCmdDispatch(command, (extent.width + 7) / 8, (extent.height + 7) / 8, 1);
@@ -1476,8 +1461,9 @@ namespace remix {
           bindTrace(command, sparseGuides, opaqueLayout, sparseGuidesFeatures);
           vkCmdDispatch(command, (extent.width + 7) / 8, (extent.height + 7) / 8, 1);
         }
-        gpu::GpuScope scope(command, querySharc ? "Trace opaque, selected pixels: direct, sun, local, emissive, indirect+SHARC"
-                                                : "Trace opaque, selected pixels: direct, sun, local, emissive, indirect",
+        gpu::GpuScope scope(command,
+                            querySharc ? "Trace opaque, selected pixels: direct, sun, local, emissive, indirect+SHARC"
+                                       : "Trace opaque, selected pixels: direct, sun, local, emissive, indirect",
                             extent);
         bindTrace(command, sparseLit, opaqueLayout, sparseLitFeatures);
         vkCmdDispatchIndirect(command, sparse.count->handle, 16);
@@ -1539,17 +1525,21 @@ namespace remix {
     const bool forceFallback = fallbackRequested || options.layerReuse;
     if (denoiser && !temporalTransparencyCompute && !multiSheetFailed && !forceFallback) {
       try {
-        createLightingPipelines({{lightingStage(trace::Stage::temporalTransparency), temporalLayout,
-                                  &temporalTransparencyCompute, false}});
+        createLightingPipelines(
+            {{lightingStage(trace::Stage::temporalTransparency), temporalLayout, &temporalTransparencyCompute, false}});
       } catch (VkResult error) {
-        if (error == VK_ERROR_DEVICE_LOST) throw;
+        if (error == VK_ERROR_DEVICE_LOST)
+          throw;
         if (error != VK_NOT_READY) {
           multiSheetFailed = true;
-          std::fprintf(stderr, "Multi-sheet pass unavailable (%d); composing layered pixels from the front sheet\n", int(error));
+          std::fprintf(stderr, "Multi-sheet pass unavailable (%d); composing layered pixels from the front sheet\n",
+                       int(error));
         }
       }
     }
-    const auto multiSheetPipeline = forceFallback ? VK_NULL_HANDLE : denoiser ? temporalTransparencyCompute : transparencyCompute;
+    const auto multiSheetPipeline = forceFallback ? VK_NULL_HANDLE
+                                    : denoiser    ? temporalTransparencyCompute
+                                                  : transparencyCompute;
     {
       // The front sheet's light (direct, paths, reused GI), for the
       // composition below; this frame's opaque radiance and NRD outputs are
@@ -1659,9 +1649,8 @@ namespace remix {
     frameGeneration = {};
     if (upscaler) {
       upscaler->record(command, denoiser->image(denoise::Composed), denoiser->image(denoise::Depth),
-                       denoiser->image(denoise::Motion), denoiser->image(denoise::Transmission),
-                       pendingProjection, temporalFrame.jitter, temporalFrame.timing[0], options.fsrSharpness,
-                       temporalFrame.flags[0],
+                       denoiser->image(denoise::Motion), denoiser->image(denoise::Transmission), pendingProjection,
+                       temporalFrame.jitter, temporalFrame.timing[0], options.fsrSharpness, temporalFrame.flags[0],
                        {denoiser->image(denoise::RrDiffuse), denoiser->image(denoise::RrSpecular),
                         denoiser->image(denoise::RrNormal), denoiser->image(denoise::RrHitDistance)},
                        resources.view());
@@ -1758,7 +1747,7 @@ namespace remix {
             for (const auto &surface : g.statics.units()[slot].surfaces)
               count(surface);
       std::fprintf(stderr, "OPACITY mixed_surfaces=%llu", static_cast<unsigned long long>(mixed));
-      const char *names[] = {"solid",   "one_sided",       "blended",          "transmission",  "alpha_test",
+      const char *names[] = {"solid",   "one_sided",       "blended",          "transmission",   "alpha_test",
                              "invalid", "missing_texture", "texture_boundary", "texture_cutout", "scrolling"};
       for (unsigned i = 0; i < scene::OpacityPartition::Count; ++i)
         std::fprintf(stderr, " %s=%llu", names[i], static_cast<unsigned long long>(reasons[i]));
@@ -1847,7 +1836,7 @@ namespace remix {
     {
       const auto ms = [](auto a, auto b) { return std::chrono::duration<double, std::milli>(b - a).count(); };
       const auto end = Clock::now();
-      const trace::SceneCosts costs{ms(start, end),         ms(start, classified), ms(classified, pruned),
+      const trace::SceneCosts costs{ms(start, end),           ms(start, classified),  ms(classified, pruned),
                                     ms(stageStart, stageEnd), ms(stageEnd, gathered), ms(gathered, split),
                                     ms(split, treed),         ms(treed, end)};
       auto &totals = trace::g_sceneCosts;
@@ -1871,12 +1860,11 @@ namespace remix {
           std::fprintf(file, "prepare_ms,opacity_ms,prune_ms,lights_ms,lookups,hits,proofs,triangles,"
                              "evictions,owners,textures\n");
         auto ms = [](auto a, auto b) { return std::chrono::duration<double, std::milli>(b - a).count(); };
-        std::fprintf(file, "%.6f,%.6f,%.6f,%.6f,%llu,%llu,%llu,%llu,%llu,%llu,%llu\n", ms(start, prepared),
-                     ms(prepared, classified), ms(classified, pruned), ms(pruned, end),
-                     (unsigned long long)count.lookups, (unsigned long long)count.hits,
-                     (unsigned long long)count.proofs, (unsigned long long)count.triangles,
-                     (unsigned long long)count.evictions, (unsigned long long)count.owners,
-                     (unsigned long long)count.textures);
+        std::fprintf(
+            file, "%.6f,%.6f,%.6f,%.6f,%llu,%llu,%llu,%llu,%llu,%llu,%llu\n", ms(start, prepared),
+            ms(prepared, classified), ms(classified, pruned), ms(pruned, end), (unsigned long long)count.lookups,
+            (unsigned long long)count.hits, (unsigned long long)count.proofs, (unsigned long long)count.triangles,
+            (unsigned long long)count.evictions, (unsigned long long)count.owners, (unsigned long long)count.textures);
         std::fclose(file);
       }
     }
@@ -1920,8 +1908,7 @@ namespace remix {
       ScopedTicks time{g.geometryTicks};
       constexpr size_t instancesPerTask = 512;
       g.workers->run((count + instancesPerTask - 1) / instancesPerTask, [&](size_t task) {
-        for (size_t index = task * instancesPerTask; index < std::min(count, (task + 1) * instancesPerTask);
-             ++index) {
+        for (size_t index = task * instancesPerTask; index < std::min(count, (task + 1) * instancesPerTask); ++index) {
           const auto instance = instances[index];
           auto *partitions = g.partitionStorage.data() + g.partitionOffsets[index];
           for (const auto &preparedSurface : instance)
@@ -1939,8 +1926,8 @@ namespace remix {
       if (pendingConversions == g.conversions.size())
         g.conversions.emplace_back();
       bool convert = false;
-      auto &view = g.meshView(draw, g.partitionStorage.data() + g.partitionOffsets[index],
-                              draw.mesh->surfaces.size(), g.conversions[pendingConversions], convert);
+      auto &view = g.meshView(draw, g.partitionStorage.data() + g.partitionOffsets[index], draw.mesh->surfaces.size(),
+                              g.conversions[pendingConversions], convert);
       g.instanceViews[index] = {&view, convert ? int32_t(pendingConversions++) : -1};
     }
     if (pendingConversions) {
@@ -1995,20 +1982,21 @@ namespace remix {
     ScopedMilliseconds post{g.breakdown.postMilliseconds};
     const auto hdr = g.upscaler && !g.debugView ? g.upscaler->output() : upscale::Input{g.world->handle, g.world->view};
     g.postProcessing->record(command, hdr, options, resources.temporalEpoch(), g.rendered,
-      (g.postProcessing == g.postFallback.get() && !g.retainPostExposure) || options.debugView || options.shadowDebug || options.sharcDebug || options.validation, -1, g.stats.sceneGeneration);
+                             (g.postProcessing == g.postFallback.get() && !g.retainPostExposure) || options.debugView ||
+                                 options.shadowDebug || options.sharcDebug || options.validation,
+                             -1, g.stats.sceneGeneration);
 
     const bool neuralUpliftActive = options.neuralUplift && g.tonemapPass && g.tonemapTarget;
     if (neuralUpliftActive) {
       if (g.rendered || !g.neuralUpliftValid) {
         VkClearValue clear[2] = {};
         clear[1].depthStencil.depth = 1.0f;
-        VkRenderPassBeginInfo rpInfo{
-            .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-            .renderPass = g.tonemapPass,
-            .framebuffer = g.tonemapFramebuffer,
-            .renderArea = {{0, 0}, g.displayExtent},
-            .clearValueCount = 2,
-            .pClearValues = clear};
+        VkRenderPassBeginInfo rpInfo{.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+                                     .renderPass = g.tonemapPass,
+                                     .framebuffer = g.tonemapFramebuffer,
+                                     .renderArea = {{0, 0}, g.displayExtent},
+                                     .clearValueCount = 2,
+                                     .pClearValues = clear};
         vkCmdBeginRenderPass(command, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
 
         if (g.upscaler && !g.debugView) {
@@ -2040,18 +2028,17 @@ namespace remix {
         }
         vkCmdEndRenderPass(command);
 
-        VkImageMemoryBarrier barrier{
-            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-            .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-            .dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
-            .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
-            .newLayout = VK_IMAGE_LAYOUT_GENERAL,
-            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .image = g.tonemapTarget->handle,
-            .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}};
-        vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-                             VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+        VkImageMemoryBarrier barrier{.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                                     .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                                     .dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+                                     .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
+                                     .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+                                     .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                                     .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                                     .image = g.tonemapTarget->handle,
+                                     .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}};
+        vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                             0, 0, nullptr, 0, nullptr, 1, &barrier);
 
         if (!g.neuralUplift) {
           g.neuralUplift = std::make_unique<upscale::NeuralUplift>();
@@ -2076,18 +2063,17 @@ namespace remix {
 
         if (g.ngx)
           g.ngx->initializeDevice();
-        g.neuralUplift->initialize(g.ngx ? g.ngx->instanceHandle() : VK_NULL_HANDLE,
-                                   g.physical, g.device, g.queueFamily, g.displayExtent, nuSettings);
+        g.neuralUplift->initialize(g.ngx ? g.ngx->instanceHandle() : VK_NULL_HANDLE, g.physical, g.device,
+                                   g.queueFamily, g.displayExtent, nuSettings);
 
         const bool resetHistory = !g.neuralUpliftValid || g.temporalFrame.flags[0] != 0;
-        g.neuralUplift->record(command, g.tonemapTarget->handle, g.tonemapTarget->view,
-                               d.image, d.view, m.image, m.view, g.extent, g.pendingProjection.data(),
-                               nuSettings, resetHistory);
+        g.neuralUplift->record(command, g.tonemapTarget->handle, g.tonemapTarget->view, d.image, d.view, m.image,
+                               m.view, g.extent, g.pendingProjection.data(), nuSettings, resetHistory);
 
         barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
         barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-        vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-                             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+        vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0,
+                             nullptr, 0, nullptr, 1, &barrier);
         g.neuralUpliftValid = true;
       }
       g.neuralUpliftRan = true;

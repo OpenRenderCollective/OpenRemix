@@ -10,11 +10,11 @@ namespace remix::upscale {
 
   struct NeuralUpliftSettings {
     bool enable = false;
-    uint32_t passes = 1;              // 1..7 (number of sequential enhancement passes)
-    uint32_t preset = 0;              // 0..7 (NVSDK_NGX_DLSSNR_Hint_Render_Preset)
-    uint32_t style = 0;               // 0..2
-    float intensity = 1.0f;           // 0..1
-    float styleStrength = 1.0f;       // 0..1 (DLSSNR.LocalToneStrength)
+    uint32_t passes = 1;                 // 1..7 (number of sequential enhancement passes)
+    uint32_t preset = 0;                 // 0..7 (NVSDK_NGX_DLSSNR_Hint_Render_Preset)
+    uint32_t style = 0;                  // 0..2
+    float intensity = 1.0f;              // 0..1
+    float styleStrength = 1.0f;          // 0..1 (DLSSNR.LocalToneStrength)
     float localStructureStrength = 1.0f; // 0..2
     float skinStructureStrength = -1.0f; // -1 sentinel, or 0..2
     bool autoMask = true;
@@ -47,9 +47,8 @@ namespace remix::upscale {
     static bool isSupported();
     static const std::string &notSupportedReason();
 
-    void initialize(VkInstance instance, VkPhysicalDevice physical, VkDevice device,
-                    uint32_t queueFamily, VkExtent2D displayExtent,
-                    const NeuralUpliftSettings &settings);
+    void initialize(VkInstance instance, VkPhysicalDevice physical, VkDevice device, uint32_t queueFamily,
+                    VkExtent2D displayExtent, const NeuralUpliftSettings &settings);
 
     void release();
 
@@ -58,13 +57,9 @@ namespace remix::upscale {
     // linearDepth is VK_FORMAT_R32_SFLOAT, guideMotion is VK_FORMAT_R32G32B32A32_SFLOAT.
     // gbufferExtent is the extent of linearDepth and guideMotion.
     // projection is the camera projection matrix (16 floats).
-    void record(VkCommandBuffer command,
-                VkImage inOutColor, VkImageView inOutColorView,
-                VkImage linearDepth, VkImageView linearDepthView,
-                VkImage guideMotion, VkImageView guideMotionView,
-                VkExtent2D gbufferExtent, const float *projection,
-                const NeuralUpliftSettings &settings,
-                bool resetHistory);
+    void record(VkCommandBuffer command, VkImage inOutColor, VkImageView inOutColorView, VkImage linearDepth,
+                VkImageView linearDepthView, VkImage guideMotion, VkImageView guideMotionView, VkExtent2D gbufferExtent,
+                const float *projection, const NeuralUpliftSettings &settings, bool resetHistory);
 
     NeuralUpliftStatistics statistics() const;
 

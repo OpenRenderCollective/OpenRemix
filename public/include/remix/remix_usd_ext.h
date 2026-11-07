@@ -4,9 +4,9 @@
 typedef uint64_t remixapi_USDSceneHandleEXT;
 typedef struct remixapi_USDLoadOptionsEXT {
   uint32_t structSize, version; // sizeof, 1
-  const char *path; // UTF-8 capture/project path
-  double hostMetersPerUnit; // 0: retain capture metadata
-  uint32_t hostUpAxis; // 0: retain metadata, 1: Y, 2: Z
+  const char *path;             // UTF-8 capture/project path
+  double hostMetersPerUnit;     // 0: retain capture metadata
+  uint32_t hostUpAxis;          // 0: retain metadata, 1: Y, 2: Z
   uint32_t reserved;
 } remixapi_USDLoadOptionsEXT;
 typedef struct remixapi_USDDrawOptionsEXT {
@@ -33,12 +33,15 @@ extern "C" {
 #endif
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_ConfigureUSDModsEXT(const remixapi_USDModsOptionsEXT *);
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetUSDModsDiagnosticEXT(char *, uint32_t);
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_LoadUSDSceneEXT(const remixapi_USDLoadOptionsEXT *, remixapi_USDSceneHandleEXT *);
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_DrawUSDSceneEXT(remixapi_USDSceneHandleEXT, const remixapi_USDDrawOptionsEXT *);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_LoadUSDSceneEXT(const remixapi_USDLoadOptionsEXT *,
+                                                                   remixapi_USDSceneHandleEXT *);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_DrawUSDSceneEXT(remixapi_USDSceneHandleEXT,
+                                                                   const remixapi_USDDrawOptionsEXT *);
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_ReloadUSDSceneEXT(remixapi_USDSceneHandleEXT);
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_DestroyUSDSceneEXT(remixapi_USDSceneHandleEXT);
 // Handle 0 returns the last load failure on the calling thread.
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetUSDDiagnosticsEXT(remixapi_USDSceneHandleEXT, remixapi_USDDiagnosticsEXT *);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetUSDDiagnosticsEXT(remixapi_USDSceneHandleEXT,
+                                                                        remixapi_USDDiagnosticsEXT *);
 #ifdef __cplusplus
 }
 #endif

@@ -4,12 +4,12 @@
 #include <cstdlib>
 
 namespace {
-void require(bool value, const char *message, const char *pass) {
-  if (!value) {
-    std::fprintf(stderr, "%s: %s\n", pass, message);
-    std::exit(1);
+  void require(bool value, const char *message, const char *pass) {
+    if (!value) {
+      std::fprintf(stderr, "%s: %s\n", pass, message);
+      std::exit(1);
+    }
   }
-}
 } // namespace
 
 int main() {

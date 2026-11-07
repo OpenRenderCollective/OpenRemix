@@ -64,7 +64,7 @@ namespace remix::usd {
       Clock::time_point loadStarted{};
       double loadSeconds = 0;
       bool pressure = false;
-      uint64_t partsVersion = 0; // Bumped by the toggles.
+      uint64_t partsVersion = 0;  // Bumped by the toggles.
       std::future<void> retiring; // A previous set going, off the Present thread.
       std::vector<std::future<void>> cacheWrites;
       std::shared_ptr<std::atomic<bool>> cacheCancel = std::make_shared<std::atomic<bool>>(false);
@@ -96,13 +96,12 @@ namespace remix::usd {
       const auto options = std::filesystem::directory_options::skip_permission_denied |
                            std::filesystem::directory_options::follow_directory_symlink;
       for (auto it = std::filesystem::recursive_directory_iterator(directory, options, error);
-           it != std::filesystem::recursive_directory_iterator() && !error;
-           it.increment(error)) {
+           it != std::filesystem::recursive_directory_iterator() && !error; it.increment(error)) {
         std::error_code ec;
         if (it->is_directory(ec)) {
           const auto dirName = it->path().filename().string();
-          if (dirName == "assets" || dirName == "deps" || dirName == ".thumbs" ||
-              dirName == "materials" || dirName == "textures" || dirName == ".git") {
+          if (dirName == "assets" || dirName == "deps" || dirName == ".thumbs" || dirName == "materials" ||
+              dirName == "textures" || dirName == ".git") {
             it.disable_recursion_pending();
             continue;
           }
@@ -235,8 +234,8 @@ namespace remix::usd {
       bool modsEnabled = true;
       uint64_t version = 0;
     };
-    Set parse(std::string directory, Options options, std::shared_ptr<Progress> progress, Toggles toggles,
-              bool edited, std::shared_ptr<std::atomic<bool>> cacheCancel) {
+    Set parse(std::string directory, Options options, std::shared_ptr<Progress> progress, Toggles toggles, bool edited,
+              std::shared_ptr<std::atomic<bool>> cacheCancel) {
       Set result;
       result.fromCache = true;
       const char *cacheSetting = std::getenv("OPENREMIX_USD_CACHE");
@@ -281,12 +280,12 @@ namespace remix::usd {
           // Worth a file when it saves a wait, and not at every save while a mod is
           // being edited.
           if (cacheAlways || (!edited && Clock::now() - loadStarted >= std::chrono::seconds(2)))
-            if (auto write = prepareModCacheWrite(cacheFile, snapshot, prepared, options.meters, options.axis,
-                                                  fileLoadStarted))
-              result.cacheWrites.push_back(std::async(std::launch::async,
-                                                      [write = std::move(*write), cacheCancel]() mutable {
-                                                        writeModCache(std::move(write), *cacheCancel);
-                                                      }));
+            if (auto write =
+                    prepareModCacheWrite(cacheFile, snapshot, prepared, options.meters, options.axis, fileLoadStarted))
+              result.cacheWrites.push_back(
+                  std::async(std::launch::async, [write = std::move(*write), cacheCancel]() mutable {
+                    writeModCache(std::move(write), *cacheCancel);
+                  }));
         }
         auto textures = prepareTextures(snapshot, *progress);
         result.geometryBytes += prepared.bytes;
@@ -307,8 +306,8 @@ namespace remix::usd {
             result.undecodable = text;
         }
         const float scale = snapshot.scene.value("light_scale", 1.0);
-        result.mods.push_back({modName(directory, path), count("meshes"), attached, count("lights"),
-                               count("materials"), missing, path, scale, scale});
+        result.mods.push_back({modName(directory, path), count("meshes"), attached, count("lights"), count("materials"),
+                               missing, path, scale, scale});
         snapshot.scene.erase("lights");
         result.dependencies.insert(snapshot.dependencies.begin(), snapshot.dependencies.end());
         result.snapshots.push_back(std::move(snapshot));
@@ -352,25 +351,24 @@ namespace remix::usd {
         state.options.axis = scene::sceneUpAxis.load();
       state.progress = std::make_shared<Progress>();
       state.loadStarted = Clock::now();
-      state.pending = std::async(std::launch::async, [directory = state.directory, options = state.options,
-                                                      progress = state.progress,
-                                                      toggles = Toggles{state.modParts, state.modsEnabled,
-                                                                        state.partsVersion},
-                                                      edited, cancel = state.cacheCancel] {
-        try {
-          return parse(directory, options, progress, toggles, edited, cancel);
-        } catch (const LoadError &e) {
-          Set failed;
-          failed.error = e.what();
-          failed.loadError = true;
-          failed.dependencies = e.dependencies;
-          return failed;
-        } catch (const std::exception &e) {
-          Set failed;
-          failed.error = e.what();
-          return failed;
-        }
-      });
+      state.pending = std::async(std::launch::async,
+                                 [directory = state.directory, options = state.options, progress = state.progress,
+                                  toggles = Toggles{state.modParts, state.modsEnabled, state.partsVersion}, edited,
+                                  cancel = state.cacheCancel] {
+                                   try {
+                                     return parse(directory, options, progress, toggles, edited, cancel);
+                                   } catch (const LoadError &e) {
+                                     Set failed;
+                                     failed.error = e.what();
+                                     failed.loadError = true;
+                                     failed.dependencies = e.dependencies;
+                                     return failed;
+                                   } catch (const std::exception &e) {
+                                     Set failed;
+                                     failed.error = e.what();
+                                     return failed;
+                                   }
+                                 });
     }
     float lightScale(size_t index);
     // A slice of a frame: the Present thread stays smooth while thousands of
@@ -573,8 +571,7 @@ namespace remix::usd {
         state.publishing.reset();
       }
     }
-    if (state.pending.valid() &&
-        state.pending.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+    if (state.pending.valid() && state.pending.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
       try {
         auto next = state.pending.get();
         for (auto &write : next.cacheWrites)
@@ -621,18 +618,18 @@ namespace remix::usd {
     if (!state.watch || state.pending.valid() || state.publishing || now < state.next)
       return;
     if (!state.scan.valid()) {
-      state.scan = std::async(std::launch::async, [directory = state.directory, deps = watchedDependencies(),
-                                                   epoch = state.scanEpoch] {
-        Scan scan{.epoch = epoch};
-        const auto started = Clock::now();
-        try {
-          scan.stamps = scanStamps(directory, std::move(deps));
-        } catch (const std::exception &e) {
-          scan.error = e.what();
-        }
-        scan.took = Clock::now() - started;
-        return scan;
-      });
+      state.scan = std::async(std::launch::async,
+                              [directory = state.directory, deps = watchedDependencies(), epoch = state.scanEpoch] {
+                                Scan scan{.epoch = epoch};
+                                const auto started = Clock::now();
+                                try {
+                                  scan.stamps = scanStamps(directory, std::move(deps));
+                                } catch (const std::exception &e) {
+                                  scan.error = e.what();
+                                }
+                                scan.took = Clock::now() - started;
+                                return scan;
+                              });
       return;
     }
     if (state.scan.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
@@ -656,8 +653,7 @@ namespace remix::usd {
     }
   }
   bool modInstance(NativeResources &resources, const remixapi_InstanceInfo &info, uint64_t originalHash) {
-    auto it = state.active.meshes.find(originalHash ? originalHash
-                                                    : uint64_t(reinterpret_cast<uintptr_t>(info.mesh)));
+    auto it = state.active.meshes.find(originalHash ? originalHash : uint64_t(reinterpret_cast<uintptr_t>(info.mesh)));
     if (it == state.active.meshes.end())
       return false;
     auto &[index, entry] = it->second;

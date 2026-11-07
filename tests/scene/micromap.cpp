@@ -38,7 +38,8 @@ namespace {
     const auto &m = *draw.material;
     const auto &p = m.texture->pixels;
     auto wrap = [](int64_t x, int64_t n, uint32_t mode) -> int64_t {
-      if (mode == 0) return std::clamp<int64_t>(x, 0, n - 1);
+      if (mode == 0)
+        return std::clamp<int64_t>(x, 0, n - 1);
       if (mode == 2) {
         const int64_t period = ((x % (2 * n)) + 2 * n) % (2 * n);
         return period < n ? period : 2 * n - 1 - period;
@@ -51,7 +52,8 @@ namespace {
       return p.mips[0][4 * (size_t(y) * p.width + size_t(x)) + 3] / 255.f;
     };
     const float x = u * p.width, y = v * p.height;
-    if (!m.filter) return texel(int64_t(std::floor(x)), int64_t(std::floor(y)));
+    if (!m.filter)
+      return texel(int64_t(std::floor(x)), int64_t(std::floor(y)));
     const float fx = x - .5f, fy = y - .5f;
     const int64_t x0 = int64_t(std::floor(fx)), y0 = int64_t(std::floor(fy));
     const float ax = fx - float(x0), ay = fy - float(y0);
@@ -65,7 +67,8 @@ namespace {
     const auto &b = draw.blend;
     const float b0 = 1 - b1 - b2;
     const Vertex *v[3];
-    for (unsigned c = 0; c < 3; ++c) v[c] = &s.vertices[s.indices[triangle * 3 + c]];
+    for (unsigned c = 0; c < 3; ++c)
+      v[c] = &s.vertices[s.indices[triangle * 3 + c]];
     const float u = v[0]->uv[0] * b0 + v[1]->uv[0] * b1 + v[2]->uv[0] * b2;
     const float w = v[0]->uv[1] * b0 + v[1]->uv[1] * b1 + v[2]->uv[1] * b2;
     const float texel = sampleAlpha(draw, u * uvTransform[0] + uvTransform[2], w * uvTransform[1] + uvTransform[3]);
@@ -73,8 +76,14 @@ namespace {
     auto arg = [&](uint32_t i) { return i == 1 ? texel : i == 2 ? vertex : i == 3 ? (b.factor >> 24) / 255.f : 1.f; };
     const float a = arg(b.alpha1), c = arg(b.alpha2);
     const uint32_t op = b.alphaOpTexture;
-    float alpha = op == 1 ? a : op == 2 ? c : op == 6 ? std::min(a + c, 1.f)
-                : std::min(a * c * (op == 4 || op == 7 ? 2.f : op == 5 ? 4.f : 1.f), 1.f);
+    float alpha = op == 1   ? a
+                  : op == 2 ? c
+                  : op == 6 ? std::min(a + c, 1.f)
+                            : std::min(a * c *
+                                           (op == 4 || op == 7 ? 2.f
+                                            : op == 5          ? 4.f
+                                                               : 1.f),
+                                       1.f);
     alpha = std::clamp(alpha * draw.material->tint[3], 0.f, 1.f);
     const float ref = draw.material->reference;
     const uint32_t cmp = draw.material->compare;
@@ -84,17 +93,21 @@ namespace {
 
   // Every point sampled inside an opaque micro-triangle passes the shader's
   // alpha test and every point inside a transparent one fails it.
-  void checkSound(const Draw &draw, const std::array<float, 4> &uv, const OpacityPartition &partition,
-                  Random &random, uint64_t &checked) {
+  void checkSound(const Draw &draw, const std::array<float, 4> &uv, const OpacityPartition &partition, Random &random,
+                  uint64_t &checked) {
     const auto &micromap = *partition.micromap;
     for (uint32_t triangle = 0; triangle < partition.triangles; ++triangle) {
-      if (partition.opaque(triangle)) continue;
+      if (partition.opaque(triangle))
+        continue;
       const int32_t index = micromap.indices[triangle];
       uint32_t level = 0;
       auto state = [&](uint32_t micro) -> uint32_t {
-        if (index == OpacityMicromap::FullyOpaque) return OpacityMicromap::Opaque;
-        if (index == OpacityMicromap::FullyTransparent) return OpacityMicromap::Transparent;
-        if (index < 0) return OpacityMicromap::UnknownOpaque;
+        if (index == OpacityMicromap::FullyOpaque)
+          return OpacityMicromap::Opaque;
+        if (index == OpacityMicromap::FullyTransparent)
+          return OpacityMicromap::Transparent;
+        if (index < 0)
+          return OpacityMicromap::UnknownOpaque;
         const auto &t = micromap.triangles[size_t(index)];
         return (micromap.data[t.dataOffset + micro / 4] >> (2 * (micro % 4))) & 3u;
       };
@@ -108,13 +121,16 @@ namespace {
       const auto &micros = microTriangles(level);
       for (uint32_t micro = 0; micro < micros.size(); ++micro) {
         const uint32_t value = state(micro);
-        if (value == OpacityMicromap::UnknownOpaque) continue;
+        if (value == OpacityMicromap::UnknownOpaque)
+          continue;
         const auto corners = microCorners(micros[micro], level);
         for (unsigned sample = 0; sample < 24; ++sample) {
           // Random barycentric point of the micro-triangle, including its corners.
           float r1 = random.unit(), r2 = random.unit();
-          if (sample < 3) r1 = sample == 1 ? 1.f : 0.f, r2 = sample == 2 ? 1.f : 0.f;
-          if (r1 + r2 > 1) r1 = 1 - r1, r2 = 1 - r2;
+          if (sample < 3)
+            r1 = sample == 1 ? 1.f : 0.f, r2 = sample == 2 ? 1.f : 0.f;
+          if (r1 + r2 > 1)
+            r1 = 1 - r1, r2 = 1 - r2;
           const float b1 = corners[0][0] + (corners[1][0] - corners[0][0]) * r1 + (corners[2][0] - corners[0][0]) * r2;
           const float b2 = corners[0][1] + (corners[1][1] - corners[0][1]) * r1 + (corners[2][1] - corners[0][1]) * r2;
           const bool pass = passes(draw, uv, triangle, b1, b2);
@@ -137,7 +153,7 @@ int main() {
   // Index order: hardware-measured anchors (RTX 5080, tools/vulkan-probes
   // micromap mode) and a bijection per level whose children nest.
   const std::tuple<uint32_t, uint32_t, uint16_t, uint16_t, bool> anchors[] = {
-      {1, 1, 0, 0, false}, {1, 3, 0, 1, true},  {2, 4, 0, 1, false}, {2, 7, 1, 0, false},
+      {1, 1, 0, 0, false}, {1, 3, 0, 1, true},   {2, 4, 0, 1, false}, {2, 7, 1, 0, false},
       {2, 10, 3, 0, true}, {2, 13, 0, 2, false}, {2, 15, 0, 3, true}};
   for (const auto &[level, index, i, j, upright] : anchors) {
     const auto &m = microTriangles(level)[index];
@@ -147,9 +163,11 @@ int main() {
     const auto &table = microTriangles(level);
     require(table.size() == size_t(1) << (2 * level), "Micro-triangle table size");
     std::set<std::tuple<uint16_t, uint16_t, bool>> seen;
-    for (const auto &m : table) seen.insert({m.i, m.j, m.upright});
+    for (const auto &m : table)
+      seen.insert({m.i, m.j, m.upright});
     require(seen.size() == table.size(), "Micro-triangle index is not a bijection");
-    if (level == 0 || level > 6) continue;
+    if (level == 0 || level > 6)
+      continue;
     const auto &parents = microTriangles(level - 1);
     for (uint32_t index = 0; index < table.size(); ++index) {
       const auto corners = microCorners(table[index], level);
@@ -172,13 +190,13 @@ int main() {
     draw.surface = std::make_shared<Surface>();
     for (unsigned v = 0; v < 12; ++v) {
       const float spread = scene % 3 == 0 ? 1.f : scene % 3 == 1 ? 2.3f : .4f;
-      draw.surface->vertices.push_back(
-          {{random.unit(), random.unit(), random.unit()},
-           {(random.unit() - .25f) * spread, (random.unit() - .25f) * spread},
-           {1, 1, 1, scene % 4 == 3 ? random.unit() : 1.f}});
+      draw.surface->vertices.push_back({{random.unit(), random.unit(), random.unit()},
+                                        {(random.unit() - .25f) * spread, (random.unit() - .25f) * spread},
+                                        {1, 1, 1, scene % 4 == 3 ? random.unit() : 1.f}});
     }
     for (unsigned t = 0; t < 8; ++t)
-      for (unsigned c = 0; c < 3; ++c) draw.surface->indices.push_back(random.next() % 12);
+      for (unsigned c = 0; c < 3; ++c)
+        draw.surface->indices.push_back(random.next() % 12);
     draw.material = std::make_shared<Material>();
     const uint32_t compares[] = {1, 3, 4, 6};
     draw.material->compare = compares[scene % 4];
@@ -199,12 +217,14 @@ int main() {
         // Coherent blobs with hard and soft edges, as in foliage cutouts.
         const float d = std::hypot(float(x) - size * .4f, float(y) - size * .55f) / size;
         const float noise = (random.next() % 32) / 255.f;
-        pixels[4 * (size_t(y) * size + x) + 3] = uint8_t(std::clamp((d < .3f ? 1.f : .35f - d) + noise, 0.f, 1.f) * 255);
+        pixels[4 * (size_t(y) * size + x) + 3] =
+            uint8_t(std::clamp((d < .3f ? 1.f : .35f - d) + noise, 0.f, 1.f) * 255);
       }
     draw.material->texture->pixels = {size, size, true, {pixels}};
     const std::array<float, 4> uv{1, 1, scene % 6 == 5 ? .25f : 0.f, 0};
     const auto partition = cache.partition(draw, uv);
-    if (!partition->micromap) continue;
+    if (!partition->micromap)
+      continue;
     checkSound(draw, uv, *partition, random, checked);
     proved += partition->micromap->opaque + partition->micromap->transparent;
     unknown += partition->micromap->unknown;
@@ -223,7 +243,8 @@ int main() {
   draw.surface = std::make_shared<Surface>();
   // Inset UVs on a clamped 32x32 texture whose right half is transparent:
   // micro-triangles away from the edge are provable on both sides.
-  draw.surface->vertices = {{{0, 0, 0}, {.05f, .05f}, {1, 1, 1, 1}}, {{1, 0, 0}, {.95f, .05f}, {1, 1, 1, 1}},
+  draw.surface->vertices = {{{0, 0, 0}, {.05f, .05f}, {1, 1, 1, 1}},
+                            {{1, 0, 0}, {.95f, .05f}, {1, 1, 1, 1}},
                             {{0, 1, 0}, {.05f, .95f}, {1, 1, 1, 1}}};
   draw.surface->indices = {0, 1, 2};
   draw.material = std::make_shared<Material>();
@@ -233,7 +254,8 @@ int main() {
   draw.material->texture = std::make_shared<Texture>();
   std::vector<uint8_t> half(32 * 32 * 4, 255);
   for (uint32_t y = 0; y < 32; ++y)
-    for (uint32_t x = 16; x < 32; ++x) half[4 * (y * 32 + x) + 3] = 0;
+    for (uint32_t x = 16; x < 32; ++x)
+      half[4 * (y * 32 + x) + 3] = 0;
   draw.material->texture->pixels = {32, 32, true, {half}};
   const std::array<float, 4> identity{1, 1, 0, 0};
   require(!cache.partition(draw, identity)->micromap, "Micromap baked while disabled");
@@ -257,7 +279,8 @@ int main() {
   auto replaced = draw;
   replaced.material = std::make_shared<Material>(*draw.material);
   replaced.material->texture = std::make_shared<Texture>(*draw.material->texture);
-  for (uint32_t y = 0; y < 32; ++y) replaced.material->texture->pixels.mips[0][4 * (y * 32 + 24) + 3] = 255;
+  for (uint32_t y = 0; y < 32; ++y)
+    replaced.material->texture->pixels.mips[0][4 * (y * 32 + 24) + 3] = 255;
   const auto reproved = cache.partition(replaced, identity);
   require(reproved != baked && reproved->micromap && reproved->micromap->hash != baked->micromap->hash,
           "A replaced texture reused the previous micromap");

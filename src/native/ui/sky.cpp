@@ -32,21 +32,21 @@ namespace remix::ui {
 
     // Groups, in display order: a setting goes to the first group whose key
     // prefixes match.
-    const char *const groups[] = {"World and units",   "Sun and time",       "Atmosphere",     "Clouds",
-                                  "Cloud layer 2",     "Cloud shadows",      "Cloud quality",  "Lightning",
-                                  "Aerial perspective", "Night sky and moon", "Moons",          "Caching and debug"};
+    const char *const groups[] = {"World and units",    "Sun and time",       "Atmosphere",    "Clouds",
+                                  "Cloud layer 2",      "Cloud shadows",      "Cloud quality", "Lightning",
+                                  "Aerial perspective", "Night sky and moon", "Moons",         "Caching and debug"};
     int groupOf(std::string_view key) {
       const auto any = [&](std::initializer_list<std::string_view> prefixes) {
         return std::any_of(prefixes.begin(), prefixes.end(), [&](auto p) { return key.starts_with(p); });
       };
       if (key.starts_with("moon") && key.size() > 5 && key[5] == '.')
         return 10;
-      if (any({"unitsPerMeter", "worldScale", "hazeWorldScale", "groundLevel", "groundSmoothing",
-               "cloudVerticalOffset", "useCameraWorldOverride", "cameraWorldOverride", "cloudAnchorCut", "seaLevel",
-               "altitudeScale", "viewAltitude", "flipUpAxis"}))
+      if (any({"unitsPerMeter", "worldScale", "hazeWorldScale", "groundLevel", "groundSmoothing", "cloudVerticalOffset",
+               "useCameraWorldOverride", "cameraWorldOverride", "cloudAnchorCut", "seaLevel", "altitudeScale",
+               "viewAltitude", "flipUpAxis"}))
         return 0;
-      if (any({"sun", "timeCycle", "timeOfDay", "dayLength", "dayOfYear", "calendarYear", "latitude",
-               "northOffset", "directionalLight"}))
+      if (any({"sun", "timeCycle", "timeOfDay", "dayLength", "dayOfYear", "calendarYear", "latitude", "northOffset",
+               "directionalLight"}))
         return 1;
       if (any({"debug", "skyView", "skyLut", "cloudProfiling"}))
         return 11;
@@ -60,9 +60,9 @@ namespace remix::ui {
         return 4;
       if (any({"cloudShadow", "cloudVoxelShadows", "cloudVoxelGrid", "cloudSkyAmbient"}))
         return 5;
-      if (any({"cloudTemporal", "cloudHistory", "cloudSpatial", "cloudMarch", "cloudPerformance",
-               "cloudViewSamples", "cloudViewStep", "cloudSecondary", "cloudDetailLod", "cloudLightingLod",
-               "nvdfStepScale", "nubis3AdaptiveStep", "nubis3Jitter", "cloudRenderRT"}))
+      if (any({"cloudTemporal", "cloudHistory", "cloudSpatial", "cloudMarch", "cloudPerformance", "cloudViewSamples",
+               "cloudViewStep", "cloudSecondary", "cloudDetailLod", "cloudLightingLod", "nvdfStepScale",
+               "nubis3AdaptiveStep", "nubis3Jitter", "cloudRenderRT"}))
         return 6;
       if (any({"cloud", "nvdf", "nubis3"}))
         return 3;
@@ -114,9 +114,9 @@ namespace remix::ui {
         const bool isInt = type == numos::SettingType::Int;
         auto value = isInt ? int64_t(*static_cast<int32_t *>(field)) : int64_t(*static_cast<uint32_t *>(field));
         const int64_t min = int64_t(lo), max = int64_t(hi);
-        const bool changed = slide ? ImGui::SliderScalar(label, ImGuiDataType_S64, &value, &min, &max, nullptr, flags)
-                                   : ImGui::DragScalar(label, ImGuiDataType_S64, &value, range.step, &min, &max,
-                                                       nullptr, flags);
+        const bool changed =
+            slide ? ImGui::SliderScalar(label, ImGuiDataType_S64, &value, &min, &max, nullptr, flags)
+                  : ImGui::DragScalar(label, ImGuiDataType_S64, &value, range.step, &min, &max, nullptr, flags);
         if (changed && isInt)
           *static_cast<int32_t *>(field) = int32_t(value);
         else if (changed)
@@ -151,19 +151,20 @@ namespace remix::ui {
       case numos::SettingType::Bool:
         return ImGui::Checkbox(label, reinterpret_cast<bool *>(field));
       case numos::SettingType::Int: {
-        const int32_t lo = low ? int32_t(info.minValue) : INT32_MIN / 2, hi = high ? int32_t(info.maxValue) : INT32_MAX / 2;
-        return low && high && hi - lo <= 4096
-                   ? ImGui::SliderScalar(label, ImGuiDataType_S32, field, &lo, &hi, nullptr, ImGuiSliderFlags_AlwaysClamp)
-                   : ImGui::DragScalar(label, ImGuiDataType_S32, field, .2f, &lo, &hi, nullptr,
-                                       ImGuiSliderFlags_AlwaysClamp);
+        const int32_t lo = low ? int32_t(info.minValue) : INT32_MIN / 2,
+                      hi = high ? int32_t(info.maxValue) : INT32_MAX / 2;
+        return low && high && hi - lo <= 4096 ? ImGui::SliderScalar(label, ImGuiDataType_S32, field, &lo, &hi, nullptr,
+                                                                    ImGuiSliderFlags_AlwaysClamp)
+                                              : ImGui::DragScalar(label, ImGuiDataType_S32, field, .2f, &lo, &hi,
+                                                                  nullptr, ImGuiSliderFlags_AlwaysClamp);
       }
       case numos::SettingType::Uint: {
         const uint32_t lo = low ? uint32_t(std::max(info.minValue, 0.f)) : 0u,
                        hi = high ? uint32_t(info.maxValue) : UINT32_MAX / 2;
-        return low && high && hi - lo <= 4096
-                   ? ImGui::SliderScalar(label, ImGuiDataType_U32, field, &lo, &hi, nullptr, ImGuiSliderFlags_AlwaysClamp)
-                   : ImGui::DragScalar(label, ImGuiDataType_U32, field, .2f, &lo, &hi, nullptr,
-                                       ImGuiSliderFlags_AlwaysClamp);
+        return low && high && hi - lo <= 4096 ? ImGui::SliderScalar(label, ImGuiDataType_U32, field, &lo, &hi, nullptr,
+                                                                    ImGuiSliderFlags_AlwaysClamp)
+                                              : ImGui::DragScalar(label, ImGuiDataType_U32, field, .2f, &lo, &hi,
+                                                                  nullptr, ImGuiSliderFlags_AlwaysClamp);
       }
       case numos::SettingType::Float: {
         auto &value = *reinterpret_cast<float *>(field);
@@ -214,9 +215,8 @@ namespace remix::ui {
         words.back() += c;
       }
       static const std::pair<std::string_view, std::string_view> units[] = {
-          {"Meters", "m"}, {"Km", "km"},          {"Deg", "deg"},       {"Degrees", "deg"},
-          {"Hours", "h"},  {"Minutes", "min"},    {"Seconds", "s"},     {"Stops", "stops"},
-          {"Pixels", "pixels"}};
+          {"Meters", "m"},    {"Km", "km"},     {"Deg", "deg"},     {"Degrees", "deg"},  {"Hours", "h"},
+          {"Minutes", "min"}, {"Seconds", "s"}, {"Stops", "stops"}, {"Pixels", "pixels"}};
       static const std::string_view acronyms[] = {"LUT", "LOD", "SDF", "NVDF", "RT", "AP"};
       std::string unit;
       if (words.size() > 2 && words[words.size() - 2] == "World" && words.back() == "Units") {
@@ -235,9 +235,9 @@ namespace remix::ui {
         for (auto &ch : word)
           ch = char(std::tolower(uint8_t(ch)));
         const auto acronym = std::find_if(std::begin(acronyms), std::end(acronyms), [&](std::string_view entry) {
-          return entry.size() == word.size() && std::equal(entry.begin(), entry.end(), word.begin(), [](char a, char b) {
-                   return std::tolower(uint8_t(a)) == b;
-                 });
+          return entry.size() == word.size() &&
+                 std::equal(entry.begin(), entry.end(), word.begin(),
+                            [](char a, char b) { return std::tolower(uint8_t(a)) == b; });
         });
         if (acronym != std::end(acronyms))
           word = *acronym;
@@ -382,7 +382,8 @@ namespace remix::ui {
             rows.push_back(&info);
         if (rows.empty())
           continue;
-        const std::string header = std::string(groups[group]) + " (" + std::to_string(rows.size()) + ")###" + groups[group];
+        const std::string header =
+            std::string(groups[group]) + " (" + std::to_string(rows.size()) + ")###" + groups[group];
         if (ImGui::TreeNode(header.c_str())) {
           for (const auto *info : rows)
             settingRow(sky, values, *info);
@@ -402,7 +403,8 @@ namespace remix::ui {
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Physically based sky, atmosphere and volumetric clouds, with weather and night sky.");
       if (!status.supported)
-        ImGui::TextWrapped("%s", status.reason.empty() ? "This backend does not render the sky." : status.reason.c_str());
+        ImGui::TextWrapped("%s",
+                           status.reason.empty() ? "This backend does not render the sky." : status.reason.c_str());
       else if (sky.enabled && !status.active && !status.reason.empty())
         ImGui::TextWrapped("Inactive: %s", status.reason.c_str());
       else if (status.active && status.gpuMilliseconds > 0)

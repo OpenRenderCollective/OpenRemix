@@ -22,12 +22,12 @@ namespace remix::scene {
   // removal.
   struct StaticUnit {
     uint64_t handle = 0, id = 0;
-    uint32_t index = 0;         // instanceIndex
-    uint64_t generation = 0;    // changes whenever the unit is (re)built
-    bool live = false;          // the slot holds a unit
-    bool singular = false;      // dropped from tracing, as prepareTraceFrame drops it
-    bool pending = false;       // listed in rebuilt()
-    uint32_t pbrSurfaces = 0;   // surfaces with a PBR material
+    uint32_t index = 0;                        // instanceIndex
+    uint64_t generation = 0;                   // changes whenever the unit is (re)built
+    bool live = false;                         // the slot holds a unit
+    bool singular = false;                     // dropped from tracing, as prepareTraceFrame drops it
+    bool pending = false;                      // listed in rebuilt()
+    uint32_t pbrSurfaces = 0;                  // surfaces with a PBR material
     std::vector<TraceFrame::Surface> surfaces; // mesh surface order
     // Its emissive triangles, as prepareTraceFrame emits them; animated says
     // whether the surface has an emission texture (animated when filtering).
@@ -56,8 +56,7 @@ namespace remix::scene {
     };
     // Brings the units up to date with resources' static set. False when this
     // frame's set is not drawn through the table; the units are then unused.
-    bool sync(NativeResources &resources, OpacityCache &opacity, SurfaceEmissionCache &emission,
-              WorkerPool *workers);
+    bool sync(NativeResources &resources, OpacityCache &opacity, SurfaceEmissionCache &emission, WorkerPool *workers);
     const std::vector<StaticUnit> &units() const { return m_units; }
     // Live units in trace order ((instanceId, instanceIndex) ascending).
     const std::vector<uint32_t> &order() const { return m_order; }
@@ -129,9 +128,9 @@ namespace remix::scene {
     std::vector<StaticUnit> m_units;
     std::vector<uint32_t> m_free, m_freeing, m_order, m_rebuilt, m_emitting;
     std::vector<Removed> m_removed;
-    std::unordered_map<uint64_t, std::vector<uint32_t>> m_handles; // handle -> units by index
+    std::unordered_map<uint64_t, std::vector<uint32_t>> m_handles;               // handle -> units by index
     std::unordered_map<std::pair<uint64_t, uint32_t>, uint32_t, KeyHash> m_keys; // (id, index) -> unit count
-    std::unordered_map<uint64_t, uint32_t> m_ids;                  // id -> unit count
+    std::unordered_map<uint64_t, uint32_t> m_ids;                                // id -> unit count
     uint64_t m_epoch = ~0ull, m_generation = 0;
     uint32_t m_duplicates = 0;
     size_t m_tracedUnits = 0, m_tracedSurfaces = 0, m_liveSurfaces = 0, m_livePbr = 0;

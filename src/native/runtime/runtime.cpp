@@ -63,8 +63,7 @@ namespace remix {
       remixapi_StructType type;
       const void *next;
     };
-    for (auto p = static_cast<const Extension *>(info.pNext); p;
-         p = static_cast<const Extension *>(p->next)) {
+    for (auto p = static_cast<const Extension *>(info.pNext); p; p = static_cast<const Extension *>(p->next)) {
       if (p->type == REMIXAPI_STRUCT_TYPE_EDITOR_HOST_WINDOW_EXT) {
         hostWindow = static_cast<SDL_Window *>(reinterpret_cast<const remixapi_EditorHostWindowEXT *>(p)->sdlWindow);
         continue;
@@ -101,7 +100,7 @@ namespace remix {
       if (!m_profiles.message().empty())
         SDL_Log("OpenRemix profiles: %s", m_profiles.message().c_str());
       // Headless with a host window: the UI runs on the host's window.
-      auto status = !m_headless ? m_window.initialize(info)
+      auto status = !m_headless  ? m_window.initialize(info)
                     : hostWindow ? m_window.adopt(hostWindow)
                                  : REMIXAPI_ERROR_CODE_SUCCESS;
       if (status != REMIXAPI_ERROR_CODE_SUCCESS) {
@@ -117,8 +116,7 @@ namespace remix {
       if (status != REMIXAPI_ERROR_CODE_SUCCESS) {
         return finish(status);
       }
-      status = m_headless ? REMIXAPI_ERROR_CODE_SUCCESS
-                          : m_window.createVulkanSurface(m_instance, nullptr, m_surface);
+      status = m_headless ? REMIXAPI_ERROR_CODE_SUCCESS : m_window.createVulkanSurface(m_instance, nullptr, m_surface);
       if (status != REMIXAPI_ERROR_CODE_SUCCESS) {
         return finish(status);
       }
@@ -212,15 +210,12 @@ namespace remix {
       m_pipelines->stop();
     if (m_pipelines) {
       const auto s = m_pipelines->statistics();
-      SDL_Log(
-          "OpenRemix pipelines: created=%llu reused=%llu failed=%llu "
-          "compile_ms=%.3f cache_hits=%llu "
-          "driver_ns=%llu presentations=%llu longest_presentation_gap_ms=%.3f",
-          (unsigned long long)s.created, (unsigned long long)s.reused,
-          (unsigned long long)s.failed, s.milliseconds,
-          (unsigned long long)s.cacheHits,
-          (unsigned long long)s.driverNanoseconds,
-          (unsigned long long)m_presentationCount, m_longestPresentationGap);
+      SDL_Log("OpenRemix pipelines: created=%llu reused=%llu failed=%llu "
+              "compile_ms=%.3f cache_hits=%llu "
+              "driver_ns=%llu presentations=%llu longest_presentation_gap_ms=%.3f",
+              (unsigned long long)s.created, (unsigned long long)s.reused, (unsigned long long)s.failed, s.milliseconds,
+              (unsigned long long)s.cacheHits, (unsigned long long)s.driverNanoseconds,
+              (unsigned long long)m_presentationCount, m_longestPresentationGap);
     }
     // Join before releasing staging objects, immutable layouts or the device.
     m_preparation.reset();

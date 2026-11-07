@@ -18,7 +18,10 @@ namespace remix {
     VkPhysicalDeviceFeatures2 features{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, .pNext = &v11};
     vkGetPhysicalDeviceFeatures2(physical, &features);
     s.supported = v11.storageBuffer16BitAccess && v12.shaderFloat16 && v12.shaderBufferInt64Atomics;
-    std::strncpy(s.unavailableReason, s.supported ? "" : "SHARC requires storageBuffer16BitAccess, shaderFloat16 and shaderBufferInt64Atomics; uncached tracing is active",
+    std::strncpy(s.unavailableReason,
+                 s.supported ? ""
+                             : "SHARC requires storageBuffer16BitAccess, shaderFloat16 and shaderBufferInt64Atomics; "
+                               "uncached tracing is active",
                  sizeof(s.unavailableReason) - 1);
     cachedStages = s.supported != 0;
 #else
@@ -32,24 +35,42 @@ namespace remix {
       return uncached;
     using trace::Stage;
     switch (uncached) {
-    case Stage::comp: return Stage::sharcQuery;
-    case Stage::temporal: return Stage::sharcTemporal;
-    case Stage::transparency: return Stage::sharcTransparency;
-    case Stage::temporalTransparency: return Stage::sharcTemporalTransparency;
-    case Stage::singleTransparency: return Stage::sharcSingleTransparency;
-    case Stage::singleTemporalTransparency: return Stage::sharcSingleTemporalTransparency;
-    case Stage::confidence: return Stage::sharcConfidence;
-    case Stage::sigmaTemporal: return Stage::sharcSigmaTemporal;
-    case Stage::localTemporal: return Stage::sharcLocalTemporal;
-    case Stage::localSigmaTemporal: return Stage::sharcLocalSigmaTemporal;
-    case Stage::splitLocalTemporal: return Stage::sharcSplitLocalTemporal;
-    case Stage::splitLocalSigmaTemporal: return Stage::sharcSplitLocalSigmaTemporal;
-    case Stage::indirectTemporal: return Stage::sharcIndirectTemporal;
-    case Stage::indirect: return Stage::sharcIndirect;
-    case Stage::sheetLighting: return Stage::sharcSheetLighting;
-    case Stage::sheetLightingTemporal: return Stage::sharcSheetLightingTemporal;
-    case Stage::orcaSparse: return Stage::sharcOrcaSparse;
-    default: return uncached;
+    case Stage::comp:
+      return Stage::sharcQuery;
+    case Stage::temporal:
+      return Stage::sharcTemporal;
+    case Stage::transparency:
+      return Stage::sharcTransparency;
+    case Stage::temporalTransparency:
+      return Stage::sharcTemporalTransparency;
+    case Stage::singleTransparency:
+      return Stage::sharcSingleTransparency;
+    case Stage::singleTemporalTransparency:
+      return Stage::sharcSingleTemporalTransparency;
+    case Stage::confidence:
+      return Stage::sharcConfidence;
+    case Stage::sigmaTemporal:
+      return Stage::sharcSigmaTemporal;
+    case Stage::localTemporal:
+      return Stage::sharcLocalTemporal;
+    case Stage::localSigmaTemporal:
+      return Stage::sharcLocalSigmaTemporal;
+    case Stage::splitLocalTemporal:
+      return Stage::sharcSplitLocalTemporal;
+    case Stage::splitLocalSigmaTemporal:
+      return Stage::sharcSplitLocalSigmaTemporal;
+    case Stage::indirectTemporal:
+      return Stage::sharcIndirectTemporal;
+    case Stage::indirect:
+      return Stage::sharcIndirect;
+    case Stage::sheetLighting:
+      return Stage::sharcSheetLighting;
+    case Stage::sheetLightingTemporal:
+      return Stage::sharcSheetLightingTemporal;
+    case Stage::orcaSparse:
+      return Stage::sharcOrcaSparse;
+    default:
+      return uncached;
     }
   }
 
@@ -67,7 +88,8 @@ namespace remix {
     // specialized so (guidingCapable). A consumer of the separate indirect
     // pass is specialized so from the start (its inline variant is the
     // fallback).
-    const VkSpecializationMapEntry baseEntries[] = {{1, 0, sizeof(VkBool32)}, {12, sizeof(VkBool32), sizeof(VkBool32)},
+    const VkSpecializationMapEntry baseEntries[] = {{1, 0, sizeof(VkBool32)},
+                                                    {12, sizeof(VkBool32), sizeof(VkBool32)},
                                                     {9, 2 * sizeof(VkBool32), sizeof(VkBool32)}};
     std::vector<std::array<VkBool32, 3>> baseConstants;
     for (const auto &request : requests)
@@ -101,7 +123,9 @@ namespace remix {
       check(pipeline::createShaderModule(device, &ci, nullptr, &modules[i]));
       infos[i] = {.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
                   .stage = {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                            .stage = VK_SHADER_STAGE_COMPUTE_BIT, .module = modules[i], .pName = "main",
+                            .stage = VK_SHADER_STAGE_COMPUTE_BIT,
+                            .module = modules[i],
+                            .pName = "main",
                             .pSpecializationInfo = &baseSpecializations[i]},
                   .layout = requests[i].layout};
     }
@@ -147,8 +171,8 @@ namespace remix {
           deferredLighting.push_back(request);
       return;
     }
-    const auto result = pipeline::createComputePipelines(device, VK_NULL_HANDLE, uint32_t(infos.size()),
-                                                         infos.data(), nullptr, pipelines.data());
+    const auto result = pipeline::createComputePipelines(device, VK_NULL_HANDLE, uint32_t(infos.size()), infos.data(),
+                                                         nullptr, pipelines.data());
     // Publish every pipeline that compiled, so failure cleanup releases it.
     for (size_t i = 0; i < requests.size(); ++i) {
       const auto &request = requests[i];
@@ -233,8 +257,8 @@ namespace remix {
       // need not be coherent, so invalidate it after the GPU-to-host dependency.
       void *mapped{};
       check(vkMapMemory(device, sharc.readback->memory, 0, VK_WHOLE_SIZE, 0, &mapped));
-      VkMappedMemoryRange range{.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
-                                .memory = sharc.readback->memory, .size = VK_WHOLE_SIZE};
+      VkMappedMemoryRange range{
+          .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, .memory = sharc.readback->memory, .size = VK_WHOLE_SIZE};
       auto result = vkInvalidateMappedMemoryRanges(device, 1, &range);
       if (result == VK_SUCCESS) {
         uint32_t counters[4];
@@ -249,8 +273,8 @@ namespace remix {
       s.gpuTimingsAvailable = 0;
       if (sharc.timestamps) {
         uint64_t values[4][2]{};
-        result = vkGetQueryPoolResults(device, sharc.timestamps, 0, 4, sizeof(values), values,
-                                       sizeof(values[0]), VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
+        result = vkGetQueryPoolResults(device, sharc.timestamps, 0, 4, sizeof(values), values, sizeof(values[0]),
+                                       VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
         if (result == VK_SUCCESS && values[0][1] && values[1][1] && values[2][1] && values[3][1]) {
           const uint64_t mask = timestampBits == 64 ? UINT64_MAX : ((uint64_t(1) << timestampBits) - 1);
           const double scale = properties.limits.timestampPeriod / 1e6;
@@ -284,15 +308,15 @@ namespace remix {
         sharc.counters = buffer(16, usage | VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
         sharc.readback = buffer(16, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true);
         s.capacity = capacity;
-        s.memoryBytes = sharc.hash->size + sharc.accumulation->size + sharc.resolved->size +
-                        sharc.counters->size + sharc.readback->size;
+        s.memoryBytes = sharc.hash->size + sharc.accumulation->size + sharc.resolved->size + sharc.counters->size +
+                        sharc.readback->size;
       }
       // The cache's own passes; the lighting stages query it (lightingStage).
       createLightingPipelines({{trace::Stage::sharcUpdate, layout, &sharc.update, false, false},
                                {trace::Stage::sharcResolve, layout, &sharc.resolve, false, false, false, false}});
       if (!sharc.timestamps && timestamps) {
-        VkQueryPoolCreateInfo qi{.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
-                                 .queryType = VK_QUERY_TYPE_TIMESTAMP, .queryCount = 4};
+        VkQueryPoolCreateInfo qi{
+            .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO, .queryType = VK_QUERY_TYPE_TIMESTAMP, .queryCount = 4};
         check(vkCreateQueryPool(device, &qi, nullptr, &sharc.timestamps));
       }
       s.active = 1;
@@ -322,8 +346,8 @@ namespace remix {
   }
 
   void PathTracer::Gpu::configureSharc(Frame &frame, const TraceOptions &options, scene::TemporalEpoch currentEpoch,
-                                      const std::vector<uint8_t> &geometry, uint64_t geometryGeneration,
-                                      const std::vector<uint8_t> &dynamicGeometry, bool hasReceivers) {
+                                       const std::vector<uint8_t> &geometry, uint64_t geometryGeneration,
+                                       const std::vector<uint8_t> &dynamicGeometry, bool hasReceivers) {
     if (!sharc.stats.active)
       return;
     // Eligibility covers every traced surface, including off-screen receivers.
@@ -367,10 +391,11 @@ namespace remix {
     }
     // Large lighting cuts discard stale radiance, independently of NRD/TAA.
     // Ordinary time/weather updates shorten only the cache's averaging window.
-    sharc.clear |= difference > .25f * std::max(oldEnergy, newEnergy) ||
-                   (std::max(oldEnergy, newEnergy) > 0 && angle < .999f);
-    const bool localChanged = !std::equal(std::begin(frame.localConfig), std::end(frame.localConfig), sharc.localConfig) ||
-                              frame.localScale[0] != sharc.localIntensity || frame.localScale[1] != sharc.localRange;
+    sharc.clear |=
+        difference > .25f * std::max(oldEnergy, newEnergy) || (std::max(oldEnergy, newEnergy) > 0 && angle < .999f);
+    const bool localChanged =
+        !std::equal(std::begin(frame.localConfig), std::end(frame.localConfig), sharc.localConfig) ||
+        frame.localScale[0] != sharc.localIntensity || frame.localScale[1] != sharc.localRange;
     if (localChanged) {
       sharc.warmFrames = 0;
       // Complete darkness must not reuse cached torch radiance.
@@ -412,8 +437,7 @@ namespace remix {
                                          options.sharcMaxUpdatePaths)
         ++sharc.downscale;
     frame.sharcConfig[0] = uint32_t(hasReceivers) | uint32_t(options.sharcDynamicSurfaces) << 1 |
-                           uint32_t(options.sharcGlossySurfaces) << 2 |
-                           uint32_t(!options.sharcFootprintTest) << 3;
+                           uint32_t(options.sharcGlossySurfaces) << 2 | uint32_t(!options.sharcFootprintTest) << 3;
     frame.sharcConfig[1] = sharc.stats.capacity;
     frame.sharcConfig[2] = sharc.downscale;
     frame.sharcConfig[3] = options.sharcDebug;
@@ -421,10 +445,10 @@ namespace remix {
     // While the lighting changes a cell's mean says nothing of what it should
     // hold next: the limit would only hold new light back.
     frame.sharcGrid[1] = sharc.responsiveFrames ? 0 : options.sharcFireflyClamp;
-    frame.sharcGrid[2] = float(sharc.responsiveFrames ? std::min(options.sharcAccumulationFrames, 4u)
-                               : sharc.motionFrames
-                                   ? std::min(options.sharcAccumulationFrames, options.sharcMotionFrames)
-                                   : options.sharcAccumulationFrames);
+    frame.sharcGrid[2] =
+        float(sharc.responsiveFrames ? std::min(options.sharcAccumulationFrames, 4u)
+              : sharc.motionFrames   ? std::min(options.sharcAccumulationFrames, options.sharcMotionFrames)
+                                     : options.sharcAccumulationFrames);
     frame.sharcGrid[3] = float(options.sharcStaleFrames);
     std::copy_n(sharc.clear ? frame.eye : sharc.previousEye, 3, frame.sharcPreviousCamera);
     std::copy_n(frame.eye, 3, sharc.previousEye);
@@ -445,8 +469,8 @@ namespace remix {
       ++sharc.stats.resets;
     }
     vkCmdFillBuffer(command, sharc.counters->handle, 0, VK_WHOLE_SIZE, 0);
-    barrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
-            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+    barrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
     // WAW/RAW dependency also covers frames that did not clear the cache.
     barrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
@@ -483,12 +507,12 @@ namespace remix {
   void PathTracer::Gpu::finishSharc(VkCommandBuffer command) {
     if (!sharc.stats.active || !sharc.hasReceivers)
       return;
-    barrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
-            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT);
+    barrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_ACCESS_TRANSFER_READ_BIT);
     VkBufferCopy copy{.size = 16};
     vkCmdCopyBuffer(command, sharc.counters->handle, sharc.readback->handle, 1, &copy);
-    barrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
-            VK_PIPELINE_STAGE_HOST_BIT, VK_ACCESS_HOST_READ_BIT);
+    barrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_HOST_BIT,
+            VK_ACCESS_HOST_READ_BIT);
     sharc.pending = true;
   }
 

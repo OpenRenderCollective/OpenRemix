@@ -9,18 +9,18 @@
 using namespace remix::api;
 
 namespace {
-template <typename F> remixapi_ErrorCode particleCall(F &&call) {
-  std::lock_guard lock(g_apiMutex);
-  if (!g_runtime.isInitialized())
-    return REMIXAPI_ERROR_CODE_NOT_INITIALIZED;
-  if (g_runtime.hasFailed())
-    return REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
-  return call(remix::scene::particles());
-}
+  template <typename F> remixapi_ErrorCode particleCall(F &&call) {
+    std::lock_guard lock(g_apiMutex);
+    if (!g_runtime.isInitialized())
+      return REMIXAPI_ERROR_CODE_NOT_INITIALIZED;
+    if (g_runtime.hasFailed())
+      return REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
+    return call(remix::scene::particles());
+  }
 } // namespace
 
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_CreateParticleEmitterEXT(
-    const remixapi_ParticleEmitterInfoEXT *info, remixapi_ParticleEmitterHandleEXT *out) {
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_CreateParticleEmitterEXT(const remixapi_ParticleEmitterInfoEXT *info,
+                                                                            remixapi_ParticleEmitterHandleEXT *out) {
   if (!info || !out)
     return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
   return particleCall([&](auto &particles) { return particles.create(*info, *out); });
@@ -40,15 +40,15 @@ REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_SetParticleEmitterTransformEX
   return particleCall([&](auto &particles) { return particles.setTransform(emitter, *transform); });
 }
 
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_SetParticleEmitterEnabledEXT(
-    remixapi_ParticleEmitterHandleEXT emitter, remixapi_Bool enabled) {
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL
+remixapi_SetParticleEmitterEnabledEXT(remixapi_ParticleEmitterHandleEXT emitter, remixapi_Bool enabled) {
   if (enabled != 0 && enabled != 1)
     return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
   return particleCall([&](auto &particles) { return particles.setEnabled(emitter, enabled != 0); });
 }
 
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_BurstParticleEmitterEXT(remixapi_ParticleEmitterHandleEXT emitter,
-                                                                        uint32_t count) {
+                                                                           uint32_t count) {
   return particleCall([&](auto &particles) { return particles.burst(emitter, count); });
 }
 
@@ -62,15 +62,14 @@ remixapi_DestroyParticleEmitterEXT(remixapi_ParticleEmitterHandleEXT emitter) {
 }
 
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_SetParticleBudgetEXT(uint32_t maxParticles,
-                                                                      uint32_t maxSpawnsPerFrame) {
+                                                                        uint32_t maxSpawnsPerFrame) {
   std::lock_guard lock(g_apiMutex);
   if (!g_runtime.isInitialized())
     return REMIXAPI_ERROR_CODE_NOT_INITIALIZED;
   // Both or neither: the ranges are checked before either is set.
   if (maxParticles < 1024 || maxParticles > 262144 || maxSpawnsPerFrame < 64 || maxSpawnsPerFrame > 65536)
     return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
-  const auto status =
-      g_runtime.configureSetting("rtx.native.particles.budget", std::to_string(maxParticles).c_str());
+  const auto status = g_runtime.configureSetting("rtx.native.particles.budget", std::to_string(maxParticles).c_str());
   if (status != REMIXAPI_ERROR_CODE_SUCCESS)
     return status;
   return g_runtime.configureSetting("rtx.native.particles.spawnBudget", std::to_string(maxSpawnsPerFrame).c_str());

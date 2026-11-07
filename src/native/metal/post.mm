@@ -46,8 +46,7 @@ namespace remix::metal::post {
     uint64_t sourceGeneration = UINT64_MAX;
     Statistics stats;
 
-    void dispatch(id<MTLCommandBuffer> command, uint32_t pass, ArgumentSet &set, const Push &push,
-                  const char *label) {
+    void dispatch(id<MTLCommandBuffer> command, uint32_t pass, ArgumentSet &set, const Push &push, const char *label) {
       static constexpr Stage stages[] = {Stage::postMeter, Stage::postResolve, Stage::postDown, Stage::postUp};
       const auto &source = library(stages[pass]);
       id<MTLComputeCommandEncoder> encoder = computeEncoder(command, @(label), push.width, push.height);
@@ -58,8 +57,9 @@ namespace remix::metal::post {
       // postfx/renderer.cpp dispatch: 16x16 meter tiles, one resolve group,
       // 8x8 tiles for the bloom chain.
       const unsigned tile = pass == 0 ? 16 : 8;
-      const MTLSize groups = pass == 1 ? MTLSizeMake(1, 1, 1)
-                                       : MTLSizeMake((push.width + tile - 1) / tile, (push.height + tile - 1) / tile, 1);
+      const MTLSize groups = pass == 1
+                                 ? MTLSizeMake(1, 1, 1)
+                                 : MTLSizeMake((push.width + tile - 1) / tile, (push.height + tile - 1) / tile, 1);
       [encoder dispatchThreadgroups:groups
               threadsPerThreadgroup:MTLSizeMake(source.threads[0], source.threads[1], source.threads[2])];
       [encoder endEncoding];
@@ -78,8 +78,8 @@ namespace remix::metal::post {
   Renderer::Renderer() = default;
   Renderer::~Renderer() = default;
 
-  void Renderer::initialize(id<MTLDevice> device, uint32_t displayWidth, uint32_t displayHeight,
-                            uint32_t renderWidth, uint32_t renderHeight) {
+  void Renderer::initialize(id<MTLDevice> device, uint32_t displayWidth, uint32_t displayHeight, uint32_t renderWidth,
+                            uint32_t renderHeight) {
     m_gpu = std::make_unique<Gpu>();
     auto &g = *m_gpu;
     g.device = device;
@@ -92,8 +92,8 @@ namespace remix::metal::post {
       g.down.push_back(texture2d(device, MTLPixelFormatRGBA16Float, size.width, size.height, usage));
       if (g.down.size() > 1) {
         id<MTLTexture> previous = g.down[g.down.size() - 2];
-        g.up.push_back(texture2d(device, MTLPixelFormatRGBA16Float, uint32_t(previous.width),
-                                 uint32_t(previous.height), usage));
+        g.up.push_back(
+            texture2d(device, MTLPixelFormatRGBA16Float, uint32_t(previous.width), uint32_t(previous.height), usage));
       }
     }
     const auto groups = ((displayWidth + 15) / 16) * ((displayHeight + 15) / 16);
@@ -133,8 +133,7 @@ namespace remix::metal::post {
     g.stats.exposure = value.current;
     g.stats.target = value.target;
     g.stats.limit = value.limit;
-    g.stats.adapting =
-        g.activeMeter && std::abs(value.current - value.target) > std::max(value.target, 1e-6f) * .001f;
+    g.stats.adapting = g.activeMeter && std::abs(value.current - value.target) > std::max(value.target, 1e-6f) * .001f;
     g.pending[g.slot] = false;
   }
 
@@ -202,8 +201,7 @@ namespace remix::metal::post {
       for (size_t i = 0; i < g.down.size(); ++i) {
         id<MTLTexture> target = g.down[i];
         g.write(g.downSets[i], i ? g.down[i - 1] : hdr, g.dummy, target, g.border);
-        g.dispatch(command, 2, g.downSets[i], {uint32_t(target.width), uint32_t(target.height)},
-                   "Bloom downsample");
+        g.dispatch(command, 2, g.downSets[i], {uint32_t(target.width), uint32_t(target.height)}, "Bloom downsample");
       }
       for (int i = int(g.up.size()) - 1; i >= 0; --i) {
         id<MTLTexture> target = g.up[i];

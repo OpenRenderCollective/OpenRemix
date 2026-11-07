@@ -39,33 +39,41 @@ namespace remix {
       if (vkGetQueryPoolResults(device, timestamps, 0, 12, sizeof(times), times, sizeof(uint64_t),
                                 VK_QUERY_RESULT_64_BIT) == VK_SUCCESS) {
         const uint64_t mask = timestampBits >= 64 ? UINT64_MAX : (uint64_t(1) << timestampBits) - 1;
-        stats.gpuBuildMilliseconds =
-            float((times[1] - times[0]) & mask) * properties.limits.timestampPeriod / 1e6f;
-        stats.gpuTraceMilliseconds =
-            float(((times[3] - times[2]) & mask) - ((times[11] - times[10]) & mask)) * properties.limits.timestampPeriod / 1e6f;
+        stats.gpuBuildMilliseconds = float((times[1] - times[0]) & mask) * properties.limits.timestampPeriod / 1e6f;
+        stats.gpuTraceMilliseconds = float(((times[3] - times[2]) & mask) - ((times[11] - times[10]) & mask)) *
+                                     properties.limits.timestampPeriod / 1e6f;
         stats.gpuTimingsAvailable = 1;
         if (stageProfile) {
           if (stateProfile && !traceState.empty()) {
             if (auto *file = std::fopen(stateProfile, "a")) {
               if (std::ftell(file) == 0)
-                std::fprintf(file, "time_ms,opaque_ms,sequence,slot,sharc,scene_device_local,split,opaque,opaque_key,producer,producer_key,transparency,transparency_key,tlas_static,tlas_dynamic,table,table_memory,table_bytes,uniform,uniform_memory,light_nodes,light_emitters,cache_hash,cache_accumulation,cache_resolved,indirect_results,scene_generation,static_builds,table_hash,frame_hex\n");
+                std::fprintf(
+                    file, "time_ms,opaque_ms,sequence,slot,sharc,scene_device_local,split,opaque,opaque_key,producer,"
+                          "producer_key,transparency,transparency_key,tlas_static,tlas_dynamic,table,table_memory,"
+                          "table_bytes,uniform,uniform_memory,light_nodes,light_emitters,cache_hash,cache_accumulation,"
+                          "cache_resolved,indirect_results,scene_generation,static_builds,table_hash,frame_hex\n");
               const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
-                  std::chrono::system_clock::now().time_since_epoch()).count();
+                                   std::chrono::system_clock::now().time_since_epoch())
+                                   .count();
               std::fprintf(file, "%lld,%.6f,%s\n", static_cast<long long>(now),
-                  double((times[6] - times[5]) & mask) * properties.limits.timestampPeriod / 1e6, traceState.c_str());
+                           double((times[6] - times[5]) & mask) * properties.limits.timestampPeriod / 1e6,
+                           traceState.c_str());
               std::fclose(file);
             }
           }
           if (auto *file = std::fopen(stageProfile, "a")) {
             if (std::ftell(file) == 0)
-              std::fprintf(file, "time_ms,primary_ms,sharc_ms,opaque_ms,local_ms,transparency_ms,confidence_ms,denoise_ms,prepare_ms\n");
+              std::fprintf(file, "time_ms,primary_ms,sharc_ms,opaque_ms,local_ms,transparency_ms,confidence_ms,denoise_"
+                                 "ms,prepare_ms\n");
             const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::system_clock::now().time_since_epoch()).count();
+                                 std::chrono::system_clock::now().time_since_epoch())
+                                 .count();
             auto elapsed = [&](unsigned first, unsigned last) {
               return double((times[last] - times[first]) & mask) * properties.limits.timestampPeriod / 1e6;
             };
             std::fprintf(file, "%lld,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f\n", static_cast<long long>(now),
-                elapsed(2, 4), elapsed(4, 5), elapsed(5, 6), elapsed(6, 7), elapsed(11, 3), elapsed(10, 8), elapsed(8, 11) + elapsed(3, 9), elapsed(1, 2));
+                         elapsed(2, 4), elapsed(4, 5), elapsed(5, 6), elapsed(6, 7), elapsed(11, 3), elapsed(10, 8),
+                         elapsed(8, 11) + elapsed(3, 9), elapsed(1, 2));
             std::fclose(file);
           }
         }
@@ -74,15 +82,14 @@ namespace remix {
     }
     if (!compactPending.empty()) {
       std::vector<uint64_t> sizes(compactPending.size());
-      check(vkGetQueryPoolResults(device, compaction, 0, uint32_t(sizes.size()), sizes.size() * 8,
-                                  sizes.data(), 8, VK_QUERY_RESULT_64_BIT));
+      check(vkGetQueryPoolResults(device, compaction, 0, uint32_t(sizes.size()), sizes.size() * 8, sizes.data(), 8,
+                                  VK_QUERY_RESULT_64_BIT));
       for (size_t i = 0; i < sizes.size(); ++i) {
         auto &geometry = *compactPending[i];
         if (!sizes[i] || sizes[i] >= geometry.accel->size)
           continue;
         auto compact = acceleration(sizes[i], VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR);
-        VkCopyAccelerationStructureInfoKHR copy = {.sType =
-                                                       VK_STRUCTURE_TYPE_COPY_ACCELERATION_STRUCTURE_INFO_KHR,
+        VkCopyAccelerationStructureInfoKHR copy = {.sType = VK_STRUCTURE_TYPE_COPY_ACCELERATION_STRUCTURE_INFO_KHR,
                                                    .src = geometry.accel->handle,
                                                    .dst = compact->handle,
                                                    .mode = VK_COPY_ACCELERATION_STRUCTURE_MODE_COMPACT_KHR};
@@ -130,15 +137,12 @@ namespace remix {
     if (work.empty())
       return;
     for (const auto &geometry : work)
-      scratchBytes +=
-          align(geometry->update ? geometry->sizes.updateScratchSize : geometry->sizes.buildScratchSize,
-                asProperties.minAccelerationStructureScratchOffsetAlignment);
-    if (!scratch ||
-        scratch->size < scratchBytes + asProperties.minAccelerationStructureScratchOffsetAlignment)
+      scratchBytes += align(geometry->update ? geometry->sizes.updateScratchSize : geometry->sizes.buildScratchSize,
+                            asProperties.minAccelerationStructureScratchOffsetAlignment);
+    if (!scratch || scratch->size < scratchBytes + asProperties.minAccelerationStructureScratchOffsetAlignment)
       scratch = buffer(scratchBytes + asProperties.minAccelerationStructureScratchOffsetAlignment,
                        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-    VkDeviceAddress address =
-        align(scratch->address, asProperties.minAccelerationStructureScratchOffsetAlignment);
+    VkDeviceAddress address = align(scratch->address, asProperties.minAccelerationStructureScratchOffsetAlignment);
     std::vector<VkAccelerationStructureBuildGeometryInfoKHR> builds;
     std::vector<const VkAccelerationStructureBuildRangeInfoKHR *> ranges;
     for (auto &g : work) {

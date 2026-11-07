@@ -19,18 +19,18 @@ namespace {
 
 int main() {
   const auto &library = *nrd::GetLibraryDesc();
-  require(library.versionMajor == 4 && library.versionMinor == 18 && library.versionBuild == 0,
-          "NRD revision changed");
+  require(library.versionMajor == 4 && library.versionMinor == 18 && library.versionBuild == 0, "NRD revision changed");
   require(library.normalEncoding == nrd::NormalEncoding::R10_G10_B10_A2_UNORM &&
               library.roughnessEncoding == nrd::RoughnessEncoding::LINEAR,
           "CPU and shader guide encodings differ");
   const auto &offset = library.spirvBindingOffsets;
-  require(offset.samplerOffset == 0 && offset.constantBufferOffset == 2 &&
-              offset.storageTextureAndBufferOffset == 3 && offset.textureOffset == 20,
+  require(offset.samplerOffset == 0 && offset.constantBufferOffset == 2 && offset.storageTextureAndBufferOffset == 3 &&
+              offset.textureOffset == 20,
           "SPIR-V binding contract changed");
   std::set<std::string> reached;
-  for (auto kind : {nrd::Denoiser::REBLUR_DIFFUSE_SH, nrd::Denoiser::SIGMA_SHADOW_TRANSLUCENCY, nrd::Denoiser::REBLUR_DIFFUSE,
-                    nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR, nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR_SH}) {
+  for (auto kind :
+       {nrd::Denoiser::REBLUR_DIFFUSE_SH, nrd::Denoiser::SIGMA_SHADOW_TRANSLUCENCY, nrd::Denoiser::REBLUR_DIFFUSE,
+        nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR, nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR_SH}) {
     nrd::DenoiserDesc denoiser{0, kind};
     nrd::InstanceCreationDesc create{};
     create.denoisers = &denoiser;
@@ -54,13 +54,13 @@ int main() {
       common.enableValidation = frame % 2;
       common.splitScreen = frame >= 8 ? (frame >= 10 ? 1.f : .5f) : 0.f;
       common.frameIndex = frame;
-      common.accumulationMode =
-          frame == 0 ? nrd::AccumulationMode::CLEAR_AND_RESTART : nrd::AccumulationMode::CONTINUE;
+      common.accumulationMode = frame == 0 ? nrd::AccumulationMode::CLEAR_AND_RESTART : nrd::AccumulationMode::CONTINUE;
       common.timeDeltaBetweenFrames = frame % 2 ? 33.f : 8.f;
       nrd::ReblurSettings settings{};
       settings.hitDistanceReconstructionMode = nrd::HitDistanceReconstructionMode::OFF;
       if ((kind == nrd::Denoiser::REBLUR_DIFFUSE || kind == nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR ||
-           kind == nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR_SH) && frame >= 2 && frame < 4) {
+           kind == nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR_SH) &&
+          frame >= 2 && frame < 4) {
         settings.hitDistanceReconstructionMode = nrd::HitDistanceReconstructionMode::AREA_3X3;
         settings.diffusePrepassBlurRadius = 4.f;
       }
@@ -98,14 +98,12 @@ int main() {
   }
   for (bool localReconstruction : {false, true}) {
     for (bool validation : {false, true}) {
-      for (auto kind : {nrd::Denoiser::REBLUR_DIFFUSE_SH,
-                        nrd::Denoiser::SIGMA_SHADOW_TRANSLUCENCY,
-                        nrd::Denoiser::REBLUR_DIFFUSE,
-                        nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR,
-                        nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR_SH}) {
+      for (auto kind :
+           {nrd::Denoiser::REBLUR_DIFFUSE_SH, nrd::Denoiser::SIGMA_SHADOW_TRANSLUCENCY, nrd::Denoiser::REBLUR_DIFFUSE,
+            nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR, nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR_SH}) {
         const bool local = kind == nrd::Denoiser::REBLUR_DIFFUSE;
-        const bool pbr = kind == nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR ||
-                         kind == nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR_SH;
+        const bool pbr =
+            kind == nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR || kind == nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR_SH;
         const bool sigma = kind == nrd::Denoiser::SIGMA_SHADOW_TRANSLUCENCY;
         nrd::DenoiserDesc denoiser{0, kind};
         nrd::InstanceCreationDesc create{};
@@ -121,32 +119,24 @@ int main() {
             common.worldToViewMatrix[i] = common.worldToViewMatrixPrev[i] = 1;
           }
           for (unsigned i = 0; i < 2; ++i)
-            common.resourceSize[i] = common.resourceSizePrev[i] =
-                common.rectSize[i] = common.rectSizePrev[i] = 128;
+            common.resourceSize[i] = common.resourceSizePrev[i] = common.rectSize[i] = common.rectSizePrev[i] = 128;
           common.frameIndex = frame;
-          common.accumulationMode =
-              frame ? nrd::AccumulationMode::CONTINUE
-                    : nrd::AccumulationMode::CLEAR_AND_RESTART;
+          common.accumulationMode = frame ? nrd::AccumulationMode::CONTINUE : nrd::AccumulationMode::CLEAR_AND_RESTART;
           common.enableValidation = validation && !sigma && !local;
           common.isHistoryConfidenceAvailable = !sigma && !local;
           ok(nrd::SetCommonSettings(*instance, common));
           if (sigma) {
             nrd::SigmaSettings settings{};
             settings.lightDirection[1] = 1;
-            settings.maxStabilizedFrameNum =
-                frame % 2 ? 1 : nrd::SIGMA_MAX_HISTORY_FRAME_NUM;
+            settings.maxStabilizedFrameNum = frame % 2 ? 1 : nrd::SIGMA_MAX_HISTORY_FRAME_NUM;
             ok(nrd::SetDenoiserSettings(*instance, 0, &settings));
           } else {
             nrd::ReblurSettings settings{};
-            settings.maxStabilizedFrameNum =
-                frame % 2 ? 1 : nrd::REBLUR_MAX_HISTORY_FRAME_NUM;
-            settings.diffusePrepassBlurRadius =
-                local ? (localReconstruction ? 4.f : 0.f)
-                      : (frame % 2 ? 0.f : 4.f);
-            settings.hitDistanceReconstructionMode =
-                pbr || (local && localReconstruction)
-                    ? nrd::HitDistanceReconstructionMode::AREA_3X3
-                    : nrd::HitDistanceReconstructionMode::OFF;
+            settings.maxStabilizedFrameNum = frame % 2 ? 1 : nrd::REBLUR_MAX_HISTORY_FRAME_NUM;
+            settings.diffusePrepassBlurRadius = local ? (localReconstruction ? 4.f : 0.f) : (frame % 2 ? 0.f : 4.f);
+            settings.hitDistanceReconstructionMode = pbr || (local && localReconstruction)
+                                                         ? nrd::HitDistanceReconstructionMode::AREA_3X3
+                                                         : nrd::HitDistanceReconstructionMode::OFF;
             ok(nrd::SetDenoiserSettings(*instance, 0, &settings));
           }
           const nrd::Identifier id = 0;
@@ -154,11 +144,8 @@ int main() {
           uint32_t count{};
           ok(nrd::GetComputeDispatches(*instance, &id, 1, dispatches, count));
           for (uint32_t i = 0; i < count; ++i) {
-            const auto *shader =
-                desc.pipelines[dispatches[i].pipelineIndex].shaderIdentifier;
-            require(remix::denoise::pipelineRequired(shader, sigma, local, pbr,
-                                                     validation,
-                                                     localReconstruction),
+            const auto *shader = desc.pipelines[dispatches[i].pipelineIndex].shaderIdentifier;
+            require(remix::denoise::pipelineRequired(shader, sigma, local, pbr, validation, localReconstruction),
                     shader);
           }
         }
@@ -168,5 +155,6 @@ int main() {
   }
   require(reached.size() == sizeof(remix::denoise::shaders) / sizeof(remix::denoise::shaders[0]),
           "A compiled permutation was not exercised");
-  std::printf("All %zu pinned diffuse SH/radiance, SIGMA, clear and validation permutations exercised\n", reached.size());
+  std::printf("All %zu pinned diffuse SH/radiance, SIGMA, clear and validation permutations exercised\n",
+              reached.size());
 }

@@ -23,8 +23,8 @@ namespace remix::ui {
     void drawCapture(ProfileUi &ui) {
       using State = usd::CaptureStatus::State;
       const auto status = usd::captureStatus();
-      const bool busy = status.state == State::Requested || status.state == State::Recording ||
-                        status.state == State::Writing;
+      const bool busy =
+          status.state == State::Requested || status.state == State::Recording || status.state == State::Writing;
       static char name[128] = {};
       if (static bool loaded = false; !loaded) {
         std::snprintf(name, sizeof name, "%s", status.name.c_str());
@@ -43,7 +43,7 @@ namespace remix::ui {
         ImGui::SetTooltip("Write the next frame's meshes, materials, textures, lights and camera as a USD\n"
                           "capture (RTX Remix layout) for the Remix Toolkit or for authoring mods.");
       ImGui::SameLine();
-      const std::string label = (ui.capturingSceneCaptureShortcut ? std::string("Press a shortcut...")
+      const std::string label = (ui.capturingSceneCaptureShortcut  ? std::string("Press a shortcut...")
                                  : ui.sceneCaptureShortcut.empty() ? std::string("Set shortcut")
                                                                    : ui.sceneCaptureShortcut) +
                                 "###Capture shortcut";
@@ -109,8 +109,8 @@ namespace remix::ui {
       ImGui::TextUnformatted(usd::modLoadText().c_str());
     else if (!status.mods.empty())
       ImGui::Text("Loaded in %.1f s%s: geometry %.2f GB; %zu of %zu replacement materials in full", status.loadSeconds,
-                  status.fromCache ? " from its cache" : "", double(status.geometryBytes) / 1e9,
-                  status.materialsInFull, status.materials);
+                  status.fromCache ? " from its cache" : "", double(status.geometryBytes) / 1e9, status.materialsInFull,
+                  status.materials);
     if (!status.diagnostic.empty())
       ImGui::TextColored(ImVec4(1, .55f, .4f, 1), "%s", status.diagnostic.c_str());
     ImGui::Separator();

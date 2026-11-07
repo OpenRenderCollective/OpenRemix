@@ -43,8 +43,8 @@ REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_PumpEvents() {
   }
 }
 
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_PollInputEvents(remixapi_InputEvent *events,
-                                                                   uint32_t capacity, uint32_t *outCount) {
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_PollInputEvents(remixapi_InputEvent *events, uint32_t capacity,
+                                                                   uint32_t *outCount) {
   if (!outCount)
     return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
   *outCount = 0;

@@ -68,9 +68,9 @@ namespace {
       require(a.mesh == b.mesh && a.surface == b.surface && a.material == b.material && a.model == b.model,
               "Retained record resolved differently");
       require(a.instanceIndex == b.instanceIndex && a.surfaceIndex == b.surfaceIndex &&
-                  a.blend.enabled == b.blend.enabled && a.blend.src == b.blend.src &&
-                  a.doubleSided == b.doubleSided && a.decal == b.decal && a.depthBias == b.depthBias &&
-                  a.alphaOverride == b.alphaOverride && a.compare == b.compare && a.reference == b.reference,
+                  a.blend.enabled == b.blend.enabled && a.blend.src == b.blend.src && a.doubleSided == b.doubleSided &&
+                  a.decal == b.decal && a.depthBias == b.depthBias && a.alphaOverride == b.alphaOverride &&
+                  a.compare == b.compare && a.reference == b.reference,
               "Retained record state differs from DrawInstance");
       require(b.instanceId != 0 && b.instanceId == r.draws()[0].instanceId, "Retained identity missing");
       require(b.classification == 0 && a.classification == 1, "Retained instance is not static");
@@ -250,8 +250,8 @@ namespace {
       r.createRetained(info);
     const double retained = measure([&] { r.drawRetained(nullptr); });
     require(r.retainedStatistics().draws == count, "Replay count");
-    std::printf("per instance: DrawInstance %.1f ns, retained replay %.1f ns (%u instances, 1 surface)\n",
-                immediate, retained, count);
+    std::printf("per instance: DrawInstance %.1f ns, retained replay %.1f ns (%u instances, 1 surface)\n", immediate,
+                retained, count);
   }
 } // namespace
 

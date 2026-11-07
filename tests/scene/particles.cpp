@@ -5,27 +5,27 @@
 #include <limits>
 
 namespace {
-void require(bool value, const char *message) {
-  if (!value) {
-    std::fprintf(stderr, "%s\n", message);
-    std::exit(1);
+  void require(bool value, const char *message) {
+    if (!value) {
+      std::fprintf(stderr, "%s\n", message);
+      std::exit(1);
+    }
   }
-}
-bool approx(float a, float b, float tolerance = 1e-4f) { return std::abs(a - b) <= tolerance; }
+  bool approx(float a, float b, float tolerance = 1e-4f) { return std::abs(a - b) <= tolerance; }
 
-remixapi_ParticleEmitterInfoEXT plain() {
-  remixapi_ParticleEmitterInfoEXT info{};
-  info.sType = REMIXAPI_STRUCT_TYPE_PARTICLE_EMITTER_INFO_EXT;
-  info.shape = REMIXAPI_PARTICLE_SHAPE_BOX_EXT;
-  info.maxParticles = 1000;
-  info.transform = {{{1, 0, 0, 5}, {0, 1, 0, 0}, {0, 0, 1, 0}}};
-  info.extent = {1, 1, 1};
-  info.spawnRate = 100;
-  info.lifetimeMin = info.lifetimeMax = 2;
-  info.sizeStart = info.sizeEnd = .1f;
-  info.colorStart = info.colorEnd = {1, 1, 1, 1};
-  return info;
-}
+  remixapi_ParticleEmitterInfoEXT plain() {
+    remixapi_ParticleEmitterInfoEXT info{};
+    info.sType = REMIXAPI_STRUCT_TYPE_PARTICLE_EMITTER_INFO_EXT;
+    info.shape = REMIXAPI_PARTICLE_SHAPE_BOX_EXT;
+    info.maxParticles = 1000;
+    info.transform = {{{1, 0, 0, 5}, {0, 1, 0, 0}, {0, 0, 1, 0}}};
+    info.extent = {1, 1, 1};
+    info.spawnRate = 100;
+    info.lifetimeMin = info.lifetimeMax = 2;
+    info.sizeStart = info.sizeEnd = .1f;
+    info.colorStart = info.colorEnd = {1, 1, 1, 1};
+    return info;
+  }
 } // namespace
 
 int main() {
@@ -151,7 +151,8 @@ int main() {
     // A second emitter does not fit the budget's remainder until the first goes.
     require(registry.create(info, other) == REMIXAPI_ERROR_CODE_SUCCESS, "A second create failed");
     frame = registry.publish(settings);
-    require(frame.emitters.size() == 1 && frame.emitters[0].handle == handle, "An emitter past the budget was published");
+    require(frame.emitters.size() == 1 && frame.emitters[0].handle == handle,
+            "An emitter past the budget was published");
     require(registry.statistics().allocatedParticles == 1000, "Allocated particles were wrong");
     require(registry.destroy(handle) == REMIXAPI_ERROR_CODE_SUCCESS, "Destroy failed");
     require(registry.destroy(handle) == REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS, "A destroyed emitter was destroyed");

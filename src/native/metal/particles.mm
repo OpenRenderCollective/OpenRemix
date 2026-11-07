@@ -47,7 +47,8 @@ namespace remix::metal {
     size_t align(size_t value) { return (value + argumentAlignment - 1) / argumentAlignment * argumentAlignment; }
 
     id<MTLBuffer> privateBuffer(id<MTLDevice> device, size_t size) {
-      id<MTLBuffer> result = [device newBufferWithLength:std::max<size_t>(size, 16) options:MTLResourceStorageModePrivate];
+      id<MTLBuffer> result = [device newBufferWithLength:std::max<size_t>(size, 16)
+                                                 options:MTLResourceStorageModePrivate];
       check(result, "particle buffer");
       return result;
     }
@@ -108,7 +109,8 @@ namespace remix::metal {
       if (!c.pipeline) {
         // The untraced stages are small and a frame without them loses its
         // spawns (the registry has handed them out): they compile at once.
-        c.pipeline = tracedStage ? computePipelineAsync(device, stages[stage], 0) : computePipeline(device, stages[stage]);
+        c.pipeline =
+            tracedStage ? computePipelineAsync(device, stages[stage], 0) : computePipeline(device, stages[stage]);
         if (c.pipeline) {
           c.pool = ArgumentSet(device, stages[stage], 0);
           if (tracedStage)
@@ -376,9 +378,14 @@ namespace remix::metal {
     const uint32_t targetPool = g.parity, sourcePool = g.parity ^ 1u;
     const auto pool = [&](ArgumentSet &set) {
       set.begin(g.slot);
-      const id<MTLBuffer> buffers[8] = {slot.frame,         g.particles[sourcePool], g.particles[targetPool],
-                                        g.counts[sourcePool], g.counts[targetPool],    g.indirect,
-                                        g.statistics,        g.light};
+      const id<MTLBuffer> buffers[8] = {slot.frame,
+                                        g.particles[sourcePool],
+                                        g.particles[targetPool],
+                                        g.counts[sourcePool],
+                                        g.counts[targetPool],
+                                        g.indirect,
+                                        g.statistics,
+                                        g.light};
       for (uint32_t i = 0; i < 8; ++i)
         if (set.has(i))
           set.buffer(i, buffers[i]);
@@ -443,7 +450,8 @@ namespace remix::metal {
     return emitterCount != 0;
   }
 
-  void Particles::draw(id<MTLRenderCommandEncoder> encoder, uint32_t width, uint32_t height, id<MTLTexture> sceneDepth) {
+  void Particles::draw(id<MTLRenderCommandEncoder> encoder, uint32_t width, uint32_t height,
+                       id<MTLTexture> sceneDepth) {
     auto &g = *m;
     if (!g.drawn)
       return;
@@ -461,9 +469,14 @@ namespace remix::metal {
     [encoder setCullMode:MTLCullModeNone];
     // The pool, as the passes left it (this frame's target is now the source parity's other).
     const uint32_t targetPool = g.parity ^ 1u, sourcePool = g.parity;
-    const id<MTLBuffer> buffers[8] = {slot.frame,         g.particles[sourcePool], g.particles[targetPool],
-                                      g.counts[sourcePool], g.counts[targetPool],    g.indirect,
-                                      g.statistics,        g.light};
+    const id<MTLBuffer> buffers[8] = {slot.frame,
+                                      g.particles[sourcePool],
+                                      g.particles[targetPool],
+                                      g.counts[sourcePool],
+                                      g.counts[targetPool],
+                                      g.indirect,
+                                      g.statistics,
+                                      g.light};
     for (auto *set : {&g.vertexPool, &g.fragmentPool}) {
       set->begin(g.slot);
       for (uint32_t i = 0; i < 8; ++i)
@@ -505,7 +518,9 @@ namespace remix::metal {
         [encoder setVertexBytes:push length:sizeof(push) atIndex:vertexSource.push];
       if (fragmentSource.push != 0xff)
         [encoder setFragmentBytes:push length:sizeof(push) atIndex:fragmentSource.push];
-      [encoder drawPrimitives:MTLPrimitiveTypeTriangle indirectBuffer:g.indirect indirectBufferOffset:i * indirectBytes];
+      [encoder drawPrimitives:MTLPrimitiveTypeTriangle
+                indirectBuffer:g.indirect
+          indirectBufferOffset:i * indirectBytes];
     }
     [encoder popDebugGroup];
   }

@@ -15,9 +15,9 @@ namespace remix::ui {
     ImGui::PopID();
     return changed;
   }
-#define REMIX_FIELD(name)                                                                                    \
-  template <typename... Args> bool name(const char *label, Args &&...args) {                                 \
-    return field(label, [&](const char *id) { return ImGui::name(id, std::forward<Args>(args)...); });       \
+#define REMIX_FIELD(name)                                                                                              \
+  template <typename... Args> bool name(const char *label, Args &&...args) {                                           \
+    return field(label, [&](const char *id) { return ImGui::name(id, std::forward<Args>(args)...); });                 \
   }
   REMIX_FIELD(Combo)
   REMIX_FIELD(SliderInt)

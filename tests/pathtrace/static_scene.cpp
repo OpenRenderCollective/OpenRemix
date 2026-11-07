@@ -117,7 +117,9 @@ namespace {
       }
       return true;
     }
-    std::shared_ptr<const void> owner(const FakeView &view, uint32_t surface) const { return view.vertices.at(surface); }
+    std::shared_ptr<const void> owner(const FakeView &view, uint32_t surface) const {
+      return view.vertices.at(surface);
+    }
     [[noreturn]] void tooManyObjects() const { throw std::runtime_error("too many descriptors"); }
     // A BLAS compaction: the mesh's views move.
     std::vector<const void *> compact(const scene::Mesh *mesh) {
@@ -150,7 +152,7 @@ namespace {
     bool changed = false;
     scene::TemporalEpoch epoch{};
     bool filterEmission = false;
-    std::vector<scene::TraceFrame::Surface> traced; // the frame's instances with the set's, in trace order
+    std::vector<scene::TraceFrame::Surface> traced;   // the frame's instances with the set's, in trace order
     std::vector<scene::TraceFrame::Emitter> emitters; // the frame's with the set's, in trace order
     std::string validation;
 
@@ -176,8 +178,8 @@ namespace {
       history.begin(epoch, 7, 64, 64);
       pending.clear();
       history.setFallback(&statics);
-      const trace::FrameTables<FakeEnv>::Inputs in{frame, &statics, history, previous, pending, workers, ++serial,
-                                                   true, true, 4096};
+      const trace::FrameTables<FakeEnv>::Inputs in{frame,   &statics, history, previous, pending,
+                                                   workers, ++serial, true,    true,     4096};
       tables.build(env, in);
       validation = tables.validate(env, in);
       signature = {};
@@ -575,7 +577,7 @@ namespace {
       scene.after(resources, frame);
       legacyScene.after(legacy, frame);
       if (frame == 10)
-        kept.epoch.reset = rebuilt.epoch.reset = 1; // A history reset.
+        kept.epoch.reset = rebuilt.epoch.reset = 1;               // A history reset.
       kept.filterEmission = rebuilt.filterEmission = frame >= 30; // Animated emission layouts.
       if (frame == 13 || frame == 27) {
         // BLAS compaction moves a mesh's acceleration structure.
@@ -680,9 +682,8 @@ namespace {
         bool same = x.size() == replayed.size();
         for (size_t i = 0; same && i < x.size(); ++i)
           same = x[i].instanceId == replayed[i].instanceId && x[i].instanceIndex == replayed[i].instanceIndex &&
-                 x[i].surfaceIndex == replayed[i].surfaceIndex &&
-                 x[i].classification == replayed[i].classification && x[i].model == replayed[i].model &&
-                 x[i].doubleSided == replayed[i].doubleSided;
+                 x[i].surfaceIndex == replayed[i].surfaceIndex && x[i].classification == replayed[i].classification &&
+                 x[i].model == replayed[i].model && x[i].doubleSided == replayed[i].doubleSided;
         if (!same) {
           std::fprintf(stderr, "Static scene test failed at published frame %d: replica draw list differs\n", f);
           std::exit(1);
@@ -981,8 +982,8 @@ void textureMotion() {
   // .05 in the scaled UVs, .025 in the mesh's; a wrapped offset is no motion.
   uint32_t packed = trace::detail::textureMotion(draw, {2, 1, .3f, 0}, previous);
   require(std::abs(motion(packed, 0) - .025f) < 1e-4f && motion(packed, 1) == 0, "Texture motion not in mesh UVs");
-  packed = trace::detail::textureMotion(draw, {2, 1, .3f, 0}, scene::TemporalHistory::SurfaceHistory(
-                                                                     scene::Draw(draw), 0, {2, 1, 1.25f, 0}));
+  packed = trace::detail::textureMotion(draw, {2, 1, .3f, 0},
+                                        scene::TemporalHistory::SurfaceHistory(scene::Draw(draw), 0, {2, 1, 1.25f, 0}));
   require(std::abs(motion(packed, 0) - .025f) < 1e-4f, "A wrapped offset moved the texture a whole repeat");
   draw.texcoord = {2, 1, 0, 0};
   scene::TemporalHistory::SurfaceHistory still(scene::Draw(draw), 0, {2, 1, 0, 0});

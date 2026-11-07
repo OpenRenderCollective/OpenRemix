@@ -220,8 +220,7 @@ namespace remix {
   }
 
   void NativeResources::updateTexture(remixapi_TextureHandle handle, uint32_t x, uint32_t y, uint32_t width,
-                                      uint32_t height, remixapi_Format format, const void *pixels,
-                                      uint32_t rowPitch) {
+                                      uint32_t height, remixapi_Format format, const void *pixels, uint32_t rowPitch) {
     textureCounters.updateCalls.fetch_add(1, std::memory_order_relaxed);
     CounterTicks time{textureCounters.updateTicks};
     const bool bgra = format == REMIXAPI_FORMAT_B8G8R8A8_UNORM || format == REMIXAPI_FORMAT_B8G8R8A8_SRGB;

@@ -130,15 +130,19 @@ namespace remix::trace::detail {
     uint32_t reuseConfig[4] = {}; // previous frame valid, diagnostics, ray counter address low/high
     uint64_t indirectResults = 0, blueNoise = 0;
     float firefly[4] = {};       // outgoing local direct / indirect luminance limits; meter guide; middle-grey radiance
-    uint32_t pathConfig[4] = {}; // adaptive termination, minimum completed bounces, sheet flags (1 traced indirect, 2 local lights), secondary ray mask
+    uint32_t pathConfig[4] = {}; // adaptive termination, minimum completed bounces, sheet flags (1 traced indirect, 2
+                                 // local lights), secondary ray mask
     float domeTransform[3][4] = {};
     uint64_t visibilityNodes = 0, visibilityLeaves = 0, visibilityTable = 0;
-    uint64_t movedLights = 0; // scene::MovedLight pairs, count in visibilityConfig[1]
-    uint32_t visibilityConfig[4] = {}; // table row words, moved light count, light-tree nodes in the table, terminator lift max doubled area (units², float bits)
-    float visibilityProbe[4] = {};     // world units: probe offset above the surface, decal attachment distance; texture footprint scale (render/output size); ray offset (ULPs)
+    uint64_t movedLights = 0;          // scene::MovedLight pairs, count in visibilityConfig[1]
+    uint32_t visibilityConfig[4] = {}; // table row words, moved light count, light-tree nodes in the table, terminator
+                                       // lift max doubled area (units², float bits)
+    float visibilityProbe[4] = {}; // world units: probe offset above the surface, decal attachment distance; texture
+                                   // footprint scale (render/output size); ray offset (ULPs)
     uint64_t restirCurrent = 0, restirHistoryRead = 0, restirHistoryWrite = 0, restirRemap = 0;
     uint32_t restirConfig[4] = {}; // candidates, spatial samples, temporal M cap, flags (1 initial visibility)
-    float restirParams[4] = {};    // spatial radius (pixels), emitter count, boiling filter strength, contact gap (world units)
+    float restirParams[4] =
+        {}; // spatial radius (pixels), emitter count, boiling filter strength, contact gap (world units)
     uint64_t regirRead = 0, regirWrite = 0, regirSlots = 0;
     // Caustics (visibility.glsl causticTint): strength (8 bits) and contrast
     // (8 bits, in 32nds), then the half float focus depth in world units
@@ -198,7 +202,8 @@ namespace remix::trace::detail {
     Matrix inverseCameraRelative{};
     // Local occlusion probes (pathtrace.comp, localOcclusionConfidence): per
     // pixel, the arrived share of its local light, last frame's (0: none)
-    // and this frame's. localProbeParams: movingShadowBlur, shadowTerminatorSoften, emissiveSpecularRoughness, terminator lift length.
+    // and this frame's. localProbeParams: movingShadowBlur, shadowTerminatorSoften, emissiveSpecularRoughness,
+    // terminator lift length.
     uint64_t localProbeRead = 0, localProbeWrite = 0;
     float localProbeParams[4] = {};
     // Volumetrics: each source's share of the scattered light (sun, lights,
@@ -237,12 +242,19 @@ namespace remix::trace::detail {
     uint32_t rayPortalConfig[4] = {};
     float rayPortalPlanes[scene::rayPortalSlots] = {};
   };
-  static_assert(sizeof(Frame) == 2896 && offsetof(Frame, rayPortalPlanes) == 2864 && offsetof(Frame, rayPortals) == 2336 && offsetof(Frame, woundVertices) == 2320 && offsetof(Frame, screenCameras) == 1808 && offsetof(Frame, srgbTextures) == 1280 && offsetof(Frame, pathDebug) == 1792 &&
-                offsetof(Frame, localProbeRead) == 1168 &&
+  static_assert(sizeof(Frame) == 2896 && offsetof(Frame, rayPortalPlanes) == 2864 &&
+                offsetof(Frame, rayPortals) == 2336 && offsetof(Frame, woundVertices) == 2320 &&
+                offsetof(Frame, screenCameras) == 1808 && offsetof(Frame, srgbTextures) == 1280 &&
+                offsetof(Frame, pathDebug) == 1792 && offsetof(Frame, localProbeRead) == 1168 &&
                 offsetof(Frame, localProbeParams) == 1184 && offsetof(Frame, volumeLightScales) == 1200 &&
                 offsetof(Frame, cloudShadow) == 1216 && offsetof(Frame, cloudShadowConfig) == 1264 &&
-                offsetof(Frame, inverseCameraRelative) == 1104 &&
-                offsetof(Frame, skyGuideRead) == 1064 && offsetof(Frame, skyGuideConfig) == 1088 && offsetof(Frame, volumeGrid) == 912 && offsetof(Frame, volumePrevious) == 1024 && offsetof(Frame, sparseList) == 880 && offsetof(Frame, sparseConfig) == 896 && offsetof(Frame, cameraCull) == 864 && offsetof(Frame, cutConfig) == 816 && offsetof(Frame, orcaParams) == 800 && offsetof(Frame, regirConfig) == 752 && offsetof(Frame, restirCurrent) == 656 && offsetof(Frame, visibilityNodes) == 592 && offsetof(Frame, pathConfig) == 528 &&
+                offsetof(Frame, inverseCameraRelative) == 1104 && offsetof(Frame, skyGuideRead) == 1064 &&
+                offsetof(Frame, skyGuideConfig) == 1088 && offsetof(Frame, volumeGrid) == 912 &&
+                offsetof(Frame, volumePrevious) == 1024 && offsetof(Frame, sparseList) == 880 &&
+                offsetof(Frame, sparseConfig) == 896 && offsetof(Frame, cameraCull) == 864 &&
+                offsetof(Frame, cutConfig) == 816 && offsetof(Frame, orcaParams) == 800 &&
+                offsetof(Frame, regirConfig) == 752 && offsetof(Frame, restirCurrent) == 656 &&
+                offsetof(Frame, visibilityNodes) == 592 && offsetof(Frame, pathConfig) == 528 &&
                 offsetof(Frame, firefly) == 512 && offsetof(Frame, indirectResults) == 496 &&
                 offsetof(Frame, lightGuideRead) == 384 && offsetof(Frame, lightGuideConfig) == 400 &&
                 offsetof(Frame, lightNodes) == 336 && offsetof(Frame, localConfig) == 352 &&
@@ -252,12 +264,10 @@ namespace remix::trace::detail {
                 offsetof(Frame, sun) == 320);
   inline void barrier(VkCommandBuffer command, VkPipelineStageFlags source, VkAccessFlags writes,
                       VkPipelineStageFlags destination, VkAccessFlags reads) {
-    VkMemoryBarrier b = {
-        .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER, .srcAccessMask = writes, .dstAccessMask = reads};
+    VkMemoryBarrier b = {.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER, .srcAccessMask = writes, .dstAccessMask = reads};
     vkCmdPipelineBarrier(command, source, destination, 0, 1, &b, 0, nullptr, 0, nullptr);
   }
-  constexpr VkBufferUsageFlags inputUsage =
-      VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
+  constexpr VkBufferUsageFlags inputUsage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
   constexpr VkPipelineStageFlags buildStage = VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR;
   constexpr VkAccessFlags asRead = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR;
   constexpr VkAccessFlags asWrite = VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
@@ -296,7 +306,7 @@ namespace remix {
     void launchSpares();
     // `warm`: also pays the driver's first-use costs (for a spare, off the render thread).
     static std::shared_ptr<trace::detail::BufferMemory> allocateBufferMemory(VkDevice device, VkDeviceSize size,
-                                                                           uint32_t type, bool host, bool warm);
+                                                                             uint32_t type, bool host, bool warm);
     using Buffer = trace::detail::Buffer;
     using Image = trace::detail::Image;
     using Arena = trace::detail::Arena;
@@ -365,10 +375,10 @@ namespace remix {
       bool supportsGuiding = true;
       bool supportsRoulette = true;
       bool preferFirstHit = true;
-      bool splitDirect = false;  // the split direct pass: combined-mode variants
-      bool baseEarlyOut = false; // the source's shadowEarlyOut specialization
+      bool splitDirect = false;          // the split direct pass: combined-mode variants
+      bool baseEarlyOut = false;         // the source's shadowEarlyOut specialization
       bool baseSeparateIndirect = false; // the source consumes the separate indirect pass
-      bool variants = true;      // selected through selectLightingPipeline: variants prewarmed
+      bool variants = true;              // selected through selectLightingPipeline: variants prewarmed
     };
     std::unordered_map<VkPipeline, LightingPipeline> lightingPipelines;
     // Variant key bits (selectedLightingKey). Sparse launch mode occupies the
@@ -429,8 +439,8 @@ namespace remix {
       bool active = false, valid = false, pending = false, failed = false;
       const char *diagnostics = std::getenv("REMIX_PBR_REUSE_DIAGNOSTICS");
     } pbrReuse;
-    void configurePbrReuse(VkCommandBuffer command, Frame &frame, const TraceOptions &options,
-                           uint64_t signature, bool stable);
+    void configurePbrReuse(VkCommandBuffer command, Frame &frame, const TraceOptions &options, uint64_t signature,
+                           bool stable);
     void completePbrReuse();
     void finishPbrReuse(VkCommandBuffer command);
     bool localFirstHitActive = false;
@@ -443,8 +453,8 @@ namespace remix {
     bool rouletteActive = false, rouletteFailed = false;
     // sparse: the launch of the opaque pass under sparse rendering (1 the
     // selected pixels, 2 the others); null until that variant has compiled.
-    VkPipeline selectLightingPipeline(VkPipeline pipeline, bool combinedDirect = false,
-                                      bool separateIndirect = false, uint32_t sparse = 0);
+    VkPipeline selectLightingPipeline(VkPipeline pipeline, bool combinedDirect = false, bool separateIndirect = false,
+                                      uint32_t sparse = 0);
     void forgetLightingPipeline(VkPipeline pipeline);
     VkShaderModule shaders[3] = {};
     VkQueryPool compaction = VK_NULL_HANDLE, timestamps = VK_NULL_HANDLE;
@@ -608,8 +618,7 @@ namespace remix {
     scene::TemporalHistory history;
     using VertexHistory = scene::TemporalTable<std::shared_ptr<Buffer>>;
     VertexHistory previousVertices, pendingVertices, retiredPreviousVertices;
-    scene::Matrix previousCamera{}, pendingCamera{}, previousView{}, previousProjection{},
-        pendingProjection{};
+    scene::Matrix previousCamera{}, pendingCamera{}, previousView{}, previousProjection{}, pendingProjection{};
     float previousJitter[2] = {};
     PathTracer::FrameGenerationInputs frameGeneration; // of the frame being prepared
     denoise::Frame temporalFrame{};
@@ -628,14 +637,14 @@ namespace remix {
     // the camera's cluster changes; shared by the frame slots like the above.
     struct CameraCulling {
       std::unique_ptr<Buffer> nodes, leaves;
-      uint64_t nodesVersion = 0, leavesVersion = 0; // partition versions held (0: none)
-      int32_t leavesClusters[2] = {-1, -1};         // the clusters whose united set `leaves` holds
-      uint64_t lastVersion = 0;                     // previous traced frame: partition and
-      int32_t lastCluster = -1;                     // camera cluster
+      uint64_t nodesVersion = 0, leavesVersion = 0;    // partition versions held (0: none)
+      int32_t leavesClusters[2] = {-1, -1};            // the clusters whose united set `leaves` holds
+      uint64_t lastVersion = 0;                        // previous traced frame: partition and
+      int32_t lastCluster = -1;                        // camera cluster
       uint32_t visibleClusters = 0, visibleLeaves = 0; // of `leaves`
       remixapi_CameraCullingStatisticsEXT statistics{.structSize = sizeof(remixapi_CameraCullingStatisticsEXT)};
     } cameraCulling;
-    ScreenCameras lastScreenCameras = {}; // the previous traced frame's (Frame::screenCameras flag 2)
+    ScreenCameras lastScreenCameras = {};  // the previous traced frame's (Frame::screenCameras flag 2)
     scene::RayPortals lastRayPortals = {}; // the previous traced frame's (Frame::rayPortals flag 2)
     // Sets the frame's camera culling constants; uploads what they refer to.
     void configureCameraCulling(VkCommandBuffer command, Frame &frame, const TraceOptions &options,
@@ -679,8 +688,7 @@ namespace remix {
       float range = 0, cellSize = 2;
       bool resampled = false;
       bool split = false;
-      remixapi_LocalLightGuidingStatisticsEXT stats{.structSize =
-                                                        sizeof(remixapi_LocalLightGuidingStatisticsEXT)};
+      remixapi_LocalLightGuidingStatisticsEXT stats{.structSize = sizeof(remixapi_LocalLightGuidingStatisticsEXT)};
     } lightGuiding;
     void configureLightGuiding(Frame &frame, const TraceOptions &options);
     // Sky guiding (sky_guiding.cpp): per world cell and facing, a histogram
@@ -831,7 +839,7 @@ namespace remix {
       std::vector<uint64_t> attributeHashes;
       // Per surface: normals. Unchanged normals are not uploaded by a delta.
       std::vector<uint64_t> normalHashes;
-      uint64_t contentHash = 0;            // topologyHash and positionHashes
+      uint64_t contentHash = 0;                           // topologyHash and positionHashes
       std::vector<float> attributeScratch, normalScratch; // Per-surface gathers, reused
       uint64_t topologyHash = 0;
       float low[3] = {}, high[3] = {};
@@ -841,7 +849,8 @@ namespace remix {
                       (counts.capacity() + vertexCounts.capacity()) * sizeof(uint32_t) +
                       groups.capacity() * sizeof(GeometryGroup) +
                       (shadingHashes.capacity() + positionHashes.capacity() + attributeHashes.capacity() +
-                       normalHashes.capacity()) * sizeof(uint64_t) +
+                       normalHashes.capacity()) *
+                          sizeof(uint64_t) +
                       (attributeScratch.capacity() + normalScratch.capacity()) * sizeof(float);
         for (const auto &vertices : shading)
           size += vertices.capacity() * sizeof(TraceVertex);
@@ -866,8 +875,8 @@ namespace remix {
     };
     // Finds the draw's view. When it needs new geometry, prepares conversion
     // (view state updated as the serial path does) and returns true.
-    MeshView &meshView(const scene::Draw &draw, const scene::OpacityPartition *const *partitions,
-                       size_t partitionCount, MeshConversion &conversion, bool &convert);
+    MeshView &meshView(const scene::Draw &draw, const scene::OpacityPartition *const *partitions, size_t partitionCount,
+                       MeshConversion &conversion, bool &convert);
     struct InstanceView {
       MeshView *view = nullptr;
       int32_t conversion = -1; // index into conversions, or -1
@@ -1003,8 +1012,7 @@ namespace remix {
       uint64_t combinedPrefix = 0; // Tlas::prefix of the combined TLAS's instances
       std::unique_ptr<Buffer> tableUpload;
       std::vector<uint8_t> tableShadow;
-      std::unique_ptr<Buffer> lightNodes, lightEmitters, torchNodes, torchEmitters, emissiveNodes,
-          emissiveEmitters;
+      std::unique_ptr<Buffer> lightNodes, lightEmitters, torchNodes, torchEmitters, emissiveNodes, emissiveEmitters;
       std::unique_ptr<Buffer> sharcReadback, guidingReadback, reuseReadback, rayReadback;
       uint64_t lightGeneration = 0, torchGeneration = 0, emissiveGeneration = 0;
       uint64_t lightInstance = 0, torchInstance = 0, emissiveInstance = 0;
@@ -1083,9 +1091,9 @@ namespace remix {
       VkPipeline *out = nullptr;
       bool supportsGuiding = true, supportsRoulette = true;
       bool splitDirect = false;
-      bool variants = true; // selected through selectLightingPipeline: prewarm its variants
+      bool variants = true;          // selected through selectLightingPipeline: prewarm its variants
       bool separateIndirect = false; // an opaque pass built as the separate indirect pass's consumer
-      bool background = false; // compiled off the awaited batch; requested again when needed
+      bool background = false;       // compiled off the awaited batch; requested again when needed
     };
     // Decompresses and compiles the requests whose pipeline does not exist yet
     // as one batch, concurrently on the compiler workers, and registers each as a lighting
@@ -1102,8 +1110,8 @@ namespace remix {
     bool deferLighting = false;
     // A configuration's temporal lighting pipelines, by role.
     struct TemporalTargets {
-      VkPipeline *indirect, *opaque, *transparency, *frontGuides, *psr, *single, *sheet, *splitDirect,
-          *restirInitial, *restirSpatial, *confidence;
+      VkPipeline *indirect, *opaque, *transparency, *frontGuides, *psr, *single, *sheet, *splitDirect, *restirInitial,
+          *restirSpatial, *confidence;
     };
     std::vector<LightingRequest> temporalRequests(bool split, bool sigma, bool local, bool restirPasses, bool reblur,
                                                   bool separateIndirect, const TemporalTargets &targets) const;
@@ -1121,8 +1129,7 @@ namespace remix {
     bool preparing = false, preparedRasterPrimary = true;
     bool preparedPerspective = false, preparedLocal = false;
     void createRawPipelines();
-    void configureFrame(const TraceOptions &options, bool perspective,
-                        bool local);
+    void configureFrame(const TraceOptions &options, bool perspective, bool local);
     ~Gpu();
     std::shared_ptr<trace::detail::BufferCache> bufferCache = std::make_shared<trace::detail::BufferCache>();
     uint32_t memoryType(uint32_t bits, VkMemoryPropertyFlags flags);
@@ -1132,8 +1139,7 @@ namespace remix {
     // Writes consecutive parts; offset skips bytes the buffer already holds.
     void write(Buffer &buffer, std::initializer_list<std::pair<const void *, size_t>> parts, size_t offset = 0);
     void hostBuffer(std::unique_ptr<Buffer> &out, const void *data, size_t size, VkBufferUsageFlags usage);
-    std::unique_ptr<Buffer> upload(VkCommandBuffer command, const void *data, size_t size,
-                                   VkBufferUsageFlags usage);
+    std::unique_ptr<Buffer> upload(VkCommandBuffer command, const void *data, size_t size, VkBufferUsageFlags usage);
     std::shared_ptr<Accel> acceleration(VkDeviceSize size, VkAccelerationStructureTypeKHR type);
     VkBuildAccelerationStructureFlagsKHR flags(bool deform) const;
     MeshView &mesh(VkCommandBuffer command, const scene::Draw &draw,
@@ -1153,8 +1159,8 @@ namespace remix {
     uint64_t tlasStaticGeneration = 0;
     bool topFaceCulling = false; // the setting the TLAS instance flags were built with
     bool topCombined = false;    // the TLAS layout last built
-    std::unique_ptr<Image> image(bool colorAttachment = false,
-                                 VkFormat format = VK_FORMAT_R32G32B32A32_SFLOAT, VkExtent2D size = {});
+    std::unique_ptr<Image> image(bool colorAttachment = false, VkFormat format = VK_FORMAT_R32G32B32A32_SFLOAT,
+                                 VkExtent2D size = {});
     void destroyPost();
     void beginFrame(const TraceOptions &options);
     void destroyTarget();

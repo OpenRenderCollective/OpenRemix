@@ -95,8 +95,8 @@ namespace remix::usd {
     size_t materialsInFull() const { return materialsInFull_; }
     void retireAttachments();
     // `meshes`/`lights` select what of the subtree draws (mod part toggles).
-    void draw(bool camera, float aspect, const remixapi_InstanceInfo *parent = nullptr,
-              const std::string &root = "", bool meshes = true, bool lights = true);
+    void draw(bool camera, float aspect, const remixapi_InstanceInfo *parent = nullptr, const std::string &root = "",
+              bool meshes = true, bool lights = true);
     // Materials are created on first use; their textures load then unless
     // already cached (NativeResources::cacheTexturePath).
     remixapi_MaterialHandle materialHandle(const std::string &id);
@@ -132,8 +132,8 @@ namespace remix::usd {
     std::map<std::string, std::weak_ptr<scene::Texture>> pulled_;
     std::map<std::string, std::vector<uint64_t>> materialKeys_;
     std::vector<StreamedMaterial> streamed_;
-    std::vector<size_t> pull_queue_;   // drawn, in the order first seen
-    std::vector<size_t> pull_ready_;   // decoded, not yet given their files
+    std::vector<size_t> pull_queue_;                         // drawn, in the order first seen
+    std::vector<size_t> pull_ready_;                         // decoded, not yet given their files
     std::vector<std::shared_ptr<scene::Texture>> pull_held_; // what pull_ready_ takes
     std::future<Pull> pull_;
     uint64_t frame_ = 0;

@@ -28,18 +28,18 @@ namespace remix {
       m_rasterSky->setSettings(settings.sky, m_skyControl);
       const auto &view = raster.view(), &projection = raster.projection();
       m_rasterUpAxis.observe(scene::inverse(view));
-      const sky::FrameDescription description{
-          .view = view,
-          .projection = projection,
-          .previousView = m_rasterSkyReady ? m_rasterSkyView : view,
-          .previousProjection = m_rasterSkyReady ? m_rasterSkyProjection : projection,
-          .renderWidth = m_swapchainExtent.width,
-          .renderHeight = m_swapchainExtent.height,
-          .outputWidth = m_swapchainExtent.width,
-          .outputHeight = m_swapchainExtent.height,
-          .metersPerUnit = settings.trace.sceneScale,
-          .upAxis = m_rasterUpAxis.resolve(settings.trace.volumetricUpAxis),
-          .cameraCut = !m_rasterSkyReady};
+      const sky::FrameDescription description{.view = view,
+                                              .projection = projection,
+                                              .previousView = m_rasterSkyReady ? m_rasterSkyView : view,
+                                              .previousProjection =
+                                                  m_rasterSkyReady ? m_rasterSkyProjection : projection,
+                                              .renderWidth = m_swapchainExtent.width,
+                                              .renderHeight = m_swapchainExtent.height,
+                                              .outputWidth = m_swapchainExtent.width,
+                                              .outputHeight = m_swapchainExtent.height,
+                                              .metersPerUnit = settings.trace.sceneScale,
+                                              .upAxis = m_rasterUpAxis.resolve(settings.trace.volumetricUpAxis),
+                                              .cameraCut = !m_rasterSkyReady};
       gpu::GpuScope scope(buffer, "NUMOS sky");
       m_rasterSkyActive = m_rasterSky->record(buffer, description);
       m_rasterSkyReady |= m_rasterSkyActive;

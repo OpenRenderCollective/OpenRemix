@@ -22,7 +22,7 @@ namespace remix::test {
   }
 
   inline remixapi_MaterialHandle material(remix::NativeResources &r, uint64_t hash, float red, float green, float blue,
-                                   float alpha = 1, remixapi_Path texture = nullptr, int compare = 7) {
+                                          float alpha = 1, remixapi_Path texture = nullptr, int compare = 7) {
     remixapi_MaterialInfoOpaqueEXT opaque = {};
     opaque.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
     opaque.albedoConstant = {red, green, blue};
@@ -39,7 +39,7 @@ namespace remix::test {
     return result;
   }
   inline remixapi_MeshHandle quad(remix::NativeResources &r, uint64_t hash, remixapi_MaterialHandle mat,
-                           uint32_t color = 0xffffffff, bool skin = false) {
+                                  uint32_t color = 0xffffffff, bool skin = false) {
     remixapi_HardcodedVertex vertices[4] = {};
     const float positions[4][3] = {{-.8f, -.8f, .5f}, {.8f, -.8f, .5f}, {.8f, .8f, .5f}, {-.8f, .8f, .5f}};
     for (int i = 0; i < 4; ++i) {
@@ -87,10 +87,8 @@ namespace remix::test {
     r.setupCamera(info);
   }
   inline void ui(remix::NativeResources &r, uint64_t texture, uint32_t color, bool depth = false, float z = 0) {
-    const remixapi_UIVertex vertices[] = {{16, 16, z, 0, 0, color},
-                                          {48, 16, z, 1, 0, color},
-                                          {48, 48, z, 1, 1, color},
-                                          {16, 48, z, 0, 1, color}};
+    const remixapi_UIVertex vertices[] = {
+        {16, 16, z, 0, 0, color}, {48, 16, z, 1, 0, color}, {48, 48, z, 1, 1, color}, {16, 48, z, 0, 1, color}};
     const uint32_t indices[] = {0, 1, 2, 0, 2, 3};
     const remixapi_UIDrawCommand command = {texture, 6, 0, 0, depth ? REMIXAPI_UI_DRAW_FLAG_DEPTH_TEST : 0u};
     remixapi_UIDrawList list = {};
@@ -105,4 +103,4 @@ namespace remix::test {
     r.submitUi(&list);
   }
 
-}
+} // namespace remix::test

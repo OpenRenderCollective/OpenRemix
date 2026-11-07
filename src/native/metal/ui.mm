@@ -70,7 +70,8 @@ fragment half4 uiFragment(VertexOut in [[stage_in]], texture2d<half, access::sam
         id<MTLTexture> target = ui.textures.at(uint64_t(texture->GetTexID()));
         const bool whole = texture->Status == ImTextureStatus_WantCreate;
         const int x = whole ? 0 : texture->UpdateRect.x, y = whole ? 0 : texture->UpdateRect.y;
-        const int w = whole ? texture->Width : texture->UpdateRect.w, h = whole ? texture->Height : texture->UpdateRect.h;
+        const int w = whole ? texture->Width : texture->UpdateRect.w,
+                  h = whole ? texture->Height : texture->UpdateRect.h;
         [target replaceRegion:MTLRegionMake2D(x, y, w, h)
                   mipmapLevel:0
                     withBytes:texture->GetPixelsAt(x, y)
@@ -281,8 +282,8 @@ fragment half4 uiFragment(VertexOut in [[stage_in]], texture2d<half, access::sam
     }
     const float l = data->DisplayPos.x, r = data->DisplayPos.x + data->DisplaySize.x;
     const float t = data->DisplayPos.y, b = data->DisplayPos.y + data->DisplaySize.y;
-    const float projection[16] = {2 / (r - l), 0, 0, 0, 0, 2 / (t - b), 0, 0, 0, 0, 1, 0,
-                                  (r + l) / (l - r), (t + b) / (b - t), 0, 1};
+    const float projection[16] = {2 / (r - l),       0, 0, 0, 0, 2 / (t - b), 0, 0, 0, 0, 1, 0, (r + l) / (l - r),
+                                  (t + b) / (b - t), 0, 1};
     [encoder setViewport:{0, 0, double(width), double(height), 0, 1}];
     [encoder setRenderPipelineState:g.format == MTLPixelFormatRGBA16Float ? ui.hdrPipeline : ui.pipeline];
     [encoder setDepthStencilState:ui.depth];
@@ -309,9 +310,7 @@ fragment half4 uiFragment(VertexOut in [[stage_in]], texture2d<half, access::sam
         if (texture == ui.textures.end())
           continue;
         [encoder setFragmentTexture:texture->second atIndex:0];
-        [encoder setVertexBuffer:vertices
-                          offset:(vertexOffset + command.VtxOffset) * sizeof(ImDrawVert)
-                         atIndex:0];
+        [encoder setVertexBuffer:vertices offset:(vertexOffset + command.VtxOffset) * sizeof(ImDrawVert) atIndex:0];
         [encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle
                             indexCount:command.ElemCount
                              indexType:sizeof(ImDrawIdx) == 2 ? MTLIndexTypeUInt16 : MTLIndexTypeUInt32
@@ -452,7 +451,6 @@ fragment half4 uiFragment(VertexOut in [[stage_in]], texture2d<half, access::sam
   config::SkyState RemixNativeRuntime::skyState() const {
     return m_pathTracer && m_backend ? m_pathTracer->skyState() : config::SkyState{};
   }
-
 
   ui::HdrStatus RemixNativeRuntime::uiHdr() const {
     ui::HdrStatus result;

@@ -74,8 +74,8 @@ namespace {
 
   // A quad facing the camera at depth z, over x0..x1 of the view's width and
   // the middle `height` of its height.
-  remixapi_MeshHandle quad(uint64_t hash, remixapi_MaterialHandle material, float z, float x0, float x1,
-                           uint32_t color, float height = .5f) {
+  remixapi_MeshHandle quad(uint64_t hash, remixapi_MaterialHandle material, float z, float x0, float x1, uint32_t color,
+                           float height = .5f) {
     remixapi_HardcodedVertex vertices[4]{};
     for (unsigned i = 0; i < 4; ++i) {
       vertices[i].position[0] = (i == 0 || i == 3 ? x0 : x1) * 2 * z;
@@ -149,7 +149,8 @@ namespace {
     int channels = 0;
     Image image;
     unsigned char *data = stbi_load(path.c_str(), &image.width, &image.height, &channels, 4);
-    require(data && image.width >= 256 && image.width % 256 == 0 && image.width == 2 * image.height, "Overlay capture unavailable");
+    require(data && image.width >= 256 && image.width % 256 == 0 && image.width == 2 * image.height,
+            "Overlay capture unavailable");
     image.pixels.assign(data, data + size_t(image.width) * image.height * 4);
     stbi_image_free(data);
     return image;
@@ -243,8 +244,8 @@ int main(int argc, char **argv) {
     ok(api.SetConfigVariable((std::string("rtx.native.pathtrace.") + key).c_str(), "0"));
   ok(api.SetConfigVariable("rtx.native.pathtrace.denoiser", "off"));
   ok(api.SetConfigVariable("rtx.native.pathtrace.upscaler", "off"));
-  const auto capabilitiesOf = reinterpret_cast<PFN_remixapi_GetBackendCapabilitiesEXT>(
-      dlsym(library, "remixapi_GetBackendCapabilitiesEXT"));
+  const auto capabilitiesOf =
+      reinterpret_cast<PFN_remixapi_GetBackendCapabilitiesEXT>(dlsym(library, "remixapi_GetBackendCapabilitiesEXT"));
   require(capabilitiesOf, "Backend capabilities are not exported");
 
   // Role CUT: an emissive red quad in front of an emissive green wall is not
@@ -276,8 +277,7 @@ int main(int argc, char **argv) {
     const auto image = capture(scene, 8, directory + "/cut.png");
     const float leftRed = image.channel(64, 64, 0), leftGreen = image.channel(64, 64, 1);
     const float rightRed = image.channel(192, 64, 0), rightGreen = image.channel(192, 64, 1);
-    std::printf("cut: left red %.3f green %.3f, right red %.3f green %.3f\n", leftRed, leftGreen, rightRed,
-                rightGreen);
+    std::printf("cut: left red %.3f green %.3f, right red %.3f green %.3f\n", leftRed, leftGreen, rightRed, rightGreen);
     require(leftGreen > leftRed + .2f, "Cut: the traced instance is seen inside the coverage");
     require(rightRed > rightGreen + .2f, "Cut: the traced instance is missing outside the coverage");
   }
@@ -298,8 +298,9 @@ int main(int argc, char **argv) {
         ok(api.SetConfigVariable("rtx.native.pathtrace.upscaler", "auto"));
         ok(api.SetConfigVariable("rtx.native.pathtrace.dlssQuality", "quality"));
         // The configuration with MetalFX is prepared in the background.
-        const auto diagnosticsOf = reinterpret_cast<remixapi_ErrorCode(REMIXAPI_CALL *)(
-            remixapi_ReconstructionDiagnosticsEXT *)>(dlsym(library, "remixapi_GetReconstructionDiagnosticsEXT"));
+        const auto diagnosticsOf =
+            reinterpret_cast<remixapi_ErrorCode(REMIXAPI_CALL *)(remixapi_ReconstructionDiagnosticsEXT *)>(
+                dlsym(library, "remixapi_GetReconstructionDiagnosticsEXT"));
         require(diagnosticsOf, "Reconstruction diagnostics are not exported");
         remixapi_ReconstructionDiagnosticsEXT diagnostics{};
         for (unsigned frame = 0; frame < 200000; ++frame) {

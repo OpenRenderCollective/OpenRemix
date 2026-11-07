@@ -28,8 +28,8 @@ namespace {
 
 extern "C" {
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_SetSkyTimeEXT(const remixapi_SkyTimeEXT *time) {
-  if (time && (time->structSize != sizeof(*time) || !finite(time->timeOfDayHours) ||
-               !finite(time->dayLengthMinutes) || time->dayOfYear < 0 || time->dayOfYear > 365))
+  if (time && (time->structSize != sizeof(*time) || !finite(time->timeOfDayHours) || !finite(time->dayLengthMinutes) ||
+               time->dayOfYear < 0 || time->dayOfYear > 365))
     return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
   return withControl([&](remix::config::SkyControl &control) {
     ++control.timeGeneration;
@@ -43,8 +43,7 @@ REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_SetSkyTimeEXT(const remixapi_
   });
 }
 
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_SetSkyWeatherPresetEXT(const char *preset,
-                                                                          float transitionSeconds,
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_SetSkyWeatherPresetEXT(const char *preset, float transitionSeconds,
                                                                           float precipitation) {
   if (!finite(transitionSeconds) || !finite(precipitation))
     return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;

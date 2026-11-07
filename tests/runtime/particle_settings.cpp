@@ -5,12 +5,12 @@
 #include <vector>
 
 namespace {
-void require(bool value, const char *message) {
-  if (!value) {
-    std::fprintf(stderr, "%s\n", message);
-    std::exit(1);
+  void require(bool value, const char *message) {
+    if (!value) {
+      std::fprintf(stderr, "%s\n", message);
+      std::exit(1);
+    }
   }
-}
 } // namespace
 
 int main() {
@@ -21,12 +21,10 @@ int main() {
           "particle defaults");
   require(set(settings, "rtx.native.particles.rain", "1") == SetResult::Success && p.rain, "rain test emitter");
   require(set(settings, "rtx.native.particles.budget", "100") == SetResult::Invalid, "budget below its range");
-  require(set(settings, "rtx.native.particles.budget", "131072") == SetResult::Success && p.budget == 131072,
-          "budget");
+  require(set(settings, "rtx.native.particles.budget", "131072") == SetResult::Success && p.budget == 131072, "budget");
   require(set(settings, "rtx.native.particles.spawnBudget", "70000") == SetResult::Invalid,
           "spawn budget above its range");
-  require(set(settings, "rtx.native.particles.precipitation", "0.25") == SetResult::Success &&
-              p.precipitation == .25f,
+  require(set(settings, "rtx.native.particles.precipitation", "0.25") == SetResult::Success && p.precipitation == .25f,
           "precipitation");
   require(set(settings, "rtx.native.particles.intensity", "2") == SetResult::Invalid, "intensity above one");
   require(set(settings, "rtx.native.particles.noSuchKey", "1") == SetResult::Unknown, "unknown particle key");

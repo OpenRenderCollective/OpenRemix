@@ -75,8 +75,7 @@ int main(int argc, char **argv) {
   text("Night caf\xc3\xa9");
   key(SDL_SCANCODE_RETURN, true);
   key(SDL_SCANCODE_RETURN, false);
-  require(profiles.active() == "Night caf\xc3\xa9" && !ui.nameDialog,
-          "Enter did not duplicate with Unicode name");
+  require(profiles.active() == "Night caf\xc3\xa9" && !ui.nameDialog, "Enter did not duplicate with Unicode name");
   ui.nameDialog = ui.duplicate = ui.focusName = true;
   ui.name[0] = 0;
   frame();

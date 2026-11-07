@@ -17,17 +17,30 @@ namespace remix {
 
     MTLPixelFormat pixelFormat(uint32_t vkFormat) {
       switch (vkFormat) {
-      case 9: return MTLPixelFormatR8Unorm;          // VK_FORMAT_R8_UNORM
-      case 16: return MTLPixelFormatRG8Unorm;        // VK_FORMAT_R8G8_UNORM
-      case 37: case 43: return MTLPixelFormatRGBA8Unorm; // R8G8B8A8 UNORM, SRGB (raw)
-      case 44: case 50: return MTLPixelFormatBGRA8Unorm; // B8G8R8A8 UNORM, SRGB (raw)
-      case 64: return MTLPixelFormatRGB10A2Unorm;    // VK_FORMAT_A2B10G10R10_UNORM_PACK32
-      case 76: return MTLPixelFormatR16Float;        // VK_FORMAT_R16_SFLOAT
-      case 83: return MTLPixelFormatRG16Float;       // VK_FORMAT_R16G16_SFLOAT
-      case 97: return MTLPixelFormatRGBA16Float;     // VK_FORMAT_R16G16B16A16_SFLOAT
-      case 100: return MTLPixelFormatR32Float;       // VK_FORMAT_R32_SFLOAT
-      case 103: return MTLPixelFormatRG32Float;      // VK_FORMAT_R32G32_SFLOAT
-      case 109: return MTLPixelFormatRGBA32Float;    // VK_FORMAT_R32G32B32A32_SFLOAT
+      case 9:
+        return MTLPixelFormatR8Unorm; // VK_FORMAT_R8_UNORM
+      case 16:
+        return MTLPixelFormatRG8Unorm; // VK_FORMAT_R8G8_UNORM
+      case 37:
+      case 43:
+        return MTLPixelFormatRGBA8Unorm; // R8G8B8A8 UNORM, SRGB (raw)
+      case 44:
+      case 50:
+        return MTLPixelFormatBGRA8Unorm; // B8G8R8A8 UNORM, SRGB (raw)
+      case 64:
+        return MTLPixelFormatRGB10A2Unorm; // VK_FORMAT_A2B10G10R10_UNORM_PACK32
+      case 76:
+        return MTLPixelFormatR16Float; // VK_FORMAT_R16_SFLOAT
+      case 83:
+        return MTLPixelFormatRG16Float; // VK_FORMAT_R16G16_SFLOAT
+      case 97:
+        return MTLPixelFormatRGBA16Float; // VK_FORMAT_R16G16B16A16_SFLOAT
+      case 100:
+        return MTLPixelFormatR32Float; // VK_FORMAT_R32_SFLOAT
+      case 103:
+        return MTLPixelFormatRG32Float; // VK_FORMAT_R32G32_SFLOAT
+      case 109:
+        return MTLPixelFormatRGBA32Float; // VK_FORMAT_R32G32B32A32_SFLOAT
       }
       return MTLPixelFormatInvalid;
     }
@@ -35,48 +48,80 @@ namespace remix {
     // The frame's format as the VkFormat a host target of its format takes.
     uint32_t vkFormatOf(MTLPixelFormat format) {
       switch (format) {
-      case MTLPixelFormatRGBA8Unorm: case MTLPixelFormatRGBA8Unorm_sRGB: return 37;
-      case MTLPixelFormatBGRA8Unorm: case MTLPixelFormatBGRA8Unorm_sRGB: return 44;
-      case MTLPixelFormatRGB10A2Unorm: return 64;
-      case MTLPixelFormatRGBA16Float: return 97;
-      default: return 0;
+      case MTLPixelFormatRGBA8Unorm:
+      case MTLPixelFormatRGBA8Unorm_sRGB:
+        return 37;
+      case MTLPixelFormatBGRA8Unorm:
+      case MTLPixelFormatBGRA8Unorm_sRGB:
+        return 44;
+      case MTLPixelFormatRGB10A2Unorm:
+        return 64;
+      case MTLPixelFormatRGBA16Float:
+        return 97;
+      default:
+        return 0;
       }
     }
 
     MTLVertexFormat vertexFormat(uint32_t vkFormat) {
       switch (vkFormat) {
-      case 37: return MTLVertexFormatUChar4Normalized;      // R8G8B8A8_UNORM
-      case 41: return MTLVertexFormatUChar4;                // R8G8B8A8_UINT
-      case 44: return MTLVertexFormatUChar4Normalized_BGRA; // B8G8R8A8_UNORM
-      case 77: return MTLVertexFormatShort2Normalized;      // R16G16_SNORM
-      case 83: return MTLVertexFormatHalf2;                 // R16G16_SFLOAT
-      case 84: return MTLVertexFormatUShort4Normalized;     // R16G16B16A16_UNORM
-      case 97: return MTLVertexFormatHalf4;                 // R16G16B16A16_SFLOAT
-      case 98: return MTLVertexFormatUInt;                  // R32_UINT
-      case 100: return MTLVertexFormatFloat;                // R32_SFLOAT
-      case 103: return MTLVertexFormatFloat2;               // R32G32_SFLOAT
-      case 106: return MTLVertexFormatFloat3;               // R32G32B32_SFLOAT
-      case 109: return MTLVertexFormatFloat4;               // R32G32B32A32_SFLOAT
+      case 37:
+        return MTLVertexFormatUChar4Normalized; // R8G8B8A8_UNORM
+      case 41:
+        return MTLVertexFormatUChar4; // R8G8B8A8_UINT
+      case 44:
+        return MTLVertexFormatUChar4Normalized_BGRA; // B8G8R8A8_UNORM
+      case 77:
+        return MTLVertexFormatShort2Normalized; // R16G16_SNORM
+      case 83:
+        return MTLVertexFormatHalf2; // R16G16_SFLOAT
+      case 84:
+        return MTLVertexFormatUShort4Normalized; // R16G16B16A16_UNORM
+      case 97:
+        return MTLVertexFormatHalf4; // R16G16B16A16_SFLOAT
+      case 98:
+        return MTLVertexFormatUInt; // R32_UINT
+      case 100:
+        return MTLVertexFormatFloat; // R32_SFLOAT
+      case 103:
+        return MTLVertexFormatFloat2; // R32G32_SFLOAT
+      case 106:
+        return MTLVertexFormatFloat3; // R32G32B32_SFLOAT
+      case 109:
+        return MTLVertexFormatFloat4; // R32G32B32A32_SFLOAT
       }
       return MTLVertexFormatInvalid;
     }
 
     // VkBlendFactor in MTLBlendFactor order.
     MTLBlendFactor blendFactor(uint32_t value) {
-      static constexpr MTLBlendFactor factors[] = {
-          MTLBlendFactorZero, MTLBlendFactorOne, MTLBlendFactorSourceColor, MTLBlendFactorOneMinusSourceColor,
-          MTLBlendFactorDestinationColor, MTLBlendFactorOneMinusDestinationColor, MTLBlendFactorSourceAlpha,
-          MTLBlendFactorOneMinusSourceAlpha, MTLBlendFactorDestinationAlpha, MTLBlendFactorOneMinusDestinationAlpha,
-          MTLBlendFactorBlendColor, MTLBlendFactorOneMinusBlendColor, MTLBlendFactorBlendAlpha,
-          MTLBlendFactorOneMinusBlendAlpha, MTLBlendFactorSourceAlphaSaturated, MTLBlendFactorSource1Color,
-          MTLBlendFactorOneMinusSource1Color, MTLBlendFactorSource1Alpha, MTLBlendFactorOneMinusSource1Alpha};
+      static constexpr MTLBlendFactor factors[] = {MTLBlendFactorZero,
+                                                   MTLBlendFactorOne,
+                                                   MTLBlendFactorSourceColor,
+                                                   MTLBlendFactorOneMinusSourceColor,
+                                                   MTLBlendFactorDestinationColor,
+                                                   MTLBlendFactorOneMinusDestinationColor,
+                                                   MTLBlendFactorSourceAlpha,
+                                                   MTLBlendFactorOneMinusSourceAlpha,
+                                                   MTLBlendFactorDestinationAlpha,
+                                                   MTLBlendFactorOneMinusDestinationAlpha,
+                                                   MTLBlendFactorBlendColor,
+                                                   MTLBlendFactorOneMinusBlendColor,
+                                                   MTLBlendFactorBlendAlpha,
+                                                   MTLBlendFactorOneMinusBlendAlpha,
+                                                   MTLBlendFactorSourceAlphaSaturated,
+                                                   MTLBlendFactorSource1Color,
+                                                   MTLBlendFactorOneMinusSource1Color,
+                                                   MTLBlendFactorSource1Alpha,
+                                                   MTLBlendFactorOneMinusSource1Alpha};
       return value < std::size(factors) ? factors[value] : MTLBlendFactorZero;
     }
 
     MTLColorWriteMask writeMask(uint32_t vkMask) {
       // VkColorComponentFlags R1 G2 B4 A8; MTLColorWriteMask A1 B2 G4 R8.
       return MTLColorWriteMask(((vkMask & 1) ? MTLColorWriteMaskRed : 0) | ((vkMask & 2) ? MTLColorWriteMaskGreen : 0) |
-                               ((vkMask & 4) ? MTLColorWriteMaskBlue : 0) | ((vkMask & 8) ? MTLColorWriteMaskAlpha : 0));
+                               ((vkMask & 4) ? MTLColorWriteMaskBlue : 0) |
+                               ((vkMask & 8) ? MTLColorWriteMaskAlpha : 0));
     }
 
     bool fits(const int32_t rect[4], uint32_t width, uint32_t height) {
@@ -203,8 +248,8 @@ fragment float4 copyFragment(Out in [[stage_in]], texture2d<float> image [[textu
   }
 
   HostPasses::Metal::Target &HostPasses::Metal::target(remixapi_HostTargetHandleEXT handle, uint32_t format,
-                                                      uint32_t width, uint32_t height, uint32_t channels,
-                                                      uint64_t frame, uint32_t depth) {
+                                                       uint32_t width, uint32_t height, uint32_t channels,
+                                                       uint64_t frame, uint32_t depth) {
     auto &t = targets[handle];
     if (t.texture && t.depth > 1 && depth == 1)
       return t; // a volume stays one: a pass naming it as its target is skipped
@@ -221,8 +266,8 @@ fragment float4 copyFragment(Out in [[stage_in]], texture2d<float> image [[textu
       descriptor.width = width;
       descriptor.height = height;
       descriptor.depth = depth;
-      descriptor.usage = MTLTextureUsageShaderRead | (depth > 1 ? 0 : MTLTextureUsageRenderTarget) |
-                         MTLTextureUsagePixelFormatView;
+      descriptor.usage =
+          MTLTextureUsageShaderRead | (depth > 1 ? 0 : MTLTextureUsageRenderTarget) | MTLTextureUsagePixelFormatView;
       descriptor.storageMode = MTLStorageModePrivate;
       t.texture = [device newTextureWithDescriptor:descriptor];
       metal::check(t.texture, "host target");
@@ -259,7 +304,8 @@ fragment float4 copyFragment(Out in [[stage_in]], texture2d<float> image [[textu
     const MTLSamplerAddressMode modes[] = {MTLSamplerAddressModeRepeat, MTLSamplerAddressModeClampToEdge,
                                            MTLSamplerAddressModeMirrorRepeat};
     auto *descriptor = [MTLSamplerDescriptor new];
-    descriptor.minFilter = descriptor.magFilter = s.linear ? MTLSamplerMinMagFilterLinear : MTLSamplerMinMagFilterNearest;
+    descriptor.minFilter = descriptor.magFilter =
+        s.linear ? MTLSamplerMinMagFilterLinear : MTLSamplerMinMagFilterNearest;
     descriptor.sAddressMode = modes[s.addressU];
     descriptor.tAddressMode = modes[s.addressV];
     descriptor.rAddressMode = MTLSamplerAddressModeClampToEdge;
@@ -307,7 +353,8 @@ fragment float4 copyFragment(Out in [[stage_in]], texture2d<float> image [[textu
     // The frame's staging: every pass's bytes, aligned for uniform buffers.
     size_t bytes = 0;
     for (const auto &pass : passes)
-      bytes += pass.data.size() + pass.indices.size() * 4 + 256 * (pass.buffers.size() + pass.vertexBindings.size() + 2);
+      bytes +=
+          pass.data.size() + pass.indices.size() * 4 + 256 * (pass.buffers.size() + pass.vertexBindings.size() + 2);
     for (const auto &upload : uploads)
       bytes += upload.pixels.size() + 256;
     auto &staging = m.slots[slotIndex % gpuFrameCount];
@@ -344,8 +391,8 @@ fragment float4 copyFragment(Out in [[stage_in]], texture2d<float> image [[textu
     const auto ensure = [&](remixapi_HostTargetHandleEXT handle, const remixapi_HostPassEXT &info) -> Metal::Target & {
       if (!handle)
         return frame;
-      return m.target(handle, info.targetFormat ? info.targetFormat : vkFormatOf(frameImage.pixelFormat), info.targetWidth,
-                      info.targetHeight, info.targetChannels, m_frame);
+      return m.target(handle, info.targetFormat ? info.targetFormat : vkFormatOf(frameImage.pixelFormat),
+                      info.targetWidth, info.targetHeight, info.targetChannels, m_frame);
     };
     const auto frameDepth = [&]() -> Metal::Target & {
       auto &t = m.targets[REMIXAPI_HOST_TARGET_FRAME_DEPTH_EXT];
@@ -401,7 +448,8 @@ fragment float4 copyFragment(Out in [[stage_in]], texture2d<float> image [[textu
         auto &t = ensure(i.target, i);
         auto source = m.targets.find(i.source);
         if (!t.texture || t.depth > 1 || source == m.targets.end() || !source->second.initialized ||
-            source->second.depth > 1 || !fits(i.sourceRect, uint32_t(source->second.texture.width), uint32_t(source->second.texture.height)) ||
+            source->second.depth > 1 ||
+            !fits(i.sourceRect, uint32_t(source->second.texture.width), uint32_t(source->second.texture.height)) ||
             !fits(i.targetRect, uint32_t(t.texture.width), uint32_t(t.texture.height))) {
           skip(m_stats.skippedCopySource);
           continue;
@@ -421,8 +469,9 @@ fragment float4 copyFragment(Out in [[stage_in]], texture2d<float> image [[textu
           from = scratch.texture;
         }
         const float sw = float(from.width), sh = float(from.height);
-        const float source4[4] = {i.sourceRect[2] ? i.sourceRect[0] / sw : 0.f, i.sourceRect[2] ? i.sourceRect[1] / sh : 0.f,
-                                  i.sourceRect[2] ? i.sourceRect[2] / sw : 1.f, i.sourceRect[2] ? i.sourceRect[3] / sh : 1.f};
+        const float source4[4] = {
+            i.sourceRect[2] ? i.sourceRect[0] / sw : 0.f, i.sourceRect[2] ? i.sourceRect[1] / sh : 0.f,
+            i.sourceRect[2] ? i.sourceRect[2] / sw : 1.f, i.sourceRect[2] ? i.sourceRect[3] / sh : 1.f};
         id<MTLRenderCommandEncoder> encoder = renderPass(t.texture, nil, false, nullptr, false, 0, @"Host pass: copy");
         const double tx = i.targetRect[2] ? i.targetRect[0] : 0, ty = i.targetRect[2] ? i.targetRect[1] : 0;
         const double tw = i.targetRect[2] ? i.targetRect[2] : double(t.texture.width),
@@ -650,7 +699,8 @@ fragment float4 copyFragment(Out in [[stage_in]], texture2d<float> image [[textu
       [encoder setViewport:{vx + half, vy + half, vw, vh, 0, 1}];
       MTLScissorRect scissor{0, 0, tw, th};
       if (i.scissor[2] && fits(i.scissor, tw, th))
-        scissor = {NSUInteger(i.scissor[0]), NSUInteger(i.scissor[1]), NSUInteger(i.scissor[2]), NSUInteger(i.scissor[3])};
+        scissor = {NSUInteger(i.scissor[0]), NSUInteger(i.scissor[1]), NSUInteger(i.scissor[2]),
+                   NSUInteger(i.scissor[3])};
       [encoder setScissorRect:scissor];
       for (const auto &b : bound) {
         if (b.buffer) {

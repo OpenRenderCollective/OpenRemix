@@ -27,7 +27,7 @@ namespace remix::usd {
     bool lights = true;         // lights authored under mesh replacements
     bool lightOverrides = true; // game light replacements
     bool materials = true;
-    bool keepOriginal = false;  // draw the game's mesh beside its replacement
+    bool keepOriginal = false; // draw the game's mesh beside its replacement
     bool operator==(const ModParts &) const = default;
   };
   struct ModInfo {
@@ -49,7 +49,7 @@ namespace remix::usd {
     std::vector<ModInfo> mods;
     // The loaded mods: seconds the load took, and their geometry in memory.
     double loadSeconds = 0;
-    bool fromCache = false; // Every mod came from its cache file (usd/mod_cache.h).
+    bool fromCache = false;    // Every mod came from its cache file (usd/mod_cache.h).
     bool cacheWriting = false; // A cache file is still being written.
     uint64_t geometryBytes = 0;
     size_t materials = 0, materialsInFull = 0;

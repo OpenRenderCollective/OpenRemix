@@ -25,7 +25,7 @@ namespace remix {
     // CPU cost of the last prepare() (FrameBreakdownEXT).
     struct Profile {
       double prepareMilliseconds = 0, skinningMilliseconds = 0;
-      uint64_t culledDraws = 0; // left out by frustum culling
+      uint64_t culledDraws = 0;  // left out by frustum culling
       uint64_t unreadyDraws = 0; // left out while their pipeline variant compiles (path tracing)
       // Where prepare()'s time goes: retiring released resources, refreshing
       // dynamic textures, ordering the draws and building their commands
@@ -50,7 +50,7 @@ namespace remix {
       uint64_t draws = 0, skinnedVertices = 0, uploadBytes = 0; // draws include halo sources
       uint64_t haloGroups = 0, haloDraws = 0;
       uint64_t maskGroups = 0, maskDraws = 0; // groups with coverage, their source draws
-      uint64_t digest = 0; // REMIX_FRAME_DIGEST only: commands and skinned vertices.
+      uint64_t digest = 0;                    // REMIX_FRAME_DIGEST only: commands and skinned vertices.
     };
     const Profile &profile() const { return m_profile; }
     // The last prepare() that finished, whole (profile() is rewritten while one runs).
@@ -85,9 +85,9 @@ namespace remix {
                  bool tracing = false); // After prior frame fence, outside render pass.
     // Layers: 0 sky, 1 world, 2 view model, 3 UI and overlays. part: with
     // masked overlays, the commands before (1) or from (2) the coverage passes.
-    void record(VkCommandBuffer command, bool skyOnly = false, bool skipSky = false,
-                const float *skyJitter = nullptr, VkExtent2D skyExtent = {}, int firstLayer = 0,
-                int lastLayer = 3, int part = 0); // Inside render pass, before ImGui.
+    void record(VkCommandBuffer command, bool skyOnly = false, bool skipSky = false, const float *skyJitter = nullptr,
+                VkExtent2D skyExtent = {}, int firstLayer = 0, int lastLayer = 3,
+                int part = 0); // Inside render pass, before ImGui.
 
     // Masked overlays (remixapi_InstanceInfoMaskEXT, masked UI commands).
     // maskRuns: coverage passes the last prepare() made; zero when the frame
@@ -150,13 +150,10 @@ namespace remix {
     // The target's depth attachment (depthView's image).
     VkImage depthImage() const;
 
-    VkDescriptorImageInfo sampledMaterial(const std::shared_ptr<scene::Material> &material,
-                                          VkCommandBuffer command);
-    VkDescriptorImageInfo sampledEmission(const std::shared_ptr<scene::Material> &material,
-                                          VkCommandBuffer command);
+    VkDescriptorImageInfo sampledMaterial(const std::shared_ptr<scene::Material> &material, VkCommandBuffer command);
+    VkDescriptorImageInfo sampledEmission(const std::shared_ptr<scene::Material> &material, VkCommandBuffer command);
     VkDescriptorImageInfo sampledTexture(const std::shared_ptr<scene::Material> &material,
-                                         const std::shared_ptr<scene::Texture> &texture,
-                                         VkCommandBuffer command);
+                                         const std::shared_ptr<scene::Texture> &texture, VkCommandBuffer command);
     VkImageView textureView(const scene::Texture *texture) const;
     // The texture's image holds sRGB-encoded texels (stored UNORM): shaders
     // sampling it as colour decode them with pow 2.2.

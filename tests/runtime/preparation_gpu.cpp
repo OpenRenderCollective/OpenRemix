@@ -11,26 +11,26 @@
 #include <image/stb_image.h>
 
 namespace {
-std::atomic<bool> holdCompile{false}, entered{false}, failCompile{false},
-    failImage{false};
-std::mutex gateMutex;
-std::condition_variable gate;
-void require(bool value, const char *message) {
-  if (!value) {
-    holdCompile = false;
-    gate.notify_all();
-    std::fprintf(stderr, "%s\n", message);
-    std::exit(1);
+  std::atomic<bool> holdCompile{false}, entered{false}, failCompile{false}, failImage{false};
+  std::mutex gateMutex;
+  std::condition_variable gate;
+  void require(bool value, const char *message) {
+    if (!value) {
+      holdCompile = false;
+      gate.notify_all();
+      std::fprintf(stderr, "%s\n", message);
+      std::exit(1);
+    }
   }
-}
-void ok(remixapi_ErrorCode code) { require(!code, "API call failed"); }
+  void ok(remixapi_ErrorCode code) { require(!code, "API call failed"); }
 } // namespace
 // Inject at the driver boundary; all requests still use the production worker,
 // API mutex, queue submission, input processing and activation implementation.
-extern "C" VKAPI_ATTR VkResult VKAPI_CALL
-vkCreateComputePipelines(VkDevice device, VkPipelineCache cache, uint32_t count,
-                         const VkComputePipelineCreateInfo *infos,
-                         const VkAllocationCallbacks *alloc, VkPipeline *out) {
+extern "C" VKAPI_ATTR VkResult VKAPI_CALL vkCreateComputePipelines(VkDevice device, VkPipelineCache cache,
+                                                                   uint32_t count,
+                                                                   const VkComputePipelineCreateInfo *infos,
+                                                                   const VkAllocationCallbacks *alloc,
+                                                                   VkPipeline *out) {
   if (holdCompile) {
     entered = true;
     std::unique_lock lock(gateMutex);
@@ -40,19 +40,16 @@ vkCreateComputePipelines(VkDevice device, VkPipelineCache cache, uint32_t count,
     std::fill_n(out, count, VK_NULL_HANDLE);
     return VK_ERROR_OUT_OF_DEVICE_MEMORY;
   }
-  static auto original = reinterpret_cast<PFN_vkCreateComputePipelines>(
-      dlsym(RTLD_NEXT, "vkCreateComputePipelines"));
+  static auto original = reinterpret_cast<PFN_vkCreateComputePipelines>(dlsym(RTLD_NEXT, "vkCreateComputePipelines"));
   return original(device, cache, count, infos, alloc, out);
 }
-extern "C" VKAPI_ATTR VkResult VKAPI_CALL
-vkCreateImage(VkDevice device, const VkImageCreateInfo *info,
-              const VkAllocationCallbacks *alloc, VkImage *out) {
+extern "C" VKAPI_ATTR VkResult VKAPI_CALL vkCreateImage(VkDevice device, const VkImageCreateInfo *info,
+                                                        const VkAllocationCallbacks *alloc, VkImage *out) {
   if (failImage.exchange(false)) {
     *out = VK_NULL_HANDLE;
     return VK_ERROR_OUT_OF_DEVICE_MEMORY;
   }
-  static auto original =
-      reinterpret_cast<PFN_vkCreateImage>(dlsym(RTLD_NEXT, "vkCreateImage"));
+  static auto original = reinterpret_cast<PFN_vkCreateImage>(dlsym(RTLD_NEXT, "vkCreateImage"));
   return original(device, info, alloc, out);
 }
 int main(int argc, char **argv) {
@@ -75,8 +72,7 @@ int main(int argc, char **argv) {
     return 77;
   }
   auto config = [&](const char *key, const char *value) {
-    ok(api.SetConfigVariable(
-        (std::string("rtx.native.pathtrace.") + key).c_str(), value));
+    ok(api.SetConfigVariable((std::string("rtx.native.pathtrace.") + key).c_str(), value));
   };
   ok(api.SetConfigVariable("rtx.native.vsync", "false"));
   config("upscaler", "off");
@@ -96,8 +92,7 @@ int main(int argc, char **argv) {
     uint32_t count = 0;
     ok(runtime.window().pollInputEvents(events, 64, count));
     for (uint32_t i = 0; i < count; ++i)
-      if (events[i].type == REMIXAPI_INPUT_KEY &&
-          events[i].code == REMIXAPI_KEY_F12)
+      if (events[i].type == REMIXAPI_INPUT_KEY && events[i].code == REMIXAPI_KEY_F12)
         ok(api.SetUIState(REMIXAPI_UI_STATE_ADVANCED));
     remixapi_WindowState window{};
     ok(api.GetWindowState(&window));
@@ -118,8 +113,7 @@ int main(int argc, char **argv) {
       int width = 0, height = 0, channels = 0;
       auto *pixels = stbi_load(path.c_str(), &width, &height, &channels, 4);
       require(pixels && width > 0 && height > 0, "Missing captured image");
-      std::vector<unsigned char> image(pixels,
-                                       pixels + size_t(width) * height * 4);
+      std::vector<unsigned char> image(pixels, pixels + size_t(width) * height * 4);
       stbi_image_free(pixels);
       return std::tuple{width, height, image};
     };
@@ -136,11 +130,9 @@ int main(int argc, char **argv) {
     auto deadline = Clock::now() + std::chrono::seconds(30);
     while (!entered) {
       frame();
-      require(Clock::now() < deadline,
-              "Compiler not entered for retained frame");
+      require(Clock::now() < deadline, "Compiler not entered for retained frame");
     }
-    require(runtime.preparationStatus().loading,
-            "Expected loading over retained frame");
+    require(runtime.preparationStatus().loading, "Expected loading over retained frame");
     ok(api.SetUIState(REMIXAPI_UI_STATE_NONE));
     const auto before = runtime.presentationCount();
     for (unsigned i = 0; i < 20; ++i)
@@ -153,41 +145,34 @@ int main(int argc, char **argv) {
           // The preparation overlay is live in the middle of the image.
           if (std::abs(x - w / 2) < 160 && std::abs(y - h / 2) < 100)
             continue;
-          const auto source =
-              (size_t(y * height / h) * width + x * width / w) * 4;
+          const auto source = (size_t(y * height / h) * width + x * width / w) * 4;
           const auto destination = (size_t(y) * w + x) * 4;
           ++checked;
           for (int c = 0; c < 3; ++c)
-            if (std::abs(int(actual[destination + c]) -
-                         int(reference[source + c])) > 2) {
+            if (std::abs(int(actual[destination + c]) - int(reference[source + c])) > 2) {
               ++changed;
               break;
             }
         }
-      require(changed < checked / 100,
-              "Loading replaced or contaminated the last game frame");
+      require(changed < checked / 100, "Loading replaced or contaminated the last game frame");
     };
     verify("retained.png");
     ok(api.SetUIState(REMIXAPI_UI_STATE_ADVANCED));
     frame();
-    require(api.GetUIState() != REMIXAPI_UI_STATE_NONE,
-            "F12 unavailable over retained frame");
+    require(api.GetUIState() != REMIXAPI_UI_STATE_NONE, "F12 unavailable over retained frame");
     capture("retained-f12.png");
     ok(api.SetUIState(REMIXAPI_UI_STATE_NONE));
     ok(api.SetConfigVariable("rtx.native.vsync", "true"));
     verify("retained-vsync.png");
-    require(SDL_SetWindowSize(runtime.window().handle(), width * 2, height * 2),
-            "Resize failed");
+    require(SDL_SetWindowSize(runtime.window().handle(), width * 2, height * 2), "Resize failed");
     for (int i = 0; i < 10; ++i)
       frame();
     verify("retained-resized.png");
-    require(runtime.presentationCount() > before + 30,
-            "Retained frame stopped presentation");
+    require(runtime.presentationCount() > before + 30, "Retained frame stopped presentation");
     holdCompile = false;
     gate.notify_all();
     settled();
-    require(runtime.backendCapabilities().activeBackend == 1,
-            "Replacement did not activate");
+    require(runtime.backendCapabilities().activeBackend == 1, "Replacement did not activate");
     capture("activated.png");
     ok(api.Shutdown());
     std::puts("Last game frame survives blocked compilation, live F12, VSync "
@@ -196,8 +181,7 @@ int main(int argc, char **argv) {
   }
   auto measure = [&](const char *phase, auto change) {
     const bool startupPhase = std::string(phase) == "startup";
-    const auto before = startupPhase ? remix::pipeline::Statistics{}
-                                     : runtime.preparationStatus().pipelines;
+    const auto before = startupPhase ? remix::pipeline::Statistics{} : runtime.preparationStatus().pipelines;
     const auto start = startupPhase ? applicationStart : Clock::now();
     auto last = Clock::time_point{};
     const auto firstPresentation = runtime.presentationCount();
@@ -210,25 +194,20 @@ int main(int argc, char **argv) {
       const auto now = Clock::now();
       if (runtime.presentationCount() != previousPresentation) {
         if (last != Clock::time_point{})
-          gap = std::max(
-              gap,
-              std::chrono::duration<double, std::milli>(now - last).count());
+          gap = std::max(gap, std::chrono::duration<double, std::milli>(now - last).count());
         last = now;
         previousPresentation = runtime.presentationCount();
       }
       frames = runtime.presentationCount() - firstPresentation;
-      require(runtime.preparationStatus().failure.empty(),
-              "Benchmark preparation failed");
+      require(runtime.preparationStatus().failure.empty(), "Benchmark preparation failed");
       require(now - start < std::chrono::seconds(600), "Preparation timed out");
     } while (runtime.preparationStatus().pending);
     const auto after = runtime.preparationStatus().pipelines;
-    std::printf(
-        "%s,%.3f,%llu,%llu,%llu,%llu,%.3f\n", phase,
-        std::chrono::duration<double, std::milli>(Clock::now() - start).count(),
-        (unsigned long long)(after.created - before.created),
-        (unsigned long long)(after.reused - before.reused),
-        (unsigned long long)(after.cacheHits - before.cacheHits),
-        (unsigned long long)frames, gap);
+    std::printf("%s,%.3f,%llu,%llu,%llu,%llu,%.3f\n", phase,
+                std::chrono::duration<double, std::milli>(Clock::now() - start).count(),
+                (unsigned long long)(after.created - before.created),
+                (unsigned long long)(after.reused - before.reused),
+                (unsigned long long)(after.cacheHits - before.cacheHits), (unsigned long long)frames, gap);
     std::fflush(stdout);
     return after.created - before.created;
   };
@@ -241,14 +220,12 @@ int main(int argc, char **argv) {
       frame();
       require(Clock::now() < deadline, "Startup compiler not entered");
     }
-    require(runtime.preparationStatus().loading,
-            "Cold startup did not show loading screen");
+    require(runtime.preparationStatus().loading, "Cold startup did not show loading screen");
     for (int i = 0; i < 10; ++i)
       frame();
     if (argc > 1) {
       std::filesystem::create_directories(argv[1]);
-      const auto path =
-          (std::filesystem::path(argv[1]) / "loading.png").string();
+      const auto path = (std::filesystem::path(argv[1]) / "loading.png").string();
       ok(api.RequestPresentedScreenshot(path.c_str()));
       frame();
       frame();
@@ -273,8 +250,7 @@ int main(int argc, char **argv) {
     require(!repeated, "Repeated toggle recompiled pipelines");
     measure("first_fsr", [&] { config("upscaler", "fsr31"); });
     measure("fsr_off", [&] { config("upscaler", "off"); });
-    require(!measure("repeat_fsr", [&] { config("upscaler", "fsr31"); }),
-            "Repeated FSR recompiled");
+    require(!measure("repeat_fsr", [&] { config("upscaler", "fsr31"); }), "Repeated FSR recompiled");
     ok(api.Shutdown());
     return 0;
   }
@@ -300,21 +276,15 @@ int main(int argc, char **argv) {
       require(SDL_PushEvent(&event), "F12 push failed");
     }
     frame();
-    require(!runtime.denoisingStatistics().activeDenoiser,
-            "Premature activation");
-    require(!runtime.preparationStatus().loading,
-            "Working renderer replaced by loading screen");
+    require(!runtime.denoisingStatistics().activeDenoiser, "Premature activation");
+    require(!runtime.preparationStatus().loading, "Working renderer replaced by loading screen");
   }
-  require(runtime.presentationCount() >= before + 100,
-          "Presentation stopped during compilation");
-  require(api.GetUIState() != REMIXAPI_UI_STATE_NONE,
-          "F12 blocked by compilation");
-  require(Clock::now() - start < std::chrono::seconds(5),
-          "Compiler stalled frame submission");
+  require(runtime.presentationCount() >= before + 100, "Presentation stopped during compilation");
+  require(api.GetUIState() != REMIXAPI_UI_STATE_NONE, "F12 blocked by compilation");
+  require(Clock::now() - start < std::chrono::seconds(5), "Compiler stalled frame submission");
   if (argc > 1) {
     std::filesystem::create_directories(argv[1]);
-    const auto path =
-        (std::filesystem::path(argv[1]) / "preparing.png").string();
+    const auto path = (std::filesystem::path(argv[1]) / "preparing.png").string();
     ok(api.RequestPresentedScreenshot(path.c_str()));
     frame();
     frame();
@@ -328,8 +298,7 @@ int main(int argc, char **argv) {
   holdCompile = false;
   gate.notify_all();
   settled();
-  require(!runtime.denoisingStatistics().activeDenoiser &&
-              runtime.tracingStatistics().samplesPerPixel == 3,
+  require(!runtime.denoisingStatistics().activeDenoiser && runtime.tracingStatistics().samplesPerPixel == 3,
           "Obsolete configuration activated");
   config("denoiser", "reblur-sh");
   config("taa", "true");
@@ -342,8 +311,7 @@ int main(int argc, char **argv) {
   config("denoiser", "reblur-sh");
   config("taa", "true");
   settled();
-  require(runtime.preparationStatus().pipelines.created == compiled,
-          "Repeated settings recompiled pipelines");
+  require(runtime.preparationStatus().pipelines.created == compiled, "Repeated settings recompiled pipelines");
   failCompile = true;
   config("sigma", "true");
   deadline = Clock::now() + std::chrono::seconds(30);
@@ -351,14 +319,12 @@ int main(int argc, char **argv) {
     frame();
     require(Clock::now() < deadline, "Missing compilation failure");
   }
-  require(runtime.denoisingStatistics().activeDenoiser &&
-              !runtime.shadowStatistics().active,
+  require(runtime.denoisingStatistics().activeDenoiser && !runtime.shadowStatistics().active,
           "Failure replaced the working configuration");
   const auto failurePresentations = runtime.presentationCount();
   for (int i = 0; i < 10; ++i)
     frame();
-  require(runtime.presentationCount() >= failurePresentations + 10,
-          "Failure stopped gameplay");
+  require(runtime.presentationCount() >= failurePresentations + 10, "Failure stopped gameplay");
   config("sigma", "false");
   frame();
   failImage = true;
@@ -371,17 +337,14 @@ int main(int argc, char **argv) {
     require(Clock::now() < deadline, "Missing resource allocation failure");
   }
   require(runtime.denoisingStatistics().activeDenoiser &&
-              runtime.reconstructionStatistics().backend ==
-                  remix::upscale::Backend::Native,
+              runtime.reconstructionStatistics().backend == remix::upscale::Backend::Native,
           "Allocation failure replaced the working configuration");
   config("upscaler", "off");
   settled();
-  require(runtime.preparationStatus().failure.empty(),
-          "Returning to the active configuration retained a failure");
+  require(runtime.preparationStatus().failure.empty(), "Returning to the active configuration retained a failure");
   config("upscaler", "fsr31");
   settled();
-  require(runtime.reconstructionStatistics().backend ==
-              remix::upscale::Backend::Fsr31,
+  require(runtime.reconstructionStatistics().backend == remix::upscale::Backend::Fsr31,
           "Reselecting a failed allocation did not retry preparation");
   ok(api.Shutdown());
   std::puts("Blocked driver compilation preserved presentation/F12; latest "

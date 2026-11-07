@@ -40,8 +40,8 @@ int main(int argc, char **argv) {
   for (;;) {
     const auto before = std::chrono::steady_clock::now();
     usd::modBoundary(resources);
-    worstBoundary =
-        std::max(worstBoundary, std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - before).count());
+    worstBoundary = std::max(
+        worstBoundary, std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - before).count());
     const auto status = usd::modStatus();
     if (!status.loading)
       break;

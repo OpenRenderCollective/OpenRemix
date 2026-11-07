@@ -59,7 +59,8 @@ namespace remix {
       } else if (std::isfinite(src.normal[0]) && std::isfinite(src.normal[1]) && std::isfinite(src.normal[2])) {
         const float length = std::hypot(src.normal[0], src.normal[1], src.normal[2]);
         if (length > 1e-12f)
-          for (int c = 0; c < 3; ++c) dst.normal[c] = src.normal[c] / length;
+          for (int c = 0; c < 3; ++c)
+            dst.normal[c] = src.normal[c] / length;
       }
       rgba(src.color, dst.color);
       for (int c = 0; c < 3; ++c) {
@@ -122,15 +123,18 @@ namespace remix {
     if (!info.hash || !info.surfaces_count || info.surfaces_count > maxMeshSurfaces || !info.surfaces_values) {
       throw invalid;
     }
-    const auto *update = static_cast<const remixapi_MeshInfoUpdateEXT *>(
-        extension(info.pNext, REMIXAPI_STRUCT_TYPE_MESH_UPDATE_EXT));
-    if (update && update->enabled > 1) throw invalid;
-    const auto *motion = static_cast<const remixapi_MeshInfoMotionEXT *>(
-        extension(info.pNext, REMIXAPI_STRUCT_TYPE_MESH_MOTION_EXT));
-    if (motion && (motion->enabled > 1 || (motion->enabled && (!update || !update->enabled)))) throw invalid;
+    const auto *update =
+        static_cast<const remixapi_MeshInfoUpdateEXT *>(extension(info.pNext, REMIXAPI_STRUCT_TYPE_MESH_UPDATE_EXT));
+    if (update && update->enabled > 1)
+      throw invalid;
+    const auto *motion =
+        static_cast<const remixapi_MeshInfoMotionEXT *>(extension(info.pNext, REMIXAPI_STRUCT_TYPE_MESH_MOTION_EXT));
+    if (motion && (motion->enabled > 1 || (motion->enabled && (!update || !update->enabled))))
+      throw invalid;
     const auto *sprites = static_cast<const remixapi_MeshInfoSpriteVerticesEXT *>(
         extension(info.pNext, REMIXAPI_STRUCT_TYPE_MESH_SPRITE_VERTICES_EXT));
-    if (sprites && sprites->enabled > 1) throw invalid;
+    if (sprites && sprites->enabled > 1)
+      throw invalid;
     const bool spriteVertices = sprites && sprites->enabled;
     auto mesh = std::make_shared<Mesh>();
     mesh->motionCorrespondence = motion && motion->enabled;
@@ -143,15 +147,20 @@ namespace remix {
       mesh->surfaces.push_back(prepareSurface(source, spriteVertices, bytes));
     }
     auto previous = m_meshes.find(info.hash);
-    if (update && update->enabled && std::none_of(mesh->surfaces.begin(), mesh->surfaces.end(),
-                                                 [](const auto &s) { return s->bonesPerVertex != 0; })) {
+    if (update && update->enabled && std::none_of(mesh->surfaces.begin(), mesh->surfaces.end(), [](const auto &s) {
+          return s->bonesPerVertex != 0;
+        })) {
       bool compatible = previous != m_meshes.end() && previous->second->updateStream &&
                         previous->second->motionCorrespondence == mesh->motionCorrespondence &&
                         previous->second->surfaces.size() == mesh->surfaces.size();
-      if (compatible) for (size_t i = 0; i < mesh->surfaces.size(); ++i) {
-        const auto &old = *previous->second->surfaces[i], &next = *mesh->surfaces[i];
-        if (old.vertices.size() != next.vertices.size() || old.indices != next.indices) { compatible = false; break; }
-      }
+      if (compatible)
+        for (size_t i = 0; i < mesh->surfaces.size(); ++i) {
+          const auto &old = *previous->second->surfaces[i], &next = *mesh->surfaces[i];
+          if (old.vertices.size() != next.vertices.size() || old.indices != next.indices) {
+            compatible = false;
+            break;
+          }
+        }
       mesh->updateStream = compatible ? previous->second->updateStream : std::make_shared<MeshUpdateStream>();
     }
     // remixapi_MeshInfoDeformEXT (behind "Refresh mesh geometry in place"):
@@ -174,14 +183,15 @@ namespace remix {
       bool compatible = bool(old.updateStream);
       for (size_t i = 0; compatible && i < mesh->surfaces.size(); ++i) {
         const auto &a = *old.surfaces[i], &b = *mesh->surfaces[i];
-        compatible = a.vertices.size() == b.vertices.size() && a.indices == b.indices &&
-                     a.bonesPerVertex == b.bonesPerVertex;
+        compatible =
+            a.vertices.size() == b.vertices.size() && a.indices == b.indices && a.bonesPerVertex == b.bonesPerVertex;
       }
       mesh->updateStream = compatible ? old.updateStream : std::make_shared<MeshUpdateStream>();
       mesh->motionCorrespondence = true;
     }
     auto equal = [&](const Mesh &a, const Mesh &b) {
-      if (a.updateStream != b.updateStream || a.motionCorrespondence != b.motionCorrespondence) return false;
+      if (a.updateStream != b.updateStream || a.motionCorrespondence != b.motionCorrespondence)
+        return false;
       if (a.surfaces.size() != b.surfaces.size())
         return false;
       for (size_t i = 0; i < a.surfaces.size(); ++i) {

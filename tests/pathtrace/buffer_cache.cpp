@@ -12,8 +12,7 @@ namespace {
   uintptr_t nextHandle = 1;
 
   std::shared_ptr<Buffer> allocation(const std::shared_ptr<BufferCache> &cache, VkDeviceSize size,
-                                     VkBufferUsageFlags usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                                     bool host = true) {
+                                     VkBufferUsageFlags usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT, bool host = true) {
     auto result = std::make_shared<Buffer>();
     result->handle = reinterpret_cast<VkBuffer>(nextHandle);
     result->memory = reinterpret_cast<VkDeviceMemory>(nextHandle++);
@@ -30,15 +29,13 @@ namespace {
     result->cache = std::move(cache);
     return result;
   }
-}
+} // namespace
 
 // Mock only destruction: these tests exercise ownership and matching without a Vulkan device.
-extern "C" VKAPI_ATTR void VKAPI_CALL vkDestroyBuffer(VkDevice, VkBuffer buffer,
-                                                       const VkAllocationCallbacks *) {
+extern "C" VKAPI_ATTR void VKAPI_CALL vkDestroyBuffer(VkDevice, VkBuffer buffer, const VkAllocationCallbacks *) {
   assert(destroyed.insert(buffer).second);
 }
-extern "C" VKAPI_ATTR void VKAPI_CALL vkFreeMemory(VkDevice, VkDeviceMemory memory,
-                                                   const VkAllocationCallbacks *) {
+extern "C" VKAPI_ATTR void VKAPI_CALL vkFreeMemory(VkDevice, VkDeviceMemory memory, const VkAllocationCallbacks *) {
   assert(freed.insert(memory).second);
 }
 extern "C" VKAPI_ATTR void VKAPI_CALL vkUnmapMemory(VkDevice, VkDeviceMemory memory) {
@@ -48,11 +45,14 @@ extern "C" VKAPI_ATTR void VKAPI_CALL vkUnmapMemory(VkDevice, VkDeviceMemory mem
 int main() {
   {
     BufferMemory block;
-    block.size = 4096; block.free.emplace_back(0,4096);
-    auto a = block.take(257,256), b = block.take(512,256), c = block.take(1024,512);
+    block.size = 4096;
+    block.free.emplace_back(0, 4096);
+    auto a = block.take(257, 256), b = block.take(512, 256), c = block.take(1024, 512);
     assert(a == 0 && b == 512 && c == 1024);
-    assert(!block.take(4096,256));
-    block.release(*b,512); block.release(*a,257); block.release(*c,1024);
+    assert(!block.take(4096, 256));
+    block.release(*b, 512);
+    block.release(*a, 257);
+    block.release(*c, 1024);
     assert(block.free.size() == 1 && block.free.begin()->first == 0 && block.free.begin()->second == 4096);
   }
   {
@@ -61,7 +61,7 @@ int main() {
     auto pendingFrame = buffer;
     const auto handle = buffer->handle;
     const auto memory = buffer->memory;
-    buffer->mapped = reinterpret_cast<void*>(uintptr_t(0x1000));
+    buffer->mapped = reinterpret_cast<void *>(uintptr_t(0x1000));
     buffer.reset();
     assert(!cache->take(4096, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true));
     pendingFrame.reset();
@@ -123,20 +123,24 @@ int main() {
     std::vector<std::shared_ptr<BufferMemory>> blocks;
     for (size_t i = 0; i < 9; ++i) {
       auto block = std::make_shared<BufferMemory>();
-      block->size = 16*1024*1024; block->memory = reinterpret_cast<VkDeviceMemory>(nextHandle++);
-      block->free.emplace_back(0,block->size);
+      block->size = 16 * 1024 * 1024;
+      block->memory = reinterpret_cast<VkDeviceMemory>(nextHandle++);
+      block->free.emplace_back(0, block->size);
       auto buffer = std::make_shared<Buffer>();
       buffer->handle = reinterpret_cast<VkBuffer>(nextHandle++);
-      buffer->memory = block->memory; buffer->block = block;
+      buffer->memory = block->memory;
+      buffer->block = block;
       buffer->size = buffer->allocationSize = 4096;
-      buffer->memoryOffset = *block->take(4096,256); buffer->cache = cache;
+      buffer->memoryOffset = *block->take(4096, 256);
+      buffer->cache = cache;
       blocks.push_back(std::move(block));
     }
     cache->trimMemory(blocks);
-    std::erase_if(blocks,[](const auto &block) { return block.use_count() == 1; });
+    std::erase_if(blocks, [](const auto &block) { return block.use_count() == 1; });
     assert(blocks.size() == 4); // 36 KiB of cached ranges cannot pin 144 MiB.
     cache.reset();
-    for (const auto &block : blocks) assert(block->liveRanges == 0 && block->free.size() == 1);
+    for (const auto &block : blocks)
+      assert(block->liveRanges == 0 && block->free.size() == 1);
   }
   std::puts("Upload buffer cache ownership, compatibility, limits and cleanup passed");
 }

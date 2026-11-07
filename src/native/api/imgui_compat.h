@@ -63,8 +63,7 @@ RIMGUI_EXPORT int remixapi_imgui_HasOverlayCallback();
 // --- Windows ---
 RIMGUI_EXPORT int RIMGUI_CALL remixapi_imgui_Begin(const char *name, int *p_open, int flags);
 RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_End(void);
-RIMGUI_EXPORT int RIMGUI_CALL remixapi_imgui_BeginChild(const char *str_id, float w, float h, int border,
-                                                        int flags);
+RIMGUI_EXPORT int RIMGUI_CALL remixapi_imgui_BeginChild(const char *str_id, float w, float h, int border, int flags);
 RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_EndChild(void);
 RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_SetNextWindowPos(float x, float y, int cond);
 RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_SetNextWindowSize(float w, float h, int cond);
@@ -92,8 +91,7 @@ RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_PopID(void);
 
 // --- Text ---
 RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_Text(const char *text);
-RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_TextColored(float r, float g, float b, float a,
-                                                          const char *text);
+RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_TextColored(float r, float g, float b, float a, const char *text);
 RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_TextWrapped(const char *text);
 RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_BulletText(const char *text);
 RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_LabelText(const char *label, const char *text);
@@ -103,33 +101,30 @@ RIMGUI_EXPORT int RIMGUI_CALL remixapi_imgui_Button(const char *label, float w, 
 RIMGUI_EXPORT int RIMGUI_CALL remixapi_imgui_SmallButton(const char *label);
 RIMGUI_EXPORT int RIMGUI_CALL remixapi_imgui_Checkbox(const char *label, int *v);
 RIMGUI_EXPORT int RIMGUI_CALL remixapi_imgui_RadioButton(const char *label, int active);
-RIMGUI_EXPORT int RIMGUI_CALL remixapi_imgui_SliderFloat(const char *label, float *v, float v_min,
-                                                         float v_max, const char *format);
+RIMGUI_EXPORT int RIMGUI_CALL remixapi_imgui_SliderFloat(const char *label, float *v, float v_min, float v_max,
+                                                         const char *format);
 RIMGUI_EXPORT int RIMGUI_CALL remixapi_imgui_SliderInt(const char *label, int *v, int v_min, int v_max,
                                                        const char *format);
-RIMGUI_EXPORT int RIMGUI_CALL remixapi_imgui_SliderFloat2(const char *label, float *v, float v_min,
-                                                          float v_max, const char *format);
-RIMGUI_EXPORT int RIMGUI_CALL remixapi_imgui_SliderFloat3(const char *label, float *v, float v_min,
-                                                          float v_max, const char *format);
-RIMGUI_EXPORT int RIMGUI_CALL remixapi_imgui_DragFloat(const char *label, float *v, float v_speed,
-                                                       float v_min, float v_max, const char *format);
-RIMGUI_EXPORT int RIMGUI_CALL remixapi_imgui_DragInt(const char *label, int *v, float v_speed, int v_min,
-                                                     int v_max, const char *format);
-RIMGUI_EXPORT int RIMGUI_CALL remixapi_imgui_InputFloat(const char *label, float *v, float step,
-                                                        float step_fast, const char *format);
+RIMGUI_EXPORT int RIMGUI_CALL remixapi_imgui_SliderFloat2(const char *label, float *v, float v_min, float v_max,
+                                                          const char *format);
+RIMGUI_EXPORT int RIMGUI_CALL remixapi_imgui_SliderFloat3(const char *label, float *v, float v_min, float v_max,
+                                                          const char *format);
+RIMGUI_EXPORT int RIMGUI_CALL remixapi_imgui_DragFloat(const char *label, float *v, float v_speed, float v_min,
+                                                       float v_max, const char *format);
+RIMGUI_EXPORT int RIMGUI_CALL remixapi_imgui_DragInt(const char *label, int *v, float v_speed, int v_min, int v_max,
+                                                     const char *format);
+RIMGUI_EXPORT int RIMGUI_CALL remixapi_imgui_InputFloat(const char *label, float *v, float step, float step_fast,
+                                                        const char *format);
 RIMGUI_EXPORT int RIMGUI_CALL remixapi_imgui_InputInt(const char *label, int *v, int step, int step_fast);
-RIMGUI_EXPORT int RIMGUI_CALL remixapi_imgui_InputText(const char *label, char *buf, uint32_t buf_size,
-                                                       int flags);
+RIMGUI_EXPORT int RIMGUI_CALL remixapi_imgui_InputText(const char *label, char *buf, uint32_t buf_size, int flags);
 RIMGUI_EXPORT int RIMGUI_CALL remixapi_imgui_ColorEdit3(const char *label, float *col);
 RIMGUI_EXPORT int RIMGUI_CALL remixapi_imgui_ColorEdit4(const char *label, float *col, int flags);
 RIMGUI_EXPORT int RIMGUI_CALL remixapi_imgui_ColorPicker3(const char *label, float *col);
 
 // --- Combo ---
-RIMGUI_EXPORT int RIMGUI_CALL remixapi_imgui_BeginCombo(const char *label, const char *preview_value,
-                                                        int flags);
+RIMGUI_EXPORT int RIMGUI_CALL remixapi_imgui_BeginCombo(const char *label, const char *preview_value, int flags);
 RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_EndCombo(void);
-RIMGUI_EXPORT int RIMGUI_CALL remixapi_imgui_Selectable(const char *label, int selected, int flags, float w,
-                                                        float h);
+RIMGUI_EXPORT int RIMGUI_CALL remixapi_imgui_Selectable(const char *label, int selected, int flags, float w, float h);
 
 // --- Trees ---
 RIMGUI_EXPORT int RIMGUI_CALL remixapi_imgui_CollapsingHeader(const char *label, int flags);
@@ -143,14 +138,14 @@ RIMGUI_EXPORT int RIMGUI_CALL remixapi_imgui_BeginTabItem(const char *label, int
 RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_EndTabItem(void);
 
 // --- Tables ---
-RIMGUI_EXPORT int RIMGUI_CALL remixapi_imgui_BeginTable(const char *str_id, int column, int flags,
-                                                        float outer_w, float outer_h, float inner_width);
+RIMGUI_EXPORT int RIMGUI_CALL remixapi_imgui_BeginTable(const char *str_id, int column, int flags, float outer_w,
+                                                        float outer_h, float inner_width);
 RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_EndTable(void);
 RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_TableNextRow(int row_flags, float min_row_height);
 RIMGUI_EXPORT int RIMGUI_CALL remixapi_imgui_TableNextColumn(void);
 RIMGUI_EXPORT int RIMGUI_CALL remixapi_imgui_TableSetColumnIndex(int column_n);
-RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_TableSetupColumn(const char *label, int flags,
-                                                               float init_width_or_weight, uint32_t user_id);
+RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_TableSetupColumn(const char *label, int flags, float init_width_or_weight,
+                                                               uint32_t user_id);
 RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_TableHeadersRow(void);
 
 // --- Tooltips ---
@@ -159,8 +154,7 @@ RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_EndTooltip(void);
 RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_SetTooltip(const char *text);
 
 // --- Misc ---
-RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_ProgressBar(float fraction, float w, float h,
-                                                          const char *overlay);
+RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_ProgressBar(float fraction, float w, float h, const char *overlay);
 RIMGUI_EXPORT int RIMGUI_CALL remixapi_imgui_IsItemHovered(int flags);
 RIMGUI_EXPORT int RIMGUI_CALL remixapi_imgui_IsItemClicked(int mouse_button);
 RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_SetItemDefaultFocus(void);
@@ -175,20 +169,18 @@ RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_PopStyleVar(int count);
 // --- Plotting (ImPlot) ---
 RIMGUI_EXPORT int RIMGUI_CALL remixapi_imgui_PlotBeginPlot(const char *title_id, float w, float h, int flags);
 RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_PlotEndPlot(void);
-RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_PlotPlotLine(const char *label_id, const float *values,
-                                                           int count);
-RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_PlotPlotBars(const char *label_id, const float *values,
-                                                           int count, double bar_size);
+RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_PlotPlotLine(const char *label_id, const float *values, int count);
+RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_PlotPlotBars(const char *label_id, const float *values, int count,
+                                                           double bar_size);
 
 // --- DrawList ---
-RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_DrawList_AddLine(float x1, float y1, float x2, float y2,
-                                                               uint32_t col, float thickness);
-RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_DrawList_AddRect(float x1, float y1, float x2, float y2,
-                                                               uint32_t col, float rounding, float thickness);
+RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_DrawList_AddLine(float x1, float y1, float x2, float y2, uint32_t col,
+                                                               float thickness);
+RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_DrawList_AddRect(float x1, float y1, float x2, float y2, uint32_t col,
+                                                               float rounding, float thickness);
 RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_DrawList_AddRectFilled(float x1, float y1, float x2, float y2,
                                                                      uint32_t col, float rounding);
-RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_DrawList_AddText(float x, float y, uint32_t col,
-                                                               const char *text);
+RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_DrawList_AddText(float x, float y, uint32_t col, const char *text);
 RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_GetDisplaySize(float *out_w, float *out_h);
 
 #ifdef __cplusplus

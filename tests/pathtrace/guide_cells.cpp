@@ -14,16 +14,14 @@
 #include <image/stb_image.h>
 
 namespace {
-void require(bool value, const char *message) {
-  if (!value) {
-    std::fprintf(stderr, "%s\n", message);
-    std::exit(1);
+  void require(bool value, const char *message) {
+    if (!value) {
+      std::fprintf(stderr, "%s\n", message);
+      std::exit(1);
+    }
   }
-}
-void ok(remixapi_ErrorCode code) {
-  require(code == REMIXAPI_ERROR_CODE_SUCCESS, "Guide-cell API failure");
-}
-using Image = std::vector<std::array<float, 3>>;
+  void ok(remixapi_ErrorCode code) { require(code == REMIXAPI_ERROR_CODE_SUCCESS, "Guide-cell API failure"); }
+  using Image = std::vector<std::array<float, 3>>;
 } // namespace
 int main(int argc, char **argv) {
   require(argc == 2, "Supply capture directory");
@@ -55,8 +53,7 @@ int main(int argc, char **argv) {
   ok(api.SetConfigVariable("rtx.native.backend", "pathtrace"));
   ok(api.SetConfigVariable("rtx.native.vsync", "0"));
   auto config = [&](const char *key, const char *value) {
-    ok(api.SetConfigVariable(
-        (std::string("rtx.native.pathtrace.") + key).c_str(), value));
+    ok(api.SetConfigVariable((std::string("rtx.native.pathtrace.") + key).c_str(), value));
   };
   config("sharc", "0");
   config("sky", "0");
@@ -83,8 +80,7 @@ int main(int argc, char **argv) {
     return result;
   };
   auto white = material({.8f, .8f, .8f}, 1), black = material({0, 0, 0}, 1);
-  auto quad = [&](int axis, float plane, float a0, float a1, float b0, float b1,
-                  remixapi_MaterialHandle material) {
+  auto quad = [&](int axis, float plane, float a0, float a1, float b0, float b1, remixapi_MaterialHandle material) {
     remixapi_HardcodedVertex v[4]{};
     uint32_t indices[] = {0, 1, 2, 0, 2, 3};
     for (int i = 0; i < 4; ++i) {
@@ -178,9 +174,8 @@ int main(int argc, char **argv) {
     for (int y = height / 8; y < height * 7 / 8; ++y)
       for (int dx = 0; dx < 8; ++dx)
         for (unsigned c = 0; c < 3; ++c)
-          delta[c] += (image[y * width + x + dx][c] -
-                       image[y * width + x - 1 - dx][c]) /
-                      (8. * (height * 7 / 8 - height / 8));
+          delta[c] +=
+              (image[y * width + x + dx][c] - image[y * width + x - 1 - dx][c]) / (8. * (height * 7 / 8 - height / 8));
     return delta;
   };
   auto energy = [&](const Image &image) {
@@ -188,9 +183,7 @@ int main(int argc, char **argv) {
     for (auto pixel : image)
       for (unsigned c = 0; c < 3; ++c) {
         double v = pixel[c];
-        mean[c] +=
-            std::pow(v, 2.2) /
-            image.size();
+        mean[c] += std::pow(v, 2.2) / image.size();
       }
     return mean;
   };
@@ -211,9 +204,8 @@ int main(int argc, char **argv) {
     meshes.push_back(quad(2, 1, -x - .25f, -x, y, y + .25f, blueLight));
     meshes.push_back(quad(2, -1, x, x + .25f, y, y + .25f, hidden));
   }
-  meshes.push_back(
-      quad(2, 0, -5, 5, -3, 3,
-           black)); // hidden green sources produce occlusion evidence
+  meshes.push_back(quad(2, 0, -5, 5, -3, 3,
+                        black)); // hidden green sources produce occlusion evidence
   // Camera begins beyond the light panels; only the flat receiver is visible.
   for (auto &row : camera.projection)
     for (float &v : row)
@@ -235,8 +227,7 @@ int main(int argc, char **argv) {
       for (int i = 0; i < 80; ++i)
         frame();
       for (int i = 0; i < 12; ++i) {
-        auto image = capture(std::string(primary) + "-guide-" +
-                             std::to_string(guide) + "-" + std::to_string(i));
+        auto image = capture(std::string(primary) + "-guide-" + std::to_string(guide) + "-" + std::to_string(i));
         if (averages[guide].empty())
           averages[guide].resize(image.size());
         for (size_t p = 0; p < image.size(); ++p)
@@ -247,8 +238,7 @@ int main(int argc, char **argv) {
       g.structSize = sizeof(g);
       ok(remixapi_GetLocalLightGuidingStatisticsEXT(&g));
       if (guide)
-        require(g.active && g.sampledGuided > g.sampledQueries / 10,
-                "Color boundary fixture did not exercise guiding");
+        require(g.active && g.sampledGuided > g.sampledQueries / 10, "Color boundary fixture did not exercise guiding");
     }
     double seam = 0;
     // The camera sees five world units: cell boundaries at X=-2,0,2 lie at
@@ -259,8 +249,7 @@ int main(int argc, char **argv) {
       for (unsigned c = 0; c < 3; ++c)
         seam = std::max(seam, std::abs(guided[c] - reference[c]));
     }
-    std::printf("%s: excess display-space guide-cell jump %.6f\n", primary,
-                seam);
+    std::printf("%s: excess display-space guide-cell jump %.6f\n", primary, seam);
     require(seam < .02, "Guiding introduced coherent colored cell boundaries");
     // An independent, linear progressive reference verifies that smoothing
     // proposals preserved energy. Average before encoding/clipping; debug
@@ -274,8 +263,7 @@ int main(int argc, char **argv) {
       ++epoch.historyResetEpoch;
       for (unsigned i = 0; i < 128; ++i)
         frame();
-      means[guide] = energy(capture(
-          std::string(primary) + "-linear-reference-" + std::to_string(guide)));
+      means[guide] = energy(capture(std::string(primary) + "-linear-reference-" + std::to_string(guide)));
     }
     for (unsigned c = 0; c < 3; ++c) {
       require(means[0][c] > .001, "Reference lost a colored source");

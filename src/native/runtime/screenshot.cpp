@@ -68,7 +68,7 @@ namespace remix {
     // pathtrace/shaders/display.glsl and color.glsl.
     constexpr Mat3 inset = {.72634649f, .13423698f, .07263955f, .16665483f, .70013888f,
                             .06012051f, .10699868f, .16562414f, .86723994f};
-    constexpr Mat3 outset = {1.45021560f,  -.25347057f, -.10389769f, -.33533138f, 1.51071102f,
+    constexpr Mat3 outset = {1.45021560f, -.25347057f, -.10389769f, -.33533138f, 1.51071102f,
                              -.07664130f, -.11488422f, -.25724045f, 1.18053899f};
     constexpr Mat3 bt709To2020 = {.6274038960f, .0690972894f, .0163914388f, .3292830384f, .9195403951f,
                                   .0880133078f, .0433130657f, .0113623156f, .8955952532f};
@@ -311,8 +311,7 @@ namespace remix {
               v = curve(v);
             c = outset * c;
             for (int k = 0; k < 3; ++k)
-              job.bytes[i * 4 + k] =
-                  uint8_t(std::lround(std::pow(std::clamp(c[k], 0.f, 1.f), 1 / 2.2f) * 255));
+              job.bytes[i * 4 + k] = uint8_t(std::lround(std::pow(std::clamp(c[k], 0.f, 1.f), 1 / 2.2f) * 255));
           }
         }
         save(job.set ? withSuffix(".png") : job.single, sdrPng(job.bytes, job.width, job.height));
@@ -320,8 +319,8 @@ namespace remix {
       // HDR files: of HDR10's light, or of an SDR frame with its white at 80
       // nits (scRGB's 1.0).
       const float whiteNits = job.half ? nits.paperWhite : 80;
-      const bool scRgbWanted = job.set ? job.half && (job.formats.jxr || job.formats.exr)
-                                       : job.single.extension() != ".png";
+      const bool scRgbWanted =
+          job.set ? job.half && (job.formats.jxr || job.formats.exr) : job.single.extension() != ".png";
       if (scRgbWanted) {
         linear();
         std::vector<uint16_t> scRgb(pixels * 4);
@@ -395,7 +394,7 @@ namespace remix {
   }
 
   remixapi_ErrorCode PresentedScreenshot::requestSet(const std::filesystem::path &base, ScreenshotFormats formats,
-                                                    bool supported) {
+                                                     bool supported) {
     if (!base.is_absolute())
       return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
     if (!supported)
@@ -415,9 +414,8 @@ namespace remix {
   }
 
 #if !defined(REMIX_METAL)
-  void PresentedScreenshot::record(VkPhysicalDevice physical, VkDevice device, VkCommandBuffer command,
-                                   VkImage image, VkExtent2D extent, VkFormat format, VkImageLayout layout,
-                                   HdrNits nits) {
+  void PresentedScreenshot::record(VkPhysicalDevice physical, VkDevice device, VkCommandBuffer command, VkImage image,
+                                   VkExtent2D extent, VkFormat format, VkImageLayout layout, HdrNits nits) {
     if (m_requested.empty() || !m_captured.empty())
       return;
     m_half = format == VK_FORMAT_R16G16B16A16_SFLOAT;
@@ -430,9 +428,8 @@ namespace remix {
     }
     m_extent = extent;
     m_bgra = format == VK_FORMAT_B8G8R8A8_SRGB || format == VK_FORMAT_B8G8R8A8_UNORM;
-    const VkBufferCreateInfo info = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-                                     .size = size,
-                                     .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT};
+    const VkBufferCreateInfo info = {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = size, .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT};
     check(vkCreateBuffer(device, &info, nullptr, &m_buffer));
     VkMemoryRequirements requirements;
     vkGetBufferMemoryRequirements(device, m_buffer, &requirements);
@@ -448,9 +445,8 @@ namespace remix {
     }
     if (type == properties.memoryTypeCount)
       throw VK_ERROR_FEATURE_NOT_PRESENT;
-    const VkMemoryAllocateInfo allocation = {.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-                                             .allocationSize = requirements.size,
-                                             .memoryTypeIndex = type};
+    const VkMemoryAllocateInfo allocation = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, .allocationSize = requirements.size, .memoryTypeIndex = type};
     check(vkAllocateMemory(device, &allocation, nullptr, &m_memory));
     check(vkBindBufferMemory(device, m_buffer, m_memory, 0));
     VkImageMemoryBarrier barrier = {.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
@@ -462,8 +458,8 @@ namespace remix {
                                     .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                                     .image = image,
                                     .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}};
-    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-                         VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0,
+                         nullptr, 0, nullptr, 1, &barrier);
     const VkBufferImageCopy copy = {.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
                                     .imageExtent = {extent.width, extent.height, 1}};
     vkCmdCopyImageToBuffer(command, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, m_buffer, 1, &copy);
@@ -471,8 +467,8 @@ namespace remix {
     barrier.dstAccessMask = 0;
     barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
     barrier.newLayout = layout;
-    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0,
-                         nullptr, 0, nullptr, 1, &barrier);
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, nullptr,
+                         0, nullptr, 1, &barrier);
     const VkBufferMemoryBarrier host = {.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
                                         .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
                                         .dstAccessMask = VK_ACCESS_HOST_READ_BIT,
@@ -480,8 +476,8 @@ namespace remix {
                                         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                                         .buffer = m_buffer,
                                         .size = VK_WHOLE_SIZE};
-    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 0, nullptr,
-                         1, &host, 0, nullptr);
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 0, nullptr, 1, &host,
+                         0, nullptr);
     m_captured = std::exchange(m_requested, {});
     m_capturedSet = m_set;
   }
@@ -494,8 +490,8 @@ namespace remix {
   void PresentedScreenshot::complete(VkDevice device, bool wait) {
     if (m_captured.empty() || !m_fence)
       return;
-    const auto ready = wait ? vkWaitForFences(device, 1, &m_fence, VK_TRUE, 1000000000)
-                            : vkGetFenceStatus(device, m_fence);
+    const auto ready =
+        wait ? vkWaitForFences(device, 1, &m_fence, VK_TRUE, 1000000000) : vkGetFenceStatus(device, m_fence);
     if (ready != VK_SUCCESS)
       return;
     try {

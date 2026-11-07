@@ -15,30 +15,44 @@ namespace remix::sky {
 
     MTLPixelFormat format(numos::Format value) {
       switch (value) {
-      case numos::Format::R8Unorm: return MTLPixelFormatR8Unorm;
-      case numos::Format::RGBA8Unorm: return MTLPixelFormatRGBA8Unorm;
-      case numos::Format::R16Float: return MTLPixelFormatR16Float;
-      case numos::Format::RGBA16Float: return MTLPixelFormatRGBA16Float;
-      case numos::Format::R32Uint: return MTLPixelFormatR32Uint;
-      case numos::Format::R32Float: return MTLPixelFormatR32Float;
-      case numos::Format::RG32Float: return MTLPixelFormatRG32Float;
-      case numos::Format::RGBA32Float: return MTLPixelFormatRGBA32Float;
-      case numos::Format::RG16Float: return MTLPixelFormatRG16Float;
+      case numos::Format::R8Unorm:
+        return MTLPixelFormatR8Unorm;
+      case numos::Format::RGBA8Unorm:
+        return MTLPixelFormatRGBA8Unorm;
+      case numos::Format::R16Float:
+        return MTLPixelFormatR16Float;
+      case numos::Format::RGBA16Float:
+        return MTLPixelFormatRGBA16Float;
+      case numos::Format::R32Uint:
+        return MTLPixelFormatR32Uint;
+      case numos::Format::R32Float:
+        return MTLPixelFormatR32Float;
+      case numos::Format::RG32Float:
+        return MTLPixelFormatRG32Float;
+      case numos::Format::RGBA32Float:
+        return MTLPixelFormatRGBA32Float;
+      case numos::Format::RG16Float:
+        return MTLPixelFormatRG16Float;
       }
       return MTLPixelFormatInvalid;
     }
 
     size_t texelBytes(numos::Format value) {
       switch (value) {
-      case numos::Format::R8Unorm: return 1;
-      case numos::Format::R16Float: return 2;
+      case numos::Format::R8Unorm:
+        return 1;
+      case numos::Format::R16Float:
+        return 2;
       case numos::Format::RGBA8Unorm:
       case numos::Format::R32Uint:
       case numos::Format::R32Float:
-      case numos::Format::RG16Float: return 4;
+      case numos::Format::RG16Float:
+        return 4;
       case numos::Format::RGBA16Float:
-      case numos::Format::RG32Float: return 8;
-      case numos::Format::RGBA32Float: return 16;
+      case numos::Format::RG32Float:
+        return 8;
+      case numos::Format::RGBA32Float:
+        return 16;
       }
       return 4;
     }
@@ -76,15 +90,24 @@ namespace remix::sky {
     // The numos::Format of a storage image's SPIR-V ImageFormat (placeholders).
     numos::Format fromSpirv(uint32_t value) {
       switch (value) {
-      case 1: return numos::Format::RGBA32Float;  // Rgba32f
-      case 2: return numos::Format::RGBA16Float;  // Rgba16f
-      case 3: return numos::Format::R32Float;     // R32f
-      case 4: return numos::Format::RGBA8Unorm;   // Rgba8
-      case 6: return numos::Format::RG32Float;    // Rg32f
-      case 7: return numos::Format::RG16Float;    // Rg16f
-      case 9: return numos::Format::R16Float;     // R16f
-      case 15: return numos::Format::R8Unorm;     // R8
-      case 33: return numos::Format::R32Uint;     // R32ui
+      case 1:
+        return numos::Format::RGBA32Float; // Rgba32f
+      case 2:
+        return numos::Format::RGBA16Float; // Rgba16f
+      case 3:
+        return numos::Format::R32Float; // R32f
+      case 4:
+        return numos::Format::RGBA8Unorm; // Rgba8
+      case 6:
+        return numos::Format::RG32Float; // Rg32f
+      case 7:
+        return numos::Format::RG16Float; // Rg16f
+      case 9:
+        return numos::Format::R16Float; // R16f
+      case 15:
+        return numos::Format::R8Unorm; // R8
+      case 33:
+        return numos::Format::R32Uint; // R32ui
       }
       return numos::Format::RGBA16Float;
     }
@@ -92,7 +115,7 @@ namespace remix::sky {
     MTLTextureType textureType(numos::TextureType type) {
       return type == numos::TextureType::Tex3D        ? MTLTextureType3D
              : type == numos::TextureType::Tex2DArray ? MTLTextureType2DArray
-                                                     : MTLTextureType2D;
+                                                      : MTLTextureType2D;
     }
 
     uint32_t layers(const numos::TextureDesc &desc) {
@@ -170,8 +193,7 @@ namespace remix::sky {
       ring.used = 0;
   }
 
-  bool Bridge::preparePipelines(const std::function<bool(uint32_t pass)> &needed, uint32_t &ready,
-                                   uint32_t &total) {
+  bool Bridge::preparePipelines(const std::function<bool(uint32_t pass)> &needed, uint32_t &ready, uint32_t &total) {
     ready = total = 0;
     for (uint32_t index = 0; index < m_passes.size(); ++index) {
       auto &pass = m_passes[index];
@@ -254,10 +276,10 @@ namespace remix::sky {
     Resource resource{.kind = Resource::Kind::Buffer, .buffer = desc};
     // Readback buffers are read by the host; the others change only through
     // recorded copies, ordered with the dispatches.
-    resource.handle = [m_device newBufferWithLength:std::max<size_t>(desc.size, 16)
-                                            options:desc.usage == numos::BufferUsage::Readback
-                                                        ? MTLResourceStorageModeShared
-                                                        : MTLResourceStorageModePrivate];
+    resource.handle =
+        [m_device newBufferWithLength:std::max<size_t>(desc.size, 16)
+                              options:desc.usage == numos::BufferUsage::Readback ? MTLResourceStorageModeShared
+                                                                                 : MTLResourceStorageModePrivate];
     check(resource.handle, "NUMOS buffer allocation");
     if (desc.debugName)
       resource.handle.label = @(desc.debugName);
@@ -271,7 +293,8 @@ namespace remix::sky {
     auto *descriptor = [MTLSamplerDescriptor new];
     descriptor.minFilter = descriptor.magFilter =
         desc.filter == numos::Filter::Linear ? MTLSamplerMinMagFilterLinear : MTLSamplerMinMagFilterNearest;
-    descriptor.mipFilter = desc.mipFilter == numos::Filter::Linear ? MTLSamplerMipFilterLinear : MTLSamplerMipFilterNearest;
+    descriptor.mipFilter =
+        desc.mipFilter == numos::Filter::Linear ? MTLSamplerMipFilterLinear : MTLSamplerMipFilterNearest;
     descriptor.sAddressMode = address(desc.addressU);
     descriptor.tAddressMode = address(desc.addressV);
     descriptor.rAddressMode = address(desc.addressW);
@@ -303,7 +326,7 @@ namespace remix::sky {
   }
 
   std::pair<id<MTLBuffer>, size_t> Bridge::allocate(std::vector<Ring> &rings, size_t size, size_t alignment,
-                                                       size_t chunk) {
+                                                    size_t chunk) {
     for (auto &ring : rings)
       if (align(ring.used, alignment) + size <= ring.buffer.length) {
         const size_t offset = align(ring.used, alignment);
@@ -329,12 +352,14 @@ namespace remix::sky {
     [blit endEncoding];
   }
 
-  void Bridge::copyBuffer(numos::GpuHandle dst, size_t dstOffset, numos::GpuHandle src, size_t srcOffset,
-                             size_t size) {
+  void Bridge::copyBuffer(numos::GpuHandle dst, size_t dstOffset, numos::GpuHandle src, size_t srcOffset, size_t size) {
     auto &target = get(dst);
     id<MTLBlitCommandEncoder> blit = blitEncoder(command(), @"NUMOS buffer copy");
-    [blit copyFromBuffer:get(src).handle sourceOffset:srcOffset toBuffer:target.handle destinationOffset:dstOffset
-                    size:size];
+    [blit copyFromBuffer:get(src).handle
+             sourceOffset:srcOffset
+                 toBuffer:target.handle
+        destinationOffset:dstOffset
+                     size:size];
     [blit endEncoding];
     if (target.buffer.usage == numos::BufferUsage::Readback)
       target.copyFrame = m_frame;
@@ -346,8 +371,7 @@ namespace remix::sky {
     [blit endEncoding];
   }
 
-  void Bridge::copyToTexture(id<MTLBuffer> source, size_t offset, size_t rowBytes, Resource &target,
-                                uint32_t mip) {
+  void Bridge::copyToTexture(id<MTLBuffer> source, size_t offset, size_t rowBytes, Resource &target, uint32_t mip) {
     const auto &desc = target.texture;
     const MTLSize size = mipSize(desc, mip);
     const size_t imageBytes = rowBytes * size.height;
@@ -421,7 +445,7 @@ namespace remix::sky {
                   : binding.dim == numos::BindingDim::Tex2DArray ? numos::TextureType::Tex2DArray
                                                                  : numos::TextureType::Tex2D;
       desc.format = binding.kind == numos::BindingKind::StorageTexture ? fromSpirv(binding.spirvImageFormat)
-                                                                        : numos::Format::RGBA16Float;
+                                                                       : numos::Format::RGBA16Float;
       desc.debugName = "NUMOS placeholder";
       handle = createTexture(desc);
       const float zero[4] = {};
@@ -466,8 +490,8 @@ namespace remix::sky {
       case numos::BindingKind::StorageTexture:
       case numos::BindingKind::CombinedTextureSampler: {
         const bool storage = declared.kind == numos::BindingKind::StorageTexture;
-        id<MTLTexture> texture = view(resource, binding.resource ? binding.mipLevel : 0,
-                                      binding.resource ? binding.mipCount : ~0u, storage);
+        id<MTLTexture> texture =
+            view(resource, binding.resource ? binding.mipLevel : 0, binding.resource ? binding.mipCount : ~0u, storage);
         id<MTLSamplerState> sampler = nil;
         if (declared.kind == numos::BindingKind::CombinedTextureSampler)
           sampler = get(binding.sampler ? binding.sampler : placeholder({.kind = numos::BindingKind::Sampler})).sampler;
@@ -480,7 +504,8 @@ namespace remix::sky {
         break;
       }
     }
-    id<MTLComputeCommandEncoder> encoder = computeEncoder(command(), [NSString stringWithFormat:@"NUMOS %s", pass.info.name]);
+    id<MTLComputeCommandEncoder> encoder =
+        computeEncoder(command(), [NSString stringWithFormat:@"NUMOS %s", pass.info.name]);
     [encoder setComputePipelineState:pass.pipeline];
     [encoder setBuffer:arguments offset:argumentOffset atIndex:0];
     set.use(encoder);

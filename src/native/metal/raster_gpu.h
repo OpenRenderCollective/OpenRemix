@@ -118,7 +118,7 @@ namespace remix::metal {
                          uint32_t count, int32_t within, bool early);
     // Halo outlines (remixapi_InstanceInfoHaloEXT, raster/halo.cpp).
     struct Halo {
-      CoverageTarget targets[3]; // silhouette mask, two blur targets
+      CoverageTarget targets[3];                                // silhouette mask, two blur targets
       id<MTLRenderPipelineState> blur = nil, composite[2] = {}; // composite: [additive]
       struct Group {
         scene::Halo halo;
@@ -147,8 +147,7 @@ namespace remix::metal {
       id<MTLRenderPipelineState> multiply = nil, add = nil;
       ArgumentSet transmittance, addition; // skyComposite set 0
     } skyComposite;
-    void recordSkyComposite(id<MTLRenderCommandEncoder> encoder, id<MTLTexture> transmittance,
-                            id<MTLTexture> addition);
+    void recordSkyComposite(id<MTLRenderCommandEncoder> encoder, id<MTLTexture> transmittance, id<MTLTexture> addition);
     // Masked overlays (remixapi_InstanceInfoMaskEXT, raster/mask.cpp).
     struct Mask {
       std::vector<CoverageTarget> targets;
@@ -161,7 +160,7 @@ namespace remix::metal {
       };
       std::vector<Run> runs;
       std::vector<Command> commands;
-      int32_t slot[scene::Mask::maxGroup + 1] = {}; // group -> target this frame, -1: no sources
+      int32_t slot[scene::Mask::maxGroup + 1] = {};    // group -> target this frame, -1: no sources
       MTLScissorRect area[scene::Mask::maxGroup] = {}; // per target: pixels its coverage can be set in
       uint32_t used = 0;
       // Commands [0, split) are recorded before the coverage passes.

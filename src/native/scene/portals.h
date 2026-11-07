@@ -102,8 +102,7 @@ namespace remix::scene {
         slot[12] = float(n[0] / length), slot[13] = float(n[1] / length), slot[14] = float(n[2] / length);
         slot[15] = 1;
         const Affine &own = side ? tb : ta;
-        out.planes[2 * pair + side] =
-            float((n[0] * own[0][3] + n[1] * own[1][3] + n[2] * own[2][3]) / length);
+        out.planes[2 * pair + side] = float((n[0] * own[0][3] + n[1] * own[1][3] + n[2] * own[2][3]) / length);
       }
     }
     return out;

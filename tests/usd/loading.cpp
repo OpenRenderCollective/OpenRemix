@@ -59,13 +59,13 @@ int main(int argc, char **argv) {
                                       "\nfloat openremix:iridescence:filmIor = 2.4"
                                       "\nfloat openremix:iridescence:flowAmplitude = 5000"
                                       "\nfloat openremix:iridescence:structural = 0.5");
-      const auto filmed = std::filesystem::temp_directory_path() /
-                          ("openremix-usd-film-" + std::to_string(getpid()) + ".usda");
+      const auto filmed =
+          std::filesystem::temp_directory_path() / ("openremix-usd-film-" + std::to_string(getpid()) + ".usda");
       std::ofstream(filmed) << text;
       auto loaded = usd::load({filmed.string()});
       const auto &film = loaded.scene["materials"].at(0).at("iridescence");
-      require(film["thickness"] == 450 && std::abs(film["ior"].get<float>() - 2.4f) < 1e-6f &&
-                  film["strength"] == 1 && film["structural"] == .5,
+      require(film["thickness"] == 450 && std::abs(film["ior"].get<float>() - 2.4f) < 1e-6f && film["strength"] == 1 &&
+                  film["structural"] == .5,
               "thin film in the material JSON");
       NativeResources filmResources;
       usd::Submission submitted(filmResources, loaded, 1);
@@ -89,12 +89,13 @@ int main(int argc, char **argv) {
       require(at != std::string::npos, "capture fixture shader");
       auto translucent = [&](bool thin) {
         auto glass = text;
-        glass.insert(at + shader.size(), std::string("\nuniform asset info:mdl:sourceAsset = @AperturePBR_Translucent.mdl@"
-                                                     "\nfloat inputs:ior_constant = 1.33"
-                                                     "\nfloat inputs:transmittance_measurement_distance = 4") +
-                                             (thin ? "\nbool inputs:thin_walled = true" : ""));
-        const auto path = std::filesystem::temp_directory_path() /
-                          ("openremix-usd-glass-" + std::to_string(getpid()) + ".usda");
+        glass.insert(at + shader.size(),
+                     std::string("\nuniform asset info:mdl:sourceAsset = @AperturePBR_Translucent.mdl@"
+                                 "\nfloat inputs:ior_constant = 1.33"
+                                 "\nfloat inputs:transmittance_measurement_distance = 4") +
+                         (thin ? "\nbool inputs:thin_walled = true" : ""));
+        const auto path =
+            std::filesystem::temp_directory_path() / ("openremix-usd-glass-" + std::to_string(getpid()) + ".usda");
         std::ofstream(path) << glass;
         auto loaded = usd::load({path.string()});
         std::filesystem::remove(path);
@@ -120,11 +121,11 @@ int main(int argc, char **argv) {
     {
       // A mod's `over` of a captured material records the parts it authors
       // (scene::ModParts); a definition replaces the whole material.
-      const auto path = std::filesystem::temp_directory_path() /
-                        ("openremix-usd-parts-" + std::to_string(getpid()) + ".usda");
+      const auto path =
+          std::filesystem::temp_directory_path() / ("openremix-usd-parts-" + std::to_string(getpid()) + ".usda");
       auto parts = [&](const char *specifier) {
-        std::ofstream(path) << "#usda 1.0\n" << specifier << " Xform \"RootNode\" { " << specifier
-                            << " Scope \"Looks\" { " << specifier
+        std::ofstream(path) << "#usda 1.0\n"
+                            << specifier << " Xform \"RootNode\" { " << specifier << " Scope \"Looks\" { " << specifier
                             << " Material \"mat_0123456789ABCDEF\" { " << specifier
                             << " Shader \"Shader\" {\nbool inputs:enable_thin_film = 1\n"
                                "float openremix:iridescence:filmIor = 2\n}\n}\n}\n}\n";
@@ -134,8 +135,9 @@ int main(int argc, char **argv) {
       };
       require(parts("over").value("authored", 0u) == scene::ModParts::film, "an override authors its film only");
       require(!parts("def").contains("authored"), "a defined material replaces the whole material");
-      std::ofstream(path) << "#usda 1.0\nover Xform \"RootNode\" { over Scope \"Looks\" { over Material "
-                             "\"mat_0123456789ABCDEF\" { over Shader \"Shader\" {\nfloat openremix:subsurface:weight = 1\n}\n}\n}\n}\n";
+      std::ofstream(path)
+          << "#usda 1.0\nover Xform \"RootNode\" { over Scope \"Looks\" { over Material "
+             "\"mat_0123456789ABCDEF\" { over Shader \"Shader\" {\nfloat openremix:subsurface:weight = 1\n}\n}\n}\n}\n";
       auto sssOver = usd::load({path.string()});
       std::filesystem::remove(path);
       require(sssOver.scene["replacements"]["materials"].at(0).value("authored", 0u) == scene::ModParts::subsurface,
@@ -154,8 +156,8 @@ int main(int argc, char **argv) {
                                       "\nfloat inputs:subsurface_radius_scale = 22"
                                       "\nfloat inputs:subsurface_max_sample_radius = 1"
                                       "\nfloat openremix:subsurface:weight = 0.75");
-      const auto sssPath = std::filesystem::temp_directory_path() /
-                           ("openremix-usd-sss-" + std::to_string(getpid()) + ".usda");
+      const auto sssPath =
+          std::filesystem::temp_directory_path() / ("openremix-usd-sss-" + std::to_string(getpid()) + ".usda");
       std::ofstream(sssPath) << text;
       auto loaded = usd::load({sssPath.string()});
       std::filesystem::remove(sssPath);
@@ -176,18 +178,19 @@ int main(int argc, char **argv) {
     }
     {
       // A polygon with no area is left as a fan: one such face must not lose its mesh.
-      const auto path = std::filesystem::temp_directory_path() / ("openremix-degenerate-" + std::to_string(getpid()) + ".usda");
-      std::ofstream(path) << "#usda 1.0\ndef Mesh \"flat\" {\npoint3f[] points = [(0,0,0),(1,0,0),(2,0,0),(3,0,0),(0,1,0),(1,1,0),(0,0,1)]\n"
+      const auto path =
+          std::filesystem::temp_directory_path() / ("openremix-degenerate-" + std::to_string(getpid()) + ".usda");
+      std::ofstream(path) << "#usda 1.0\ndef Mesh \"flat\" {\npoint3f[] points = "
+                             "[(0,0,0),(1,0,0),(2,0,0),(3,0,0),(0,1,0),(1,1,0),(0,0,1)]\n"
                              "int[] faceVertexCounts = [4,3]\nint[] faceVertexIndices = [0,1,2,3,4,5,6]\n}\n";
       auto loaded = usd::load({path.string()});
       std::filesystem::remove(path);
-      require(loaded.scene["meshes"].size() == 1 && loaded.scene["warnings"].empty(), "a degenerate polygon keeps its mesh");
+      require(loaded.scene["meshes"].size() == 1 && loaded.scene["warnings"].empty(),
+              "a degenerate polygon keeps its mesh");
     }
     auto converted = usd::load({(fixture / "capture.usda").string(), 1, 2});
-    require(converted.scene["meters_per_unit"] == 1 && converted.scene["up_axis"] == "Z",
-            "explicit host coordinates");
-    require(usd::capturedHash("/RootNode/meshes/mesh_0123456789ABCDEF") == 0x0123456789abcdefull,
-            "captured mesh hash");
+    require(converted.scene["meters_per_unit"] == 1 && converted.scene["up_axis"] == "Z", "explicit host coordinates");
+    require(usd::capturedHash("/RootNode/meshes/mesh_0123456789ABCDEF") == 0x0123456789abcdefull, "captured mesh hash");
     auto dir = std::filesystem::temp_directory_path() / ("openremix-usd-test-" + std::to_string(getpid()));
     std::filesystem::create_directories(dir / "a");
     auto write = [&](const std::string &text) { std::ofstream(dir / "a/mod.usda") << text; };
@@ -249,8 +252,8 @@ int main(int argc, char **argv) {
           for (uint32_t b = 0; b < ((edge + 3) / 4) * ((edge + 3) / 4); ++b)
             file.insert(file.end(), block, block + 8);
         }
-        std::ofstream(path, std::ios::binary).write(reinterpret_cast<const char *>(file.data()),
-                                                    std::streamsize(file.size()));
+        std::ofstream(path, std::ios::binary)
+            .write(reinterpret_cast<const char *>(file.data()), std::streamsize(file.size()));
       };
       const auto big = dir / "a/big.dds", flat = dir / "a/flat.dds";
       dds(big, 9);
@@ -260,8 +263,7 @@ int main(int argc, char **argv) {
       require(low.width == 64 && low.height == 64 && low.levels() == 7 && low.compressed &&
                   low.compressed->format == whole.compressed->format,
               "the levels of a DDS that fit");
-      require(low.compressed->upload.size() < whole.compressed->upload.size() / 8 &&
-                  low.compressed->upload[0] == 3,
+      require(low.compressed->upload.size() < whole.compressed->upload.size() / 8 && low.compressed->upload[0] == 3,
               "a preview starts at its own level");
       require(scene::loadTexturePreview(big, 512).width == 256, "a texture smaller than the limit stays");
       const auto flatLow = scene::loadTexturePreview(flat, 64);
@@ -523,7 +525,8 @@ int main(int argc, char **argv) {
     // instance moves (the host gives it no identity): new ones each frame
     // would rebuild the light tree, and the guide with it, as it moves.
     write("#usda 1.0\n(\nmetersPerUnit = 1\nupAxis = \"Y\"\n)\ndef Xform \"RootNode\" { def Scope \"meshes\" { "
-          "def Xform \"mesh_0123456789ABCDEF\" {\n def SphereLight \"child\" {\n float inputs:radius = 1\n }\n }\n }\n }\n");
+          "def Xform \"mesh_0123456789ABCDEF\" {\n def SphereLight \"child\" {\n float inputs:radius = 1\n }\n }\n }\n "
+          "}\n");
     auto attached = [&](std::initializer_list<float> positions) {
       usd::modBoundary(resources);
       for (float x : positions) {
@@ -562,7 +565,8 @@ int main(int argc, char **argv) {
     write("#usda 1.0\n(\nmetersPerUnit = 1\nupAxis = \"Y\"\n)\ndef Xform \"RootNode\" { def Scope \"meshes\" { "
           "def Xform \"mesh_0123456789ABCDEF\" {\n custom int preserveOriginalDrawCall = 0\n"
           "def Mesh \"body\" (prepend apiSchemas = [\"SkelBindingAPI\"]) {\n"
-          "point3f[] points = [(0,0,0),(1,0,0),(0,1,0)]\nint[] faceVertexCounts = [3]\nint[] faceVertexIndices = [0,1,2]\n"
+          "point3f[] points = [(0,0,0),(1,0,0),(0,1,0)]\nint[] faceVertexCounts = [3]\nint[] faceVertexIndices = "
+          "[0,1,2]\n"
           "int[] primvars:skel:jointIndices = [0,2,0] (elementSize = 1\n interpolation = \"vertex\")\n"
           "float[] primvars:skel:jointWeights = [1,1,1] (elementSize = 1\n interpolation = \"vertex\")\n"
           "rel skel:skeleton = </RootNode/meshes/gone>\n}\n"
@@ -589,7 +593,8 @@ int main(int argc, char **argv) {
     for (int i = 0; i < 300 && !skinnedReady; ++i) {
       std::this_thread::sleep_for(std::chrono::milliseconds(20));
       usd::modBoundary(resources);
-      skinnedReady = skinnedDraw({0, 0, 0}, 0) && !resources.draws().empty() && resources.draws()[0].surface->bonesPerVertex;
+      skinnedReady =
+          skinnedDraw({0, 0, 0}, 0) && !resources.draws().empty() && resources.draws()[0].surface->bonesPerVertex;
       resources.finishFrame();
     }
     require(skinnedReady, "a replacement keeps its joint influences");
@@ -597,7 +602,8 @@ int main(int argc, char **argv) {
     skinnedDraw({1, 2, 3}, REMIXAPI_INSTANCE_CATEGORY_BIT_VIEW_MODEL);
     {
       const auto &draw = resources.draws().at(0);
-      require(draw.bones && draw.bones->size() == 3 && (*draw.bones)[2][12] == 3, "a replacement takes its draw's bones");
+      require(draw.bones && draw.bones->size() == 3 && (*draw.bones)[2][12] == 3,
+              "a replacement takes its draw's bones");
       require(draw.camera == REMIXAPI_CAMERA_TYPE_VIEW_MODEL, "a replacement of a view model is one");
     }
     resources.finishFrame();
@@ -608,7 +614,8 @@ int main(int argc, char **argv) {
             "bones past those its draw names stay at identity");
     resources.finishFrame();
     usd::modBoundary(resources);
-    require(skinnedDraw({}, 0) && resources.draws().at(0).bones->size() == 3 && resources.draws().at(0).bones->at(2)[12] == 0,
+    require(skinnedDraw({}, 0) && resources.draws().at(0).bones->size() == 3 &&
+                resources.draws().at(0).bones->at(2)[12] == 0,
             "a replacement of a draw without bones stays in its bind pose");
     resources.finishFrame();
     usd::modBoundary(resources);

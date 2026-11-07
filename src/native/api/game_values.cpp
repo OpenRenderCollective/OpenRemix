@@ -41,11 +41,9 @@ REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_SetGameValue(const char *key,
   return REMIXAPI_ERROR_CODE_SUCCESS;
 }
 
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetGameValue(const char *key, char *outBuffer,
-                                                                uint32_t bufferSize,
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetGameValue(const char *key, char *outBuffer, uint32_t bufferSize,
                                                                 uint32_t *outActualSize) {
-  if (key == nullptr || key[0] == '\0' || outActualSize == nullptr ||
-      (bufferSize != 0 && outBuffer == nullptr)) {
+  if (key == nullptr || key[0] == '\0' || outActualSize == nullptr || (bufferSize != 0 && outBuffer == nullptr)) {
     return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
   }
 

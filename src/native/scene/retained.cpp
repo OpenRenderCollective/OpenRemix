@@ -539,9 +539,9 @@ namespace remix {
     Double inverseView, inverseProjection;
     if (!invert(widen(m_authoredViews[world]), inverseView) || !invert(widen(worldProjection), inverseProjection))
       return false;
-    const auto correction = product(
-        inverseView,
-        product(inverseProjection, product(widen(projection), product(shrink, widen(m_authoredViews[viewModel])))));
+    const auto correction =
+        product(inverseView, product(inverseProjection,
+                                     product(widen(projection), product(shrink, widen(m_authoredViews[viewModel])))));
     if (!std::all_of(correction.begin(), correction.end(), [](double v) { return std::isfinite(v); }))
       return false;
     // Traced now, its identity must be unique, which DrawInstance does not ask

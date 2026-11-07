@@ -32,21 +32,19 @@ namespace remix::api {
   remixapi_ErrorCode REMIXAPI_CALL setupCamera(const remixapi_CameraInfo *info);
   remixapi_ErrorCode REMIXAPI_CALL setCameraMediumMaterial(const remixapi_CameraMediumInfo *info);
   remixapi_ErrorCode REMIXAPI_CALL drawInstance(const remixapi_InstanceInfo *info);
-  remixapi_ErrorCode REMIXAPI_CALL createLight(const remixapi_LightInfo *info,
-                                               remixapi_LightHandle *outHandle);
+  remixapi_ErrorCode REMIXAPI_CALL createLight(const remixapi_LightInfo *info, remixapi_LightHandle *outHandle);
   remixapi_ErrorCode REMIXAPI_CALL destroyLight(remixapi_LightHandle handle);
   remixapi_ErrorCode REMIXAPI_CALL drawLightInstance(remixapi_LightHandle handle);
   remixapi_ErrorCode REMIXAPI_CALL setConfigVariable(const char *key, const char *value);
   remixapi_ErrorCode REMIXAPI_CALL addTextureHash(const char *category, const char *hash);
   remixapi_ErrorCode REMIXAPI_CALL removeTextureHash(const char *category, const char *hash);
-  remixapi_ErrorCode REMIXAPI_CALL createTexture(const remixapi_TextureInfo *info,
-                                                 remixapi_TextureHandle *outHandle);
+  remixapi_ErrorCode REMIXAPI_CALL createTexture(const remixapi_TextureInfo *info, remixapi_TextureHandle *outHandle);
   remixapi_ErrorCode REMIXAPI_CALL destroyTexture(remixapi_TextureHandle handle);
-  remixapi_ErrorCode REMIXAPI_CALL
-  requestObjectPicking(const remixapi_Rect2D *pixelRegion,
-                       PFN_remixapi_pick_RequestObjectPickingUserCallback callback, void *);
-  remixapi_ErrorCode REMIXAPI_CALL highlightObjects(const uint32_t *values, uint32_t valueCount, uint8_t,
-                                                    uint8_t, uint8_t);
+  remixapi_ErrorCode REMIXAPI_CALL requestObjectPicking(const remixapi_Rect2D *pixelRegion,
+                                                        PFN_remixapi_pick_RequestObjectPickingUserCallback callback,
+                                                        void *);
+  remixapi_ErrorCode REMIXAPI_CALL highlightObjects(const uint32_t *values, uint32_t valueCount, uint8_t, uint8_t,
+                                                    uint8_t);
   remixapi_ErrorCode REMIXAPI_CALL drawScreenOverlay(const void *pixels, uint32_t width, uint32_t height,
                                                      remixapi_Format format, float opacity);
   remixapi_ErrorCode REMIXAPI_CALL requestTextureVramFree();
@@ -57,8 +55,7 @@ namespace remix::api {
   remixapi_ErrorCode REMIXAPI_CALL registerD3D9(IDirect3DDevice9Ex *device);
   remixapi_ErrorCode REMIXAPI_CALL getExternalSwapchain(uint64_t *image, uint64_t *done, uint64_t *resume);
   remixapi_ErrorCode REMIXAPI_CALL getVkImage(IDirect3DSurface9 *source, uint64_t *output);
-  remixapi_ErrorCode REMIXAPI_CALL copyOutput(IDirect3DSurface9 *target,
-                                              remixapi_dxvk_CopyRenderingOutputType type);
+  remixapi_ErrorCode REMIXAPI_CALL copyOutput(IDirect3DSurface9 *target, remixapi_dxvk_CopyRenderingOutputType type);
   remixapi_ErrorCode REMIXAPI_CALL defaultOutput(remixapi_dxvk_CopyRenderingOutputType type,
                                                  const remixapi_Float4D *color);
   remixapi_ErrorCode REMIXAPI_CALL getTextureHash(IDirect3DTexture9 *texture, uint64_t *output);

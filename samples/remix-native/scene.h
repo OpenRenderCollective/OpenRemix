@@ -14,10 +14,13 @@ struct SampleScene {
     distant.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DISTANT_EXT;
     distant.direction = {-.4f, -.8f, -.3f};
     remixapi_LightInfo light = {};
-    light.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO; light.pNext = &distant;
-    light.hash = 0x104; light.radiance = {3.14159265f, 3.14159265f, 3.14159265f};
+    light.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
+    light.pNext = &distant;
+    light.hash = 0x104;
+    light.radiance = {3.14159265f, 3.14159265f, 3.14159265f};
     auto lightResult = api.CreateLight(&light, &daylight);
-    if (lightResult) return lightResult;
+    if (lightResult)
+      return lightResult;
     std::array<uint32_t, 64> pixels;
     for (unsigned y = 0; y < 8; ++y) {
       for (unsigned x = 0; x < 8; ++x) {
@@ -95,7 +98,8 @@ struct SampleScene {
   }
   remixapi_ErrorCode draw(remixapi_Interface &api, float seconds, uint32_t width, uint32_t height) {
     auto lightResult = api.DrawLightInstance(daylight);
-    if (lightResult) return lightResult;
+    if (lightResult)
+      return lightResult;
     remixapi_CameraInfoParameterizedEXT params = {};
     params.sType = REMIXAPI_STRUCT_TYPE_CAMERA_INFO_PARAMETERIZED_EXT;
     params.forward = {0, 0, 1};

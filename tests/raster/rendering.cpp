@@ -73,8 +73,7 @@ namespace {
       const VkDebugUtilsMessengerCreateInfoEXT debug = {
           .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
           .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
-          .messageType =
-              VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT,
+          .messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT,
           .pfnUserCallback = message};
       vk(reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>(vkGetInstanceProcAddr(
           instanceHandle, "vkCreateDebugUtilsMessengerEXT"))(instanceHandle, &debug, nullptr, &messenger));
@@ -113,8 +112,7 @@ namespace {
       vkGetDeviceQueue(device, family, 0, &queue);
       VkPhysicalDeviceProperties properties{};
       vkGetPhysicalDeviceProperties(physical, &properties);
-      pipelines =
-          std::make_unique<remix::pipeline::Service>(device, properties, false);
+      pipelines = std::make_unique<remix::pipeline::Service>(device, properties, false);
       raster.initializeGpu(physical, device);
       const VkImageCreateInfo image = {.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
                                        .imageType = VK_IMAGE_TYPE_2D,
@@ -124,8 +122,7 @@ namespace {
                                        .arrayLayers = 1,
                                        .samples = VK_SAMPLE_COUNT_1_BIT,
                                        .tiling = VK_IMAGE_TILING_OPTIMAL,
-                                       .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-                                                VK_IMAGE_USAGE_TRANSFER_SRC_BIT};
+                                       .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT};
       vk(vkCreateImage(device, &image, nullptr, &color));
       VkMemoryRequirements mem;
       vkGetImageMemoryRequirements(device, color, &mem);
@@ -141,19 +138,18 @@ namespace {
                                        .format = VK_FORMAT_R8G8B8A8_UNORM,
                                        .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}};
       vk(vkCreateImageView(device, &v, nullptr, &view));
-      const VkAttachmentDescription attachments[] = {
-          {.format = VK_FORMAT_R8G8B8A8_UNORM,
-           .samples = VK_SAMPLE_COUNT_1_BIT,
-           .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-           .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-           .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-           .finalLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL},
-          {.format = raster.depthFormat(),
-           .samples = VK_SAMPLE_COUNT_1_BIT,
-           .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-           .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-           .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-           .finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL}};
+      const VkAttachmentDescription attachments[] = {{.format = VK_FORMAT_R8G8B8A8_UNORM,
+                                                      .samples = VK_SAMPLE_COUNT_1_BIT,
+                                                      .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+                                                      .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+                                                      .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                                                      .finalLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL},
+                                                     {.format = raster.depthFormat(),
+                                                      .samples = VK_SAMPLE_COUNT_1_BIT,
+                                                      .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+                                                      .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+                                                      .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                                                      .finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL}};
       const VkAttachmentReference colorRef = {0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
                                   depthRef = {1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
       const VkSubpassDescription subpass = {.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -164,11 +160,9 @@ namespace {
           {.srcSubpass = VK_SUBPASS_EXTERNAL,
            .dstSubpass = 0,
            .srcStageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-           .dstStageMask =
-               VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+           .dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
            .srcAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
-           .dstAccessMask =
-               VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT},
+           .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT},
           {.srcSubpass = 0,
            .dstSubpass = VK_SUBPASS_EXTERNAL,
            .srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
@@ -239,8 +233,8 @@ namespace {
       vkDestroyCommandPool(device, pool, nullptr);
       pipelines.reset();
       vkDestroyDevice(device, nullptr);
-      reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(vkGetInstanceProcAddr(
-          instanceHandle, "vkDestroyDebugUtilsMessengerEXT"))(instanceHandle, messenger, nullptr);
+      reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(
+          vkGetInstanceProcAddr(instanceHandle, "vkDestroyDebugUtilsMessengerEXT"))(instanceHandle, messenger, nullptr);
       vkDestroyInstance(instanceHandle, nullptr);
     }
     void outputEncoding(bool enabled) {
@@ -303,8 +297,8 @@ namespace {
       const VkMemoryBarrier barrier = {.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
                                        .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
                                        .dstAccessMask = VK_ACCESS_HOST_READ_BIT};
-      vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1,
-                           &barrier, 0, nullptr, 0, nullptr);
+      vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &barrier, 0,
+                           nullptr, 0, nullptr);
       vk(vkEndCommandBuffer(command));
       vk(vkResetFences(device, 1, &fence));
       const VkSubmitInfo submit = {
@@ -326,8 +320,7 @@ namespace {
   void pixel(const std::vector<uint8_t> &data, int x, int y, int r, int g, int b, const char *what) {
     auto p = data.data() + (y * 64 + x) * 4;
     if (std::abs(p[0] - r) > 2 || std::abs(p[1] - g) > 2 || std::abs(p[2] - b) > 2) {
-      std::fprintf(stderr, "%s: pixel %d,%d = %u,%u,%u; expected %d,%d,%d\n", what, x, y, p[0], p[1], p[2], r,
-                   g, b);
+      std::fprintf(stderr, "%s: pixel %d,%d = %u,%u,%u; expected %d,%d,%d\n", what, x, y, p[0], p[1], p[2], r, g, b);
       std::exit(1);
     }
   }
@@ -407,7 +400,8 @@ namespace {
     auto &r = target.raster;
     camera(r);
     // Four texels in a row (linear values): A, B, C, D at u = 1/8, 3/8, 5/8, 7/8.
-    const uint8_t texels[] = {26, 51, 0, 102, /* A */ 0, 153, 0, 204, /* B */ 255, 0, 0, 255, /* C */ 0, 255, 0, 128 /* D */};
+    const uint8_t texels[] = {26,          51, 0, 102, /* A */ 0, 153, 0, 204,
+                              /* B */ 255, 0,  0, 255, /* C */ 0, 255, 0, 128 /* D */};
     remixapi_TextureInfo tex = {};
     tex.hash = 0x51;
     tex.width = 4;
@@ -645,9 +639,9 @@ namespace {
     pixel(target.render(), 32, 32, 0, 128, 0, "Gradient map: the wound's blood");
     // The burn: t = saturate(burnStrength (2 - skin) + U.a - 1) over the
     // green composite, U read like an albedo (sRGB-decoded).
-    texture(0x89, {255, 0, 0, 255}, REMIXAPI_FORMAT_R8G8B8A8_SRGB);   // U: red, opaque
-    texture(0x8a, {255, 0, 0, 128}, REMIXAPI_FORMAT_R8G8B8A8_SRGB);   // U: red, alpha 1/2
-    texture(0x8b, {0, 0, 0, 128}, REMIXAPI_FORMAT_R8G8B8A8_UNORM);    // B: cloth, luminance 1/2
+    texture(0x89, {255, 0, 0, 255}, REMIXAPI_FORMAT_R8G8B8A8_SRGB); // U: red, opaque
+    texture(0x8a, {255, 0, 0, 128}, REMIXAPI_FORMAT_R8G8B8A8_SRGB); // U: red, alpha 1/2
+    texture(0x8b, {0, 0, 0, 128}, REMIXAPI_FORMAT_R8G8B8A8_UNORM);  // B: cloth, luminance 1/2
     m.albedoTexture = WOUND_PATH("0x82");
     g.burnTexture = WOUND_PATH("0x89");
     g.burnStrength = .5f;
@@ -916,8 +910,7 @@ namespace {
     for (size_t i = 0; i < pixels.size(); i += 4) {
       out.write(reinterpret_cast<const char *>(pixels.data() + i), 3);
     }
-    std::puts(
-        "Raster GPU readback: depth, culling, textures, cutouts, blending, skinning, UI and lifetime passed");
+    std::puts("Raster GPU readback: depth, culling, textures, cutouts, blending, skinning, UI and lifetime passed");
   }
 } // namespace
 int main(int argc, char **argv) {

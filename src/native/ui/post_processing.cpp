@@ -63,12 +63,17 @@ namespace remix {
       const auto post = uiPost();
       if (post.available) {
         ImGui::TextWrapped("Automatic %.4g | target %.4g | %s", post.exposure, post.target,
-          post.limit < 0 ? "minimum EV limit" : post.limit > 0 ? "maximum EV limit" : "within limits");
+                           post.limit < 0   ? "minimum EV limit"
+                           : post.limit > 0 ? "maximum EV limit"
+                                            : "within limits");
         ImGui::TextWrapped("Active exposure %.4g", post.activeExposure);
-        ImGui::TextWrapped("Exposure/bloom %.3f ms | %.1f MiB", post.milliseconds, double(post.memoryBytes) / (1024 * 1024));
+        ImGui::TextWrapped("Exposure/bloom %.3f ms | %.1f MiB", post.milliseconds,
+                           double(post.memoryBytes) / (1024 * 1024));
       } else
-        ImGui::TextDisabled("%s", "Automatic exposure and bloom are not available on this backend (manual exposure applies).");
-      if (!post.failure.empty()) ImGui::TextWrapped("%s", post.failure.c_str());
+        ImGui::TextDisabled(
+            "%s", "Automatic exposure and bloom are not available on this backend (manual exposure applies).");
+      if (!post.failure.empty())
+        ImGui::TextWrapped("%s", post.failure.c_str());
       ui::Checkbox("Contrast before tonemapping", &options.contrast);
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Per-channel contrast around middle grey (0.18), applied after exposure:\n"
@@ -92,28 +97,26 @@ namespace remix {
         ImGui::SetTooltip("The clamps count in multiples of middle grey (0.18 on screen) at the current\n"
                           "exposure instead of linear scene luminance, so one value suits any scene.");
       auto denoising = denoisingStatistics();
-      const bool fireflyFilterActive =
-          denoising.activeDenoiser && !rrActive && (options.localDenoiser || options.bounces > 0) &&
-          options.localLights && options.localIntensity > 0 && localLightStatistics().activeLights > 0;
+      const bool fireflyFilterActive = denoising.activeDenoiser && !rrActive &&
+                                       (options.localDenoiser || options.bounces > 0) && options.localLights &&
+                                       options.localIntensity > 0 && localLightStatistics().activeLights > 0;
       ImGui::BeginDisabled(!fireflyFilterActive);
       ui::Checkbox("PBR local-light firefly filter (REBLUR)", &options.localFireflyFilter);
       ImGui::EndDisabled();
       if (!fireflyFilterActive)
-        ImGui::TextWrapped(
-            "%s", "PBR local-light firefly filter inactive: requires REBLUR receiving local lighting.");
+        ImGui::TextWrapped("%s", "PBR local-light firefly filter inactive: requires REBLUR receiving local lighting.");
       if (options.localDirectClamp > 0 || options.indirectClamp > 0)
         ImGui::TextWrapped("%s", "Clamping bypasses experimental PBR lighting reuse.");
       if (options.indirectClamp > 0)
         ImGui::TextWrapped("%s", "Indirect clamping bypasses water irradiance sharing.");
       if (denoising.unavailableReason[0])
         ImGui::TextWrapped("%s", denoising.unavailableReason);
-      ImGui::TextWrapped("NRD %s, TAA %s | history %llu, resets %llu",
-                         denoising.activeDenoiser ? "on" : "off", denoising.activeTaa ? "on" : "off",
-                         (unsigned long long)denoising.historyFrames,
+      ImGui::TextWrapped("NRD %s, TAA %s | history %llu, resets %llu", denoising.activeDenoiser ? "on" : "off",
+                         denoising.activeTaa ? "on" : "off", (unsigned long long)denoising.historyFrames,
                          (unsigned long long)denoising.historyResets);
-      ImGui::TextWrapped("Confidence %.2f / NRD %.2f / TAA %.2f ms | %.1f MiB",
-                         denoising.gpuConfidenceMilliseconds, denoising.gpuDenoiseMilliseconds,
-                         denoising.gpuTaaMilliseconds, double(denoising.memoryBytes) / (1024 * 1024));
+      ImGui::TextWrapped("Confidence %.2f / NRD %.2f / TAA %.2f ms | %.1f MiB", denoising.gpuConfidenceMilliseconds,
+                         denoising.gpuDenoiseMilliseconds, denoising.gpuTaaMilliseconds,
+                         double(denoising.memoryBytes) / (1024 * 1024));
     }
     // Only while Windows has HDR on for the window's display: SDR has no HDR10 settings.
     const auto hdr = uiHdr();
@@ -122,7 +125,8 @@ namespace remix {
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("BT.2020 primaries, ST.2084 PQ, 10-bit swapchain. Off: SDR.");
       if (hdr.active) {
-        ui::SliderFloat("Peak brightness (nits)", &settings.hdrPeakNits, 80, 10000, "%.0f", ImGuiSliderFlags_Logarithmic);
+        ui::SliderFloat("Peak brightness (nits)", &settings.hdrPeakNits, 80, 10000, "%.0f",
+                        ImGuiSliderFlags_Logarithmic);
         ui::SliderFloat("Paper white (nits)", &settings.hdrPaperWhiteNits, 80, 1000, "%.0f");
         ui::SliderFloat("UI brightness (nits)", &settings.hdrUiNits, 80, 1000, "%.0f");
       } else {
@@ -136,7 +140,7 @@ namespace remix {
       ImGui::SameLine();
       // The shortcut: click, then press it (ui/menu_shortcut.cpp).
       const std::string label = (m_profileUi.capturingScreenshotShortcut ? std::string("Press a shortcut...")
-                                                                          : m_profileUi.screenshotShortcut) +
+                                                                         : m_profileUi.screenshotShortcut) +
                                 "###Screenshot shortcut";
       if (ImGui::SmallButton(label.c_str()))
         m_profileUi.captureScreenshotShortcut = true;

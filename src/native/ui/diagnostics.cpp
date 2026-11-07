@@ -70,8 +70,8 @@ namespace remix {
         } else {
           const auto &pass = t.passes[row];
           size(pass, dims, sizeof(dims));
-          std::snprintf(line, sizeof(line), "%-56s %11s %8.3f %8.3f %5.1f%%\n", pass.name, dims,
-                        pass.selfMilliseconds, pass.milliseconds, 100 * pass.selfMilliseconds / frame);
+          std::snprintf(line, sizeof(line), "%-56s %11s %8.3f %8.3f %5.1f%%\n", pass.name, dims, pass.selfMilliseconds,
+                        pass.milliseconds, 100 * pass.selfMilliseconds / frame);
         }
         text += line;
       }
@@ -148,7 +148,8 @@ namespace remix {
                           "paths collected. Drawn over the scene; click elsewhere to pick another pixel.");
       if (m_inspecting) {
         ImGui::Text("Pixel %d, %d: %zu records", m_inspectX, m_inspectY, inspection.records.size());
-        if (ImGui::BeginTable("Path records", 5, ImGuiTableFlags_Borders | ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingFixedFit,
+        if (ImGui::BeginTable("Path records", 5,
+                              ImGuiTableFlags_Borders | ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingFixedFit,
                               ImVec2(0, 260))) {
           for (const char *name : {"Kind", "Position", "", "", ""})
             ImGui::TableSetupColumn(name);
@@ -197,7 +198,8 @@ namespace remix {
     // framebuffer coordinates) to the window's points.
     const auto &m = inspection.camera;
     const auto project = [&](const float *p, ImVec2 &out) {
-      const float x = m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12], y = m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13],
+      const float x = m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12],
+                  y = m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13],
                   w = m[3] * p[0] + m[7] * p[1] + m[11] * p[2] + m[15];
       if (w <= 1e-6f)
         return false;
@@ -233,48 +235,37 @@ namespace remix {
 
   void RemixNativeRuntime::drawDiagnosticsTab(config::Settings &settings) {
     if (const auto s = uiPreparation(); s.available) {
-      ImGui::Text("Pipeline preparation: %llu / %llu completed",
-                  (unsigned long long)s.completed,
+      ImGui::Text("Pipeline preparation: %llu / %llu completed", (unsigned long long)s.completed,
                   (unsigned long long)s.requested);
-      ImGui::Text("Created %llu, reused %llu, failed %llu; %.1f ms compiling",
-                  (unsigned long long)s.created, (unsigned long long)s.reused,
-                  (unsigned long long)s.failed, s.milliseconds);
-      ImGui::Text("Pending requests deduplicated: %llu",
-                  (unsigned long long)s.deduplicated);
-      ImGui::Text("Driver cache: %s; feedback: %s; hits: %llu",
-                  s.cacheLoaded ? "loaded" : "cold",
-                  s.feedback ? "supported" : "unavailable",
-                  (unsigned long long)s.cacheHits);
+      ImGui::Text("Created %llu, reused %llu, failed %llu; %.1f ms compiling", (unsigned long long)s.created,
+                  (unsigned long long)s.reused, (unsigned long long)s.failed, s.milliseconds);
+      ImGui::Text("Pending requests deduplicated: %llu", (unsigned long long)s.deduplicated);
+      ImGui::Text("Driver cache: %s; feedback: %s; hits: %llu", s.cacheLoaded ? "loaded" : "cold",
+                  s.feedback ? "supported" : "unavailable", (unsigned long long)s.cacheHits);
       if (s.feedback)
         ImGui::Text("Driver creation time: %.1f ms", s.driverMilliseconds);
       if (s.cacheWriteFailed)
-        ImGui::TextUnformatted(
-            "Pipeline cache could not be saved; rendering remains available.");
+        ImGui::TextUnformatted("Pipeline cache could not be saved; rendering remains available.");
       if (s.pending) {
-        ImGui::Text("Pending configuration #%llu (profile %s)",
-                    (unsigned long long)s.generation,
+        ImGui::Text("Pending configuration #%llu (profile %s)", (unsigned long long)s.generation,
                     m_profiles.active().c_str());
-        ImGui::Text(
-            "Elapsed %.1f s; totals include jobs discovered during preparation",
-            s.elapsedSeconds);
+        ImGui::Text("Elapsed %.1f s; totals include jobs discovered during preparation", s.elapsedSeconds);
       }
       if (!s.failure.empty())
         ImGui::TextWrapped("%s", s.failure.c_str());
       ImGui::Separator();
-      ImGui::Text(
-          "Longest presentation gap: %.1f ms (includes application idle time)",
-          m_longestPresentationGap);
+      ImGui::Text("Longest presentation gap: %.1f ms (includes application idle time)", m_longestPresentationGap);
     }
     auto &options = settings.trace;
     const bool rrActive = reconstructionDenoises();
     if (ImGui::CollapsingHeader("Debug views", ImGuiTreeNodeFlags_DefaultOpen)) {
       int view = int(options.debugView);
-      if (ui::Combo(
-              "Debug view", &view,
-              "Final lighting\0Albedo\0Shading normals\0Triangle IDs\0Depth bands\0World position grid\0"
-              "Raw local lighting\0Raw indirect lighting\0Motion vectors\0Motion validity\0"
-              "Indirect lighting confidence\0TAA current-frame weight\0Roughness and metalness\0Local history confidence\0"
-              "Translucent layer count\0Shadow terminator offset\0"))
+      if (ui::Combo("Debug view", &view,
+                    "Final lighting\0Albedo\0Shading normals\0Triangle IDs\0Depth bands\0World position grid\0"
+                    "Raw local lighting\0Raw indirect lighting\0Motion vectors\0Motion validity\0"
+                    "Indirect lighting confidence\0TAA current-frame weight\0Roughness and metalness\0Local history "
+                    "confidence\0"
+                    "Translucent layer count\0Shadow terminator offset\0"))
         options.debugView = uint32_t(view);
       static const char *help[] = {
           "Start with Triangle IDs and Shading normals at the problem angle, then compare Raw local "
@@ -368,18 +359,15 @@ namespace remix {
       ImGui::TextWrapped("Scene: %zu surface draws", pendingDrawCount());
       auto s = tracingStatistics();
       ImGui::TextWrapped("Accumulated frames: %llu", (unsigned long long)s.accumulationCount);
-      ImGui::TextWrapped("BLAS builds / refits / compactions: %llu / %llu / %llu",
-                         (unsigned long long)s.blasBuilds, (unsigned long long)s.blasRefits,
-                         (unsigned long long)s.blasCompactions);
+      ImGui::TextWrapped("BLAS builds / refits / compactions: %llu / %llu / %llu", (unsigned long long)s.blasBuilds,
+                         (unsigned long long)s.blasRefits, (unsigned long long)s.blasCompactions);
       ImGui::TextWrapped("Static TLAS builds: %llu", (unsigned long long)s.staticTlasBuilds);
       ImGui::TextWrapped("Dynamic TLAS builds / refits: %llu / %llu", (unsigned long long)s.dynamicTlasBuilds,
                          (unsigned long long)s.dynamicTlasRefits);
-      ImGui::TextWrapped("Rebuild reason: %u; refits since build: %u", s.dynamicRebuildReason,
-                         s.dynamicRefitCount);
+      ImGui::TextWrapped("Rebuild reason: %u; refits since build: %u", s.dynamicRebuildReason, s.dynamicRefitCount);
       ImGui::TextWrapped("Acceleration memory: %.1f MiB", double(s.accelerationBytes) / (1024 * 1024));
       if (s.gpuTimingsAvailable) {
-        ImGui::TextWrapped("GPU builds %.3f ms; tracing %.3f ms", s.gpuBuildMilliseconds,
-                           s.gpuTraceMilliseconds);
+        ImGui::TextWrapped("GPU builds %.3f ms; tracing %.3f ms", s.gpuBuildMilliseconds, s.gpuTraceMilliseconds);
         if (ImGui::IsItemHovered())
           ImGui::SetTooltip("Tracing includes sun and local shadows, indirect rays, and transparent "
                             "sheets.\nDenoiser timings are reported separately.");
@@ -475,8 +463,7 @@ namespace remix {
       ImGui::TextWrapped("Geometry conversions %llu, uploads %.2f MiB (raster %.2f MiB), raster skinned "
                          "vertices %llu",
                          (unsigned long long)p.geometryConversions, double(p.uploadBytes) / (1024 * 1024),
-                         double(b.rasterUploadBytes) / (1024 * 1024),
-                         (unsigned long long)b.rasterSkinnedVertices);
+                         double(b.rasterUploadBytes) / (1024 * 1024), (unsigned long long)b.rasterSkinnedVertices);
     }
     if (ImGui::CollapsingHeader("Input and clear color", ImGuiTreeNodeFlags_DefaultOpen)) {
       ui::ColorEdit3("Clear color", settings.clearColor.data());

@@ -146,11 +146,10 @@ namespace remix {
             options.volumetricHistory = uint32_t(history);
           const float cellSize = std::clamp(options.volumetricCellSize, .02f, 16.f);
           const uint32_t side = trace::volumeCells(options), count = trace::volumeLevels(options);
-          ImGui::TextWrapped("Grids span %.0f m to %.0f m; %.1f MiB; lighting settles in about %u frames",
-                             cellSize * side, cellSize * side * float(1u << (count - 1)),
-                             double(side) * side * side * count * 32 / (1024 * 1024),
-                             std::clamp(options.volumetricUpdateInterval, 1u, 64u) *
-                                 std::clamp(options.volumetricHistory, 1u, 256u));
+          ImGui::TextWrapped(
+              "Grids span %.0f m to %.0f m; %.1f MiB; lighting settles in about %u frames", cellSize * side,
+              cellSize * side * float(1u << (count - 1)), double(side) * side * side * count * 32 / (1024 * 1024),
+              std::clamp(options.volumetricUpdateInterval, 1u, 64u) * std::clamp(options.volumetricHistory, 1u, 256u));
           ImGui::TreePop();
         }
         const auto volume = trace::g_volumeState;
@@ -226,8 +225,8 @@ namespace remix {
                           "denoising.\nPreserves candidate and shadow-ray budgets.");
       ImGui::BeginDisabled(rrActive);
       int separation = int(options.separateLocalLighting);
-      const char *separationModes[] = {"Combined", "Separate - shared ray budget",
-                                       "Separate - samples per family", "Combined - separate pass"};
+      const char *separationModes[] = {"Combined", "Separate - shared ray budget", "Separate - samples per family",
+                                       "Combined - separate pass"};
       if (ui::Combo("Torch / emissive lighting", &separation, separationModes, 4))
         options.separateLocalLighting = uint32_t(separation);
       if (ImGui::IsItemHovered())
@@ -308,9 +307,8 @@ namespace remix {
                           "cannot be seen from a surface are never sampled for it.");
       ui::Checkbox("Guide by recent visibility", &options.localGuiding);
       if (ImGui::IsItemHovered())
-        ImGui::SetTooltip(
-            "Guides opaque direct-light samples while retaining exploration.\nOne active light needs no "
-            "visibility history.\nEmissive reservoirs use visible groups while checking shadows afresh.");
+        ImGui::SetTooltip("Guides opaque direct-light samples while retaining exploration.\nOne active light needs no "
+                          "visibility history.\nEmissive reservoirs use visible groups while checking shadows afresh.");
       ImGui::BeginDisabled(!options.localGuiding);
       ui::DragFloat("Guide cell size", &options.localGuideCellSize, .01f, .05f, 100, "%.2f m");
       ImGui::EndDisabled();
@@ -371,15 +369,15 @@ namespace remix {
                          cache.queryAttempts ? 100.0 * cache.queryHits / cache.queryAttempts : 0.0,
                          (unsigned long long)cache.resets);
       if (cache.gpuTimingsAvailable)
-        ImGui::TextWrapped("Update %.3f / resolve %.3f ms", cache.gpuUpdateMilliseconds,
-                           cache.gpuResolveMilliseconds);
+        ImGui::TextWrapped("Update %.3f / resolve %.3f ms", cache.gpuUpdateMilliseconds, cache.gpuResolveMilliseconds);
       if (cache.unavailableReason[0])
         ImGui::TextWrapped("%s", cache.unavailableReason);
       if (cache.active && !cache.updatePaths)
         ImGui::TextWrapped("No cache update paths. Requires opaque surfaces the settings above let hold entries.");
-      ImGui::TextWrapped("%s", options.sharcGlossySurfaces
-                                   ? "Glossy PBR surfaces hold cached lighting as rough ones; paths that are still sharp trace on."
-                                   : "Sharp PBR surfaces continue tracing; rough PBR surfaces can reuse cached lighting.");
+      ImGui::TextWrapped(
+          "%s", options.sharcGlossySurfaces
+                    ? "Glossy PBR surfaces hold cached lighting as rough ones; paths that are still sharp trace on."
+                    : "Sharp PBR surfaces continue tracing; rough PBR surfaces can reuse cached lighting.");
       if (options.accumulate)
         ImGui::TextWrapped("%s", "Progressive reference rendering bypasses SHARC.");
     }

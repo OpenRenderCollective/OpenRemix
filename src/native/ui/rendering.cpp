@@ -77,7 +77,8 @@ namespace remix {
         ui::SliderFloat("Offset: longest offset (m)", &options.shadowTerminatorMaxLength, .002f, .2f, "%.3f",
                         ImGuiSliderFlags_Logarithmic);
       }
-      ui::SliderFloat("Ray offset (float steps)", &options.rayOffset, 4.f, 1024.f, "%.0f", ImGuiSliderFlags_Logarithmic);
+      ui::SliderFloat("Ray offset (float steps)", &options.rayOffset, 4.f, 1024.f, "%.0f",
+                      ImGuiSliderFlags_Logarithmic);
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("How far shadow and bounce rays start off a surface, in units in the last place\n"
                           "of its coordinates. Smaller: tighter contact shadows; too small: shadow acne.");
@@ -89,10 +90,11 @@ namespace remix {
       ui::Checkbox("Denoise translucent surfaces", &options.translucencyDenoiser);
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Filters single-layer surface lighting with its own motion and depth.\n"
-                         "Uses NRD, including before DLSS RR; overlapping layers retain their existing rendering.");
+                          "Uses NRD, including before DLSS RR; overlapping layers retain their existing rendering.");
       if (options.translucencyDenoiser)
         ImGui::TextDisabled("Surface filter: %s", m_pathTracer && m_pathTracer->translucencyDenoiserActive()
-                                               ? "active" : "inactive (requires NRD and translucent surfaces)");
+                                                      ? "active"
+                                                      : "inactive (requires NRD and translucent surfaces)");
       ui::Checkbox("Shadow and bounce rays ignore blended surfaces", &options.skipBlendedSecondaryRays);
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Glass, sprites and other blended layers stay visible to the camera, but cast no\n"
@@ -140,8 +142,8 @@ namespace remix {
       ui::Checkbox("Reuse opaque lighting through translucency", &options.translucencyReuse);
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Uses filtered lighting at closely matching opaque ray hits.\n"
-                         "Requires NRD; unmatched surfaces and raw references keep full tracing.\n"
-                         "Optional: its performance benefit depends on the scene.");
+                          "Requires NRD; unmatched surfaces and raw references keep full tracing.\n"
+                          "Optional: its performance benefit depends on the scene.");
       ui::Checkbox("Reuse water indirect samples", &options.waterIndirectReuse);
       ImGui::EndDisabled();
       if (ImGui::IsItemHovered())
@@ -292,10 +294,9 @@ namespace remix {
                                      : "The SHARC debug view renders without reconstruction.");
       ImGui::TextWrapped("Active: %s", reconstruction.name.c_str());
       if (reconstruction.models)
-        ImGui::TextWrapped("Ray Reconstruction: %s, preset %c",
-                           reconstruction.cnn ? "CNN (DLSS 310.2.1)" : "transformer",
-                           reconstruction.preset >= 1 && reconstruction.preset <= 6 ? char('A' + reconstruction.preset - 1)
-                                                                                    : '-');
+        ImGui::TextWrapped(
+            "Ray Reconstruction: %s, preset %c", reconstruction.cnn ? "CNN (DLSS 310.2.1)" : "transformer",
+            reconstruction.preset >= 1 && reconstruction.preset <= 6 ? char('A' + reconstruction.preset - 1) : '-');
       if (!reconstruction.note.empty())
         ImGui::TextWrapped("%s", reconstruction.note.c_str());
       ImGui::TextWrapped("%ux%u -> %ux%u | reconstruction %.2f ms", reconstruction.renderWidth,
@@ -314,12 +315,11 @@ namespace remix {
         settings.lowLatency = lowLatency;
       ImGui::EndDisabled();
       if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-        ImGui::SetTooltip("%s", !generation.lowLatencySupported
-                                    ? generation.lowLatencyUnavailable
-                                    : settings.frameGeneration
-                                          ? "Always on with frame generation."
-                                          : "The driver holds the game back so that frames are not queued ahead of\n"
-                                            "the GPU: input reaches the screen sooner when the GPU is the limit.");
+        ImGui::SetTooltip("%s", !generation.lowLatencySupported ? generation.lowLatencyUnavailable
+                                : settings.frameGeneration
+                                    ? "Always on with frame generation."
+                                    : "The driver holds the game back so that frames are not queued ahead of\n"
+                                      "the GPU: input reaches the screen sooner when the GPU is the limit.");
       ui::Checkbox("Frame generation", &settings.frameGeneration);
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", choices.frameGenerationTooltip);
@@ -334,7 +334,8 @@ namespace remix {
         // FSR generates one frame whatever is asked.
         ImGui::BeginDisabled(settings.frameGenerationBackend == upscale::FrameGenerationMode::Fsr31);
         int frames = int(settings.frameGenerationFrames) - 1;
-        if (ui::Combo("Generated frames", &frames, "2x (one generated)\0003x (two generated)\0004x (three generated)\0"))
+        if (ui::Combo("Generated frames", &frames,
+                      "2x (one generated)\0003x (two generated)\0004x (three generated)\0"))
           settings.frameGenerationFrames = uint32_t(frames) + 1;
         ImGui::EndDisabled();
       }
@@ -357,12 +358,13 @@ namespace remix {
                           "display-encoded LDR frame, enhancing structure, details and tone.");
       const auto nuStats = m_pathTracer ? m_pathTracer->neuralUpliftStatistics() : upscale::NeuralUpliftStatistics{};
       if (!nuStats.supported) {
-        ImGui::TextDisabled("Neural Uplift: unavailable - %s",
-                            nuStats.notLoadedReason.empty() ? "nvngx_dlssnr.dll not found" : nuStats.notLoadedReason.c_str());
+        ImGui::TextDisabled("Neural Uplift: unavailable - %s", nuStats.notLoadedReason.empty()
+                                                                   ? "nvngx_dlssnr.dll not found"
+                                                                   : nuStats.notLoadedReason.c_str());
       } else {
         ImGui::Text("Neural Uplift: %s (feature id %u, preset %u, inits %u)",
-                    nuStats.statusReason.empty() ? "idle" : nuStats.statusReason.c_str(),
-                    options.neuralUpliftFeatureId, options.neuralUpliftPreset, nuStats.initCount);
+                    nuStats.statusReason.empty() ? "idle" : nuStats.statusReason.c_str(), options.neuralUpliftFeatureId,
+                    options.neuralUpliftPreset, nuStats.initCount);
         if (options.neuralUplift && !(nuStats.lastHadDepth && nuStats.lastHadMotionVectors)) {
           ImGui::TextWrapped("Inputs: %s, %s - running spatially only. Presets that rely on temporal "
                              "reprojection cannot be judged in this state.",
@@ -435,9 +437,10 @@ namespace remix {
 #if REMIX_HAS_USD
       ui::Checkbox("Retain texture data for captures", &settings.captureRetainTextureData);
       if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Keep BC texture blocks in system memory after upload so USD captures (Mods tab)\n"
-                          "can write them. Costs about the textures' VRAM size in system memory.\n"
-                          "Applies to textures uploaded afterwards. Off: captures save BC textures as 64-pixel stand-ins.");
+        ImGui::SetTooltip(
+            "Keep BC texture blocks in system memory after upload so USD captures (Mods tab)\n"
+            "can write them. Costs about the textures' VRAM size in system memory.\n"
+            "Applies to textures uploaded afterwards. Off: captures save BC textures as 64-pixel stand-ins.");
 #endif
       ui::Checkbox("Report VRAM statistics", &settings.vramStatistics);
       if (ImGui::IsItemHovered())

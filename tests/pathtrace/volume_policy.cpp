@@ -3,7 +3,12 @@
 #include <cstdlib>
 
 namespace {
-  void require(bool value, const char *message) { if (!value) { std::fprintf(stderr, "%s\n", message); std::exit(1); } }
+  void require(bool value, const char *message) {
+    if (!value) {
+      std::fprintf(stderr, "%s\n", message);
+      std::exit(1);
+    }
+  }
   bool near(float a, float b) { return std::abs(a - b) <= 1e-3f * std::max(std::abs(a), std::abs(b)); }
 } // namespace
 
@@ -63,8 +68,10 @@ int main() {
   require(volumeCells(options) == 96 && volumeLevels(options) == 1, "Grid size limits");
   // The defaults are the Ultra quality and Immediate response presets.
   const TraceOptions defaults;
-  require(defaults.volumetricCellSize == volumeQualities[3].cellSize && defaults.volumetricCells == volumeQualities[3].cells &&
-              defaults.volumetricLevels == volumeQualities[3].levels && defaults.volumetricSteps == volumeQualities[3].steps,
+  require(defaults.volumetricCellSize == volumeQualities[3].cellSize &&
+              defaults.volumetricCells == volumeQualities[3].cells &&
+              defaults.volumetricLevels == volumeQualities[3].levels &&
+              defaults.volumetricSteps == volumeQualities[3].steps,
           "Default quality is the Ultra preset");
   require(defaults.volumetricUpdateInterval == volumeResponses[3].interval &&
               defaults.volumetricHistory == volumeResponses[3].history,

@@ -59,8 +59,7 @@ namespace remix::scene {
     const double verticalCount = header[3], horizontalCount = header[4];
     if (verticalCount < 1 || horizontalCount < 1 || verticalCount > 1e4 || horizontalCount > 1e4)
       return false;
-    std::vector<double> vertical(static_cast<size_t>(verticalCount)),
-        horizontal(static_cast<size_t>(horizontalCount));
+    std::vector<double> vertical(static_cast<size_t>(verticalCount)), horizontal(static_cast<size_t>(horizontalCount));
     for (double &a : vertical)
       if (!numbers.next(a))
         return false;

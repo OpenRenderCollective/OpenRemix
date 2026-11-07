@@ -9,13 +9,11 @@
 #include <mutex>
 #include <thread>
 #include <source_location>
-std::atomic<bool> failPostImage{false}, holdPostImage{false},
-    imageEntered{false};
+std::atomic<bool> failPostImage{false}, holdPostImage{false}, imageEntered{false};
 std::mutex imageMutex;
 std::condition_variable imageGate;
-extern "C" VKAPI_ATTR VkResult VKAPI_CALL
-vkCreateImage(VkDevice d, const VkImageCreateInfo *i,
-              const VkAllocationCallbacks *a, VkImage *out) {
+extern "C" VKAPI_ATTR VkResult VKAPI_CALL vkCreateImage(VkDevice d, const VkImageCreateInfo *i,
+                                                        const VkAllocationCallbacks *a, VkImage *out) {
   if (holdPostImage) {
     imageEntered = true;
     std::unique_lock lock(imageMutex);
@@ -25,8 +23,7 @@ vkCreateImage(VkDevice d, const VkImageCreateInfo *i,
     *out = VK_NULL_HANDLE;
     return VK_ERROR_OUT_OF_DEVICE_MEMORY;
   }
-  static auto original =
-      reinterpret_cast<PFN_vkCreateImage>(dlsym(RTLD_NEXT, "vkCreateImage"));
+  static auto original = reinterpret_cast<PFN_vkCreateImage>(dlsym(RTLD_NEXT, "vkCreateImage"));
   return original(d, i, a, out);
 }
 void require(bool v, const char *m) {
@@ -38,14 +35,14 @@ void require(bool v, const char *m) {
   }
 }
 void ok(remixapi_ErrorCode r, std::source_location location = std::source_location::current()) {
-  if (r) std::fprintf(stderr, "API error %u at %s:%u\n", r, location.file_name(), location.line());
+  if (r)
+    std::fprintf(stderr, "API error %u at %s:%u\n", r, location.file_name(), location.line());
   require(!r, "Postfx runtime API failure");
 }
 int main(int argc, char **argv) {
   require(argc > 1, "Missing output directory");
   std::filesystem::create_directories(argv[1]);
-  const auto linearPath =
-      (std::filesystem::absolute(argv[1]) / "transparent.pfm").string();
+  const auto linearPath = (std::filesystem::absolute(argv[1]) / "transparent.pfm").string();
   remixapi_Interface api{};
   remixapi_InitializeLibraryInfo init{};
   init.sType = REMIXAPI_STRUCT_TYPE_INITIALIZE_LIBRARY_INFO;
@@ -57,8 +54,7 @@ int main(int argc, char **argv) {
   startup.windowHeight = 97;
   ok(api.Startup(&startup));
   auto config = [&](const char *key, const char *value) {
-    ok(api.SetConfigVariable(
-        (std::string("rtx.native.pathtrace.") + key).c_str(), value));
+    ok(api.SetConfigVariable((std::string("rtx.native.pathtrace.") + key).c_str(), value));
   };
   config("upscaler", "off");
   config("denoiser", "off");
@@ -125,8 +121,7 @@ int main(int argc, char **argv) {
     meshes.push_back(mesh);
     return mesh;
   };
-  auto dark = quad(.0625, 1, .6), gray = quad(.25, 1, .6),
-       white = quad(1, 1, .6), glass = quad(.25, .5, .4);
+  auto dark = quad(.0625, 1, .6), gray = quad(.25, 1, .6), white = quad(1, 1, .6), glass = quad(.25, .5, .4);
   remixapi_LightInfoDistantEXT distant{};
   distant.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DISTANT_EXT;
   distant.direction = {0, 0, 1};
@@ -182,8 +177,7 @@ int main(int argc, char **argv) {
         surface = material;
         ++epoch.historyResetEpoch;
         auto stats = settle();
-        std::printf("%s %s material %p: exposure %.5f target %.5f\n",
-                    visibility, denoiser, material, stats.exposure,
+        std::printf("%s %s material %p: exposure %.5f target %.5f\n", visibility, denoiser, material, stats.exposure,
                     stats.target);
         if (!reference)
           reference = stats.target;
@@ -200,27 +194,23 @@ int main(int argc, char **argv) {
       require(pfm, "Missing unexposed transparency capture");
       unsigned width, height;
       float scale;
-      require(std::fscanf(pfm, "PF\n%u %u\n%f", &width, &height, &scale) == 3,
-              "Invalid PFM");
+      require(std::fscanf(pfm, "PF\n%u %u\n%f", &width, &height, &scale) == 3, "Invalid PFM");
       std::fgetc(pfm);
       remix::postfx::Meter expectedMeter;
       for (unsigned y = height; y-- > 0;)
         for (unsigned x = 0; x < width; ++x) {
           std::array<float, 3> pixel;
-          require(std::fread(pixel.data(), sizeof(float), 3, pfm) == 3,
-                  "Short PFM");
+          require(std::fread(pixel.data(), sizeof(float), 3, pfm) == 3, "Short PFM");
           // Authored opacity is tinted: alpha*.25 + (1-alpha)*.25*white.
-          expectedMeter.sample(pixel, {.25f, .25f, .25f}, x, y, {width, height},
-                               .75f);
+          expectedMeter.sample(pixel, {.25f, .25f, .25f}, x, y, {width, height}, .75f);
         }
       std::fclose(pfm);
       remix::postfx::Exposure expected;
       expected.resolve(expectedMeter, .2f, -16, 2, 1);
-      std::printf("Transparency %s %s target %.5f reference %.5f\n", visibility,
-                  denoiser, stats.target, expected.target);
-      require(
-          std::abs(stats.target - expected.target) < .025f,
-          "Transparency material composition differs from lighting weights");
+      std::printf("Transparency %s %s target %.5f reference %.5f\n", visibility, denoiser, stats.target,
+                  expected.target);
+      require(std::abs(stats.target - expected.target) < .025f,
+              "Transparency material composition differs from lighting weights");
       transparent = false;
     }
   surface = nullptr;
@@ -228,10 +218,8 @@ int main(int argc, char **argv) {
   ++epoch.historyResetEpoch;
   auto skyStats = settle();
   const float skyReference = .2f / (.18f * (.025f + .035f + .055f) / 3);
-  std::printf("Sky target %.5f reference %.5f\n", skyStats.target,
-              skyReference);
-  require(std::abs(skyStats.target - skyReference) < .1f,
-          "Sky material guide is not white");
+  std::printf("Sky target %.5f reference %.5f\n", skyStats.target, skyReference);
+  require(std::abs(skyStats.target - skyReference) < .1f, "Sky material guide is not white");
   config("autoExposureMaxEv", "2");
   surface = gray;
   config("primaryVisibility", "raster");
@@ -253,38 +241,31 @@ int main(int argc, char **argv) {
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
   require(sequence() == before, "Exposure edit retraced cached HDR");
-  require(runtime.postProcessingStatistics().exposure < oldExposure * .8,
-          "Cached HDR exposure did not adapt");
+  require(runtime.postProcessingStatistics().exposure < oldExposure * .8, "Cached HDR exposure did not adapt");
   const auto pipelines = runtime.preparationStatus().pipelines.created;
   config("exposure", "1.4");
   config("autoExposureSpeed", "8");
   settle();
-  require(runtime.preparationStatus().pipelines.created == pipelines,
-          "Scalar post edit compiled a pipeline");
+  require(runtime.preparationStatus().pipelines.created == pipelines, "Scalar post edit compiled a pipeline");
   failPostImage = true;
   config("bloom", "1");
   settle();
-  require(!runtime.postProcessingFailure().empty(),
-          "Post allocation failure was not reported");
-  require(runtime.postProcessingStatistics().meterFrames > 0,
-          "Post failure discarded working exposure");
+  require(!runtime.postProcessingFailure().empty(), "Post allocation failure was not reported");
+  require(runtime.postProcessingStatistics().meterFrames > 0, "Post failure discarded working exposure");
   config("bloom", "0");
   settle();
   holdPostImage = true;
   config("bloom", "1");
-  const auto deadline =
-      std::chrono::steady_clock::now() + std::chrono::seconds(10);
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
   while (!imageEntered) {
     submit();
-    require(std::chrono::steady_clock::now() < deadline,
-            "Post preparation worker did not enter allocation");
+    require(std::chrono::steady_clock::now() < deadline, "Post preparation worker did not enter allocation");
   }
   const auto presentations = runtime.presentationCount();
   ok(api.SetUIState(REMIXAPI_UI_STATE_ADVANCED));
   for (unsigned i = 0; i < 8; ++i)
     submit();
-  require(runtime.presentationCount() >= presentations + 8,
-          "Post preparation blocked presentation/F12");
+  require(runtime.presentationCount() >= presentations + 8, "Post preparation blocked presentation/F12");
   config("bloom", "0");
   submit(); // supersede the held request
   config("bloom", "1");
@@ -293,8 +274,7 @@ int main(int argc, char **argv) {
   imageGate.notify_all();
   settle();
   ok(api.SetUIState(REMIXAPI_UI_STATE_NONE));
-  require(runtime.postProcessingFailure().empty() &&
-              runtime.postProcessingStatistics().bloomFrames,
+  require(runtime.postProcessingFailure().empty() && runtime.postProcessingStatistics().bloomFrames,
           "Latest bloom retry failed");
   auto compiled = runtime.preparationStatus().pipelines.created;
   config("bloom", "0");
@@ -303,26 +283,21 @@ int main(int argc, char **argv) {
   config("bloom", "1");
   config("autoExposure", "1");
   settle();
-  require(runtime.preparationStatus().pipelines.created == compiled,
-          "Effect toggle recompiled pipelines");
+  require(runtime.preparationStatus().pipelines.created == compiled, "Effect toggle recompiled pipelines");
   config("autoExposureSpeed", "0.1");
   config("autoExposureTarget", "0.4");
   settle();
   float preserved = runtime.postProcessingStatistics().exposure;
   SDL_SetWindowSize(runtime.window().handle(), 151, 103);
   settle();
-  require(std::abs(runtime.postProcessingStatistics().exposure - preserved) <
-              .2f,
-          "Resize snapped exposure");
+  require(std::abs(runtime.postProcessingStatistics().exposure - preserved) < .2f, "Resize snapped exposure");
   ok(api.SetConfigVariable("rtx.native.vsync", "true"));
   settle();
-  require(runtime.postProcessingStatistics().exposure <
-              runtime.postProcessingStatistics().target * .9f,
+  require(runtime.postProcessingStatistics().exposure < runtime.postProcessingStatistics().target * .9f,
           "VSync snapped exposure");
   ++epoch.historyResetEpoch;
   settle();
-  require(std::abs(runtime.postProcessingStatistics().exposure -
-                   runtime.postProcessingStatistics().target) < .01f,
+  require(std::abs(runtime.postProcessingStatistics().exposure - runtime.postProcessingStatistics().target) < .01f,
           "Camera reset did not snap exposure");
   SDL_SetWindowSize(runtime.window().handle(), 640, 480);
   // Perspective reconstruction meters the display-resolution HDR result while
@@ -350,23 +325,17 @@ int main(int argc, char **argv) {
       auto stats = runtime.postProcessingStatistics();
       auto reconstruction = runtime.reconstructionStatistics();
       if (!reconstruction.active)
-        std::fprintf(stderr, "Inactive %s: %s\n", backend,
-                     reconstruction.failure.c_str());
-      require(reconstruction.active,
-              "Reconstruction inactive during post-processing test");
-      require(stats.meterFrames && stats.bloomFrames &&
-                  std::isfinite(stats.exposure) && stats.exposure > 0 &&
+        std::fprintf(stderr, "Inactive %s: %s\n", backend, reconstruction.failure.c_str());
+      require(reconstruction.active, "Reconstruction inactive during post-processing test");
+      require(stats.meterFrames && stats.bloomFrames && std::isfinite(stats.exposure) && stats.exposure > 0 &&
                   stats.exposure <= 4,
               "Reconstructed HDR metering/bloom failed");
-      std::printf(
-          "Postfx reconstruction %s %s active=%u exposure=%.4f bytes=%llu\n",
-          visibility, backend, unsigned(reconstruction.backend), stats.exposure,
-          (unsigned long long)stats.memoryBytes);
+      std::printf("Postfx reconstruction %s %s active=%u exposure=%.4f bytes=%llu\n", visibility, backend,
+                  unsigned(reconstruction.backend), stats.exposure, (unsigned long long)stats.memoryBytes);
       const auto metered = stats.meterFrames;
       config("debugView", "1");
       settle();
-      require(runtime.postProcessingStatistics().meterFrames == metered,
-              "Diagnostic display adapted exposure");
+      require(runtime.postProcessingStatistics().meterFrames == metered, "Diagnostic display adapted exposure");
       config("debugView", "0");
     }
   if (argc > 1) {
@@ -382,8 +351,7 @@ int main(int argc, char **argv) {
   settle();
   remixapi_TracingStatisticsEXT stopped{.structSize = sizeof(stopped)};
   ok(remixapi_GetTracingStatisticsEXT(&stopped));
-  require(!stopped.redrawRequested,
-          "Inactive post-processing kept requesting redraws");
+  require(!stopped.redrawRequested, "Inactive post-processing kept requesting redraws");
   for (auto mesh : meshes)
     ok(api.DestroyMesh(mesh));
   for (auto mat : materials)

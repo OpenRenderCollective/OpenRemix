@@ -68,9 +68,7 @@ namespace remix {
     return true;
   }
 
-  bool RasterRenderer::wantsSceneDepth() const {
-    return m_gpu && (m_gpu->sprite.soft != 0 || m_gpu->sprite.requested);
-  }
+  bool RasterRenderer::wantsSceneDepth() const { return m_gpu && (m_gpu->sprite.soft != 0 || m_gpu->sprite.requested); }
 
   void RasterRenderer::requestSceneDepth() {
     if (m_gpu)
@@ -132,25 +130,24 @@ namespace remix {
     // The target's depth attachment, left in its attachment layout by the
     // pass that just ended, to the copy.
     const VkImageSubresourceRange range = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
-    VkImageMemoryBarrier barriers[2] = {
-        {.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-         .srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-         .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
-         .oldLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-         .newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-         .image = g.depth->image,
-         .subresourceRange = range},
-        {.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-         .srcAccessMask = VK_ACCESS_SHADER_READ_BIT,
-         .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-         .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-         .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-         .image = s.depth->image,
-         .subresourceRange = range}};
+    VkImageMemoryBarrier barriers[2] = {{.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                                         .srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                                         .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+                                         .oldLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                                         .newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                                         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                                         .image = g.depth->image,
+                                         .subresourceRange = range},
+                                        {.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                                         .srcAccessMask = VK_ACCESS_SHADER_READ_BIT,
+                                         .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+                                         .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                                         .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                                         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                                         .image = s.depth->image,
+                                         .subresourceRange = range}};
     vkCmdPipelineBarrier(command,
                          VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT |
                              VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,

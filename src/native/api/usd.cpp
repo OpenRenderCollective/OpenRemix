@@ -52,8 +52,7 @@ REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_LoadUSDSceneEXT(const remixap
                                                                    remixapi_USDSceneHandleEXT *handle) {
   if (handle)
     *handle = 0;
-  if (!options || !handle || options->structSize != sizeof(*options) || options->version != 1 ||
-      !options->path)
+  if (!options || !handle || options->structSize != sizeof(*options) || options->version != 1 || !options->path)
     return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
 #if REMIX_HAS_USD
   try {
@@ -76,8 +75,8 @@ REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_LoadUSDSceneEXT(const remixap
   return REMIXAPI_ERROR_CODE_FEATURE_UNAVAILABLE;
 #endif
 }
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL
-remixapi_DrawUSDSceneEXT(remixapi_USDSceneHandleEXT handle, const remixapi_USDDrawOptionsEXT *options) {
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_DrawUSDSceneEXT(remixapi_USDSceneHandleEXT handle,
+                                                                   const remixapi_USDDrawOptionsEXT *options) {
   if (!options || options->structSize != sizeof(*options) || options->version != 1)
     return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
 #if REMIX_HAS_USD
@@ -92,8 +91,7 @@ remixapi_DrawUSDSceneEXT(remixapi_USDSceneHandleEXT handle, const remixapi_USDDr
       publish(*d, resources, handle);
     }
     if (!d->submission)
-      d->submission =
-          std::make_unique<remix::usd::Submission>(resources, d->snapshot, (handle << 32) + d->generation);
+      d->submission = std::make_unique<remix::usd::Submission>(resources, d->snapshot, (handle << 32) + d->generation);
     d->submission->draw(options->useStageCamera, options->aspectRatio);
   });
 #else
@@ -190,14 +188,12 @@ remixapi_ConfigureUSDModsEXT(const remixapi_USDModsOptionsEXT *options) {
     return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
 #if REMIX_HAS_USD
   std::lock_guard lock(remix::api::g_apiMutex);
-  return remix::usd::configureMods(options->directory, options->hostMetersPerUnit, options->hostUpAxis,
-                                   options->watch);
+  return remix::usd::configureMods(options->directory, options->hostMetersPerUnit, options->hostUpAxis, options->watch);
 #else
   return REMIXAPI_ERROR_CODE_FEATURE_UNAVAILABLE;
 #endif
 }
-extern "C" REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetUSDModsDiagnosticEXT(char *out,
-                                                                                      uint32_t capacity) {
+extern "C" REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetUSDModsDiagnosticEXT(char *out, uint32_t capacity) {
   if (!out || capacity < 1)
     return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
 #if REMIX_HAS_USD

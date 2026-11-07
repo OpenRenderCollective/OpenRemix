@@ -87,8 +87,7 @@ namespace remix::usd {
       }
     return result;
   }
-  Submission::Submission(NativeResources &resources, const Snapshot &snapshot, uint64_t namespaceId,
-                         bool applyMods)
+  Submission::Submission(NativeResources &resources, const Snapshot &snapshot, uint64_t namespaceId, bool applyMods)
       : resources_(resources), namespace_(namespaceId), applyMods_(applyMods),
         snapshot_({{"cameras", snapshot.scene["cameras"]}}) {
     try {
@@ -181,11 +180,10 @@ namespace remix::usd {
             const uint32_t other = firstCorner[held];
             if (std::memcmp(v, source.vertices.data() + size_t(other) * 8, sizeof(float) * 8) == 0 &&
                 (source.colors.empty() || source.colors[other] == color) &&
-                (!influences ||
-                 (std::memcmp(boneIndex, source.jointIndices.data() + size_t(other) * influences,
-                              influences * sizeof(uint32_t)) == 0 &&
-                  std::memcmp(boneWeight, source.jointWeights.data() + size_t(other) * influences,
-                              influences * sizeof(float)) == 0))) {
+                (!influences || (std::memcmp(boneIndex, source.jointIndices.data() + size_t(other) * influences,
+                                             influences * sizeof(uint32_t)) == 0 &&
+                                 std::memcmp(boneWeight, source.jointWeights.data() + size_t(other) * influences,
+                                             influences * sizeof(float)) == 0))) {
               index = held;
               break;
             }
@@ -302,8 +300,7 @@ namespace remix::usd {
     return mod;
   }
   Submission::Submission(NativeResources &resources, PreparedMod &&mod, uint64_t namespaceId)
-      : resources_(resources), namespace_(namespaceId), applyMods_(false),
-        snapshot_({{"cameras", Json::array()}}) {
+      : resources_(resources), namespace_(namespaceId), applyMods_(false), snapshot_({{"cameras", Json::array()}}) {
     prepared_ = true;
     prepared_meshes_ = std::move(mod.meshes);
     previews_ = std::move(mod.textures.previews);
@@ -518,9 +515,7 @@ namespace remix::usd {
       }
     }
   }
-  Submission::~Submission() {
-    clear();
-  }
+  Submission::~Submission() { clear(); }
   void Submission::clear() {
     for (auto mesh : meshes_)
       resources_.destroyMesh(mesh);
@@ -541,8 +536,8 @@ namespace remix::usd {
     }
     used_attachments_.clear();
   }
-  void Submission::draw(bool camera, float aspect, const remixapi_InstanceInfo *parent,
-                        const std::string &root, bool meshes, bool lights) {
+  void Submission::draw(bool camera, float aspect, const remixapi_InstanceInfo *parent, const std::string &root,
+                        bool meshes, bool lights) {
     if (parent) {
       auto *batch = static_cast<const remixapi_InstanceInfoGpuInstancingEXT *>(
           scene::extension(parent->pNext, REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_GPU_INSTANCING_EXT));
@@ -557,9 +552,8 @@ namespace remix::usd {
           instance.transform = transformed(parent->transform, batch->instanceTransforms_values[i]);
           remixapi_InstanceIdentityEXT identity{};
           identity.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_IDENTITY_EXT;
-          identity.instanceId = source && source->instanceId
-                                    ? hash64(std::to_string(source->instanceId) + ":" + std::to_string(i))
-                                    : 0;
+          identity.instanceId =
+              source && source->instanceId ? hash64(std::to_string(source->instanceId) + ":" + std::to_string(i)) : 0;
           instance.pNext = &identity;
           draw(false, aspect, &instance, root, meshes, lights);
         }
@@ -647,10 +641,9 @@ namespace remix::usd {
       remixapi_InstanceInfoBoneTransformsEXT bones{};
       std::vector<remixapi_Transform> palette;
       if (const uint32_t needed = instance_bones_[i]) {
-        const auto *given =
-            parent ? static_cast<const remixapi_InstanceInfoBoneTransformsEXT *>(scene::extension(
-                         parent->pNext, REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_BONE_TRANSFORMS_EXT))
-                   : nullptr;
+        const auto *given = parent ? static_cast<const remixapi_InstanceInfoBoneTransformsEXT *>(scene::extension(
+                                         parent->pNext, REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_BONE_TRANSFORMS_EXT))
+                                   : nullptr;
         bones.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_BONE_TRANSFORMS_EXT;
         bones.pNext = instance.pNext;
         if (given && given->boneTransforms_count >= needed) {
@@ -708,8 +701,7 @@ namespace remix::usd {
         attached_lights_.insert(handle);
         used_attachments_.insert(handle);
         resources_.drawLight(handle);
-      } else if (!applyMods_ ||
-                 !modLight(resources_, lights_[i], light_origins_[i].value("hash", uint64_t(0))))
+      } else if (!applyMods_ || !modLight(resources_, lights_[i], light_origins_[i].value("hash", uint64_t(0))))
         resources_.drawLight(lights_[i]);
     }
   }

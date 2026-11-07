@@ -12,9 +12,12 @@ namespace remix::metal {
   enum class ReconstructionBackend : uint32_t { Native = 0, MetalFxUpscaling = 1, MetalFxDenoising = 3 };
   inline const char *name(ReconstructionBackend backend) {
     switch (backend) {
-    case ReconstructionBackend::MetalFxUpscaling: return "MetalFX upscaling";
-    case ReconstructionBackend::MetalFxDenoising: return "MetalFX denoising";
-    default: return "Native";
+    case ReconstructionBackend::MetalFxUpscaling:
+      return "MetalFX upscaling";
+    case ReconstructionBackend::MetalFxDenoising:
+      return "MetalFX denoising";
+    default:
+      return "Native";
     }
   }
   inline bool denoises(ReconstructionBackend backend) { return backend == ReconstructionBackend::MetalFxDenoising; }

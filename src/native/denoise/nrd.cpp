@@ -49,11 +49,11 @@ namespace remix::denoise {
     // legacy diffuse, and both lobes of PBR surfaces (with the direct local
     // light routed into them). The translucent front layer and the separate
     // direct local-light passes stay plain radiance.
-    const nrd::DenoiserDesc denoiser{
-        0, sigma ? nrd::Denoiser::SIGMA_SHADOW_TRANSLUCENCY
-                 : pbr ? (pass.foreground ? nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR
-                                          : nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR_SH)
-                       : local ? nrd::Denoiser::REBLUR_DIFFUSE : nrd::Denoiser::REBLUR_DIFFUSE_SH};
+    const nrd::DenoiserDesc denoiser{0, sigma   ? nrd::Denoiser::SIGMA_SHADOW_TRANSLUCENCY
+                                        : pbr   ? (pass.foreground ? nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR
+                                                                   : nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR_SH)
+                                        : local ? nrd::Denoiser::REBLUR_DIFFUSE
+                                                : nrd::Denoiser::REBLUR_DIFFUSE_SH};
     nrd::InstanceCreationDesc create{};
     create.denoisers = &denoiser;
     create.denoisersNum = 1;
@@ -74,21 +74,19 @@ namespace remix::denoise {
     }
     std::vector<VkDescriptorSetLayoutBinding> bindings;
     for (uint32_t i = 0; i < desc.samplersNum; ++i)
-      bindings.push_back({offset.samplerOffset + desc.samplersBaseRegisterIndex + i,
-                          VK_DESCRIPTOR_TYPE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, &pass.samplers[i]});
+      bindings.push_back({offset.samplerOffset + desc.samplersBaseRegisterIndex + i, VK_DESCRIPTOR_TYPE_SAMPLER, 1,
+                          VK_SHADER_STAGE_COMPUTE_BIT, &pass.samplers[i]});
     bindings.push_back({offset.constantBufferOffset + desc.constantBufferRegisterIndex,
                         VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr});
     VkDescriptorSetLayoutCreateInfo ci{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
                                        .bindingCount = uint32_t(bindings.size()),
                                        .pBindings = bindings.data()};
-    check(pipeline::createDescriptorSetLayout(device, &ci, nullptr,
-                                              &pass.commonLayout));
+    check(pipeline::createDescriptorSetLayout(device, &ci, nullptr, &pass.commonLayout));
     pass.pipelines.resize(desc.pipelinesNum);
     for (uint32_t i = 0; i < desc.pipelinesNum; ++i) {
       const auto &source = desc.pipelines[i];
       auto &p = pass.pipelines[i];
-      if (!pipelineRequired(source.shaderIdentifier, sigma, local, pbr,
-                            validation, localReconstruction))
+      if (!pipelineRequired(source.shaderIdentifier, sigma, local, pbr, validation, localReconstruction))
         continue;
       const Shader *shader = nullptr;
       for (const auto &s : shaders)
@@ -102,20 +100,17 @@ namespace remix::denoise {
         const auto &range = source.resourceRanges[r];
         const bool storage = range.descriptorType == nrd::DescriptorType::STORAGE_TEXTURE;
         for (uint32_t k = 0; k < range.descriptorsNum; ++k)
-          bindings.push_back(
-              {desc.resourcesBaseRegisterIndex +
-                   (storage ? offset.storageTextureAndBufferOffset + u++ : offset.textureOffset + t++),
-               storage ? VK_DESCRIPTOR_TYPE_STORAGE_IMAGE : VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1,
-               VK_SHADER_STAGE_COMPUTE_BIT, nullptr});
+          bindings.push_back({desc.resourcesBaseRegisterIndex +
+                                  (storage ? offset.storageTextureAndBufferOffset + u++ : offset.textureOffset + t++),
+                              storage ? VK_DESCRIPTOR_TYPE_STORAGE_IMAGE : VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1,
+                              VK_SHADER_STAGE_COMPUTE_BIT, nullptr});
       }
       ci.bindingCount = uint32_t(bindings.size());
       ci.pBindings = bindings.data();
-      check(pipeline::createDescriptorSetLayout(device, &ci, nullptr,
-                                                &p.resources));
+      check(pipeline::createDescriptorSetLayout(device, &ci, nullptr, &p.resources));
       VkDescriptorSetLayout layouts[] = {p.resources, pass.commonLayout};
-      VkPipelineLayoutCreateInfo li{.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-                                    .setLayoutCount = 2,
-                                    .pSetLayouts = layouts};
+      VkPipelineLayoutCreateInfo li{
+          .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, .setLayoutCount = 2, .pSetLayouts = layouts};
       check(pipeline::createPipelineLayout(device, &li, nullptr, &p.layout));
       p.pipeline = pipeline(p.layout, shader->code, shader->size);
     }
@@ -139,14 +134,14 @@ namespace remix::denoise {
     auto allocate = [&](auto &pool, const nrd::TextureDesc *textures, uint32_t count) {
       for (uint32_t i = 0; i < count; ++i) {
         uint32_t d = textures[i].downsampleFactor;
-        pool.push_back(
-            texture(format(textures[i].format), {(extent.width + d - 1) / d, (extent.height + d - 1) / d}));
+        pool.push_back(texture(format(textures[i].format), {(extent.width + d - 1) / d, (extent.height + d - 1) / d}));
       }
     };
     allocate(pass.permanent, desc.permanentPool, desc.permanentPoolSize);
     allocate(pass.transient, desc.transientPool, desc.transientPoolSize);
   }
-  void Renderer::Gpu::prepareNrd(NrdPass &pass, const scene::Matrix &projection, const scene::Matrix &previousProjection) {
+  void Renderer::Gpu::prepareNrd(NrdPass &pass, const scene::Matrix &projection,
+                                 const scene::Matrix &previousProjection) {
     nrd::CommonSettings common{};
     std::copy(projection.begin(), projection.end(), common.viewToClipMatrix);
     std::copy(previousProjection.begin(), previousProjection.end(), common.viewToClipMatrixPrev);
@@ -164,8 +159,7 @@ namespace remix::denoise {
       common.cameraJitter[i] = frame.jitter[i];
       common.cameraJitterPrev[i] = frame.jitter[i + 2];
       uint16_t size = uint16_t(i ? extent.height : extent.width);
-      common.resourceSize[i] = common.resourceSizePrev[i] = common.rectSize[i] = common.rectSizePrev[i] =
-          size;
+      common.resourceSize[i] = common.resourceSizePrev[i] = common.rectSize[i] = common.rectSizePrev[i] = size;
       common.motionVectorScale[i] = 1.f / size;
     }
     common.motionVectorScale[2] = 1;
@@ -173,7 +167,8 @@ namespace remix::denoise {
     common.frameIndex = uint32_t(stats.renderedFrames);
     common.accumulationMode =
         (frame.flags[0] || ((pass.sigma || pass.foreground) && frame.shadow[0]) || !pass.wasActive)
-            ? nrd::AccumulationMode::CLEAR_AND_RESTART : nrd::AccumulationMode::CONTINUE;
+            ? nrd::AccumulationMode::CLEAR_AND_RESTART
+            : nrd::AccumulationMode::CONTINUE;
     common.enableValidation = frame.timing[1] != 0;
     common.isHistoryConfidenceAvailable = !pass.sigma;
     common.enableValidation &= !pass.sigma && !pass.local && !pass.foreground;
@@ -182,10 +177,10 @@ namespace remix::denoise {
     if (pass.sigma) {
       nrd::SigmaSettings settings{};
       std::copy_n(frame.sun, 3, settings.lightDirection);
-      settings.maxStabilizedFrameNum = std::clamp(
-          nrd::GetMaxAccumulatedFrameNum(nrd::SIGMA_DEFAULT_ACCUMULATION_TIME,
-                                        1000.f / std::max(smoothedFrameMilliseconds, 1.f)),
-          1u, nrd::SIGMA_MAX_HISTORY_FRAME_NUM);
+      settings.maxStabilizedFrameNum =
+          std::clamp(nrd::GetMaxAccumulatedFrameNum(nrd::SIGMA_DEFAULT_ACCUMULATION_TIME,
+                                                    1000.f / std::max(smoothedFrameMilliseconds, 1.f)),
+                     1u, nrd::SIGMA_MAX_HISTORY_FRAME_NUM);
       require(nrd::SetDenoiserSettings(*pass.instance, 0, &settings));
     } else {
       nrd::ReblurSettings settings{};
@@ -329,7 +324,7 @@ namespace remix::denoise {
         // The PBR pass carries local light's specular lobe on PBR surfaces
         // (addPbrLocalSpecular): it restarts where an occluder moved too,
         // in frames whose local pass wrote LocalMotion.
-        return *images[pass.foreground                                      ? FrontMotion
+        return *images[pass.foreground                                       ? FrontMotion
                        : pass.local || (pass.pbr && local && frame.local[0]) ? LocalMotion
                                                                              : Motion];
       case R::IN_NORMAL_ROUGHNESS:
@@ -339,7 +334,10 @@ namespace remix::denoise {
       case R::IN_DIFF_RADIANCE_HITDIST:
         return *images[pass.foreground ? FrontDiffuse : pass.pbr ? Sh0 : pass.emissive ? EmissiveInput : LocalInput];
       case R::OUT_DIFF_RADIANCE_HITDIST:
-        return *images[pass.foreground ? FrontDiffuseOutput : pass.pbr ? PbrDiffuseOutput : pass.emissive ? EmissiveOutput : LocalOutput];
+        return *images[pass.foreground ? FrontDiffuseOutput
+                       : pass.pbr      ? PbrDiffuseOutput
+                       : pass.emissive ? EmissiveOutput
+                                       : LocalOutput];
       case R::IN_SPEC_RADIANCE_HITDIST:
         return *images[pass.foreground ? FrontSpecular : PbrSpecularInput];
       case R::OUT_SPEC_RADIANCE_HITDIST:
@@ -391,9 +389,8 @@ namespace remix::denoise {
         writes.push_back(
             {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
              .dstSet = sets[0],
-             .dstBinding =
-                 desc.resourcesBaseRegisterIndex +
-                 (storage ? offset.storageTextureAndBufferOffset + u++ : offset.textureOffset + t++),
+             .dstBinding = desc.resourcesBaseRegisterIndex +
+                           (storage ? offset.storageTextureAndBufferOffset + u++ : offset.textureOffset + t++),
              .descriptorCount = 1,
              .descriptorType = storage ? VK_DESCRIPTOR_TYPE_STORAGE_IMAGE : VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
              .pImageInfo = &imagesInfo[r]});

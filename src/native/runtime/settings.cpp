@@ -47,8 +47,7 @@ namespace remix::config {
       }
     }
     template <typename Access>
-    Entry scalar(std::string key, Access access, double low, double high, double gap = 0,
-                 bool sentinel = false) {
+    Entry scalar(std::string key, Access access, double low, double high, double gap = 0, bool sentinel = false) {
       return {std::move(key), [=](const Settings &s) { return number(access(s)); },
               [=](Settings &s, std::string_view text) {
                 using T = std::remove_cvref_t<decltype(access(s))>;
@@ -63,8 +62,7 @@ namespace remix::config {
                 return true;
               }};
     }
-    template <typename Access>
-    Entry choices(std::string key, Access access, std::vector<std::string> values) {
+    template <typename Access> Entry choices(std::string key, Access access, std::vector<std::string> values) {
       return {std::move(key),
               [=](const Settings &s) {
                 size_t index = size_t(access(s));
@@ -134,7 +132,7 @@ namespace remix::config {
       static const std::vector<Entry> entries = [] {
         std::vector<Entry> result;
 #define FIELD(member) [](auto &s) -> auto & { return s.member; }
-#define TRACE(member, low, high)                                                                             \
+#define TRACE(member, low, high)                                                                                       \
   result.push_back(scalar("rtx.native.pathtrace." #member, FIELD(trace.member), low, high))
         result.push_back(choices("rtx.native.backend", FIELD(backend), {"raster", "pathtrace"}));
         result.push_back({"rtx.native.vsync", [](const Settings &s) { return number(s.vsync); },
@@ -148,10 +146,10 @@ namespace remix::config {
                             s.vsync = lower == "1" || lower == "true";
                             return true;
                           }});
-        result.push_back(choices("rtx.native.pathtrace.upscaler", FIELD(trace.upscaler),
-                                 {"off", "auto", "fsr31", "dlss", "xess"}));
-        result.push_back(choices("rtx.native.pathtrace.dlssRayReconstruction",
-                                 FIELD(trace.dlssRayReconstruction), {"0", "1"}));
+        result.push_back(
+            choices("rtx.native.pathtrace.upscaler", FIELD(trace.upscaler), {"off", "auto", "fsr31", "dlss", "xess"}));
+        result.push_back(
+            choices("rtx.native.pathtrace.dlssRayReconstruction", FIELD(trace.dlssRayReconstruction), {"0", "1"}));
         result.push_back(choices("rtx.native.pathtrace.dlssRayReconstructionModel",
                                  FIELD(trace.dlssRayReconstructionModel), {"transformer", "cnn"}));
         result.push_back(choices("rtx.native.pathtrace.dlssRayReconstructionPresetOverride",
@@ -160,8 +158,7 @@ namespace remix::config {
                                  FIELD(trace.dlssRayReconstructionPreset), {"default", "A", "B", "C", "D", "E", "F"}));
         result.push_back(
             choices("rtx.native.pathtrace.primaryVisibility", FIELD(trace.rasterPrimary), {"ray", "raster"}));
-        result.push_back(
-            choices("rtx.native.pathtrace.denoiser", FIELD(trace.denoiser), {"off", "reblur-sh"}));
+        result.push_back(choices("rtx.native.pathtrace.denoiser", FIELD(trace.denoiser), {"off", "reblur-sh"}));
         result.push_back(choices("rtx.native.pathtrace.fsrQuality", FIELD(trace.fsrQuality),
                                  {"native-aa", "quality", "balanced", "performance", "ultra-performance"}));
         result.push_back(choices("rtx.native.pathtrace.dlssQuality", FIELD(trace.dlssQuality),
@@ -300,12 +297,15 @@ namespace remix::config {
         TRACE(causticsDepth, 0, 100);
         TRACE(iridescence, 0, 1);
         TRACE(subsurface, 0, 1);
-        result.push_back(scalar("rtx.subsurface.enableDiffusionProfile", FIELD(trace.subsurfaceDiffusionProfile), 0, 1));
+        result.push_back(
+            scalar("rtx.subsurface.enableDiffusionProfile", FIELD(trace.subsurfaceDiffusionProfile), 0, 1));
         result.push_back(scalar("rtx.subsurface.enableThinOpaque", FIELD(trace.subsurfaceThinOpaque), 0, 1));
         result.push_back(scalar("rtx.subsurface.enableTextureMaps", FIELD(trace.subsurfaceTextureMaps), 0, 1));
         result.push_back(scalar("rtx.subsurface.enableTransmission", FIELD(trace.subsurfaceTransmission), 0, 1));
-        result.push_back(scalar("rtx.subsurface.diffusionProfileScale", FIELD(trace.subsurfaceProfileScale), .001, 1000));
-        result.push_back(scalar("rtx.subsurface.surfaceThicknessScale", FIELD(trace.subsurfaceThicknessScale), 0, 1000));
+        result.push_back(
+            scalar("rtx.subsurface.diffusionProfileScale", FIELD(trace.subsurfaceProfileScale), .001, 1000));
+        result.push_back(
+            scalar("rtx.subsurface.surfaceThicknessScale", FIELD(trace.subsurfaceThicknessScale), 0, 1000));
         TRACE(translucencyDenoiser, 0, 1);
         TRACE(translucencyReuse, 0, 1);
         TRACE(pbrLocalReuse, 0, 1);
@@ -333,8 +333,8 @@ namespace remix::config {
         TRACE(relativeClamps, 0, 1);
         TRACE(localIntensity, 0, 100);
         result.push_back(scalar("rtx.native.pathtrace.localRange", FIELD(trace.localRange), 0, 1024, .01));
-        result.push_back(scalar("rtx.native.pathtrace.sunAngularDiameter", FIELD(trace.sunAngularDiameter), 0,
-                                10, 0, true));
+        result.push_back(
+            scalar("rtx.native.pathtrace.sunAngularDiameter", FIELD(trace.sunAngularDiameter), 0, 10, 0, true));
         TRACE(overrideLight, 0, 1);
         TRACE(lightIntensity, 0, 20);
         TRACE(hardwareFaceCulling, 0, 1);
@@ -361,13 +361,17 @@ namespace remix::config {
         result.push_back(scalar("rtx.neuralUplift.style", FIELD(trace.neuralUpliftStyle), 0, 2));
         result.push_back(scalar("rtx.neuralUplift.intensity", FIELD(trace.neuralUpliftIntensity), 0, 1));
         result.push_back(scalar("rtx.neuralUplift.styleStrength", FIELD(trace.neuralUpliftStyleStrength), 0, 1));
-        result.push_back(scalar("rtx.neuralUplift.localStructureStrength", FIELD(trace.neuralUpliftLocalStructureStrength), 0, 2));
-        result.push_back(scalar("rtx.neuralUplift.skinStructureStrength", FIELD(trace.neuralUpliftSkinStructureStrength), 0, 2, 0, true));
+        result.push_back(
+            scalar("rtx.neuralUplift.localStructureStrength", FIELD(trace.neuralUpliftLocalStructureStrength), 0, 2));
+        result.push_back(scalar("rtx.neuralUplift.skinStructureStrength",
+                                FIELD(trace.neuralUpliftSkinStructureStrength), 0, 2, 0, true));
         result.push_back(scalar("rtx.neuralUplift.autoMask", FIELD(trace.neuralUpliftAutoMask), 0, 1));
         result.push_back(scalar("rtx.neuralUplift.depthInverted", FIELD(trace.neuralUpliftDepthInverted), 0, 1));
-        result.push_back(scalar("rtx.neuralUplift.motionVectorScale", FIELD(trace.neuralUpliftMotionVectorScale), 0.01, 10));
+        result.push_back(
+            scalar("rtx.neuralUplift.motionVectorScale", FIELD(trace.neuralUpliftMotionVectorScale), 0.01, 10));
         result.push_back(scalar("rtx.neuralUplift.featureId", FIELD(trace.neuralUpliftFeatureId), 0, 63));
-        result.push_back(scalar("rtx.neuralUplift.bypassCallerCheck", FIELD(trace.neuralUpliftBypassCallerCheck), 0, 1));
+        result.push_back(
+            scalar("rtx.neuralUplift.bypassCallerCheck", FIELD(trace.neuralUpliftBypassCallerCheck), 0, 1));
         for (size_t i = 0; i < 3; ++i) {
           result.push_back(scalar(
               "rtx.native.pathtrace.lightDirection." + std::string(1, "xyz"[i]),
@@ -381,11 +385,10 @@ namespace remix::config {
         }
         for (size_t i = 0; i < 4; ++i)
           result.push_back(scalar(
-              "rtx.native.clearColor." + std::string(1, "rgba"[i]),
-              [i](auto &s) -> auto & { return s.clearColor[i]; }, 0, 1));
+              "rtx.native.clearColor." + std::string(1, "rgba"[i]), [i](auto &s) -> auto & { return s.clearColor[i]; },
+              0, 1));
         result.push_back(scalar("rtx.native.textures.keepCompressed", FIELD(compressedTextures), 0, 1));
-        result.push_back(
-            scalar("rtx.native.capture.retainTextureData", FIELD(captureRetainTextureData), 0, 1));
+        result.push_back(scalar("rtx.native.capture.retainTextureData", FIELD(captureRetainTextureData), 0, 1));
         result.push_back(scalar("rtx.zUp", FIELD(zUp), 0, 1));
         result.push_back(scalar("rtx.native.vramStatistics", FIELD(vramStatistics), 0, 1));
         result.push_back(scalar("rtx.native.meshes.refreshInPlace", FIELD(refreshGeometry), 0, 1));
@@ -402,8 +405,8 @@ namespace remix::config {
         result.push_back(scalar("rtx.native.screenshot.jxr", FIELD(screenshotJxr), 0, 1));
         result.push_back(scalar("rtx.native.screenshot.exr", FIELD(screenshotExr), 0, 1));
         result.push_back(scalar("rtx.native.frameGeneration", FIELD(frameGeneration), 0, 1));
-        result.push_back(choices("rtx.native.frameGenerationBackend", FIELD(frameGenerationBackend),
-                                 {"auto", "dlss", "fsr31"}));
+        result.push_back(
+            choices("rtx.native.frameGenerationBackend", FIELD(frameGenerationBackend), {"auto", "dlss", "fsr31"}));
         result.push_back(scalar("rtx.native.frameGenerationFrames", FIELD(frameGenerationFrames), 1, 3));
         result.push_back(scalar("rtx.native.lowLatency", FIELD(lowLatency), 0, 1));
         result.push_back(scalar("rtx.native.gpuPassTimers", FIELD(gpuPassTimers), 0, 1));
@@ -421,43 +424,42 @@ namespace remix::config {
         result.push_back(scalar("rtx.native.particles.shelter", FIELD(particles.shelter), 0, 1));
         result.push_back(scalar("rtx.native.particles.followWeather", FIELD(particles.followWeather), 0, 1));
         result.push_back(scalar("rtx.native.particles.intensity", FIELD(particles.intensity), 0, 1));
-        result.push_back({
-            "rtx.hideInstanceTextures",
-            [](const Settings &s) {
-              std::string text;
-              for (size_t i = 0; i < s.hideTextures.size(); ++i) {
-                if (i > 0)
-                  text += ", ";
-                char buf[32];
-                snprintf(buf, sizeof(buf), "0x%llX", (unsigned long long)s.hideTextures[i]);
-                text += buf;
-              }
-              return text;
-            },
-            [](Settings &s, std::string_view text) {
-              s.hideTextures.clear();
-              while (!text.empty()) {
-                auto comma = text.find(',');
-                auto item = trim(comma == text.npos ? text : text.substr(0, comma));
-                if (comma == text.npos)
-                  text = {};
-                else
-                  text = text.substr(comma + 1);
-                if (item.empty())
-                  continue;
-                uint64_t hash = 0;
-                if (item.size() > 2 && item[0] == '0' && (item[1] == 'x' || item[1] == 'X')) {
-                  auto res = std::from_chars(item.data() + 2, item.data() + item.size(), hash, 16);
-                  if (res.ec == std::errc{})
-                    s.hideTextures.push_back(hash);
-                } else {
-                  auto res = std::from_chars(item.data(), item.data() + item.size(), hash, 10);
-                  if (res.ec == std::errc{})
-                    s.hideTextures.push_back(hash);
-                }
-              }
-              return true;
-            }});
+        result.push_back({"rtx.hideInstanceTextures",
+                          [](const Settings &s) {
+                            std::string text;
+                            for (size_t i = 0; i < s.hideTextures.size(); ++i) {
+                              if (i > 0)
+                                text += ", ";
+                              char buf[32];
+                              snprintf(buf, sizeof(buf), "0x%llX", (unsigned long long)s.hideTextures[i]);
+                              text += buf;
+                            }
+                            return text;
+                          },
+                          [](Settings &s, std::string_view text) {
+                            s.hideTextures.clear();
+                            while (!text.empty()) {
+                              auto comma = text.find(',');
+                              auto item = trim(comma == text.npos ? text : text.substr(0, comma));
+                              if (comma == text.npos)
+                                text = {};
+                              else
+                                text = text.substr(comma + 1);
+                              if (item.empty())
+                                continue;
+                              uint64_t hash = 0;
+                              if (item.size() > 2 && item[0] == '0' && (item[1] == 'x' || item[1] == 'X')) {
+                                auto res = std::from_chars(item.data() + 2, item.data() + item.size(), hash, 16);
+                                if (res.ec == std::errc{})
+                                  s.hideTextures.push_back(hash);
+                              } else {
+                                auto res = std::from_chars(item.data(), item.data() + item.size(), hash, 10);
+                                if (res.ec == std::errc{})
+                                  s.hideTextures.push_back(hash);
+                              }
+                            }
+                            return true;
+                          }});
 #undef TRACE
 #undef FIELD
         return result;
@@ -511,8 +513,8 @@ namespace remix::config {
     return text;
   }
 
-  bool parse(std::string_view text, Settings &settings, UnknownSettings &unknown,
-             std::vector<std::string> &warnings, std::string &error) {
+  bool parse(std::string_view text, Settings &settings, UnknownSettings &unknown, std::vector<std::string> &warnings,
+             std::string &error) {
     if (text.starts_with("\xef\xbb\xbf"))
       text.remove_prefix(3);
     Settings next;

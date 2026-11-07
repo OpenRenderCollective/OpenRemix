@@ -123,9 +123,8 @@ namespace remix {
           .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST};
       VkPipelineViewportStateCreateInfo viewport = {
           .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO, .viewportCount = 1, .scissorCount = 1};
-      VkPipelineMultisampleStateCreateInfo samples = {
-          .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-          .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT};
+      VkPipelineMultisampleStateCreateInfo samples = {.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+                                                      .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT};
       VkDynamicState dynamicStates[2] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
       VkPipelineDynamicStateCreateInfo dynamic = {.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
                                                   .dynamicStateCount = 2,
@@ -168,12 +167,12 @@ namespace remix {
         {0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, position)},
         {1, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(Vertex, uv)},
         {2, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(Vertex, color)}};
-    const VkPipelineVertexInputStateCreateInfo input = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-        .vertexBindingDescriptionCount = 1,
-        .pVertexBindingDescriptions = &binding,
-        .vertexAttributeDescriptionCount = 3,
-        .pVertexAttributeDescriptions = attributes};
+    const VkPipelineVertexInputStateCreateInfo input = {.sType =
+                                                            VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+                                                        .vertexBindingDescriptionCount = 1,
+                                                        .pVertexBindingDescriptions = &binding,
+                                                        .vertexAttributeDescriptionCount = 3,
+                                                        .pVertexAttributeDescriptions = attributes};
     // The source is usually also in the scene, at the same depth: the frame's
     // depth comes from another pipeline (the tracer's primary surface, at a
     // jittered sample without an upscaler), so the test is biased toward the
@@ -193,10 +192,10 @@ namespace remix {
         .depthWriteEnable = VK_FALSE,
         .depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL};
     const VkPipelineColorBlendAttachmentState blend = {.colorWriteMask = VK_COLOR_COMPONENT_R_BIT};
-    const VkPipelineColorBlendStateCreateInfo blending = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-        .attachmentCount = 1,
-        .pAttachments = &blend};
+    const VkPipelineColorBlendStateCreateInfo blending = {.sType =
+                                                              VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+                                                          .attachmentCount = 1,
+                                                          .pAttachments = &blend};
     const VkGraphicsPipelineCreateInfo info = {.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
                                                .stageCount = 2,
                                                .pStages = state.stages,
@@ -245,37 +244,35 @@ namespace remix {
     // Mask targets that cut traced instances are also sampled by the path
     // tracer's compute passes.
     const auto samplingStages = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
-    const VkSubpassDependency dependencies[] = {
-        {.srcSubpass = VK_SUBPASS_EXTERNAL,
-         .dstSubpass = 0,
-         .srcStageMask = attachmentStages | samplingStages,
-         .dstStageMask = attachmentStages,
-         .srcAccessMask = attachmentAccess | VK_ACCESS_SHADER_READ_BIT,
-         .dstAccessMask = attachmentAccess},
-        {.srcSubpass = 0,
-         .dstSubpass = VK_SUBPASS_EXTERNAL,
-         .srcStageMask = attachmentStages,
-         .dstStageMask = attachmentStages | samplingStages,
-         .srcAccessMask = attachmentAccess,
-         .dstAccessMask = attachmentAccess | VK_ACCESS_SHADER_READ_BIT}};
-    const VkAttachmentDescription attachments[] = {
-        {.format = coverageFormat,
-         .samples = VK_SAMPLE_COUNT_1_BIT,
-         .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-         .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-         .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-         .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-         .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-         .finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
-        // The frame's depth: tested, never written.
-        {.format = depthFormat,
-         .samples = VK_SAMPLE_COUNT_1_BIT,
-         .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
-         .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-         .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-         .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-         .initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-         .finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL}};
+    const VkSubpassDependency dependencies[] = {{.srcSubpass = VK_SUBPASS_EXTERNAL,
+                                                 .dstSubpass = 0,
+                                                 .srcStageMask = attachmentStages | samplingStages,
+                                                 .dstStageMask = attachmentStages,
+                                                 .srcAccessMask = attachmentAccess | VK_ACCESS_SHADER_READ_BIT,
+                                                 .dstAccessMask = attachmentAccess},
+                                                {.srcSubpass = 0,
+                                                 .dstSubpass = VK_SUBPASS_EXTERNAL,
+                                                 .srcStageMask = attachmentStages,
+                                                 .dstStageMask = attachmentStages | samplingStages,
+                                                 .srcAccessMask = attachmentAccess,
+                                                 .dstAccessMask = attachmentAccess | VK_ACCESS_SHADER_READ_BIT}};
+    const VkAttachmentDescription attachments[] = {{.format = coverageFormat,
+                                                    .samples = VK_SAMPLE_COUNT_1_BIT,
+                                                    .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+                                                    .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+                                                    .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                                                    .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+                                                    .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                                                    .finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+                                                   // The frame's depth: tested, never written.
+                                                   {.format = depthFormat,
+                                                    .samples = VK_SAMPLE_COUNT_1_BIT,
+                                                    .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
+                                                    .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+                                                    .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                                                    .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+                                                    .initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                                                    .finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL}};
     const VkAttachmentReference color = {0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
     const VkAttachmentReference depthReference = {1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
     for (int variant = 0; variant < 4; ++variant) {
@@ -315,9 +312,8 @@ namespace remix {
       // Every pixel of the render area is written.
       auto target = attachments[0];
       target.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-      const VkSubpassDescription subpass = {.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                            .colorAttachmentCount = 1,
-                                            .pColorAttachments = &color};
+      const VkSubpassDescription subpass = {
+          .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS, .colorAttachmentCount = 1, .pColorAttachments = &color};
       const VkRenderPassCreateInfo info = {.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
                                            .attachmentCount = 1,
                                            .pAttachments = &target,
@@ -521,15 +517,14 @@ namespace remix {
       vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, g.layout, 0, 1, &draw.set, 0, nullptr);
       vkCmdBindVertexBuffers(command, 0, 1, &draw.vertices, &draw.vertexOffset);
       vkCmdBindIndexBuffer(command, draw.indices, draw.indexOffset, VK_INDEX_TYPE_UINT32);
-      vkCmdPushConstants(command, g.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-                         sizeof(Push), &draw.push);
+      vkCmdPushConstants(command, g.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(Push),
+                         &draw.push);
       vkCmdDrawIndexed(command, draw.count, 1, draw.firstIndex, draw.baseVertex, 0);
     }
     vkCmdEndRenderPass(command);
 
     // Horizontal then vertical, twice: mask -> A -> B -> A -> B.
-    const Kernel kernels[2] = {kernel(group.halo.blurX, g.extent.height),
-                               kernel(group.halo.blurY, g.extent.height)};
+    const Kernel kernels[2] = {kernel(group.halo.blurX, g.extent.height), kernel(group.halo.blurY, g.extent.height)};
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, h.blur);
     begin.renderPass = h.blurPass;
     begin.clearValueCount = 0;

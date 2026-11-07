@@ -54,8 +54,8 @@ namespace remix {
       uint32_t width = 0, height = 0;
       bool srgb = true;
       std::vector<std::vector<uint8_t>> mips;
-      std::vector<std::vector<float>> hdrMips; // Linear RGBA32F, retained through upload.
-      bool twoChannel = false; // BC5 stores normal X/Y; reconstruct Z when used as a normal map.
+      std::vector<std::vector<float>> hdrMips;      // Linear RGBA32F, retained through upload.
+      bool twoChannel = false;                      // BC5 stores normal X/Y; reconstruct Z when used as a normal map.
       std::shared_ptr<CompressedPixels> compressed; // Set only for GPU-compressed textures.
       uint32_t levels() const { return compressed ? compressed->levels : uint32_t(mips.size()); }
     };
@@ -91,10 +91,10 @@ namespace remix {
       std::atomic<uint64_t> &out;
       std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
       ~CounterTicks() {
-        out.fetch_add(uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(
-                                   std::chrono::steady_clock::now() - start)
-                                   .count()),
-                      std::memory_order_relaxed);
+        out.fetch_add(
+            uint64_t(
+                std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count()),
+            std::memory_order_relaxed);
       }
     };
     struct Texture {
@@ -400,8 +400,7 @@ namespace remix {
       uint32_t classification = 1; // dynamic for callers without the extension
       bool rasterVisible = true;
       bool traced() const {
-        return !ui && camera == REMIXAPI_CAMERA_TYPE_WORLD && classification != 2 && blend.mask != 0 &&
-               !maskGroup;
+        return !ui && camera == REMIXAPI_CAMERA_TYPE_WORLD && classification != 2 && blend.mask != 0 && !maskGroup;
       }
       std::shared_ptr<Surface> surface;
       std::shared_ptr<Material> material;

@@ -48,8 +48,7 @@ remixapi_ChangeSceneInstancesEXT(const remixapi_SceneInstanceChangeEXT *changes,
   return resourceCall([&](auto &resources) { resources.updateRetained(changes, count); });
 }
 
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_RemoveSceneInstancesEXT(const uint64_t *instances,
-                                                                           uint32_t count) {
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_RemoveSceneInstancesEXT(const uint64_t *instances, uint32_t count) {
   return resourceCall([&](auto &resources) { resources.destroyRetained(instances, count); });
 }
 

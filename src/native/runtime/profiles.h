@@ -76,7 +76,7 @@ namespace remix::config {
     void remember();
     Settings m_current, m_saved;
     UnknownSettings m_unknown;
-    std::set<std::string> m_listed; // the keys the active profile's file has
+    std::set<std::string> m_listed;                              // the keys the active profile's file has
     std::vector<std::pair<std::string, std::string>> m_defaults; // the host's, in order
     std::filesystem::path m_directory, m_folder;
     std::vector<std::string> m_files;

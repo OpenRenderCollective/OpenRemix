@@ -49,8 +49,7 @@ namespace {
     const uint64_t retained = r.createRetained(info);
     r.finishFrame();
     r.drawRetained(nullptr);
-    require(r.draws().size() == 2 && r.draws()[0].material == otherMaterial &&
-                r.draws()[1].material == otherMaterial,
+    require(r.draws().size() == 2 && r.draws()[0].material == otherMaterial && r.draws()[1].material == otherMaterial,
             "Retained and immediate overrides disagree");
     r.destroyRetained(&retained, 1);
     // A null handle keeps the mesh's own material.
@@ -63,8 +62,7 @@ namespace {
     r.destroyMaterial(other);
     r.finishFrame();
     r.drawInstance(info);
-    require(r.draws().size() == 2 && r.draws()[0].material == ownMaterial,
-            "Dead override not ignored");
+    require(r.draws().size() == 2 && r.draws()[0].material == ownMaterial, "Dead override not ignored");
     // A handle that was never a material is ignored the same way.
     override.material = reinterpret_cast<remixapi_MaterialHandle>(uintptr_t(0x1234));
     r.finishFrame();
@@ -195,7 +193,8 @@ namespace {
     rejected([&] { r.updateTexture(handle, 0, 0, 2, 2, REMIXAPI_FORMAT_B8G8R8A8_SRGB, red, 4); });
 
     // The bottom row turns green (R8G8B8A8 this time, with a row pitch).
-    const uint8_t rows[2][12] = {{255, 0, 0, 255, 255, 0, 0, 255, 9, 9, 9, 9}, {0, 255, 0, 255, 0, 255, 0, 255, 9, 9, 9, 9}};
+    const uint8_t rows[2][12] = {{255, 0, 0, 255, 255, 0, 0, 255, 9, 9, 9, 9},
+                                 {0, 255, 0, 255, 0, 255, 0, 255, 9, 9, 9, 9}};
     r.updateTexture(handle, 0, 0, 2, 2, REMIXAPI_FORMAT_R8G8B8A8_UNORM, rows, 12);
     {
       std::lock_guard lock(texture->updates->lock);
@@ -219,9 +218,11 @@ namespace {
     scene::Draw other = draw;
     other.surface = std::make_shared<scene::Surface>(*draw.surface);
     const auto fresh = emission.reduce(other, uv);
-    require(fresh->size() == 2 && (*fresh)[0].radiance == (*first)[0].radiance && (*fresh)[1].radiance == (*first)[1].radiance,
+    require(fresh->size() == 2 && (*fresh)[0].radiance == (*first)[0].radiance &&
+                (*fresh)[1].radiance == (*first)[1].radiance,
             "A new surface did not keep the material's estimate");
-    std::this_thread::sleep_for(std::chrono::milliseconds(int(REMIXAPI_DYNAMIC_TEXTURE_EMISSION_SECONDS_EXT * 1000) + 50));
+    std::this_thread::sleep_for(
+        std::chrono::milliseconds(int(REMIXAPI_DYNAMIC_TEXTURE_EMISSION_SECONDS_EXT * 1000) + 50));
     const auto second = emission.reduce(draw, uv);
     float sum[3] = {};
     for (const auto &triangle : *second)
@@ -284,8 +285,7 @@ namespace {
     const auto made = drawn(r, quad(r, 0x62, handle));
     const auto &rough = made->remap[0];
     require(made->normalEncoding == 4 && rough.channel == 3 && rough.invert && rough.curve == 1 &&
-                rough.exponent == 2 && rough.bias == 1 && rough.scale == 149 && made->remap[1].identity() &&
-                made->pbr,
+                rough.exponent == 2 && rough.bias == 1 && rough.scale == 149 && made->remap[1].identity() && made->pbr,
             "PBR remap fields");
     remap.roughness.channel = 4;
     rejected([&] { r.createMaterial(info, handle); });
@@ -592,8 +592,7 @@ namespace {
     remixapi_MaterialHandle handle{};
     r.createMaterial(m, handle);
     const auto material = drawn(r, quad(r, 0x95, handle));
-    require(material->gradient && material->gradient->gradient && material->gradient->detail,
-            "Gradient map: parsed");
+    require(material->gradient && material->gradient->gradient && material->gradient->detail, "Gradient map: parsed");
     const auto &map = *material->gradient;
     require(!material->texture->pixels.srgb && material->texture->hash == 0x91,
             "Gradient map: the albedo is not read as stored");
@@ -603,8 +602,7 @@ namespace {
     require(map.gradientSampler->texture == map.gradient && map.gradientSampler->filter == 1 &&
                 map.gradientSampler->wrapU == 0 && map.gradientSampler->wrapV == 0,
             "Gradient map: gradient sampler");
-    require(map.detailSampler->texture == map.detail && map.detailSampler->wrapU == 1,
-            "Gradient map: detail sampler");
+    require(map.detailSampler->texture == map.detail && map.detailSampler->wrapU == 1, "Gradient map: detail sampler");
     // The burn is read as an albedo texture is (sRGB-decoded), with the
     // material's filter, repeating.
     require(map.burn && map.burn->hash == 0x96 && map.burn->pixels.srgb && map.burnStrength == .25f,
@@ -632,8 +630,7 @@ namespace {
     // Without a burn texture: none (its strength still validated).
     g.burnTexture = name("");
     r.createMaterial(m, handle);
-    require(!drawn(r, quad(r, 0x95, handle))->gradient->burn &&
-                !drawn(r, quad(r, 0x95, handle))->gradient->burnSampler,
+    require(!drawn(r, quad(r, 0x95, handle))->gradient->burn && !drawn(r, quad(r, 0x95, handle))->gradient->burnSampler,
             "Gradient map: empty burn");
     g.burnTexture = nullptr;
     r.createMaterial(m, handle);
@@ -806,7 +803,8 @@ namespace {
     // A zero-initialized colour is no colour under a profile.
     sss.subsurfaceTransmittanceColor = {0, 0, 0};
     r.createMaterial(info, handle);
-    require(drawn(r, quad(r, 0xb3, handle))->subsurface.transmittance[1] == 1, "A profile's unset colour keeps the albedo");
+    require(drawn(r, quad(r, 0xb3, handle))->subsurface.transmittance[1] == 1,
+            "A profile's unset colour keeps the albedo");
     sss.subsurfaceTransmittanceColor = {1, 1, 1};
     // OpenRemix's weight.
     remixapi_MaterialSubsurfaceWeightEXT weight{};
@@ -853,127 +851,129 @@ namespace {
     info.albedoTexture = name("0xb9");
     sss.subsurfaceTransmittanceTexture = name("0xb9");
     r.createMaterial(info, handle);
-    require(!drawn(r, quad(r, 0xbb, handle))->subsurface.transmittanceTexture, "The albedo map as the transmittance map");
+    require(!drawn(r, quad(r, 0xbb, handle))->subsurface.transmittanceTexture,
+            "The albedo map as the transmittance map");
     sss.subsurfaceTransmittanceTexture = name("0xba");
     r.createMaterial(info, handle);
-    require(drawn(r, quad(r, 0xbc, handle))->subsurface.transmittanceTexture != nullptr, "A transmittance map of its own");
+    require(drawn(r, quad(r, 0xbc, handle))->subsurface.transmittanceTexture != nullptr,
+            "A transmittance map of its own");
   }
 } // namespace
 
-  // A dynamic texture with generated mips: an update makes each level again
-  // only where it reads the changed texels, and the region stays level 0's.
-  void scopedMipUpdate() {
-    remix::NativeResources r;
-    remixapi_TextureInfoGenerateMipsEXT mips{};
-    mips.sType = REMIXAPI_STRUCT_TYPE_TEXTURE_GENERATE_MIPS_EXT;
-    mips.generate = 1;
-    remixapi_TextureInfoDynamicEXT dynamic{};
-    dynamic.sType = REMIXAPI_STRUCT_TYPE_TEXTURE_DYNAMIC_EXT;
-    dynamic.pNext = &mips;
-    dynamic.dynamic = 1;
-    std::vector<uint8_t> black(4 * 4 * 4, 0);
-    for (size_t i = 3; i < black.size(); i += 4)
-      black[i] = 255;
-    remixapi_TextureInfo info{};
-    info.sType = REMIXAPI_STRUCT_TYPE_TEXTURE_INFO;
-    info.pNext = &dynamic;
-    info.hash = 0x81;
-    info.format = REMIXAPI_FORMAT_R8G8B8A8_UNORM;
-    info.width = info.height = 4;
-    info.depth = info.mipLevels = 1;
-    info.data = black.data();
-    info.dataSize = black.size();
-    remixapi_TextureHandle handle{};
-    r.createTexture(info, handle);
-    remixapi_MaterialInfoOpaqueEXT o{};
-    o.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
-    o.albedoConstant = {1, 1, 1};
-    o.opacityConstant = 1;
-    o.alphaTestType = 7;
-    remixapi_MaterialInfo m{};
-    m.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
-    m.pNext = &o;
-    m.hash = 0x82;
+// A dynamic texture with generated mips: an update makes each level again
+// only where it reads the changed texels, and the region stays level 0's.
+void scopedMipUpdate() {
+  remix::NativeResources r;
+  remixapi_TextureInfoGenerateMipsEXT mips{};
+  mips.sType = REMIXAPI_STRUCT_TYPE_TEXTURE_GENERATE_MIPS_EXT;
+  mips.generate = 1;
+  remixapi_TextureInfoDynamicEXT dynamic{};
+  dynamic.sType = REMIXAPI_STRUCT_TYPE_TEXTURE_DYNAMIC_EXT;
+  dynamic.pNext = &mips;
+  dynamic.dynamic = 1;
+  std::vector<uint8_t> black(4 * 4 * 4, 0);
+  for (size_t i = 3; i < black.size(); i += 4)
+    black[i] = 255;
+  remixapi_TextureInfo info{};
+  info.sType = REMIXAPI_STRUCT_TYPE_TEXTURE_INFO;
+  info.pNext = &dynamic;
+  info.hash = 0x81;
+  info.format = REMIXAPI_FORMAT_R8G8B8A8_UNORM;
+  info.width = info.height = 4;
+  info.depth = info.mipLevels = 1;
+  info.data = black.data();
+  info.dataSize = black.size();
+  remixapi_TextureHandle handle{};
+  r.createTexture(info, handle);
+  remixapi_MaterialInfoOpaqueEXT o{};
+  o.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
+  o.albedoConstant = {1, 1, 1};
+  o.opacityConstant = 1;
+  o.alphaTestType = 7;
+  remixapi_MaterialInfo m{};
+  m.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
+  m.pNext = &o;
+  m.hash = 0x82;
 #ifdef _WIN32
-    m.albedoTexture = L"0x81";
+  m.albedoTexture = L"0x81";
 #else
-    m.albedoTexture = "0x81";
+  m.albedoTexture = "0x81";
 #endif
-    remixapi_MaterialHandle mh{};
-    r.createMaterial(m, mh);
-    const auto t = drawn(r, quad(r, 0x83, mh))->texture;
-    require(t->pixels.mips.size() == 3, "Scoped mips: chain");
-    const uint8_t white[4] = {255, 255, 255, 255};
-    r.updateTexture(handle, 0, 0, 1, 1, REMIXAPI_FORMAT_R8G8B8A8_UNORM, white, 4);
-    std::lock_guard lock(t->updates->lock);
-    const auto &p = t->pixels;
-    const auto &u = *t->updates;
-    require(u.dirty[0] == 0 && u.dirty[1] == 0 && u.dirty[2] == 1 && u.dirty[3] == 1, "Scoped mips: level 0 region");
-    require(p.mips[1][0] == 64 && p.mips[1][4] == 0 && p.mips[1][12] == 0, "Scoped mips: level 1 texels");
-    require(p.mips[2][0] == 16, "Scoped mips: level 2 texel");
-  }
+  remixapi_MaterialHandle mh{};
+  r.createMaterial(m, mh);
+  const auto t = drawn(r, quad(r, 0x83, mh))->texture;
+  require(t->pixels.mips.size() == 3, "Scoped mips: chain");
+  const uint8_t white[4] = {255, 255, 255, 255};
+  r.updateTexture(handle, 0, 0, 1, 1, REMIXAPI_FORMAT_R8G8B8A8_UNORM, white, 4);
+  std::lock_guard lock(t->updates->lock);
+  const auto &p = t->pixels;
+  const auto &u = *t->updates;
+  require(u.dirty[0] == 0 && u.dirty[1] == 0 && u.dirty[2] == 1 && u.dirty[3] == 1, "Scoped mips: level 0 region");
+  require(p.mips[1][0] == 64 && p.mips[1][4] == 0 && p.mips[1][12] == 0, "Scoped mips: level 1 texels");
+  require(p.mips[2][0] == 16, "Scoped mips: level 2 texel");
+}
 
-  // A float dynamic texture (an HDR sky): RGBA32F texels updated from halves.
-  void floatDynamicTexture() {
-    remix::NativeResources r;
-    remixapi_TextureInfoDynamicEXT dynamic{};
-    dynamic.sType = REMIXAPI_STRUCT_TYPE_TEXTURE_DYNAMIC_EXT;
-    dynamic.dynamic = 1;
-    const float bright[8] = {4, 0.5f, 0, 1, 4, 0.5f, 0, 1};
-    remixapi_TextureInfo info{};
-    info.sType = REMIXAPI_STRUCT_TYPE_TEXTURE_INFO;
-    info.pNext = &dynamic;
-    info.hash = 0x71;
-    info.format = REMIXAPI_FORMAT_R32G32B32A32_SFLOAT_EXT;
-    info.width = 2;
-    info.height = 1;
-    info.depth = info.mipLevels = 1;
-    info.data = bright;
-    info.dataSize = sizeof(bright);
-    remixapi_TextureHandle handle{};
-    r.createTexture(info, handle);
-    remixapi_MaterialInfoOpaqueEXT o{};
-    o.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
-    o.albedoConstant = {1, 1, 1};
-    o.opacityConstant = 1;
-    o.alphaTestType = 7;
-    remixapi_MaterialInfo m{};
-    m.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
-    m.pNext = &o;
-    m.hash = 0x72;
+// A float dynamic texture (an HDR sky): RGBA32F texels updated from halves.
+void floatDynamicTexture() {
+  remix::NativeResources r;
+  remixapi_TextureInfoDynamicEXT dynamic{};
+  dynamic.sType = REMIXAPI_STRUCT_TYPE_TEXTURE_DYNAMIC_EXT;
+  dynamic.dynamic = 1;
+  const float bright[8] = {4, 0.5f, 0, 1, 4, 0.5f, 0, 1};
+  remixapi_TextureInfo info{};
+  info.sType = REMIXAPI_STRUCT_TYPE_TEXTURE_INFO;
+  info.pNext = &dynamic;
+  info.hash = 0x71;
+  info.format = REMIXAPI_FORMAT_R32G32B32A32_SFLOAT_EXT;
+  info.width = 2;
+  info.height = 1;
+  info.depth = info.mipLevels = 1;
+  info.data = bright;
+  info.dataSize = sizeof(bright);
+  remixapi_TextureHandle handle{};
+  r.createTexture(info, handle);
+  remixapi_MaterialInfoOpaqueEXT o{};
+  o.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
+  o.albedoConstant = {1, 1, 1};
+  o.opacityConstant = 1;
+  o.alphaTestType = 7;
+  remixapi_MaterialInfo m{};
+  m.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
+  m.pNext = &o;
+  m.hash = 0x72;
 #ifdef _WIN32
-    m.albedoTexture = L"0x71";
+  m.albedoTexture = L"0x71";
 #else
-    m.albedoTexture = "0x71";
+  m.albedoTexture = "0x71";
 #endif
-    remixapi_MaterialHandle mh{};
-    r.createMaterial(m, mh);
-    const auto t = drawn(r, quad(r, 0x73, mh))->texture;
-    require(t->dynamic && t->pixels.hdrMips.size() == 1 && t->pixels.hdrMips[0][0] == 4 &&
-                t->pixels.mips[0][0] == 255 && t->pixels.mips[0][1] == 127,
-            "Float dynamic texture");
-    // The second texel turns to (0.25, 2, 0, 1) in halves.
-    const uint16_t halves[4] = {0x3400, 0x4000, 0x0000, 0x3c00};
-    r.updateTexture(handle, 1, 0, 1, 1, REMIXAPI_FORMAT_R16G16B16A16_SFLOAT_EXT, halves, 8);
-    {
-      std::lock_guard lock(t->updates->lock);
-      const auto &u = *t->updates;
-      require(u.revision == 1 && u.dirty[0] == 1 && u.dirty[2] == 2 && t->pixels.hdrMips[0][4] == .25f &&
-                  t->pixels.hdrMips[0][5] == 2 && t->pixels.hdrMips[0][0] == 4 && t->pixels.mips[0][5] == 255,
-              "Float update");
-    }
-    // An 8-bit update of a float texture, and a float one of an 8-bit texture: rejected.
-    const uint8_t texel[4] = {1, 2, 3, 4};
-    rejected([&] { r.updateTexture(handle, 0, 0, 1, 1, REMIXAPI_FORMAT_R8G8B8A8_UNORM, texel, 4); });
-    info.hash = 0x74;
-    info.format = REMIXAPI_FORMAT_R8G8B8A8_UNORM;
-    info.data = texel;
-    info.dataSize = sizeof(texel);
-    info.width = 1;
-    remixapi_TextureHandle plain{};
-    r.createTexture(info, plain);
-    rejected([&] { r.updateTexture(plain, 0, 0, 1, 1, REMIXAPI_FORMAT_R16G16B16A16_SFLOAT_EXT, halves, 8); });
+  remixapi_MaterialHandle mh{};
+  r.createMaterial(m, mh);
+  const auto t = drawn(r, quad(r, 0x73, mh))->texture;
+  require(t->dynamic && t->pixels.hdrMips.size() == 1 && t->pixels.hdrMips[0][0] == 4 && t->pixels.mips[0][0] == 255 &&
+              t->pixels.mips[0][1] == 127,
+          "Float dynamic texture");
+  // The second texel turns to (0.25, 2, 0, 1) in halves.
+  const uint16_t halves[4] = {0x3400, 0x4000, 0x0000, 0x3c00};
+  r.updateTexture(handle, 1, 0, 1, 1, REMIXAPI_FORMAT_R16G16B16A16_SFLOAT_EXT, halves, 8);
+  {
+    std::lock_guard lock(t->updates->lock);
+    const auto &u = *t->updates;
+    require(u.revision == 1 && u.dirty[0] == 1 && u.dirty[2] == 2 && t->pixels.hdrMips[0][4] == .25f &&
+                t->pixels.hdrMips[0][5] == 2 && t->pixels.hdrMips[0][0] == 4 && t->pixels.mips[0][5] == 255,
+            "Float update");
   }
+  // An 8-bit update of a float texture, and a float one of an 8-bit texture: rejected.
+  const uint8_t texel[4] = {1, 2, 3, 4};
+  rejected([&] { r.updateTexture(handle, 0, 0, 1, 1, REMIXAPI_FORMAT_R8G8B8A8_UNORM, texel, 4); });
+  info.hash = 0x74;
+  info.format = REMIXAPI_FORMAT_R8G8B8A8_UNORM;
+  info.data = texel;
+  info.dataSize = sizeof(texel);
+  info.width = 1;
+  remixapi_TextureHandle plain{};
+  r.createTexture(info, plain);
+  rejected([&] { r.updateTexture(plain, 0, 0, 1, 1, REMIXAPI_FORMAT_R16G16B16A16_SFLOAT_EXT, halves, 8); });
+}
 
 int main() {
   materialOverride();

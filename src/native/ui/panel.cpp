@@ -11,14 +11,13 @@ namespace remix::ui {
     const auto *viewport = ImGui::GetMainViewport();
     const float scale = ImGui::GetStyle().FontScaleDpi;
     const float width = std::min(panel.width * scale, viewport->WorkSize.x);
-    const ImVec2 origin(viewport->WorkPos.x + (panel.right ? viewport->WorkSize.x - width : 0),
-                        viewport->WorkPos.y);
+    const ImVec2 origin(viewport->WorkPos.x + (panel.right ? viewport->WorkSize.x - width : 0), viewport->WorkPos.y);
     ImGui::SetNextWindowPos(origin);
     ImGui::SetNextWindowSize(ImVec2(width, viewport->WorkSize.y));
     ImGui::Begin("OpenRemix", nullptr,
                  ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
-                     ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings |
-                     ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+                     ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar |
+                     ImGuiWindowFlags_NoScrollWithMouse);
     const bool minimal = viewport->WorkSize.y < 200 * scale;
     if (!minimal) {
       const bool compact = width <= 340 * scale;
@@ -36,8 +35,7 @@ namespace remix::ui {
                             "the modifiers to use (Alt, Ctrl, Shift).\nEscape keeps the current shortcut.");
         ImGui::SameLine();
       }
-      if (ImGui::SmallButton(compact ? (panel.right ? "<" : ">")
-                                     : (panel.right ? "Dock left" : "Dock right")))
+      if (ImGui::SmallButton(compact ? (panel.right ? "<" : ">") : (panel.right ? "Dock left" : "Dock right")))
         panel.right = !panel.right;
       if (compact && ImGui::IsItemHovered())
         ImGui::SetTooltip("Dock to the other edge");
@@ -51,7 +49,8 @@ namespace remix::ui {
     // Tabs before kMods edit the profile's settings.
     enum { kTextures = 5, kMods, kProfiles, kPlugin };
     const int tabCount = hasPlugin ? 9 : 8;
-    static const char *tabs[] = {"Rendering", "Lighting", "Sky", "Post-processing", "Diagnostics", "Textures", "Mods", "Profiles", "Plugin"};
+    static const char *tabs[] = {"Rendering", "Lighting", "Sky",      "Post-processing", "Diagnostics",
+                                 "Textures",  "Mods",     "Profiles", "Plugin"};
     const float footerHeight = ImGui::GetFrameHeightWithSpacing() * 2 + ImGui::GetStyle().ItemSpacing.y * 2;
     auto draft = profiles.current();
     if (panel.tab >= tabCount)
@@ -73,8 +72,7 @@ namespace remix::ui {
             profileUi.restoreTab && i == restoreTab ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None;
         if (ImGui::BeginTabItem(tabs[i], nullptr, flags)) {
           panel.tab = i;
-          ImGui::BeginChild("Tab contents",
-                            ImVec2(0, std::max(1.f, ImGui::GetContentRegionAvail().y - footerHeight)),
+          ImGui::BeginChild("Tab contents", ImVec2(0, std::max(1.f, ImGui::GetContentRegionAvail().y - footerHeight)),
                             ImGuiChildFlags_None, ImGuiWindowFlags_AlwaysVerticalScrollbar);
           ImGui::PushItemWidth(std::max(80.f * scale, ImGui::GetContentRegionAvail().x * .46f));
           if (i == kMods)
@@ -96,8 +94,7 @@ namespace remix::ui {
     if (panel.tab <= kMods && draft != profiles.current())
       profiles.edit(draft);
     ImGui::BeginChild("Profile footer", ImVec2(0, std::max(1.f, ImGui::GetContentRegionAvail().y)),
-                      ImGuiChildFlags_None,
-                      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+                      ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     ui::drawProfileFooter(profiles, profileUi);
     ImGui::EndChild();
     // An edge handle allows horizontal resizing while preserving full height.
@@ -109,8 +106,8 @@ namespace remix::ui {
     if (ImGui::IsItemActivated())
       panel.width = width / scale;
     else if (ImGui::IsItemActive())
-      panel.width = std::clamp(panel.width + ImGui::GetIO().MouseDelta.x / scale * (panel.right ? -1.f : 1.f),
-                               240.f, 1600.f);
+      panel.width =
+          std::clamp(panel.width + ImGui::GetIO().MouseDelta.x / scale * (panel.right ? -1.f : 1.f), 240.f, 1600.f);
     const bool resizing = ImGui::IsItemActive();
     ImGui::SetCursorScreenPos(cursor);
     ui::drawProfileDialogs(profiles, profileUi);

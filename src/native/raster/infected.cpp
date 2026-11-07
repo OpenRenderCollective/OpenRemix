@@ -56,12 +56,10 @@ namespace remix {
           {0, image, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
           {1, image, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
           {2, image, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
-          {3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-           nullptr},
+          {3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
           {4, image, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr}};
-      const VkDescriptorSetLayoutCreateInfo info = {.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-                                                    .bindingCount = 5,
-                                                    .pBindings = bindings};
+      const VkDescriptorSetLayoutCreateInfo info = {
+          .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, .bindingCount = 5, .pBindings = bindings};
       check(pipeline::createDescriptorSetLayout(device, &info, nullptr, &s.setLayout));
     }
     if (!s.layout) {
@@ -87,7 +85,7 @@ namespace remix {
   }
 
   void RasterRenderer::Gpu::infectedParameters(const Draw &draw, Command &out, VkCommandBuffer command,
-                                              double seconds) {
+                                               double seconds) {
     auto &s = infected;
     // shaders/infected.glsl Infected, std140: 15 vec4.
     struct Block {
@@ -207,8 +205,7 @@ namespace remix {
     std::vector<VkWriteDescriptorSet> writes;
     writes.reserve(size_t(count) * 5);
     for (uint32_t i = 0; i < count; ++i) {
-      blocks[i] = {parameters->buffer, parameters->offset + VkDeviceSize(i) * Infected::blockSize,
-                   Infected::blockSize};
+      blocks[i] = {parameters->buffer, parameters->offset + VkDeviceSize(i) * Infected::blockSize, Infected::blockSize};
       for (uint32_t image = 0; image < 4; ++image)
         writes.push_back({.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                           .dstSet = sets[i],

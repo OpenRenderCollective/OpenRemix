@@ -7,24 +7,24 @@
 #include <remix/remix_native_ext.h>
 
 namespace {
-void require(bool value, const char *message) {
-  if (!value) {
-    std::fprintf(stderr, "%s\n", message);
-    std::exit(1);
+  void require(bool value, const char *message) {
+    if (!value) {
+      std::fprintf(stderr, "%s\n", message);
+      std::exit(1);
+    }
   }
-}
-bool approx(float a, float b) { return std::abs(a - b) < 1e-4f; }
-// 0, 45 and 90 degrees from the axis; two horizontal planes that average to
-// 100, 50 and 0 candela.
-const std::string spot = "IESNA:LM-63-2002\r\n"
-                         "[TEST] spot\r\n"
-                         "TILT=NONE\r\n"
-                         "1 1000 1 3 2 1 1 0 0 0\r\n"
-                         "1 1 10\r\n"
-                         "0 45 90\r\n"
-                         "0 180\r\n"
-                         "120 60 0\r\n"
-                         "80 40 0\r\n";
+  bool approx(float a, float b) { return std::abs(a - b) < 1e-4f; }
+  // 0, 45 and 90 degrees from the axis; two horizontal planes that average to
+  // 100, 50 and 0 candela.
+  const std::string spot = "IESNA:LM-63-2002\r\n"
+                           "[TEST] spot\r\n"
+                           "TILT=NONE\r\n"
+                           "1 1000 1 3 2 1 1 0 0 0\r\n"
+                           "1 1 10\r\n"
+                           "0 45 90\r\n"
+                           "0 180\r\n"
+                           "120 60 0\r\n"
+                           "80 40 0\r\n";
 } // namespace
 
 int main() {

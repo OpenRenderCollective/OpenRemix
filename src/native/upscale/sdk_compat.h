@@ -30,9 +30,7 @@ inline int wcscpy_s(wchar_t *out, size_t size, const wchar_t *in) {
   std::wcscpy(out, in);
   return 0;
 }
-template <size_t N> int wcscpy_s(wchar_t (&out)[N], const wchar_t *in) {
-  return wcscpy_s(out, N, in);
-}
+template <size_t N> int wcscpy_s(wchar_t (&out)[N], const wchar_t *in) { return wcscpy_s(out, N, in); }
 inline int strcpy_s(char *out, size_t size, const char *in) {
   if (!out || !in || !size)
     return EINVAL;
@@ -43,8 +41,7 @@ inline int strcpy_s(char *out, size_t size, const char *in) {
   std::strcpy(out, in);
   return 0;
 }
-inline int wcstombs_s(size_t *converted, char *out, size_t size,
-                      const wchar_t *in, size_t count) {
+inline int wcstombs_s(size_t *converted, char *out, size_t size, const wchar_t *in, size_t count) {
   if (!out || !in || !size)
     return EINVAL;
   size_t result = std::wcstombs(out, in, std::min(size - 1, count));

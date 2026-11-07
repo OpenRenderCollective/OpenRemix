@@ -57,8 +57,11 @@ namespace remix::usd {
       return Json::array({0, 0});
     }
     Json identity(double meters, uint32_t axis) {
-      return {{"format", format}, {"vertex", sizeof(scene::Vertex)}, {"runtime", runtimeStamp()},
-              {"meters", meters}, {"axis", axis}};
+      return {{"format", format},
+              {"vertex", sizeof(scene::Vertex)},
+              {"runtime", runtimeStamp()},
+              {"meters", meters},
+              {"axis", axis}};
     }
     template <class T> uint64_t arrayBytes(const std::vector<T> &values) { return values.size() * sizeof(T); }
   } // namespace
@@ -70,8 +73,8 @@ namespace remix::usd {
     std::error_code error;
     const auto working = std::filesystem::current_path(error);
     const char *directory = std::getenv("REMIX_CONFIG_DIR");
-    const auto config = directory && *directory ? utf8Path(directory)
-                                                : (error ? std::filesystem::path(".") : working) / "openremix";
+    const auto config =
+        directory && *directory ? utf8Path(directory) : (error ? std::filesystem::path(".") : working) / "openremix";
     const auto name = scene::hashBytes(modPath.data(), modPath.size());
     return config / "cache" / "usd" / (std::to_string(name) + ".bin");
   }
@@ -210,9 +213,12 @@ namespace remix::usd {
                                                     std::filesystem::file_time_type loadStarted) {
     if (file.empty())
       return std::nullopt;
-    Json tables = {{"identity", identity(meters, axis)}, {"scene", snapshot.scene},
-                   {"stamps", Json::array()},            {"meshes", Json::array()},
-                   {"parts", Json::array()},             {"failed", meshes.failed},
+    Json tables = {{"identity", identity(meters, axis)},
+                   {"scene", snapshot.scene},
+                   {"stamps", Json::array()},
+                   {"meshes", Json::array()},
+                   {"parts", Json::array()},
+                   {"failed", meshes.failed},
                    {"bytes", meshes.bytes}};
     // A change in the moments before the load counts too: file times are coarse.
     const auto limit = stampTime(loadStarted - std::chrono::seconds(2));

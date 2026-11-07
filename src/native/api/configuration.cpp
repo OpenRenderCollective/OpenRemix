@@ -37,28 +37,23 @@ namespace remix::api {
       return g_runtime.selectBackend(value);
     if (std::strncmp(key, "rtx.native.pathtrace.", 21) == 0)
       return g_runtime.configureTracing(key + 21, value);
-    const bool clearColor = std::strlen(key) == 23 && std::strncmp(key, "rtx.native.clearColor.", 22) == 0 &&
-                            std::strchr("rgba", key[22]);
+    const bool clearColor =
+        std::strlen(key) == 23 && std::strncmp(key, "rtx.native.clearColor.", 22) == 0 && std::strchr("rgba", key[22]);
     if (std::strcmp(key, "rtx.native.vsync") == 0 || clearColor ||
         std::strcmp(key, "rtx.native.textures.keepCompressed") == 0 ||
         std::strcmp(key, "rtx.native.capture.retainTextureData") == 0 || std::strcmp(key, "rtx.zUp") == 0 ||
         std::strcmp(key, "rtx.native.vramStatistics") == 0 ||
-        std::strcmp(key, "rtx.native.meshes.refreshInPlace") == 0 ||
-        std::strcmp(key, "rtx.native.hostPasses") == 0 ||
+        std::strcmp(key, "rtx.native.meshes.refreshInPlace") == 0 || std::strcmp(key, "rtx.native.hostPasses") == 0 ||
         std::strcmp(key, "rtx.native.scene.persistentStatic") == 0 ||
         std::strcmp(key, "rtx.native.scene.persistentStaticValidation") == 0 ||
-        std::strcmp(key, "rtx.native.asyncPresent") == 0 ||
-        std::strcmp(key, "rtx.native.frameGeneration") == 0 ||
+        std::strcmp(key, "rtx.native.asyncPresent") == 0 || std::strcmp(key, "rtx.native.frameGeneration") == 0 ||
         std::strcmp(key, "rtx.native.frameGenerationBackend") == 0 ||
-        std::strcmp(key, "rtx.native.frameGenerationFrames") == 0 ||
-        std::strcmp(key, "rtx.native.lowLatency") == 0 ||
+        std::strcmp(key, "rtx.native.frameGenerationFrames") == 0 || std::strcmp(key, "rtx.native.lowLatency") == 0 ||
         std::strcmp(key, "rtx.native.gpuPassTimers") == 0 || std::strncmp(key, "rtx.native.sky.", 15) == 0 ||
-        std::strncmp(key, "rtx.native.particles.", 21) == 0 ||
-        std::strncmp(key, "rtx.atmosphere.", 15) == 0)
+        std::strncmp(key, "rtx.native.particles.", 21) == 0 || std::strncmp(key, "rtx.atmosphere.", 15) == 0)
       return g_runtime.configureSetting(key, value);
     // Recognized legacy renderer namespace: accepted but ignored by the unlit renderer.
-    return std::strncmp(key, "rtx.", 4) == 0 ? REMIXAPI_ERROR_CODE_SUCCESS
-                                           : REMIXAPI_ERROR_CODE_FEATURE_UNAVAILABLE;
+    return std::strncmp(key, "rtx.", 4) == 0 ? REMIXAPI_ERROR_CODE_SUCCESS : REMIXAPI_ERROR_CODE_FEATURE_UNAVAILABLE;
   }
 
 } // namespace remix::api
@@ -73,7 +68,6 @@ REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_SetConfigDefaultEXT(const cha
     return REMIXAPI_ERROR_CODE_NOT_INITIALIZED;
   if (std::strncmp(key, "rtx.native.", 11) != 0)
     // Legacy renderer namespaces: accepted and ignored, as SetConfigVariable.
-    return std::strncmp(key, "rtx.", 4) == 0 ? REMIXAPI_ERROR_CODE_SUCCESS
-                                           : REMIXAPI_ERROR_CODE_FEATURE_UNAVAILABLE;
+    return std::strncmp(key, "rtx.", 4) == 0 ? REMIXAPI_ERROR_CODE_SUCCESS : REMIXAPI_ERROR_CODE_FEATURE_UNAVAILABLE;
   return g_runtime.configureDefault(key, value);
 }

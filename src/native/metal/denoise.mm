@@ -109,8 +109,8 @@ namespace remix::metal::denoise {
   Renderer::Renderer() = default;
   Renderer::~Renderer() = default;
 
-  void Renderer::initialize(id<MTLDevice> device, uint32_t width, uint32_t height, bool reblur, bool sigma,
-                            bool local, bool localDenoise, bool split, bool validation, bool localReconstruction,
+  void Renderer::initialize(id<MTLDevice> device, uint32_t width, uint32_t height, bool reblur, bool sigma, bool local,
+                            bool localDenoise, bool split, bool validation, bool localReconstruction,
                             bool foregroundDenoise, bool rayReconstruction) {
     m_gpu = std::make_unique<Gpu>();
     auto &g = *m_gpu;
@@ -199,12 +199,11 @@ namespace remix::metal::denoise {
     // Indirect light is denoised as SH and resolved per pixel (denoise.comp):
     // legacy diffuse, and both lobes of PBR surfaces. The translucent front
     // layer and the direct local-light pass stay plain radiance.
-    const nrd::DenoiserDesc denoiser{
-        0, sigmaPass ? nrd::Denoiser::SIGMA_SHADOW_TRANSLUCENCY
-           : pbrPass ? (pass.foreground ? nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR
-                                        : nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR_SH)
-           : localPass ? nrd::Denoiser::REBLUR_DIFFUSE
-                       : nrd::Denoiser::REBLUR_DIFFUSE_SH};
+    const nrd::DenoiserDesc denoiser{0, sigmaPass   ? nrd::Denoiser::SIGMA_SHADOW_TRANSLUCENCY
+                                        : pbrPass   ? (pass.foreground ? nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR
+                                                                       : nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR_SH)
+                                        : localPass ? nrd::Denoiser::REBLUR_DIFFUSE
+                                                    : nrd::Denoiser::REBLUR_DIFFUSE_SH};
     nrd::InstanceCreationDesc create{};
     create.denoisers = &denoiser;
     create.denoisersNum = 1;
@@ -490,7 +489,7 @@ namespace remix::metal::denoise {
       case R::OUT_SHADOW_TRANSLUCENCY:
         return images[ShadowOutput];
       case R::IN_MV:
-        return images[pass.foreground                                      ? FrontMotion
+        return images[pass.foreground                                       ? FrontMotion
                       : pass.local || (pass.pbr && local && frame.local[0]) ? LocalMotion
                                                                             : Motion];
       case R::IN_NORMAL_ROUGHNESS:
@@ -500,8 +499,10 @@ namespace remix::metal::denoise {
       case R::IN_DIFF_RADIANCE_HITDIST:
         return images[pass.foreground ? FrontDiffuse : pass.pbr ? Sh0 : pass.emissive ? EmissiveInput : LocalInput];
       case R::OUT_DIFF_RADIANCE_HITDIST:
-        return images[pass.foreground ? FrontDiffuseOutput : pass.pbr ? PbrDiffuseOutput
-                      : pass.emissive ? EmissiveOutput : LocalOutput];
+        return images[pass.foreground ? FrontDiffuseOutput
+                      : pass.pbr      ? PbrDiffuseOutput
+                      : pass.emissive ? EmissiveOutput
+                                      : LocalOutput];
       case R::IN_SPEC_RADIANCE_HITDIST:
         return images[pass.foreground ? FrontSpecular : PbrSpecularInput];
       case R::OUT_SPEC_RADIANCE_HITDIST:
@@ -554,8 +555,7 @@ namespace remix::metal::denoise {
         throw Error("NRD constant limit exceeded");
       const NSUInteger position = pass.constantStride * i;
       if (d.constantBufferDataSize)
-        std::memcpy(static_cast<char *>(constants.contents) + position, d.constantBufferData,
-                    d.constantBufferDataSize);
+        std::memcpy(static_cast<char *>(constants.contents) + position, d.constantBufferData, d.constantBufferDataSize);
       p.common.buffer(offset.constantBufferOffset + desc.constantBufferRegisterIndex, constants, position);
       [encoder setComputePipelineState:p.state];
       [encoder setBuffer:arguments offset:p.resources.offset() atIndex:0];
@@ -597,8 +597,7 @@ namespace remix::metal::denoise {
       g.recordNrd(*g.pbr, encoder);
     if (g.sigma)
       g.recordNrd(*g.shadow, encoder);
-    if (g.localDirect && g.frame.shadow[3] && g.frame.local[0] &&
-        (g.split ? g.frame.families[0] : g.frame.local[1]))
+    if (g.localDirect && g.frame.shadow[3] && g.frame.local[0] && (g.split ? g.frame.families[0] : g.frame.local[1]))
       g.recordNrd(*g.localDirect, encoder);
     if (g.emissiveDirect && g.frame.shadow[3] && g.frame.local[0] && g.frame.families[1])
       g.recordNrd(*g.emissiveDirect, encoder);

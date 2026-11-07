@@ -100,8 +100,7 @@ namespace remix {
       // The composite's exposure (postfx/shaders/composite.glsl), as the
       // last completed frame measured it.
       const auto &options = m_traceOptions;
-      inputs.exposure =
-          options.exposure * (options.autoExposure ? m_pathTracer->postStatistics().exposure : 1.f);
+      inputs.exposure = options.exposure * (options.autoExposure ? m_pathTracer->postStatistics().exposure : 1.f);
       inputs.display[0] |= lighting.skyRadiance[3] > 0 && lighting.environmentSrgb ? 2u : 0u;
     } else {
       // The raster backend: the scene's sun and sky colour, unshadowed and

@@ -124,8 +124,7 @@ namespace remix::scene {
     void stage(const Draw &draw, uint32_t textureFrame = 0) { stage(Draw(draw), textureFrame); }
     // Stores the draw under instanceId (default: its own), consuming it.
     void stage(Draw &&draw, uint32_t textureFrame = 0);
-    void stage(Draw &&draw, uint64_t instanceId, uint32_t textureFrame,
-               const std::array<float, 4> &uv = {1, 1, 0, 0});
+    void stage(Draw &&draw, uint64_t instanceId, uint32_t textureFrame, const std::array<float, 4> &uv = {1, 1, 0, 0});
     void commit();
     void clear();
     bool reset() const { return m_reset; }

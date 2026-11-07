@@ -61,7 +61,9 @@ namespace remix {
     remixapi_FramePerformanceEXT framePerformance() const {
       return busyState() ? busyState()->performance : m_framePerformance;
     }
-    remixapi_FrameBreakdownEXT frameBreakdown() const { return busyState() ? busyState()->breakdown : m_frameBreakdown; }
+    remixapi_FrameBreakdownEXT frameBreakdown() const {
+      return busyState() ? busyState()->breakdown : m_frameBreakdown;
+    }
     // The developer UI's view of the runtime (ui/status.h), the same
     // queries the Vulkan runtime answers (metal/ui.mm).
     ui::DeviceStatus uiDevice() const;
@@ -95,14 +97,16 @@ namespace remix {
     remixapi_LocalLightSetStatisticsEXT localLightSetStatistics() const {
       if (const auto *busy = busyState())
         return busy->localLightSet;
-      return m_pathTracer && m_backend ? m_pathTracer->localLightSetStatistics()
-                                       : remixapi_LocalLightSetStatisticsEXT{.structSize = sizeof(remixapi_LocalLightSetStatisticsEXT)};
+      return m_pathTracer && m_backend
+                 ? m_pathTracer->localLightSetStatistics()
+                 : remixapi_LocalLightSetStatisticsEXT{.structSize = sizeof(remixapi_LocalLightSetStatisticsEXT)};
     }
     remixapi_CameraCullingStatisticsEXT cameraCullingStatistics() const {
       if (const auto *busy = busyState())
         return busy->cameraCulling;
-      return m_pathTracer && m_backend ? m_pathTracer->cameraCullingStatistics()
-                                       : remixapi_CameraCullingStatisticsEXT{.structSize = sizeof(remixapi_CameraCullingStatisticsEXT)};
+      return m_pathTracer && m_backend
+                 ? m_pathTracer->cameraCullingStatistics()
+                 : remixapi_CameraCullingStatisticsEXT{.structSize = sizeof(remixapi_CameraCullingStatisticsEXT)};
     }
     bool latencyRequested() const { return false; }
     bool latencyActive() const { return false; }

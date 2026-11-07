@@ -155,8 +155,8 @@ namespace remix {
         interpolator.farPlane = std::isfinite(range.farPlane) ? range.farPlane : 1e6f;
         const float focal = std::abs(projection[5]);
         interpolator.fieldOfView = focal > 0 ? 2 * std::atan(1 / focal) * 57.29577951f : 60;
-        interpolator.aspectRatio = projection[0] != 0 ? std::abs(projection[5] / projection[0])
-                                                      : float(g.width) / float(g.height);
+        interpolator.aspectRatio =
+            projection[0] != 0 ? std::abs(projection[5] / projection[0]) : float(g.width) / float(g.height);
         interpolator.shouldResetHistory = reset;
         if (!reset) {
           [interpolator encodeToCommandBuffer:command];
@@ -508,9 +508,8 @@ namespace remix {
     pass.depthAttachment.storeAction =
         raster.splitsFrame() || rasterSky || particles ? MTLStoreActionStore : MTLStoreActionDontCare;
     pass.depthAttachment.clearDepth = 1;
-    id<MTLRenderCommandEncoder> encoder =
-        metal::renderEncoder(command, pass, tracing ? @"Composite, tonemap and raster overlay" : @"Raster scene",
-                             g.width, g.height);
+    id<MTLRenderCommandEncoder> encoder = metal::renderEncoder(
+        command, pass, tracing ? @"Composite, tonemap and raster overlay" : @"Raster scene", g.width, g.height);
     // The frame's pass again, after passes of its own (the previous encoder ended).
     const auto resume = [&](NSString *label) {
       auto *next = [MTLRenderPassDescriptor renderPassDescriptor];
@@ -671,7 +670,8 @@ namespace remix {
         }
         // Half the frame's GPU time: a pace from the measured frame interval
         // would grow with the time frames wait for it.
-        const auto pace = std::chrono::duration<double>(std::clamp((buffer.GPUEndTime - buffer.GPUStartTime) * .5, 0., .05));
+        const auto pace =
+            std::chrono::duration<double>(std::clamp((buffer.GPUEndTime - buffer.GPUStartTime) * .5, 0., .05));
         dispatch_async(presentDispatch, ^{
           @autoreleasepool {
             // A presenting command buffer for source (uncommitted), or nil.
@@ -737,18 +737,28 @@ namespace remix {
     if (ImGui::IsKeyDown(ImGuiKey_LeftCtrl) || ImGui::IsKeyDown(ImGuiKey_RightCtrl))
       speed *= 0.25f;
     float moveForward = 0.0f, moveRight = 0.0f, moveUp = 0.0f;
-    if (ImGui::IsKeyDown(ImGuiKey_W)) moveForward += speed;
-    if (ImGui::IsKeyDown(ImGuiKey_S)) moveForward -= speed;
-    if (ImGui::IsKeyDown(ImGuiKey_D)) moveRight += speed;
-    if (ImGui::IsKeyDown(ImGuiKey_A)) moveRight -= speed;
-    if (ImGui::IsKeyDown(ImGuiKey_E)) moveUp += speed;
-    if (ImGui::IsKeyDown(ImGuiKey_Q)) moveUp -= speed;
+    if (ImGui::IsKeyDown(ImGuiKey_W))
+      moveForward += speed;
+    if (ImGui::IsKeyDown(ImGuiKey_S))
+      moveForward -= speed;
+    if (ImGui::IsKeyDown(ImGuiKey_D))
+      moveRight += speed;
+    if (ImGui::IsKeyDown(ImGuiKey_A))
+      moveRight -= speed;
+    if (ImGui::IsKeyDown(ImGuiKey_E))
+      moveUp += speed;
+    if (ImGui::IsKeyDown(ImGuiKey_Q))
+      moveUp -= speed;
     const float turnSpeed = m_freeCamera.turningSpeed * dt * 2.0f;
     const float pitchDir = m_freeCamera.invertY ? -1.0f : 1.0f;
-    if (ImGui::IsKeyDown(ImGuiKey_J)) m_freeCamera.yaw -= turnSpeed;
-    if (ImGui::IsKeyDown(ImGuiKey_L)) m_freeCamera.yaw += turnSpeed;
-    if (ImGui::IsKeyDown(ImGuiKey_I)) m_freeCamera.pitch += pitchDir * turnSpeed;
-    if (ImGui::IsKeyDown(ImGuiKey_K)) m_freeCamera.pitch -= pitchDir * turnSpeed;
+    if (ImGui::IsKeyDown(ImGuiKey_J))
+      m_freeCamera.yaw -= turnSpeed;
+    if (ImGui::IsKeyDown(ImGuiKey_L))
+      m_freeCamera.yaw += turnSpeed;
+    if (ImGui::IsKeyDown(ImGuiKey_I))
+      m_freeCamera.pitch += pitchDir * turnSpeed;
+    if (ImGui::IsKeyDown(ImGuiKey_K))
+      m_freeCamera.pitch -= pitchDir * turnSpeed;
     if (!io.WantCaptureMouse) {
       if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
         const float mouseSens = m_freeCamera.turningSpeed * 0.005f;
@@ -761,8 +771,10 @@ namespace remix {
     constexpr float maxPitch = 1.55f;
     m_freeCamera.pitch = std::clamp(m_freeCamera.pitch, -maxPitch, maxPitch);
     constexpr float twoPi = 6.28318530718f;
-    while (m_freeCamera.yaw > 3.14159265359f) m_freeCamera.yaw -= twoPi;
-    while (m_freeCamera.yaw < -3.14159265359f) m_freeCamera.yaw += twoPi;
+    while (m_freeCamera.yaw > 3.14159265359f)
+      m_freeCamera.yaw -= twoPi;
+    while (m_freeCamera.yaw < -3.14159265359f)
+      m_freeCamera.yaw += twoPi;
     if ((moveForward != 0.0f || moveRight != 0.0f || moveUp != 0.0f) && m_raster.cameraValid()) {
       const scene::Matrix viewToWorld = scene::inverse(m_raster.view());
       const float upSign = viewToWorld[5] < 0.0f ? -1.0f : 1.0f;

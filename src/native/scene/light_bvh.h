@@ -19,7 +19,7 @@ namespace remix::scene {
   };
   struct LightNode {
     float minimumPower[4] = {};
-    float maximum[4] = {};  // xyz bounds; w largest emitter radius squared
+    float maximum[4] = {}; // xyz bounds; w largest emitter radius squared
     // Internal: left, right, first leaf rank, leaf count. Leaf: leaf rank,
     // emitter count, first emitter, 1. A leaf's emitters are consecutive;
     // LightEmitter::shaping[2] holds the running share of the leaf's power
@@ -141,8 +141,7 @@ namespace remix::scene {
     double buildMilliseconds = 0, buildTotalMilliseconds = 0;
     // Same bounded-distance importance estimate as the shader; useful for PDF
     // validation.
-    static double weight(const LightNode &node, const float position[3], const float normal[3],
-                         double range = 0);
+    static double weight(const LightNode &node, const float position[3], const float normal[3], double range = 0);
     static double falloff(double distanceSquared, double range);
     // Updates a new light stays in the dynamic part before it counts as at
     // rest, and between builds.
@@ -155,9 +154,9 @@ namespace remix::scene {
     std::vector<MovedLight> m_moved;
     // staticSeen: the update each static light was last present in (absent
     // ones keep their slot, unlit).
-    void build(std::vector<SphereLight> statics, std::vector<uint64_t> staticStamps,
-               std::vector<uint64_t> staticSeen, std::vector<SphereLight> dynamics,
-               std::vector<uint64_t> dynamicStamps, std::vector<uint64_t> dynamicSeen, Reason reason);
+    void build(std::vector<SphereLight> statics, std::vector<uint64_t> staticStamps, std::vector<uint64_t> staticSeen,
+               std::vector<SphereLight> dynamics, std::vector<uint64_t> dynamicStamps,
+               std::vector<uint64_t> dynamicSeen, Reason reason);
     void buildDynamic();
     // Leaves over the emitters [begin, end) (m_clusters, m_centers).
     void makeClusters(uint32_t begin, uint32_t end);
@@ -209,7 +208,7 @@ namespace remix::scene {
     // Scratch of update (storage kept): see there.
     std::vector<uint32_t> m_extraIndex, m_mergeSource;
     std::vector<uint64_t> m_mergeStamps, m_mergeSeen;
-    bool m_split = false;           // root -> static part, dynamic part
+    bool m_split = false; // root -> static part, dynamic part
     // Static and dynamic emitters; a part without lights keeps one unlit slot.
     uint32_t m_staticReal = 0, m_dynamicReal = 0;
     uint32_t m_staticCount = 0, m_staticNodes = 0, m_staticDepth = 0;

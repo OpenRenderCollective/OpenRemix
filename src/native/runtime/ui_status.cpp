@@ -55,7 +55,7 @@ namespace remix {
     result.ungenerated = m_ungeneratedFrames;
     result.renderedInterval = m_renderedInterval;
     result.presentImages = m_swapchainImages.size();
-    result.presentMode = m_presentMode == VK_PRESENT_MODE_IMMEDIATE_KHR  ? "immediate"
+    result.presentMode = m_presentMode == VK_PRESENT_MODE_IMMEDIATE_KHR ? "immediate"
                          : m_presentMode == VK_PRESENT_MODE_MAILBOX_KHR ? "mailbox"
                          : m_presentMode == VK_PRESENT_MODE_FIFO_KHR    ? "FIFO (vsync)"
                                                                         : "other present mode";

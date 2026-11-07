@@ -136,11 +136,9 @@ namespace remix {
     }
     const VkDescriptorSetLayoutBinding binding = {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1,
                                                   VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
-    const VkDescriptorSetLayoutCreateInfo set = {.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-                                                 .bindingCount = 1,
-                                                 .pBindings = &binding};
-    check(pipeline::createDescriptorSetLayout(device, &set, nullptr,
-                                              &g.setLayout));
+    const VkDescriptorSetLayoutCreateInfo set = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, .bindingCount = 1, .pBindings = &binding};
+    check(pipeline::createDescriptorSetLayout(device, &set, nullptr, &g.setLayout));
     const VkDescriptorPoolSize size = {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 16384};
     const VkDescriptorPoolCreateInfo pool = {.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
                                              .flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
@@ -148,17 +146,15 @@ namespace remix {
                                              .poolSizeCount = 1,
                                              .pPoolSizes = &size};
     check(vkCreateDescriptorPool(device, &pool, nullptr, &g.pool));
-    const VkPushConstantRange push = {VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-                                      sizeof(Push)};
+    const VkPushConstantRange push = {VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(Push)};
     const VkPipelineLayoutCreateInfo layout = {.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
                                                .setLayoutCount = 1,
                                                .pSetLayouts = &g.setLayout,
                                                .pushConstantRangeCount = 1,
                                                .pPushConstantRanges = &push};
     check(pipeline::createPipelineLayout(device, &layout, nullptr, &g.layout));
-    VkShaderModuleCreateInfo shader = {.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-                                       .codeSize = sizeof(vertShader),
-                                       .pCode = vertShader};
+    VkShaderModuleCreateInfo shader = {
+        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, .codeSize = sizeof(vertShader), .pCode = vertShader};
     check(pipeline::createShaderModule(device, &shader, nullptr, &g.vertex));
     shader.codeSize = sizeof(fragShader);
     shader.pCode = fragShader;
@@ -204,9 +200,7 @@ namespace remix {
 
   VkFormat RasterRenderer::depthFormat() const { return m_gpu->depthFormat; }
 
-  std::shared_ptr<void> RasterRenderer::depthLifetime() const {
-    return m_gpu->depth;
-  }
+  std::shared_ptr<void> RasterRenderer::depthLifetime() const { return m_gpu->depth; }
 
   VkImageView RasterRenderer::depthView() const { return m_gpu->depth->view; }
 
