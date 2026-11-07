@@ -704,8 +704,11 @@ void HostPasses::record(VkCommandBuffer command, uint32_t slotIndex, VkImage ima
   std::vector<Upload> uploads;
   {
     std::lock_guard lock(m_mutex);
-    passes = std::move(m_pending);
-    m_pending.clear();
+    // The host's latest list, kept for the frames that come before its next
+    // one (presentation runs on its own thread: a frame recorded between two
+    // submissions drew none of the passes, and the effect flickered). The host
+    // submits every frame, an empty list when it has no passes.
+    passes = m_pending;
     uploads = std::move(m_uploads);
     m_uploads.clear();
     m_stats.passes = uint32_t(passes.size());
