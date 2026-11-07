@@ -136,10 +136,7 @@ namespace remix {
       m_inspectY = int(io.MousePos.y / io.DisplaySize.y * float(height));
       uiInspectPixel(m_inspectX, m_inspectY);
     }
-    if (!ImGui::CollapsingHeader("Path inspector")) {
-      if (m_inspecting)
-        ImGui::TextDisabled("Path inspector: pixel %d, %d", m_inspectX, m_inspectY);
-    } else {
+    if (ui::Panel panel{"Path inspector"}) {
       if (ui::Checkbox("Inspect a pixel (click the scene)", &m_inspecting) && !m_inspecting)
         uiInspectPixel(-1, -1);
       if (ImGui::IsItemHovered())
@@ -191,6 +188,9 @@ namespace remix {
           ImGui::EndTable();
         }
       }
+    } else {
+      if (m_inspecting)
+        ImGui::TextDisabled("Path inspector: pixel %d, %d", m_inspectX, m_inspectY);
     }
     if (!m_inspecting || inspection.records.empty() || !inspection.width)
       return;
@@ -257,8 +257,8 @@ namespace remix {
       ImGui::Text("Longest presentation gap: %.1f ms (includes application idle time)", m_longestPresentationGap);
     }
     auto &options = settings.trace;
-    const bool rrActive = reconstructionDenoises();
-    if (ImGui::CollapsingHeader("Debug views", ImGuiTreeNodeFlags_DefaultOpen)) {
+    const bool rrActive = uiReconstruction().denoises;
+    if (ui::Panel panel{"Debug views", ImGuiTreeNodeFlags_DefaultOpen}) {
       int view = int(options.debugView);
       if (ui::Combo("Debug view", &view,
                     "Final lighting\0Albedo\0Shading normals\0Triangle IDs\0Depth bands\0World position grid\0"
@@ -323,7 +323,7 @@ namespace remix {
     ui::Checkbox("Force dynamic TLAS rebuild", &options.forceRebuild);
     ui::Checkbox("Freeze emissive radiance", &options.freezeEmissiveRadiance);
     drawPathInspector();
-    if (ImGui::CollapsingHeader("Free Camera", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (ui::Panel panel{"Free Camera", ImGuiTreeNodeFlags_DefaultOpen}) {
       ui::Checkbox("Enable Free Camera", &m_freeCamera.enabled);
       if (m_freeCamera.enabled) {
         ImGui::Indent();
@@ -337,7 +337,7 @@ namespace remix {
         if (ImGui::Button("Reset Camera")) {
           m_freeCamera.reset();
         }
-        if (ImGui::CollapsingHeader("Controls Guide")) {
+        if (ui::Panel guide{"Controls guide"}) {
           ImGui::BulletText("W / S: Move Forward / Backward");
           ImGui::BulletText("A / D: Move Left / Right");
           ImGui::BulletText("E / Q: Move Up / Down");
@@ -349,7 +349,7 @@ namespace remix {
         ImGui::Unindent();
       }
     }
-    if (ImGui::CollapsingHeader("Performance statistics", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (ui::Panel panel{"Performance statistics", ImGuiTreeNodeFlags_DefaultOpen}) {
       const auto device = uiDevice();
       ImGui::TextWrapped("%s", device.name.c_str());
       ImGui::TextWrapped("%s", device.api.c_str());
@@ -373,7 +373,7 @@ namespace remix {
                             "sheets.\nDenoiser timings are reported separately.");
       }
     }
-    if (ImGui::CollapsingHeader("GPU pass timings", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (ui::Panel panel{"GPU pass timings", ImGuiTreeNodeFlags_DefaultOpen}) {
       ui::Checkbox("GPU pass timers", &settings.gpuPassTimers);
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Timestamps around every GPU pass of the frame (rtx.native.gpuPassTimers).\n"
@@ -381,7 +381,7 @@ namespace remix {
                           "without waiting, so they describe the frame completed two frames ago.");
       drawGpuPassTimings(settings.gpuPassTimers);
     }
-    if (ImGui::CollapsingHeader("Present CPU breakdown")) {
+    if (ui::Panel panel{"Present CPU breakdown"}) {
       // Previous Present; this panel is drawn while the current one records.
       const auto present = uiPresent();
       const auto &p = present.performance;
@@ -465,9 +465,9 @@ namespace remix {
                          (unsigned long long)p.geometryConversions, double(p.uploadBytes) / (1024 * 1024),
                          double(b.rasterUploadBytes) / (1024 * 1024), (unsigned long long)b.rasterSkinnedVertices);
     }
-    if (ImGui::CollapsingHeader("Input and clear color", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (ui::Panel panel{"Input and clear color", ImGuiTreeNodeFlags_DefaultOpen}) {
       ui::ColorEdit3("Clear color", settings.clearColor.data());
-      ui::InputText("Input", m_input, sizeof(m_input));
+      ui::InputText("Input", uiInput(), uiInputSize());
     }
   }
 } // namespace remix

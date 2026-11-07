@@ -1,6 +1,5 @@
 // The developer UI's view of the Vulkan runtime (ui/status.h): what the shared
-// tabs (ui/rendering.cpp, lighting.cpp, post_processing.cpp, diagnostics.cpp,
-// textures.cpp) ask of the backend, answered from its own state. metal/ui.mm
+// tabs (ui/settings.cpp, diagnostics.cpp, textures.cpp) ask of the backend, answered from its own state. metal/ui.mm
 // answers the same queries in Metal builds.
 #include "runtime/runtime.h"
 #include "upscale/ngx.h"

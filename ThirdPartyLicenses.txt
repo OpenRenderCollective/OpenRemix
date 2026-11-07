@@ -4,6 +4,10 @@ Dear ImGui v1.92.9b (core, SDL3 backend, Vulkan backend)
 Copyright (c) 2014-2026 Omar Cornut and Dear ImGui contributors
 MIT license; full notice: third_party/imgui/LICENSE.txt (included in packages).
 
+Inter 4.1 (Regular), the settings panel's font
+Copyright (c) 2016 The Inter Project Authors
+SIL Open Font License 1.1; full notice: third_party/inter/LICENSE.txt (included in packages as Inter.txt).
+
 SDL3 3.4.14
 Copyright (C) 1997-2026 Sam Lantinga and SDL contributors
 zlib license; full notice: SDL source LICENSE.txt (included in packages).

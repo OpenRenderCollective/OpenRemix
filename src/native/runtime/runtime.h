@@ -84,6 +84,9 @@ namespace remix {
     int configureSharedFrame(remixapi_EditorSharedFrame &frame);
     bool modsDisabled() const { return m_disableMods; }
     bool isHeadless() const { return m_headless; }
+    // Diagnostics' text input test field (ui/diagnostics.cpp), as on Metal.
+    char *uiInput() { return m_input; }
+    size_t uiInputSize() const { return sizeof(m_input); }
     bool isInitialized() const { return m_initialized; }
     uint64_t presentationCount() const {
       if (const auto *busy = busyState())
@@ -298,11 +301,16 @@ namespace remix {
     bool initializeUiVulkan();
     void shutdownUiVulkan();
     void drawUi(VkCommandBuffer commandBuffer);
-    void drawRenderingTab(config::Settings &settings);
+    // The panel's settings tabs (all in ui/settings.cpp, dispatched by ui::Tab).
+    void drawSettingsTab(int tab, config::Settings &settings);
+    void drawDisplayTab(config::Settings &settings);
     void drawLightingTab(config::Settings &settings);
+    void drawMaterialsTab(config::Settings &settings);
     void drawSkyTab(config::Settings &settings);
-    void drawPostProcessingTab(config::Settings &settings);
+    void drawPostProcessTab(config::Settings &settings);
+    void drawPerformanceTab(config::Settings &settings);
     void drawDiagnosticsTab(config::Settings &settings);
+    void drawCaptureTab(config::Settings &settings);
     void drawTexturesTab(config::Settings &settings);
     // The developer UI's view of the runtime (ui/status.h, runtime/ui_status.cpp):
     // the shared tabs ask through these what differs from the Metal runtime.

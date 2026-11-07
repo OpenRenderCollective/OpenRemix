@@ -1,5 +1,6 @@
 #include <cstdio>
 #include "runtime/runtime.h"
+#include "ui/theme.h"
 #if REMIX_HAS_USD
 #include "usd/mods.h"
 #endif
@@ -35,6 +36,7 @@ namespace remix {
     // A host window usually hides the OS cursor on its thread (games do), so
     // draw ImGui's own while the menu is open and the OS cursor is hidden.
     ImGui::GetIO().MouseDrawCursor = m_window.embedded() && m_uiState != REMIXAPI_UI_STATE_NONE && !SDL_CursorVisible();
+    ui::theme::setColors(m_profiles.panel().background, m_profiles.panel().accent);
     ImGui::NewFrame();
     if (preparationPending() || !m_preparationFailure.empty()) {
       const auto stats = m_pipelines->statistics();
@@ -80,27 +82,7 @@ namespace remix {
     if (m_uiState != REMIXAPI_UI_STATE_NONE) {
       const bool open =
           ui::drawPanel(m_profiles, m_profileUi, this, [](void *user, int tab, config::Settings &settings) {
-            auto &runtime = *static_cast<RemixNativeRuntime *>(user);
-            switch (tab) {
-            case 0:
-              runtime.drawRenderingTab(settings);
-              break;
-            case 1:
-              runtime.drawLightingTab(settings);
-              break;
-            case 2:
-              runtime.drawSkyTab(settings);
-              break;
-            case 3:
-              runtime.drawPostProcessingTab(settings);
-              break;
-            case 4:
-              runtime.drawDiagnosticsTab(settings);
-              break;
-            case 5:
-              runtime.drawTexturesTab(settings);
-              break;
-            }
+            static_cast<RemixNativeRuntime *>(user)->drawSettingsTab(tab, settings);
           });
       if (!open)
         setUiState(REMIXAPI_UI_STATE_NONE);

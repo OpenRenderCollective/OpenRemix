@@ -318,13 +318,17 @@ namespace remix {
     scene::ParticleFrame m_particleFrame;
     std::chrono::steady_clock::time_point m_particleClock{}, m_particleStart = std::chrono::steady_clock::now();
     uint32_t m_particleUpAxis = 2; // the up axis the last traced frame resolved
-    // The developer UI's tabs (ui/rendering.cpp, lighting.cpp,
-    // post_processing.cpp, diagnostics.cpp, textures.cpp), shared with Vulkan builds.
-    void drawRenderingTab(config::Settings &settings);
+    // The panel's settings tabs, shared with Vulkan builds (ui/settings.cpp,
+    // dispatched by ui::Tab; the tool tabs have their own ui/ sources).
+    void drawSettingsTab(int tab, config::Settings &settings);
+    void drawDisplayTab(config::Settings &settings);
     void drawLightingTab(config::Settings &settings);
+    void drawMaterialsTab(config::Settings &settings);
     void drawSkyTab(config::Settings &settings);
-    void drawPostProcessingTab(config::Settings &settings);
+    void drawPostProcessTab(config::Settings &settings);
+    void drawPerformanceTab(config::Settings &settings);
     void drawDiagnosticsTab(config::Settings &settings);
+    void drawCaptureTab(config::Settings &settings);
     void drawGpuPassTimings(bool enabled);
     void drawTexturesTab(config::Settings &settings);
     // The diagnostics tab's path inspector (uiPathInspection).

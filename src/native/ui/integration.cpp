@@ -30,6 +30,7 @@ namespace remix {
     io.LogFilename = nullptr;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     ui::toolkitStyle();
+    ui::toolkitFont();
     if (!ImGui_ImplSDL3_InitForVulkan(m_window.handle())) {
       return false;
     }
