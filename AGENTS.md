@@ -25,7 +25,9 @@ XeSS Super Resolution is Windows only, like FSR 4: it loads Intel's signed `libx
 XeSS SDK 3.0.2 submodule `third_party/xess/xess`, pinned in `third_party/xess/upstream.json` and
 required by Windows builds (`git submodule update --init third_party/xess/xess`; `upscale/xess.h`).
 Use two-space indentation and attached braces;
-`.clang-format` covers maintained first-party C/C++ only.
+`.clang-format` covers maintained first-party C/C++ only (`.clang-format-ignore` lists the
+vendored, generated and recorded sources it skips). Format with
+`meson compile -C _work/build/native clang-format`; `clang-format-check` reports unformatted files.
 
 Build: `CC=clang CXX=clang++ meson setup _work/build/native && meson compile -C _work/build/native`.
 Test: `meson test -C _work/build/native --print-errorlogs`.
