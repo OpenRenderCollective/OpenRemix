@@ -280,6 +280,7 @@ namespace remix {
     trace::g_accelNow.total = trace::g_accelNow.bottom + trace::g_accelNow.top;
     if (trace::g_accelNow.total > trace::g_accelCosts.total)
       trace::g_accelCosts = trace::g_accelNow;
+    profileAcceleration();
     trace::g_accelNow = {};
     // An empty frame uploads one default surface.
     const TraceSurface emptySurface{};
@@ -1685,6 +1686,33 @@ namespace remix {
       if (top.instances)
         stats.accelerationBytes += top.instances->size;
     stats.peakAccelerationBytes = std::max(stats.accelerationBytes, stats.peakAccelerationBytes);
+  }
+
+  // REMIX_ACCEL_PROFILE=<file>: a CSV row per recorded frame with its
+  // acceleration structure work (wall-clock time, so other recordings can be
+  // lined up with it). The GPU build time is the last one read back, a few
+  // frames behind the others.
+  void PathTracer::Gpu::profileAcceleration() {
+    static FILE *file = [] {
+      const char *path = std::getenv("REMIX_ACCEL_PROFILE");
+      FILE *out = path && *path ? std::fopen(path, "a") : nullptr;
+      if (out && std::ftell(out) == 0)
+        std::fprintf(out, "time_ms,geometry_ms,conversions,bottom_ms,top_ms,blas_builds,blas_refits,built_triangles,"
+                          "refit_triangles,structures_created,top_update,top_instances,gpu_build_ms\n");
+      return out;
+    }();
+    if (!file)
+      return;
+    const auto &a = trace::g_accelNow;
+    const auto now =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+            .count();
+    std::fprintf(file, "%lld,%.3f,%llu,%.3f,%.3f,%u,%u,%llu,%llu,%u,%d,%u,%.3f\n", static_cast<long long>(now),
+                 tickMilliseconds(geometryTicks), static_cast<unsigned long long>(performance.geometryConversions),
+                 a.bottom, a.top, a.bottomBuilds - a.bottomRefits, a.bottomRefits,
+                 static_cast<unsigned long long>(a.builtTriangles), static_cast<unsigned long long>(a.refitTriangles),
+                 a.created, int(a.update), a.topInstances, double(stats.gpuBuildMilliseconds));
+    std::fflush(file);
   }
 
   scene::TraceFrame PathTracer::prepareScene(RasterRenderer &resources, const TraceOptions &options) const {

@@ -216,10 +216,17 @@ namespace remix {
       ranges.push_back(g->ranges.data());
       address += align(g->update ? g->sizes.updateScratchSize : g->sizes.buildScratchSize,
                        asProperties.minAccelerationStructureScratchOffsetAlignment);
-      if (g->update)
+      uint64_t triangles = 0;
+      for (const auto &range : g->ranges)
+        triangles += range.primitiveCount;
+      if (g->update) {
         ++stats.blasRefits;
-      else
+        ++trace::g_accelNow.bottomRefits;
+        trace::g_accelNow.refitTriangles += triangles;
+      } else {
         ++stats.blasBuilds;
+        trace::g_accelNow.builtTriangles += triangles;
+      }
       if (!g->deform)
         compactPending.push_back(g);
       g->pending = false;

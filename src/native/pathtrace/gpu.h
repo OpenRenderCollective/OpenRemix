@@ -1192,6 +1192,7 @@ namespace remix {
     uint64_t geometryTicks = 0; // FramePerformanceEXT geometry time, per-instance timer.
     void complete(VkCommandBuffer command);
     void buildBottom(VkCommandBuffer command);
+    void profileAcceleration(); // REMIX_ACCEL_PROFILE (rendering.cpp)
     // Records the builds of these BLASes' unbuilt micromaps, before the BLAS builds.
     void buildMicromaps(VkCommandBuffer command, const std::vector<std::shared_ptr<Geometry>> &work);
     std::unique_ptr<Buffer> topScratch;
