@@ -394,7 +394,7 @@ namespace remix {
       // path records in `paths` (wavefrontPlanes 16-byte planes a pixel).
       // Dispatched only while all four exist (wavefrontActive), else the
       // single kernel runs. Temporal (denoised) lighting, one sample a pixel.
-      static constexpr uint32_t wavefrontPlanes = 22;
+      static constexpr uint32_t wavefrontPlanes = 15;
       static constexpr size_t wavefrontKernels = 4;
       VkPipeline wavefront[wavefrontKernels] = {};
       std::unique_ptr<Buffer> paths;
