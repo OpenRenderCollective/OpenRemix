@@ -6,6 +6,12 @@
 #include <cstdint>
 
 namespace remix::forward {
+  // Numeric values match the renderer setting and GLSL LightingView.
+  enum class LightingView : uint32_t {
+    Shaded = 0, BakedIrradiance = 1, AnalyticDiffuse = 2, DirectSpecular = 3,
+    Albedo = 4, IrradianceWithoutNormalMaps = 5, BakeCoverage = 6, TotalDiffuse = 7
+  };
+
   struct Options {
     uint32_t samples = 4;
     uint32_t shadowResolution = 1024;
@@ -18,9 +24,7 @@ namespace remix::forward {
     bool autoExposure = false; // runtime profiles enable it; low-level callers retain explicit manual output
     float autoExposureTarget = .18f, autoExposureSpeed = 2, autoExposureCentre = .75f;
     float autoExposureMinEv = -8, autoExposureMaxEv = 4;
-    // 0 shaded, 1 baked irradiance, 2 analytic diffuse, 3 specular, 4 albedo,
-    // 5 irradiance without normal maps, 6 bake coverage, 7 total diffuse.
-    uint32_t debugView = 0;
+    uint32_t debugView = uint32_t(LightingView::Shaded);
     float lightCutoff = .001f;
     uint32_t clusterLights = 0; // zero adapts64..512; explicit1..1024 retains a bounded profiling override
     bool shadows = true;
@@ -34,7 +38,7 @@ namespace remix::forward {
     float localShadowDistance = 100; // metres, independent of light influence
     float localShadowBias = .002f;   // metres, radial comparison bias
     float localShadowFade = 2;      // seconds per selection fade; zero selects immediately
-    bool ssr = true;
+    bool ssr = false;
     bool authoredReflectionFallback = true;
     bool rtReflections = false;
     bool rtGI = false;
@@ -55,6 +59,8 @@ namespace remix::forward {
     float ssrThickness = .15f; // metres, single-layer screen depth tolerance
     float ssrRoughness = .6f;
     bake::Config baking;
+    // Scene-space offset shared by reflection sampling and probe mask padding.
+    float reflectionSampleBias() const { return .002f / sceneScale; }
     lighting::Plan lightingPlan(bool liveGiActive) const {
       auto config = baking;
       config.modelLightmaps = bake::modelChartsRequested(config.modelLightmaps);
@@ -73,6 +79,15 @@ namespace remix::forward {
     }
     bool operator==(const Options &) const = default;
     bool reflections() const { return ssr || rtReflections || baking.reflectionProbes != 0; }
+    bool worldReflectionGuides() const {
+      switch (LightingView(debugView)) {
+      case LightingView::BakedIrradiance:
+      case LightingView::Albedo:
+      case LightingView::IrradianceWithoutNormalMaps:
+      case LightingView::BakeCoverage: return false;
+      default: return true;
+      }
+    }
     bool sameTargets(const Options &other) const {
       return debugView == other.debugView && staticDepthBatch == other.staticDepthBatch &&
              depthPrepass == other.depthPrepass &&
@@ -84,10 +99,11 @@ namespace remix::forward {
              localShadowLights == other.localShadowLights &&
              localShadowResolution == other.localShadowResolution && samples == other.samples &&
              shadowResolution == other.shadowResolution && ssr == other.ssr &&
-             reflections() == other.reflections() &&
-             // A requested ray provider may be unsupported. Changing its cube
-             // fallback can therefore change attachment requirements.
-             (ssr || !rtReflections || bool(baking.reflectionProbes) == bool(other.baking.reflectionProbes)) &&
+             (!worldReflectionGuides() ||
+              (reflections() == other.reflections() &&
+               // A requested ray provider may be unsupported. Its cube fallback
+               // can therefore change attachment requirements.
+               (ssr || !rtReflections || bool(baking.reflectionProbes) == bool(other.baking.reflectionProbes)))) &&
              ssrScale == other.ssrScale;
     }
   };

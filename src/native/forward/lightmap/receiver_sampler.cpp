@@ -5,6 +5,19 @@
 #include <stdexcept>
 
 namespace remix::forward::lightmap {
+  bool buriedReceiverSample(const scene::BakeScene &source, const bake::Point &point,
+                            float receiverBias) {
+    if (!source.partition || !source.partition->closed)
+      return false;
+    const Vec3 normal{point.normal[0], point.normal[1], point.normal[2]};
+    const float lengthSquared = dot(normal, normal);
+    if (!(lengthSquared > 1e-10f)) return false;
+    const float scale = receiverBias / std::sqrt(lengthSquared);
+    const Vec3 origin{point.position[0] + normal[0] * scale, point.position[1] + normal[1] * scale,
+                      point.position[2] + normal[2] * scale};
+    return source.partition->cluster(origin.data()) < 0;
+  }
+
   namespace {
     Vec3 difference(Vec3 a, Vec3 b) { return {a[0] - b[0], a[1] - b[1], a[2] - b[2]}; }
     double edge(ReceiverFootprint::Uv a, ReceiverFootprint::Uv b, ReceiverFootprint::Uv p) {
@@ -59,6 +72,35 @@ namespace remix::forward::lightmap {
     std::array<bake::Point, 4> result;
     sample(index, result);
     return result;
+  }
+  std::optional<bake::Point> ReceiverSampler::pointAt(uint32_t chart, ReceiverFootprint::Uv uv) {
+    if (chart != m_chart)
+      prepare(chart);
+    for (const auto &triangle : m_triangles) {
+      if (uv[0] < triangle.minimum[0] || uv[0] > triangle.maximum[0] ||
+          uv[1] < triangle.minimum[1] || uv[1] > triangle.maximum[1])
+        continue;
+      const std::array weights{
+          edge(triangle.uv[1], triangle.uv[2], uv) / triangle.area,
+          edge(triangle.uv[2], triangle.uv[0], uv) / triangle.area,
+          edge(triangle.uv[0], triangle.uv[1], uv) / triangle.area};
+      if (std::any_of(weights.begin(), weights.end(), [](double weight) { return weight < -1e-8; }))
+        continue;
+      bake::Point result;
+      Vec3 vertexNormal{};
+      for (uint32_t corner = 0; corner < 3; ++corner)
+        for (uint32_t axis = 0; axis < 3; ++axis) {
+          result.position[axis] += float(weights[corner] * triangle.positions[corner][axis]);
+          vertexNormal[axis] += float(weights[corner] * triangle.normals[corner][axis]);
+        }
+      auto normal = normalized(cross(difference(triangle.positions[1], triangle.positions[0]),
+                                    difference(triangle.positions[2], triangle.positions[0])));
+      if (dot(normal, vertexNormal) < 0)
+        for (auto &component : normal) component = -component;
+      std::copy(normal.begin(), normal.end(), result.normal.begin());
+      return result;
+    }
+    return {};
   }
   void ReceiverSampler::sample(uint32_t index, std::span<bake::Point> result) {
     if (result.size() != 4 && result.size() != 16)

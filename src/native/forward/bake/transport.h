@@ -285,7 +285,7 @@ namespace remix::forward::bake {
                 std::optional<uint32_t> component = {}, uint32_t receiverSites = 1, bool receiverDirect = true);
     void dispatch(VkCommandBuffer command, uint32_t slot, uint32_t count, uint32_t samples, uint32_t bounces,
                   uint32_t firstSample, Mode mode, std::optional<uint32_t> component = {},
-                  uint32_t receiverSites = 1, bool receiverDirect = true);
+                  uint32_t receiverSites = 1, bool receiverDirect = true, bool surfaceSun = false);
     void recordTaskVisibility(VkCommandBuffer command, uint32_t slot, std::span<const Point> receivers,
                               std::span<const VisibilityTask> tasks, uint32_t samples, bool validatedReceivers,
                               bool directDiffuse = false);

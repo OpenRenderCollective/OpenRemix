@@ -14,7 +14,7 @@ namespace remix::forward {
   struct FrameData {
     Matrix camera, view, inverseProjection;
     std::array<Matrix, cascadeCount> shadows;
-    Vec4 cameraPosition{}, sunDirection{}, sunRadiance{}, ambientExposure{};
+    Vec4 cameraPosition{}, sunDirection{}, sunRadiance{}, ambientExposure{}; // cameraPosition.w: shortlist scene scale
     // sunDirection.w: matching surface sun bake; sunRadiance.w: sine of disc angular radius.
     Vec4 depth{}, splits{};
     std::array<uint32_t, 4> grid{}, target{};
@@ -22,9 +22,9 @@ namespace remix::forward {
     std::array<Vec4, shadows::maximumLights> localPositions{}; // xyz origin, w far plane
     Vec4 localSettings{}; // local resolution, local radial bias, sun bias (scene units), baked direct enabled
     std::array<Vec4, 32> styleScales{}; // current/authored envelope scalar, indexed by adapter-assigned group ID
-    std::array<uint32_t, 4> occlusion{}; // words per chart, chart count, texture width, indexed-mask tail
+    std::array<uint32_t, 4> occlusion{}; // words per chart, chart count, reserved, indexed-mask tail
     // Capacity; mixed-prefix length + 1 (zero = all), high bit = clustered baked tail;
-    // sparse SH word; flags (viewmodel local shadows/reflections, sun caster coverage).
+    // sparse SH word; flags (viewmodel local shadows/reflections, sun caster coverage, cluster highlights).
     std::array<uint32_t, 4> clusterInfo{};
     std::array<shadows::Coverage, shadows::maximumLights> movingShadowCoverage{};
     std::array<Vec4, cascadeCount> movingSunCoverage{}; // XY caster bounds in each cascade's clip domain
@@ -32,7 +32,8 @@ namespace remix::forward {
   struct LightData {
     // shaping: prepared inner-cone cosine, focus, influence radius, captured index + 1.
     Vec4 positionRadius{}, radiance{}, directionCone{}, shaping{};
-    // xyz triangle; [0].w shadow slot + 1, [1].w unshadowed blend,
+    // xyz triangle; sphere [2].x optionally retains its uncapped fade range.
+    // [0].w shadow slot + 1, [1].w unshadowed blend,
     // [2].w: LightResponse (runtime packing only; see light_response.h).
     std::array<Vec4, 3> corners{};
     // x: selected highlight fade; y: proven empty world moving-caster map;

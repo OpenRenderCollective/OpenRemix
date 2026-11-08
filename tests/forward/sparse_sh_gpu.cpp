@@ -530,6 +530,28 @@ int main(int argc, char **argv) try {
     }
   }
   if (composition) {
+    // The last scenario completed an exact zero-weight publication. Drive the
+    // idle policy with a deterministic clock rather than sleeping in the test.
+    fixture.begin();
+    cache.selectFrame(0);
+    require(!cache.record(fixture.command, gpu.source, {}, compositionTime, true),
+            "Base-field selection never samples a retained composition");
+    require(cache.record(fixture.command, gpu.source, {}, compositionTime + .1) == publication,
+            "A short idle interval keeps the exact completed result reusable");
+    fixture.finish();
+    compositionTime += .2;
+    fixture.begin();
+    require(!cache.record(fixture.command, gpu.source, {}, compositionTime, true),
+            "Returning to the base field starts a new idle interval");
+    fixture.finish();
+    publication.reset();
+    compositionTime += 3;
+    fixture.begin();
+    require(!cache.record(fixture.command, gpu.source, {}, compositionTime, true) &&
+                cache.bufferBytes() + cache.imageBytes() == 0,
+            "An idle publication releases GPU memory after the retention interval");
+    fixture.finish();
+
     styled_lighting::Weights invalid{};
     invalid[0][0] = std::numeric_limits<float>::infinity();
     fixture.begin();

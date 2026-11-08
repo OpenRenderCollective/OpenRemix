@@ -6,8 +6,7 @@ namespace remix::forward::mixed {
       : m_extent(extent), m_layers(layers) {
     m_image.create(physical, device, extent, format,
                    VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_SAMPLE_COUNT_1_BIT,
-                   VK_IMAGE_ASPECT_COLOR_BIT, layers, 1,
-                   format == VK_FORMAT_R8_UNORM ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D);
+                   VK_IMAGE_ASPECT_COLOR_BIT, layers, 1, VK_IMAGE_VIEW_TYPE_2D_ARRAY);
   }
   void OcclusionMap::upload(VkCommandBuffer command, VkBuffer source, VkDeviceSize offset) const {
     transfer(command, source, offset);

@@ -544,8 +544,13 @@ namespace remix::forward::bake {
     g.reserveSlot(index, uint32_t(points.size()), stride);
     auto &slot = g.slots.at(index);
     slot.points->write(points.data(), points.size_bytes());
+    const bool surfaceSun = (mode == Mode::SunVisibility || mode == Mode::SunDirectVisibility) &&
+        std::all_of(points.begin(), points.end(), [](const Point &point) {
+          const Vec3 normal{point.normal[0], point.normal[1], point.normal[2]};
+          return dot(normal, normal) > 1e-10f;
+        });
     dispatch(command, index, uint32_t(points.size() / receiverSites), samples, bounces, firstSample, mode,
-             component, receiverSites, receiverDirect);
+             component, receiverSites, receiverDirect, surfaceSun);
   }
   Transport::DeviceBatch Transport::deviceBatch(uint32_t index) const {
     const auto &g = *m_gpu;
@@ -668,7 +673,7 @@ namespace remix::forward::bake {
   }
   void Transport::dispatch(VkCommandBuffer command, uint32_t index, uint32_t count, uint32_t samples,
                            uint32_t bounces, uint32_t firstSample, Mode mode,
-                           std::optional<uint32_t> component, uint32_t receiverSites, bool receiverDirect) {
+                           std::optional<uint32_t> component, uint32_t receiverSites, bool receiverDirect, bool surfaceSun) {
     auto &g = *m_gpu;
     auto &slot = g.slots.at(index);
     if (slot.externalDepth) {
@@ -698,8 +703,15 @@ namespace remix::forward::bake {
     frame.counts[0] = count;
     frame.trace[2] = decalReachMetres / g.world->source->sceneScale;
     frame.trace[3] = g.world->hasModulatingDecals ? 1 : 0;
-    if (mode == Mode::SunVisibility || mode == Mode::SunDirectVisibility)
+    if (mode == Mode::SunVisibility || mode == Mode::SunDirectVisibility) {
       frame.trace[0] = g.sunDistance;
+      frame.trace[2] = frame.trace[1]; // normal offset, independent of the ray minimum
+      // Offset surface origins already avoid their receiver. A second full
+      // bias along the ray can skip a wall next to the receiver. Keep the
+      // existing interval for probes and multi-boundary dielectric traversal.
+      if (surfaceSun && !g.world->hasDielectrics)
+        frame.trace[1] *= .01f;
+    }
     frame.counts[2] = samples;
     frame.counts[3] = bounces;
     const bool aggregate = mode == Mode::Irradiance && g.aggregateIrradiance && !slot.lighting;

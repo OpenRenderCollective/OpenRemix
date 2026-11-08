@@ -51,6 +51,5 @@ namespace remix::forward::mixed {
     uint32_t m_received = 0;
     std::vector<directional::Field> m_samples;
     std::vector<uint8_t> m_seen;
-    bake::VisibilityTask task(uint32_t sample) const;
   };
 }

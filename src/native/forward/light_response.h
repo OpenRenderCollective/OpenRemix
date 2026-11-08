@@ -5,7 +5,7 @@
 #include <span>
 
 namespace remix::forward {
-  // Stored exactly as floats in LightData::corners[2].w; shared with direct-light.glsl.
+  // Stored exactly as floats in LightData::corners[2].w, read by local-light-record.glsl.
   enum class LightResponse { Analytic = 0, Aggregate = 1, BakedFallback = 2, SelectedAggregate = 3 };
 
   struct LightResponseInput {

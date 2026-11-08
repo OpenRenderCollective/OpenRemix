@@ -2,12 +2,14 @@
 #include "forward/gpu.h"
 #include "forward/light_response.h"
 #include "forward/material.h"
+#include "forward/mixed/publication.h"
 #include "forward/viewmodel/lighting.h"
 #include "forward/probes/capture_dump.h"
 #include <algorithm>
 #include <bit>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <limits>
@@ -30,6 +32,92 @@ namespace remix::forward {
     }
     return staticBounds;
   }
+  void Renderer::Gpu::recordChartHighlights(VkCommandBuffer command, Frame &frame, VkDeviceSize offset,
+      const std::shared_ptr<const std::vector<uint32_t>> &payload) {
+    const VkDeviceSize bytes = payload->size() * sizeof(uint32_t);
+    ensure(frame.chartHighlightUpload, bytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+    if (frame.chartHighlightPayload != payload) {
+      frame.chartHighlightOffset = VK_WHOLE_SIZE;
+      frame.chartHighlightUpload->write(payload->data(), bytes);
+      frame.chartHighlightPayload = payload;
+    }
+
+    if (!frame.chartHighlightCopy) {
+      const VkEventCreateInfo event{.sType = VK_STRUCTURE_TYPE_EVENT_CREATE_INFO};
+      // Failure to allocate the marker keeps the ordinary copy path.
+      if (vkCreateEvent(device, &event, nullptr, &frame.chartHighlightCopy) != VK_SUCCESS)
+        frame.chartHighlightCopy = VK_NULL_HANDLE;
+    }
+    // This slot's fence has completed. Check the marker once per upload to
+    // distinguish a submitted copy from a discarded command buffer.
+    if (frame.chartHighlightCopy && frame.chartHighlightOffset == offset) {
+      if (!frame.chartHighlightReady) {
+        const auto status = vkGetEventStatus(device, frame.chartHighlightCopy);
+        if (status != VK_EVENT_SET && status != VK_EVENT_RESET) throw status;
+        frame.chartHighlightReady = status == VK_EVENT_SET;
+      }
+      if (frame.chartHighlightReady) return;
+    }
+    if (frame.chartHighlightCopy) check(vkResetEvent(device, frame.chartHighlightCopy));
+    const VkBufferCopy copy{0, offset, bytes};
+    vkCmdCopyBuffer(command, frame.chartHighlightUpload->handle, frame.clusters->handle, 1, &copy);
+    const VkBufferMemoryBarrier ready{.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED, .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .buffer = frame.clusters->handle, .offset = offset, .size = bytes};
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        0, 0, nullptr, 1, &ready, 0, nullptr);
+    if (frame.chartHighlightCopy) {
+      vkCmdSetEvent(command, frame.chartHighlightCopy, VK_PIPELINE_STAGE_TRANSFER_BIT);
+      frame.chartHighlightOffset = offset;
+      frame.chartHighlightReady = false;
+    }
+  }
+  void Renderer::Gpu::prepareMaterialDescriptors(VkCommandBuffer command, RasterRenderer &resources, Frame &frame) {
+    struct MaterialBinding {
+      VkDescriptorSet set;
+      uint64_t alphaSampler;
+    };
+    std::unordered_map<const scene::Material *, MaterialBinding> materials;
+    constexpr uint32_t batchSize = 32;
+    std::array<std::array<VkDescriptorImageInfo, materialTextureCount>, batchSize> textures;
+    std::array<VkWriteDescriptorSet, batchSize> writes;
+    uint32_t pending = 0;
+    auto flush = [&] {
+      if (pending) vkUpdateDescriptorSets(device, pending, writes.data(), 0, nullptr);
+      pending = 0;
+    };
+    for (auto *commands : {&frame.commands, &frame.staticCommands, &frame.terrainCommands,
+                           &frame.waterCommands, &frame.viewModelCommands, &frame.viewModelCasters})
+      for (auto &draw : *commands) {
+        if (!draw.needsMaterial) continue;
+        const auto &material = draw.source.material;
+        const auto [entry, inserted] = materials.try_emplace(material.get());
+        if (inserted) {
+          const auto set = allocate(frame, materialLayout);
+          const auto fallback = resources.sampledMaterial(material, command);
+          entry->second = {set, std::bit_cast<uint64_t>(fallback.sampler)};
+          auto sample = [&](const std::shared_ptr<scene::Texture> &texture) {
+            return texture ? resources.sampledTexture(material, texture, command) : fallback;
+          };
+          textures[pending] = {fallback, sample(material->normalTexture), sample(material->roughnessTexture),
+                               sample(material->metallicTexture), sample(material->emissionTexture)};
+          // The material layout uses consecutive, identical sampler bindings.
+          writes[pending] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                             .dstSet = set,
+                             .descriptorCount = materialTextureCount,
+                             .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                             .pImageInfo = textures[pending].data()};
+          if (++pending == batchSize) flush();
+        }
+        draw.material = entry->second.set;
+        draw.alphaSampler = entry->second.alphaSampler;
+      }
+    flush();
+  }
+
   void Renderer::Gpu::prepareFrame(VkCommandBuffer command, RasterRenderer &resources, double seconds,
                                    const lighting::Plan &lightingPlan) {
     // Baking and all receiver decisions consume the same frame request.
@@ -44,10 +132,14 @@ namespace remix::forward {
       began = now;
     };
     auto &frame = frames[slot];
+    normalPoseSource = nullptr;
     const auto camera = resources.camera();
+    const ClipFrustum cameraFrustum(camera);
     statistics.boundReflectionDraws = statistics.unresolvedReflectionDraws = 0;
     const auto sun = resources.light();
     frame.commands.clear();
+    frame.visibleOpaqueRanges = 0;
+    frame.visibleOpaqueBounds = 0;
     frame.probeVisibility.reset();
     frame.staticCommands.clear();
     frame.terrainCommands.clear();
@@ -57,8 +149,14 @@ namespace remix::forward {
     frame.viewModelScene = VK_NULL_HANDLE;
     frame.waterComposed = false;
     frame.waterMedium = false;
-    auto sources = resources.sphereLights();
+    auto &sources = sourceLightScratch;
+    resources.copySphereLights(sources);
     std::sort(sources.begin(), sources.end(), [](const auto &a, const auto &b) { return a.id < b.id; });
+    auto &ranges = lightRangeScratch;
+    ranges.clear();
+    ranges.reserve(sources.size());
+    for (const auto &light : sources)
+      ranges.push_back(localLightRange(light, options.lightCutoff));
     const auto publishedBake = baking->volume();
     std::vector<uint32_t> capturedLights(sources.size(), mixed::none);
     std::vector<uint8_t> fallbackShadows;
@@ -79,7 +177,7 @@ namespace remix::forward {
     shadowSelection = shadowPlanner.update(sources, eye, options.localShadows ? options.localShadowLights : 0,
                                            options.lightCutoff, options.localShadowDistance,
                                            options.sceneScale, resources.bakeScene(), seconds,
-                                           options.localShadowFade, fallbackShadows);
+                                           options.localShadowFade, fallbackShadows, ranges);
     const auto bindings = publishedBake ? publishedBake->mixedLights : nullptr;
     if (highlightSource.lock() != bindings) {
       highlightSelection.reset();
@@ -111,7 +209,7 @@ namespace remix::forward {
             !bindings->retainsVisibility(captured) || bindings->source->lights[captured].bakeHint ==
                 REMIXAPI_LIGHT_BAKING_REQUIRE_MIXED_EXT) continue;
         const auto &source = sources[i];
-        const float range = influenceRadius(source, options.lightCutoff);
+        const float range = ranges[i].influence;
         if (!std::isfinite(range) || range <= 0) continue;
         Vec3 delta;
         for (uint32_t c = 0; c < 3; ++c) delta[c] = eye[c] - source.position[c];
@@ -131,7 +229,10 @@ namespace remix::forward {
     draws.reserve(resources.draws().size());
     std::vector<water::MaterialData> waterMaterials;
     Bounds casters;
-    auto append = [&](const scene::Draw &draw, std::vector<Command> &commands, bool staticOnly, bool liquid = false) {
+    const auto *surfaces = publishedBake ? publishedBake->surfaces.get() : nullptr;
+    const bool sharedCasterSource = surfaces && &surfaces->source() == shadowPlanner.source().get();
+    auto append = [&](const scene::Draw &draw, std::vector<Command> &commands, bool staticOnly, bool liquid = false,
+                      const ClipFrustum *casterFrustum = nullptr) {
       if (!(liquid ? water::accepts(draw) : accepts(draw) ||
             (!staticOnly && (acceptsSurfaceLayer(draw) || acceptsViewModel(draw)))))
         return;
@@ -141,20 +242,34 @@ namespace remix::forward {
       Command out;
       out.geometry = geometry(draw);
       out.source = draw;
-      out.captured = !liquid && !draw.viewModel && (staticOnly || shadowPlanner.captured(draw));
-      if (!staticOnly && !liquid && !draw.viewModel)
-        if (const auto &volume = baking->volume(); volume && volume->surfaces)
-          out.lightmap = volume->surfaces->find(draw);
       out.index = uint32_t(draws.size());
       out.count = count;
       out.worldBounds = transformBounds(out.geometry->bounds, draw.model);
-      out.cameraVisible = !staticOnly && draw.rasterVisible && intersectsClip(out.worldBounds, camera);
+      if (casterFrustum && !casterFrustum->intersects(out.worldBounds)) return;
+      out.cameraVisible = !staticOnly && draw.rasterVisible && cameraFrustum.intersects(out.worldBounds);
+      const bool surfaceLayer = &commands == &frame.terrainCommands;
+      if (surfaces && !staticOnly && !liquid && !draw.viewModel && (!surfaceLayer || out.cameraVisible))
+        out.lightmap = surfaces->find(draw);
+      if (out.cameraVisible && &commands == &frame.commands) {
+        frame.visibleOpaqueRanges += std::max(size_t(1), out.receiverRuns().size());
+        frame.visibleOpaqueBounds += out.worldBounds.valid;
+      }
+      // A non-receiver-only chart match already verified this frozen draw.
+      // Derived decal receivers never prove that a draw is a frozen caster.
+      const bool mappedCaster = sharedCasterSource && out.lightmap &&
+                                !surfaces->source().receiverOnly(out.lightmap->draw);
+      out.captured = !liquid && !draw.viewModel && (staticOnly || mappedCaster || shadowPlanner.captured(draw));
+      out.needsMaterial = out.cameraVisible || staticOnly || draw.viewModel ||
+                          (!liquid && !surfaceLayer && !out.captured);
       if (!liquid && !draw.viewModel) casters.merge(out.worldBounds);
-      if (liquid) {
+      if (liquid && out.cameraVisible) {
         out.waterIndex = uint32_t(waterMaterials.size());
         waterMaterials.push_back(water::materialData(*draw.material, seconds));
       }
-      draws.push_back(materialData(draw, seconds));
+      // Keep the table indices stable for the depth batch. Invisible sources
+      // remain in its immutable geometry, but emit no indices this frame.
+      if (out.needsMaterial) draws.push_back(materialData(draw, seconds));
+      else draws.emplace_back();
       if (!liquid && !staticOnly) {
         const auto binding = resources.materialReflection(draw.reflectionMaterial);
         if (binding.volumeId) {
@@ -164,9 +279,9 @@ namespace remix::forward {
           else ++statistics.unresolvedReflectionDraws;
         }
       }
-      const auto &state = draws.back().state;
-      out.unconditionalCoverage = state[1] == VK_COMPARE_OP_ALWAYS && (state[3] & 16u) == 0;
-      out.opaqueDepth = state[1] == VK_COMPARE_OP_ALWAYS;
+      out.opaqueDepth = alphaComparison(draw) == VK_COMPARE_OP_ALWAYS;
+      out.unconditionalCoverage = out.opaqueDepth &&
+          (draw.cameraCull & REMIXAPI_INSTANCE_CAMERA_CULL_BACK_FACES_EXT) == 0;
       commands.push_back(std::move(out));
     };
     for (const auto &draw : resources.draws()) {
@@ -182,19 +297,37 @@ namespace remix::forward {
     auto emptyMovingShadows = shadowSelection.active;
     std::array<shadows::Coverage, shadows::maximumLights> movingCoverage;
     movingCoverage.fill(shadows::emptyCoverage());
+    using LocalProjections = std::array<shadows::CoverageProjection, shadows::faces>;
+    std::array<std::optional<LocalProjections>, shadows::maximumLights> movingProjections;
+    std::array<uint32_t, shadows::maximumLights> activeSlotStorage;
+    uint32_t activeSlotCount = 0;
+    for (uint32_t slot = 0; slot < shadows::maximumLights; ++slot)
+      if (shadowSelection.active[slot]) activeSlotStorage[activeSlotCount++] = slot;
+    const auto activeShadowSlots = std::span(activeSlotStorage).first(activeSlotCount);
     // Keep moving caster selection independent of camera visibility. Reuse
     // the ordered radial candidates for coverage, cache keys and all six faces.
     for (auto &casters : frame.movingLocalCasters) casters.clear();
-    if (capturedCasters != frame.commands.size())
+    if (!activeShadowSlots.empty() && capturedCasters != frame.commands.size())
       for (uint32_t i = 0; i < frame.commands.size(); ++i) {
         const auto &draw = frame.commands[i];
         if (draw.captured) continue;
-        for (uint32_t lightSlot = 0; lightSlot < shadows::maximumLights; ++lightSlot) {
+        for (uint32_t lightSlot : activeShadowSlots) {
           const auto &view = shadowSelection.views[lightSlot];
-          if (!shadowSelection.active[lightSlot] || !shadows::intersects(draw.worldBounds, view)) continue;
-          frame.movingLocalCasters[lightSlot].push_back(i);
+          if (!shadows::intersects(draw.worldBounds, view)) continue;
+          auto &candidates = frame.movingLocalCasters[lightSlot];
+          candidates.push_back(i);
           emptyMovingShadows[lightSlot] = false;
-          shadows::includeCoverage(movingCoverage[lightSlot], draw.worldBounds, view);
+          if (disableShadowCoverage) continue;
+          auto &coverage = movingCoverage[lightSlot];
+          if (candidates.size() == 1) {
+            shadows::includeCoverage(coverage, draw.worldBounds, view);
+          } else {
+            auto &projections = movingProjections[lightSlot];
+            if (!projections)
+              projections.emplace(shadows::coverageProjections(view.matrices, view.nearPlane));
+            for (uint32_t face = 0; face < shadows::faces; ++face)
+              (*projections)[face].include(coverage[face], draw.worldBounds);
+          }
         }
       }
     // Complete frozen bounds still fit the cascades even when no static draw
@@ -212,12 +345,14 @@ namespace remix::forward {
           data.styleScales[scale.style / 4][scale.style % 4] = scale.value;
           statistics.activeStyledGroups += uint32_t(scale.value != 0);
         }
+      if (statistics.activeStyledGroups == 0) data.clusterInfo[3] |= inactiveLightStylesFlag;
     }
     if (baking->volume()) {
       data.occlusion = baking->volume()->occlusionParameters;
       data.clusterInfo[2] = baking->volume()->surfaceDirectOffset;
     }
     data.camera = camera;
+    const auto inverseCamera = scene::inverse(data.camera);
     data.view = resources.view();
     // The shared camera already includes Vulkan framebuffer Y. Reconstruction
     // from gl_FragCoord must invert that same projection, without flipping it
@@ -232,32 +367,37 @@ namespace remix::forward {
       data.sunDirection[3] = 1; // lightmap/probe receivers may use matching static visibility
     data.sunRadiance[3] = std::sin(sun.angularDiameterDegrees * .008726646259971648f);
     data.ambientExposure = {options.ambient, options.ambient, options.ambient, options.exposure};
-    const auto range = depthRange(resources.projection());
+    const auto range = depthRangeFromInverseProjection(data.inverseProjection);
     data.depth = {range.nearPlane, range.farPlane,
                   float(clusterSlices) / std::log(range.farPlane / range.nearPlane), range.sign};
     const uint32_t x = std::max(1u, (extent.width + 63) / 64), y = std::max(1u, (extent.height + 63) / 64);
     data.grid = {x, y, clusterSlices, x * y * clusterSlices};
     const auto cascades =
-        shadowCascades(data.camera, data.view, range, direction, casters,
+        shadowCascades(inverseCamera, data.view, range, direction, casters,
                        options.shadowDistance / options.sceneScale, options.shadowResolution);
     data.shadows = cascades.matrices;
     data.splits = cascades.splits;
     if (!disableShadowCoverage && options.shadows && sun.isDistant) {
-      data.clusterInfo[3] |= 4u;
+      data.clusterInfo[3] |= movingSunCoverageFlag;
       data.movingSunCoverage.fill({1, 1, -1, -1});
-      for (const auto &draw : frame.commands)
-        if (!draw.captured)
-          for (uint32_t cascade = 0; cascade < cascadeCount; ++cascade)
-            shadows::includeCoverage(data.movingSunCoverage[cascade], draw.worldBounds, data.shadows[cascade]);
+      if (capturedCasters != frame.commands.size()) {
+        const auto projections = shadows::coverageProjections(data.shadows);
+        for (const auto &draw : frame.commands)
+          if (!draw.captured)
+            for (uint32_t cascade = 0; cascade < cascadeCount; ++cascade)
+              projections[cascade].include(data.movingSunCoverage[cascade], draw.worldBounds);
+      }
     }
-    std::vector<LightData> lights;
+    auto &lights = lightScratch;
+    auto &bakedLights = bakedLightScratch;
+    lights.clear();
+    lights.reserve(sources.size());
+    bakedLights.clear();
     data.localSettings = {
         float(options.localShadowResolution), options.localShadowBias / options.sceneScale,
         options.shadowBias / options.sceneScale,
         float(options.baking.directDiffuse && baking->volume() && baking->volume()->directDiffuse)};
-    for (uint32_t i = 0; i < shadows::maximumLights; ++i) {
-      if (!shadowSelection.active[i])
-        continue;
+    for (uint32_t i : activeShadowSlots) {
       const auto &view = shadowSelection.views[i];
       data.localPositions[i] = {view.position[0], view.position[1], view.position[2], view.farPlane};
       std::copy(view.matrices.begin(), view.matrices.end(), data.localShadows.begin() + i * shadows::faces);
@@ -276,7 +416,7 @@ namespace remix::forward {
     const float clusterRadiusScale = viewRadiusScale(data.view);
     for (uint32_t sourceIndex = 0; sourceIndex < sources.size(); ++sourceIndex) {
       const auto &source = sources[sourceIndex];
-      const float radius = influenceRadius(source, options.lightCutoff);
+      const auto [radius, fadeRange] = ranges[sourceIndex];
       if (!std::isfinite(radius) || radius <= 0)
         continue;
       LightData light;
@@ -327,32 +467,41 @@ namespace remix::forward {
       light.responseWeights[0] = response.highlightWeight;
       for (int i = 0; i < 3; ++i)
         std::copy_n(source.corners[i], 3, light.corners[i].begin());
+      if (!source.triangle && radius < fadeRange)
+        light.corners[2][0] = fadeRange;
       if (const auto slot = shadowSelection.slots[sourceIndex]; slot != UINT32_MAX) {
         light.corners[0][3] = float(slot + 1);
         light.corners[1][3] = 1 - shadowSelection.strength[slot];
         light.responseWeights[1] = emptyMovingShadows[slot] ? 1.f : 0.f;
         light.responseWeights[3] = disableShadowCoverage ? 0.f : 1.f;
       }
-      lights.push_back(light);
+      auto &destination = response.mode == LightResponse::BakedFallback ? bakedLights : lights;
+      destination.push_back(light);
+    }
+    // Append the fallback tail without reordering either group of lights.
+    const uint32_t runtimeLights = uint32_t(lights.size());
+    lights.insert(lights.end(), bakedLights.begin(), bakedLights.end());
+    const bool chartHighlightSupport = mixed::chartHighlightsEnabled() && !techniquePlan.rayDiffuse();
+    mixed::ChartHighlightWork::Table chartHighlights;
+    if (chartHighlightSupport) {
+      auto field = publishedBake && bakedReceivers ? publishedBake->chartHighlights : nullptr;
+      chartHighlights = chartHighlightWork.prepare(std::move(field), std::span(lights).first(runtimeLights));
     }
     if (selectDirectOwners) {
       for (const auto *commands : {&frame.commands, &frame.terrainCommands})
         for (const auto &draw : *commands) {
-          if (!draw.lightmap) continue;
+          if (!draw.needsMaterial || !draw.lightmap) continue;
           const auto &owners = draw.lightmap->directOwners;
           if (!drawNeedsUnitDirect(owners, unitDirectNeeded)) draws[draw.index].maps[0] |= skipUnitDirect;
         }
     }
-    const auto firstBaked = std::find_if(lights.begin(), lights.end(),
-        [](const auto &light) { return light.corners[2][3] == float(LightResponse::BakedFallback); });
-    const auto mixedEnd = std::stable_partition(firstBaked, lights.end(),
-        [](const auto &light) { return light.corners[2][3] != float(LightResponse::BakedFallback); });
-    const uint32_t runtimeLights = uint32_t(mixedEnd - lights.begin());
     // Zero preserves the ordinary full-list contract. Otherwise the prefix
     // contains mixed/dynamic lights; the baked tail is only an uncovered fallback.
-    data.clusterInfo[1] = firstBaked == lights.end() ? 0 : runtimeLights + 1;
+    data.clusterInfo[1] = bakedLights.empty() ? 0 : runtimeLights + 1;
     static const bool clusterFallback = std::getenv("REMIX_DEBUG_FORWARD_UNCLUSTERED_FALLBACK") == nullptr;
-    if (clusterFallback && firstBaked != lights.end()) data.clusterInfo[1] |= clusteredBakedTail;
+    if (clusterFallback && !bakedLights.empty()) data.clusterInfo[1] |= clusteredBakedTail;
+    const uint32_t clusterBuildLights =
+        (data.clusterInfo[1] & clusteredBakedTail) ? uint32_t(lights.size()) : runtimeLights;
     data.target = {extent.width, extent.height, uint32_t(lights.size()),
                    uint32_t(options.shadows && sun.isDistant)};
     frame.staticSunDirty = sunMaps->update(shadowPlanner.source(), data.target[3] != 0, data.shadows);
@@ -364,6 +513,16 @@ namespace remix::forward {
       for (size_t i = 0; i < shadowPlanner.source()->draws.size(); ++i)
         if (!shadowPlanner.source()->receiverOnly(i))
           append(shadowPlanner.source()->draws[i], frame.staticCommands, true);
+    for (auto &casters : frame.staticLocalCasters) casters.clear();
+    for (uint32_t lightSlot : activeShadowSlots) {
+      if (!shadowSelection.dirty[lightSlot]) continue;
+      const auto &view = shadowSelection.views[lightSlot];
+      auto &candidates = frame.staticLocalCasters[lightSlot];
+      // Each face still checks its own frustum. Share the radial test.
+      for (uint32_t i = 0; i < frame.staticCommands.size(); ++i)
+        if (shadows::intersects(frame.staticCommands[i].worldBounds, view))
+          candidates.push_back(i);
+    }
     if (!frame.viewModelCommands.empty() && data.target[3]) {
       if (!viewModelSun) {
         viewModelSun = std::make_unique<viewmodel::SunShadow>();
@@ -376,14 +535,13 @@ namespace remix::forward {
       frame.viewModelProjection = viewmodel::sunProjection(receivers, allCasters, direction,
                                                            options.shadowResolution);
       frame.viewModelStaticSunDirty = viewModelSun->updateStatic(shadowPlanner.source(), frame.viewModelProjection);
-      if (frame.viewModelStaticSunDirty && shadowPlanner.source())
-        for (size_t i = 0; i < shadowPlanner.source()->draws.size(); ++i) {
-          if (shadowPlanner.source()->receiverOnly(i)) continue;
-          const auto &draw = shadowPlanner.source()->draws[i];
-          if (!accepts(draw)) continue;
-          const auto bounds = transformBounds(geometry(draw)->bounds, draw.model);
-          if (intersectsClip(bounds, frame.viewModelProjection)) append(draw, frame.viewModelCasters, true);
-        }
+      if (frame.viewModelStaticSunDirty && shadowPlanner.source()) {
+        const auto &source = *shadowPlanner.source();
+        const ClipFrustum casterFrustum(frame.viewModelProjection);
+        for (size_t i = 0; i < source.draws.size(); ++i)
+          if (!source.receiverOnly(i))
+            append(source.draws[i], frame.viewModelCasters, true, false, &casterFrustum);
+      }
     }
     if (probeVisibility && techniquePlan.bakedAttribution()) {
       std::vector<uint32_t> selected;
@@ -403,31 +561,97 @@ namespace remix::forward {
       if (!frame.probeVisibility)
         for (auto &light : lights) light.responseWeights[2] = 0;
     }
-    prepareDepthBatch(publishedBake);
+    prepareDepthBatch(publishedBake, draws);
     step(cpu.lighting);
-    frame.reflectionProbes = reflections || waterPass || !frame.viewModelCommands.empty()
+    frame.reflectionProbes = reflections || techniquePlan.inlineReflections || waterPass || !frame.viewModelCommands.empty()
         ? reflectionDescriptor() : probes::Descriptors{};
-    VkPhysicalDeviceProperties properties;
-    vkGetPhysicalDeviceProperties(physical, &properties);
-    data.clusterInfo[0] = clusterListCapacity(runtimeLights, data.grid[3],
-        properties.limits.maxStorageBufferRange, options.clusterLights);
+    prepareReflectionMasks(waterMaterials);
+    if (clusterBuildLights != 0)
+      data.clusterInfo[0] = clusterListCapacity(runtimeLights, data.grid[3],
+          maxStorageBufferRange, options.clusterLights);
     statistics.clusterLightCapacity = data.clusterInfo[0];
-    const VkDeviceSize clusterBytes =
-        VkDeviceSize(data.grid[3]) * (data.clusterInfo[0] + clusterHeaderWords) * sizeof(uint32_t);
+    // Empty frames need a valid descriptor only. Keep any existing allocation
+    // for later frames, and let ensure() provide the minimum on first use.
+    const bool defaultConeMasks = mixed::bakedLightMasksEnabled() && data.clusterInfo[2] != 0u;
+    // Vulkan guarantees at least 65535 compute groups in X. Each group
+    // handles 64 chart rows in addition to its ordinary cluster work.
+    constexpr uint32_t chartDispatchLimit = 65535u * 64u;
+    const bool chartConeMasks = defaultConeMasks && data.occlusion[1] != 0u &&
+        data.occlusion[1] <= chartDispatchLimit && !std::getenv("REMIX_DEBUG_DISABLE_CLUSTER_CHART_CONES");
+    const bool coneMasks = bakedReceivers && runtimeLights != 0 && runtimeLights <= 32 &&
+        VkDeviceSize(data.grid[3]) * (data.clusterInfo[0] + clusterHeaderWords + 1 + uint32_t(chartConeMasks)) * sizeof(uint32_t) +
+            (chartConeMasks ? VkDeviceSize(data.occlusion[1]) * sizeof(uint32_t) : 0) <=
+            maxStorageBufferRange &&
+        (defaultConeMasks || std::getenv("REMIX_DEBUG_CLUSTER_CONE_MASKS"));
+    if (coneMasks) {
+      data.clusterInfo[3] |= clusterConeMaskFlag;
+      if (defaultConeMasks || std::getenv("REMIX_DEBUG_CLUSTER_CONE_INTERVALS"))
+        data.clusterInfo[3] |= clusterConeIntervalFlag;
+      if (defaultConeMasks || std::getenv("REMIX_DEBUG_CLUSTER_CONE_PLANES"))
+        data.clusterInfo[3] |= clusterConePlaneFlag;
+      if (chartConeMasks) data.clusterInfo[3] |= clusterChartConeFlag;
+      else if (std::getenv("REMIX_DEBUG_CLUSTER_MOVING_CONES"))
+        data.clusterInfo[3] |= clusterMovingConeFlag;
+    }
+    const VkDeviceSize clusterWords = VkDeviceSize(data.grid[3]) *
+        (data.clusterInfo[0] + clusterHeaderWords + uint32_t(coneMasks) + uint32_t(coneMasks && chartConeMasks));
+    const VkDeviceSize clusterBytes = clusterBuildLights == 0 ? 0 : clusterWords * sizeof(uint32_t);
     for (const auto bytes : {clusterBytes, VkDeviceSize(lights.size() * sizeof(LightData)),
                              VkDeviceSize(draws.size() * sizeof(DrawData))})
-      if (bytes > properties.limits.maxStorageBufferRange)
+      if (bytes > maxStorageBufferRange)
         throw VK_ERROR_TOO_MANY_OBJECTS;
     ensure(frame.constants, sizeof(data), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
     ensure(frame.lights, lights.size() * sizeof(LightData), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     ensure(frame.draws, draws.size() * sizeof(DrawData), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     // Only compute writes and fragment shading reads this list. Keeping it
     // GPU-local avoids scattered writes into host-visible memory on discrete GPUs.
-    ensure(frame.clusters, clusterBytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, Buffer::Memory::Device);
-    frame.constants->write(&data, sizeof(data));
+    const VkBufferUsageFlags clusterUsage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+        (chartHighlightSupport ? VK_BUFFER_USAGE_TRANSFER_DST_BIT : 0);
+    auto ensureClusters = [&](VkDeviceSize bytes) {
+      if (!frame.clusters || frame.clusters->capacity < bytes)
+        frame.chartHighlightOffset = VK_WHOLE_SIZE;
+      ensure(frame.clusters, bytes, clusterUsage, Buffer::Memory::Device);
+    };
+    const VkDeviceSize chartConeBytes = (data.clusterInfo[3] & clusterChartConeFlag)
+        ? VkDeviceSize(data.occlusion[1]) * sizeof(uint32_t) : 0;
+    const VkDeviceSize clusterStorageBytes = clusterBytes + chartConeBytes;
+    const auto highlightBytes = chartHighlights.words ? chartHighlights.words->size() * sizeof(uint32_t) : 0;
+    bool useHighlights = clusterBuildLights != 0 && highlightBytes &&
+        clusterStorageBytes + highlightBytes <= maxStorageBufferRange;
+    if (useHighlights) {
+      try {
+        ensureClusters(clusterStorageBytes + highlightBytes);
+        recordChartHighlights(command, frame, clusterStorageBytes, chartHighlights.words);
+      } catch (VkResult error) {
+        if (error != VK_ERROR_OUT_OF_HOST_MEMORY && error != VK_ERROR_OUT_OF_DEVICE_MEMORY) throw;
+        useHighlights = false;
+      }
+    }
+    if (useHighlights) {
+      data.occlusion[2] = uint32_t(clusterStorageBytes / sizeof(uint32_t)) | chartHighlights.flags;
+    } else {
+      // A small runtime prefix can still use a membership header while a
+      // chart table is absent. The complete fallback list remains available.
+      if (bakedReceivers && runtimeLights != 0 && runtimeLights <= 32)
+        data.occlusion[2] = mixed::ChartHighlightField::clusterMembershipFlag;
+      // The compute pass writes only the cluster prefix. A temporary fallback
+      // can keep the cached mask when that prefix does not overlap it.
+      if (clusterStorageBytes > frame.chartHighlightOffset)
+        frame.chartHighlightOffset = VK_WHOLE_SIZE;
+      ensureClusters(clusterStorageBytes);
+    }
+    if (useHighlights != chartHighlightsActive) {
+      chartHighlightsActive = useHighlights;
+      if (useHighlights)
+        std::fprintf(stderr, "Forward %s active (%zu bytes)\n",
+                     (chartHighlights.flags & mixed::ChartHighlightField::exactVisibilityFlag)
+                         ? "exact chart visibility masks" : "automatic chart highlight shortlist",
+                     size_t(highlightBytes));
+      else
+        std::fprintf(stderr, "Forward chart highlights: using full light lists\n");
+    }
     frame.lights->write(lights.data(), lights.size() * sizeof(LightData));
     frame.draws->write(draws.data(), draws.size() * sizeof(DrawData));
-    probes::dumpFrameData(".world-frame.bin", &data, sizeof(data));
     probes::dumpFrameData(".draws.bin", draws.data(), draws.size() * sizeof(DrawData));
     probes::dumpFrameData(".lights.bin", lights.data(), lights.size() * sizeof(LightData));
     const uint32_t capacity = uint32_t(frame.commands.size() + frame.staticCommands.size() +
@@ -440,8 +664,8 @@ namespace remix::forward {
       frame.poolCapacity = std::max(64u, capacity);
       const VkDescriptorPoolSize sizes[] = {
           {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 7},
-          {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 16},
-          {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, frame.poolCapacity * 5 + 21}};
+          {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 18},
+          {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, frame.poolCapacity * materialTextureCount + 23}};
       const VkDescriptorPoolCreateInfo info{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
                                             .maxSets = frame.poolCapacity,
                                             .poolSizeCount = 3,
@@ -454,7 +678,7 @@ namespace remix::forward {
     if (waterPass) {
       water::Parameters parameters;
       parameters.projection = scene::inverse(data.inverseProjection);
-      parameters.inverseCamera = scene::inverse(data.camera);
+      parameters.inverseCamera = inverseCamera;
       parameters.cameraMedium = resources.cameraMedium();
       frame.waterMedium = parameters.cameraMedium[3] > 0;
       parameters.target = {float(extent.width), float(extent.height), options.waterDistance / options.sceneScale,
@@ -467,7 +691,7 @@ namespace remix::forward {
       for (uint32_t c = 0; c < 3; ++c) parameters.sunFog[c] = sun.radiance[c] * light;
       const auto screen = reflections ? reflections->screenInputs() : Reflections::ScreenInputs{};
       parameters.reflectionTrace = {options.ssrDistance / options.sceneScale,
-          options.ssrThickness / options.sceneScale, .002f / options.sceneScale, options.ssrRoughness};
+          options.ssrThickness / options.sceneScale, options.reflectionSampleBias(), options.ssrRoughness};
       parameters.reflectionConfig = {uint32_t(samples), options.ssrScale,
           screen.depth.imageView ? options.ssrSteps : 0u,
           uint32_t(std::bit_width(std::max(extent.width, extent.height)))};
@@ -492,7 +716,7 @@ namespace remix::forward {
                        i == 0 ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER : VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
                    .pBufferInfo = &buffers[i]};
     const VkDescriptorImageInfo images[] = {
-        {shadowSampler, sunMaps->view(), VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL},
+        {sampler, sunMaps->view(), VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL},
         {sampler, resolved ? resolved->view : color->view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
         {sampler, depth->view, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL},
         reflections ? reflections->output()
@@ -513,10 +737,15 @@ namespace remix::forward {
         .dstSet = frame.composite, .dstBinding = 6, .descriptorCount = 1,
         .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &viewModelImage};
     vkUpdateDescriptorSets(device, 1, &viewModelWrite, 0, nullptr);
-    const auto compositionSource = techniquePlan.bakedDiffuse() || techniquePlan.bakedDirect ? publishedBake : nullptr;
+    // All-off weights select the base field while keeping the last matching
+    // bake's completed composition available for a repeated switch.
+    const bool composeStyles = techniquePlan.bakedDiffuse() || techniquePlan.composesBakedDirect();
+    const auto compositionSource = composeStyles ? publishedBake : nullptr;
     frame.styledLighting = styledLighting ? styledLighting->record(command, compositionSource, data.styleScales,
-        std::chrono::duration<double>(std::chrono::steady_clock::now() - epoch).count()) : nullptr;
-    const auto irradiance = frame.styledLighting ? frame.styledLighting->probes() : baking->descriptor();
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - epoch).count(),
+        statistics.activeStyledGroups == 0) : nullptr;
+    const auto irradiance = frame.styledLighting
+        ? frame.styledLighting->probes() : baking->descriptor();
     writes[8] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                  .dstSet = frame.scene,
                  .dstBinding = 5,
@@ -524,7 +753,10 @@ namespace remix::forward {
                  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
                  .pBufferInfo = &irradiance};
     vkUpdateDescriptorSets(device, 1, &writes[8], 0, nullptr);
-    auto surfaceAtlas = frame.styledLighting ? frame.styledLighting->surfaces() : baking->surfaceDescriptor();
+    frame.constants->write(&data, sizeof(data));
+    probes::dumpFrameData(".world-frame.bin", &data, sizeof(data));
+    auto surfaceAtlas = frame.styledLighting
+        ? frame.styledLighting->surfaces() : baking->surfaceDescriptor();
     surfaceAtlas.sampler = surfaceSampler;
     writes[9] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                  .dstSet = frame.scene,
@@ -584,46 +816,11 @@ namespace remix::forward {
     vkUpdateDescriptorSets(device, 1, &probeWrite, 0, nullptr);
     prepareViewModelDescriptors();
     step(cpu.uploads);
-    std::unordered_map<const scene::Material *, std::pair<VkDescriptorSet, uint64_t>> materials;
-    for (auto *commands : {&frame.commands, &frame.staticCommands, &frame.terrainCommands,
-                           &frame.waterCommands, &frame.viewModelCommands, &frame.viewModelCasters})
-      for (auto &draw : *commands) {
-        // Frozen shadow passes have separate draw records. Hidden captured
-        // world draws and camera-only layers never bind a material this frame.
-        if (!draw.cameraVisible &&
-            ((commands == &frame.commands && draw.captured) ||
-             commands == &frame.terrainCommands || commands == &frame.waterCommands)) continue;
-        const auto &material = draw.source.material;
-        if (auto found = materials.find(material.get()); found != materials.end()) {
-          draw.material = found->second.first;
-          draw.alphaSampler = found->second.second;
-          continue;
-        }
-        draw.material = allocate(frame, materialLayout);
-        const auto fallback = resources.sampledMaterial(material, command);
-        draw.alphaSampler = std::bit_cast<uint64_t>(fallback.sampler);
-        materials[material.get()] = {draw.material, draw.alphaSampler};
-        auto sample = [&](const std::shared_ptr<scene::Texture> &texture) {
-          return texture ? resources.sampledTexture(material, texture, command) : fallback;
-        };
-        const VkDescriptorImageInfo textures[] = {
-            fallback, sample(material->normalTexture), sample(material->roughnessTexture),
-            sample(material->metallicTexture), sample(material->emissionTexture)};
-        VkWriteDescriptorSet textureWrites[5];
-        for (uint32_t i = 0; i < 5; ++i)
-          textureWrites[i] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-                              .dstSet = draw.material,
-                              .dstBinding = i,
-                              .descriptorCount = 1,
-                              .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                              .pImageInfo = &textures[i]};
-        vkUpdateDescriptorSets(device, 5, textureWrites, 0, nullptr);
-      }
+    prepareMaterialDescriptors(command, resources, frame);
     step(cpu.materials);
     statistics.draws = uint32_t(frame.commands.size() + frame.terrainCommands.size() +
                                 frame.waterCommands.size() + frame.viewModelCommands.size());
-    statistics.shadowedLights =
-        uint32_t(std::count(shadowSelection.active.begin(), shadowSelection.active.end(), true));
+    statistics.shadowedLights = activeSlotCount;
     statistics.emptyMovingShadowMaps =
         uint32_t(std::count(emptyMovingShadows.begin(), emptyMovingShadows.end(), true));
     statistics.shadowOverflow = shadowSelection.overflow;
@@ -644,8 +841,7 @@ namespace remix::forward {
     probes::dumpFrameData(".shadow-policy.bin", shadowPolicy, sizeof(shadowPolicy));
     statistics.lights = uint32_t(lights.size());
     statistics.clusteredLights = runtimeLights;
-    statistics.clusterBuildLights =
-        (data.clusterInfo[1] & clusteredBakedTail) ? uint32_t(lights.size()) : runtimeLights;
+    statistics.clusterBuildLights = clusterBuildLights;
     statistics.fullyBakedLights = uint32_t(lights.size()) - runtimeLights;
     statistics.clusters = data.grid[3];
     statistics.geometryBytes = spareGeometryBytes;
@@ -660,6 +856,7 @@ namespace remix::forward {
       if (submitted.depthBatch) statistics.bufferBytes += submitted.depthBatch->bytes();
       for (const auto *buffer : {submitted.constants.get(), submitted.lights.get(), submitted.draws.get(),
                                  submitted.clusters.get(), submitted.skyConstants.get(),
+                                 submitted.chartHighlightUpload.get(),
                                  submitted.viewModelConstants.get(), submitted.viewModelReflectionConstants.get()})
         if (buffer)
           statistics.bufferBytes += buffer->allocationBytes;

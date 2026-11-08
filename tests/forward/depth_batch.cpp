@@ -44,7 +44,7 @@ int main() try {
   depth_batch::Batch batch(fixture.physical, fixture.device);
   require(batch.prepare(sources) && batch.indexCount() == 6 && batch.visibleSources() == 1,
           "Invisible source indices are excluded without discarding cached geometry");
-  const auto positions = static_cast<const std::array<float, 4> *>(batch.positions().mapped);
+  const auto positions = static_cast<const depth_batch::Position *>(batch.positions().mapped);
   for (uint32_t i = 0; i < 4; ++i)
     require(std::memcmp(positions[i].data(), a->positions[i + 1].data(), 12) == 0,
             "Batch preserves native local position bits, stride and signed base vertex");
@@ -54,25 +54,36 @@ int main() try {
   const VkBuffer originalPositions = batch.positions().handle;
   sources[0].visible = false;
   sources[1].visible = true;
-  sources[1].materialIndex = 31;
   require(batch.prepare(sources) && batch.positions().handle == originalPositions && batch.indexCount() == 3,
-          "Camera and per-frame material-table changes reuse immutable geometry");
+          "Camera changes reuse immutable geometry");
   const uint32_t expectedB[]{6, 5, 4};
   require(std::memcmp(batch.indices().mapped, expectedB, sizeof(expectedB)) == 0,
           "Visible index ranges retain the second source's winding");
-  const auto materials = static_cast<const uint32_t *>(batch.materials().mapped);
-  require(materials[4] == 31 && materials[5] == 31 && materials[6] == 31,
-          "Every vertex receives the current frame's material-table index");
+  const auto tags = static_cast<const uint32_t *>(batch.tags().mapped);
+  require(tags[4] == 25 && tags[5] == 25 && tags[6] == 25,
+          "First visibility initializes every tag even when the requested tag is unchanged");
+  sources[1].vertexTag = 32;
+  require(batch.prepare(sources) && tags[4] == 32 && batch.indexCount() == 3 &&
+              std::memcmp(batch.indices().mapped, expectedB, sizeof(expectedB)) == 0,
+          "A tag-only change preserves the visible draw and winding");
   require(batch.prepare(sources) && batch.indexCount() == 3 && batch.visibleSources() == 1,
           "An unchanged fenced slot retains its uploaded draw counts");
   sources[1].visible = false;
   require(batch.prepare(sources) && batch.indexCount() == 0 && batch.visibleSources() == 0 &&
               batch.prepare(sources) && batch.indexCount() == 0,
           "A cached empty visibility set cannot replay stale triangles");
+  const uint32_t identityTag = depth_batch::identityTransform | depth_batch::rejectBackfaces;
+  sources[1].vertexTag = identityTag;
+  require(batch.prepare(sources) && batch.indexCount() == 0 && tags[4] == 32,
+          "Hidden geometry defers its tag upload");
   sources[1].visible = true;
-  sources[1].materialIndex = 32;
-  require(batch.prepare(sources) && batch.indexCount() == 3 && materials[4] == 32,
-          "Visibility restoration refreshes the material stream without rebuilding geometry");
+  require(batch.prepare(sources) && batch.indexCount() == 3 && tags[4] == identityTag,
+          "Visibility restoration refreshes the identity and culling tag without rebuilding geometry");
+  sources[0].visible = true;
+  const uint32_t expectedBoth[]{0, 2, 1, 2, 3, 1, 6, 5, 4};
+  require(batch.prepare(sources) && batch.indexCount() == 9 && batch.visibleSources() == 2 &&
+              std::memcmp(batch.indices().mapped, expectedBoth, sizeof(expectedBoth)) == 0,
+          "Adjacent visible ranges preserve source order and winding");
   depth_batch::Batch limited(fixture.physical, fixture.device, 32);
   require(!limited.prepare(sources) && limited.indexCount() == 0 && limited.bytes() == 0,
           "A bounded batch declines entirely before truncating geometry");

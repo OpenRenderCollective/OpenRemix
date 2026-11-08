@@ -14,9 +14,8 @@ bool surfaceDirectionalField(uint chart, uint id, vec4 coordinate, vec3 normal, 
   value = fieldValue;
   return fieldKnown;
 }
-bool bakedLightVisibility(vec4 coordinate, vec4 bounds, uvec4 owners, uint id, out float value, out uint channel) {
+bool bakedLightVisibility(vec4 coordinate, vec4 bounds, uvec4 owners, uint id, out float value) {
   value = 1;
-  channel = 0xffffffffu;
   return false;
 }
 bool overflowLightVisibility(uint chart, uint id, vec4 coordinate, vec4 bounds, out float value) {
@@ -39,7 +38,7 @@ bool emitterAbovePlane(Light light, vec3 position, vec3 normal) {
 bool rawLocalLight(uint index, vec3 p, vec3 n, vec3 receiverNormal, BakedReceiver receiver,
                    vec4 directIrradiance, bool aggregateReceiver, out LocalLightSample lightSample) {
   const bool frontFacingOnly = true;
-#define LOCAL_LIGHT_MISS return false
+#define LOCAL_LIGHT_MISS(reason) return false
 #include "../../../src/native/forward/shaders/local-light-query.glsl"
 #undef LOCAL_LIGHT_MISS
   lightSample = lighting;
@@ -61,7 +60,7 @@ vec4 compareLocalResponses(vec3 position, vec3 geometric) {
   vec3 n = normalize(light.positionRadius.xyz - position);
   BakedReceiver receiver = BakedReceiver(vec4(0, 0, 0, 1), vec4(0, 0, 1, 1),
       uvec4(0xffffffffu), uvec4(0xffffffffu), 0u);
-  float moving = localShadowVisibility(light, position, geometric, false);
+  float moving = localShadowVisibility(light, position, geometric, MovingLocalShadowLayer, true);
   vec4 result = vec4(0);
   // Positive, known-black and missing fields, both inside and outside the
   // analytic cone. Captured finite-emitter energy must survive cone rejection.
@@ -80,12 +79,27 @@ vec4 compareLocalResponses(vec3 position, vec3 geometric) {
       LightContribution expected = LightContribution(vec3(0), vec3(0));
       if (found)
         expected = shadeStandardLocalLight(lightSample, n, n, vec3(.6), .5, 0, vec3(.04));
+      uint miss;
       LightContribution actual = localLightResponse(0u, position, n, n, vec3(.6), .5, 0,
-          vec4(-1), receiver, vec3(.04), geometric, true);
+          vec4(-1), receiver, vec3(.04), geometric, true, miss);
       vec3 difference = max(abs(actual.diffuse - expected.diffuse), abs(actual.specular - expected.specular));
       result.x = max(result.x, max(difference.x, max(difference.y, difference.z)));
       result.w += moving == 1 ? 1 : 0;
     }
   }
+  // A negative centre cosine can still retain baked light from a finite
+  // emitter crossing the horizon. The same sphere farther back must miss.
+  vec3 horizonNormal = vec3(1, 0, 0);
+  light.directionCone.w = -1;
+  fieldKnown = true;
+  fieldValue = 2;
+  light.positionRadius.xyz = position - .125 * horizonNormal;
+  lights[0] = light;
+  LocalLightSample horizonSample;
+  bool found = rawLocalLight(0u, position, horizonNormal, geometric, receiver, vec4(-1), true, horizonSample);
+  if (!found || horizonSample.diffuseIrradiance != 2) result.y += 1;
+  light.positionRadius.xyz = position - .5 * horizonNormal;
+  lights[0] = light;
+  if (rawLocalLight(0u, position, horizonNormal, geometric, receiver, vec4(-1), true, horizonSample)) result.y += 1;
   return result;
 }

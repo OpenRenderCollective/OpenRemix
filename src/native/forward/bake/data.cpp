@@ -141,6 +141,7 @@ namespace remix::forward::bake {
       light.shaping = {source.softness, source.focus, 0, float(source.style)};
       for (uint32_t i = 0; i < 3; ++i)
         std::copy_n(source.corners[i], 3, light.corners[i].begin());
+      light.corners[0][3] = source.forwardCutoff;
       result.lights.push_back(light);
     }
     if (scene.dome.texture) {

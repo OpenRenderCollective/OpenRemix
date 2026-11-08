@@ -10,5 +10,6 @@ namespace remix::forward::lightmap {
   // indices change: coordinates, sample identities and chart light owners stay
   // intact. Charts without an exterior donor retain their original data.
   InteriorDonors repairInteriorDonors(Layout &layout, std::span<const bake::Result> results,
-                                     std::stop_token cancelled = {});
+                                     std::stop_token cancelled = {},
+                                     const scene::BakeScene *source = nullptr, float receiverBias = 0);
 } // namespace remix::forward::lightmap

@@ -23,6 +23,7 @@ namespace remix {
   class RasterRenderer;
 }
 namespace remix::forward::probes { struct ReceiverCoverageEvidence; struct ReceiverCoveragePlan; struct CoverageReadyImage; }
+namespace remix::forward::mixed { struct ChartHighlightField; }
 namespace remix::forward::bake {
   class SunDepth;
   class TransportMemory;
@@ -37,6 +38,7 @@ namespace remix::forward::bake {
     std::shared_ptr<SunDepth> sunDepth;
     scene::DistantLight sun; // shape provenance for matching surface/probe static sunlight
     GridHeader irradianceHeader;
+    std::vector<uint32_t> probeEndpointCellSides;
     uint32_t usableIrradianceProbes = 0;
     // Immutable private transfer candidate; GPU publication requires an explicit sampling flag.
     std::shared_ptr<const std::vector<uint32_t>> coarseTransferWords;
@@ -45,7 +47,8 @@ namespace remix::forward::bake {
     uint32_t coarseIrradianceProbes = 0;
     float finestIrradianceSpacing = 0; // scene units, before sceneScale
     float sceneScale = 1;
-    std::array<uint32_t, 4> occlusionParameters{}; // stride + compact-atlas flag, charts, width, indexed-mask tail
+    std::array<uint32_t, 4> occlusionParameters{}; // stride + compact-atlas flag, charts, shortlist, indexed-mask tail
+    std::shared_ptr<const mixed::ChartHighlightField> chartHighlights;
     uint32_t surfaceDirectOffset = 0; // sparse directional table in the R32_UINT lookup; zero keeps atlas SH
     std::unique_ptr<Buffer> data, staging;
     std::unique_ptr<Image> surfaceAtlas;
@@ -91,6 +94,7 @@ namespace remix::forward::bake {
     const std::shared_ptr<const probes::LocalCaptureSource> &localReflectionSource() const {
       return m_captures.local;
     }
+    const probes::ImageAsset *reflectionImage() const { return m_captures.image.get(); }
     const probes::Header *reflectionHeader() const { return m_captures.header(); }
     float reflectionSceneScale() const { return m_captures.image && m_source ? m_source->sceneScale : 1; }
     VkDescriptorImageInfo surfaceDescriptor() const;
@@ -107,6 +111,7 @@ namespace remix::forward::bake {
       std::shared_ptr<Volume> sampled;
       std::shared_ptr<probes::ImageAsset> reflectionUpload, reflectionSampled, localReflectionUpload;
       uint32_t first = 0, count = 0, styled = 0;
+      std::vector<VisibilityTask> directTasks;
       probes::CaptureStep reflection = probes::CaptureStep::None;
       bool preparation = false, surface = false, visibility = false,
            sun = false, sunDepth = false, sunDepthCache = false, probeSun = false, probeLocal = false, overflowVisibility = false,

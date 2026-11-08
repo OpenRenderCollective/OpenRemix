@@ -1,14 +1,17 @@
 // Two bits per chart/light pair: unknown=0, blocked=1, clear=2.
 // R32_UINT stores each packed word exactly, without byte reconstruction.
-layout(set = 0, binding = 9) uniform usampler2D staticLightOcclusion;
+layout(set = 0, binding = 9) uniform usampler2DArray staticLightOcclusion;
+const uint occlusionPageShift = 10u; // 1024, mirrored in mixed/occlusion.h
 uint occlusionWord(uint index) {
-  uint width = frame.occlusion.z;
-  return texelFetch(staticLightOcclusion, ivec2(index % width, index / width), 0).r;
+  const uint mask = (1u << occlusionPageShift) - 1u;
+  uint row = index >> occlusionPageShift;
+  return texelFetch(staticLightOcclusion,
+      ivec3(index & mask, row & mask, row >> occlusionPageShift), 0).r;
 }
 uint staticLightVisibility(uint chart, uint capturedLight) {
   if (chart == 0xffffffffu || capturedLight == 0u)
     return 0u;
-  uint stride = frame.occlusion.x & 0x7fffffffu;
+  uint stride = frame.occlusion.x & 0x1fffffffu;
   uint light = capturedLight - 1u;
   if (light / 16u >= stride || chart >= frame.occlusion.y)
     return 0u;

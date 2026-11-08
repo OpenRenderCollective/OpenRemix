@@ -553,11 +553,21 @@ int main(int argc, char **argv) try {
   parallelCharts(layout, raw);
 #endif
   std::vector<std::array<uint32_t, 2>> progress;
-  const auto statistics = lightmap::denoise(layout, values, {}, [&](uint32_t completed, uint32_t total) {
+  const lightmap::DenoisePlan plan(layout);
+  const auto statistics = plan.filter(values, {}, [&](uint32_t completed, uint32_t total) {
     progress.push_back({completed, total});
   });
   auto pageable = raw;
-  const auto reference = lightmap::denoise(layout, pageable, {}, {}, lightmap::HostTransfers::Pageable, lightmap::FilterDispatch::Ordinary);
+  const auto reference = plan.filter(pageable, {}, {}, lightmap::HostTransfers::Pageable, lightmap::FilterDispatch::Ordinary);
+  std::vector<bake::Result> dark(raw.size());
+  const auto darkStatistics = plan.filter(dark);
+  require(darkStatistics.charts == layout.charts.size() &&
+              std::ranges::all_of(dark, [](const auto &sample) {
+                return std::ranges::all_of(sample.irradiance, [](const auto &band) {
+                  return band[0] == 0 && band[1] == 0 && band[2] == 0;
+                });
+              }),
+          "Reusing a chart plan for a dark field retains no samples from the previous field");
   float transferError = 0;
   for (size_t point = 0; point < values.size(); ++point)
     for (uint32_t band = 0; band < 9; ++band)

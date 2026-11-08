@@ -21,6 +21,7 @@
 #include <remix/remix_native_ext.h>
 #include <remix/remix_bake_ext.h>
 #include <string>
+#include <span>
 #include <unordered_map>
 #include <vector>
 
@@ -347,6 +348,11 @@ namespace remix {
     const scene::DomeLight &dome() const { return m_dome; }
     const scene::DistantLight &light() const { return m_light; }
     std::vector<scene::SphereLight> sphereLights() const;
+    // Replace the destination in the same order as sphereLights(), reusing its allocation.
+    void copySphereLights(std::vector<scene::SphereLight> &output) const;
+    // Borrow the immutable published list, or collect into caller-owned storage
+    // during synchronous rendering. Consume the view within the current frame.
+    std::span<const scene::SphereLight> sphereLightView(std::vector<scene::SphereLight> &scratch) const;
     bool hasSphereLights() const { return !m_frameLights.empty(); }
 
     // A light as created: its USD-style parameters (overrideLight merges

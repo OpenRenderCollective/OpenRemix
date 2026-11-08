@@ -14,7 +14,7 @@ bool emitterAbovePlane(Light light, vec3 p, vec3 n) {
 // Read the output only when the query succeeds.
 bool sampleLocalLight(uint index, vec3 p, vec3 n, vec4 directIrradiance,
     BakedReceiver receiver, vec3 receiverNormal, bool aggregateReceiver, bool frontFacingOnly, out LocalLightSample sampled) {
-#define LOCAL_LIGHT_MISS return false
+#define LOCAL_LIGHT_MISS(reason) return false
 #include "local-light-query.glsl"
 #undef LOCAL_LIGHT_MISS
   sampled = lighting;

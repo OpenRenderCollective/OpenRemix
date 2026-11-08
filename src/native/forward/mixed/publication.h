@@ -4,7 +4,10 @@
 #include "forward/mixed/data.h"
 #include "forward/mixed/unified_masks.h"
 
+
 namespace remix::forward::mixed {
+  bool bakedLightMasksEnabled();
+
   struct VisibilityPublication {
     Occlusion::Pixels lookup;
     std::unique_ptr<OcclusionMap> lookupImage, pageImage;
@@ -21,7 +24,8 @@ namespace remix::forward::mixed {
   // among equivalent candidates. Device/allocation limits can still decline
   // the entire indexed replacement and retain ordinary shading.
   VisibilityPublication prepareVisibility(VkPhysicalDevice physical, VkDevice device,
-      const Plan &plan, const lightmap::Layout &layout, std::span<const uint16_t> pixels,
+      const Plan &plan, const lightmap::Layout &layout,
+      std::span<const uint16_t> pixels,
       bool allowPages, const UnifiedMasks *unified, std::span<const uint32_t> directional = {},
       bool preferCompleteDirectionals = false);
 }

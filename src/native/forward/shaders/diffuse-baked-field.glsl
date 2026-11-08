@@ -7,12 +7,6 @@ ReceiverLighting sampleBakedDiffuseField(vec3 position, vec3 normal, vec3 geomet
     lighting.diffuse = chartIrradiance / Pi;
     lighting.direct.attribution = true;
     lighting.reflectionReference = true;
-#ifdef ZERO_DIFFUSE_MATERIAL
-  } else if (localProbeStencil(position, normal)) {
-    lighting.diffuse = vec3(0);
-    lighting.direct.attribution = true;
-    lighting.reflectionReference = true;
-#else
   } else {
     vec3 irradiance;
     if (bakedIrradiance(position, normal, irradiance)) {
@@ -20,7 +14,6 @@ ReceiverLighting sampleBakedDiffuseField(vec3 position, vec3 normal, vec3 geomet
       lighting.direct.attribution = true;
       lighting.reflectionReference = true;
     }
-#endif
   }
   return lighting;
 }

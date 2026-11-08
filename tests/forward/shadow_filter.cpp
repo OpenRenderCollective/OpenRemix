@@ -68,10 +68,8 @@ int main(int argc, char **argv) try {
     VkPipelineLayout layout{};
     VkPipeline pipeline{};
     VkDescriptorPool pool{};
-    VkSampler sampler{}, pointSampler{};
+    VkSampler sampler{};
     ~Gpu() {
-      if (pointSampler)
-        vkDestroySampler(device, pointSampler, nullptr);
       if (pool)
         vkDestroyDescriptorPool(device, pool, nullptr);
       if (pipeline)
@@ -181,13 +179,8 @@ int main(int argc, char **argv) try {
                                     .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
                                     .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
                                     .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-                                    .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-                                    .compareEnable = VK_TRUE,
-                                    .compareOp = VK_COMPARE_OP_LESS_OR_EQUAL};
+                                    .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE};
   check(vkCreateSampler(fixture.device, &sampler, nullptr, &gpu.sampler));
-  auto pointSampler = sampler;
-  pointSampler.compareEnable = VK_FALSE;
-  check(vkCreateSampler(fixture.device, &pointSampler, nullptr, &gpu.pointSampler));
   const VkDescriptorSetLayoutBinding bindings[] = {
       {0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
       {1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
@@ -242,9 +235,9 @@ int main(int argc, char **argv) try {
                                             gpu.output.descriptor()};
   const VkDescriptorImageInfo images[] = {
       {gpu.sampler, gpu.sun.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
-      {gpu.pointSampler, gpu.fixed.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
-      {gpu.pointSampler, gpu.moving.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
-      {gpu.pointSampler, gpu.fixed.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}};
+      {gpu.sampler, gpu.fixed.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+      {gpu.sampler, gpu.moving.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+      {gpu.sampler, gpu.fixed.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}};
   VkWriteDescriptorSet writes[std::size(bindings)];
   for (uint32_t i = 0; i < std::size(writes); ++i)
     writes[i] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -273,7 +266,7 @@ int main(int argc, char **argv) try {
     return values;
   };
   const auto values = render();
-  parameters.cluster[3] |= 4u;
+  parameters.cluster[3] |= movingSunCoverageFlag;
   parameters.movingSunCoverage[0] = {-1, -1, 0, 1};
   parameters.movingSunCoverage[1] = {1, 1, -1, -1};
   parameters.movingSunCoverage[2] = {-1, -1, 1, 1};
@@ -289,7 +282,7 @@ int main(int argc, char **argv) try {
     const auto &coverage = values[i + 6 * queries.size()];
     require(std::abs(coverage[0] - coverage[1]) < 1e-5f,
             "Conservative moving-caster coverage preserves filtered visibility at boundaries and cube seams");
-    require(coverage[3] < 1e-5f, "Gathered depths match individual receiver-plane comparisons");
+    require(coverage[3] < 1e-5f, "Gather and moving-layer rejection match the full receiver-plane filter");
     if (i >= coverageFirst && i < planeFirst) skipped += coverage[2] == 0;
   }
   require(skipped > 0 && skipped < planeFirst - coverageFirst,
@@ -358,14 +351,14 @@ int main(int argc, char **argv) try {
             "Bright receivers never amplify captures and dark/unknown/incompatible references remain neutral");
 
   }
-  parameters.cluster[3] |= 1u;
+  parameters.cluster[3] |= viewModelLocalShadowFlag;
   gpu.parameters.write(&parameters, sizeof(parameters));
   const auto selfShadowed = render();
   require(selfShadowed[exclusionFirst][0] < .001f,
           "Viewmodel self shadows remain visible when baked coverage excludes frozen shadows");
   for (size_t i = 0; i < queries.size(); ++i)
     require(selfShadowed[i + 6 * queries.size()][3] < 1e-5f,
-            "Gather and scalar comparisons match with viewmodel self shadows");
+            "Gather and moving-layer rejection match the full filter with viewmodel self shadows");
   require(validationErrors == 0, "Shadow filter readback is Vulkan validation clean");
 } catch (VkResult error) {
   std::fprintf(stderr, "Shadow filtering GPU test failed: %d\n", int(error));

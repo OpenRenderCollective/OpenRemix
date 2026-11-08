@@ -4,13 +4,18 @@ layout(set = 0, binding = 7) uniform sampler2DArray staticLocalShadows;
 layout(set = 0, binding = 8) uniform sampler2DArray dynamicLocalShadows;
 #ifdef VIEWMODEL_PASS
 layout(set = 0, binding = 11) uniform sampler2DArray viewModelLocalShadows;
+const uint ViewModelLocalShadowFlag = 1u << 0;
+bool hasViewModelLocalShadows() { return (frame.clusterInfo.w & ViewModelLocalShadowFlag) != 0u; }
 #endif
+
+const uint StaticLocalShadowLayer = 1u;
+const uint MovingLocalShadowLayer = 2u;
 
 bool movingLocalShadowRequired(Light light, vec3 position) {
   if (light.corners[0].w <= 0 || light.corners[1].w >= 1) return false;
 #ifdef VIEWMODEL_PASS
   // Viewmodel self casters have a separate map and are not in world coverage.
-  if ((frame.clusterInfo.w & 1u) != 0u) return true;
+  if (hasViewModelLocalShadows()) return true;
 #endif
   if (light.responseWeights.y >= .5) return false;
   if (light.responseWeights.w < .5) return true;
@@ -35,11 +40,11 @@ float localShadowReference(uint face, vec2 pixel, float plane, vec3 normal, floa
   return receiver > 0 ? clamp((receiver - frame.localSettings.y) / range, 0, 1) : 0;
 }
 
-vec4 gatherLocalShadowDepth(vec3 coordinate, bool includeStatic) {
+vec4 gatherLocalShadowDepth(vec3 coordinate, bool includeStatic, bool includeMoving) {
   // Reorder the gather's footprint into the receiver plane's row order.
-  vec4 depth = textureGather(dynamicLocalShadows, coordinate).wzxy;
+  vec4 depth = includeMoving ? textureGather(dynamicLocalShadows, coordinate).wzxy : vec4(1);
 #ifdef VIEWMODEL_PASS
-  if ((frame.clusterInfo.w & 1u) != 0u)
+  if (includeMoving && hasViewModelLocalShadows())
     depth = min(depth, textureGather(viewModelLocalShadows, coordinate).wzxy);
 #endif
   if (includeStatic)
@@ -47,10 +52,13 @@ vec4 gatherLocalShadowDepth(vec3 coordinate, bool includeStatic) {
   return depth;
 }
 
-float localShadowVisibility(Light light, vec3 position, vec3 receiverNormal, bool includeStatic, bool allowGather) {
+float localShadowVisibility(Light light, vec3 position, vec3 receiverNormal, uint layers, bool allowGather) {
   uint tag = uint(light.corners[0].w);
-  if (tag == 0u)
+  float fade = light.corners[1].w;
+  if (tag == 0u || layers == 0u || fade >= 1)
     return 1;
+  bool includeStatic = (layers & StaticLocalShadowLayer) != 0u;
+  bool includeMoving = (layers & MovingLocalShadowLayer) != 0u;
   uint slot = tag - 1u;
   vec4 origin = frame.localPositions[slot];
   vec3 ray = position - origin.xyz;
@@ -72,15 +80,20 @@ float localShadowVisibility(Light light, vec3 position, vec3 receiverNormal, boo
     for (int y = 0; y < 4; y += 2)
       for (int x = 0; x < 4; x += 2) {
         vec2 block = base + vec2(x, y);
-        vec4 depth = gatherLocalShadowDepth(vec3((block + 1) / frame.localSettings.x, layer), includeStatic);
-        vec4 reference = vec4(
-            localShadowReference(face, block, plane, receiverNormal, origin.w),
-            localShadowReference(face, block + vec2(1, 0), plane, receiverNormal, origin.w),
-            localShadowReference(face, block + vec2(0, 1), plane, receiverNormal, origin.w),
-            localShadowReference(face, block + 1, plane, receiverNormal, origin.w));
+        vec4 depth = gatherLocalShadowDepth(vec3((block + 1) / frame.localSettings.x, layer), includeStatic, includeMoving);
         vec4 weights = vec4(weightsX[x], weightsX[x + 1], weightsX[x], weightsX[x + 1]) *
                        vec4(weightsY[y], weightsY[y], weightsY[y + 1], weightsY[y + 1]);
-        visibility += dot(weights, vec4(lessThanEqual(reference, depth)));
+        vec4 visible = vec4(1);
+        // Cleared texels pass every clamped receiver-plane depth comparison.
+        if (!all(equal(depth, vec4(1)))) {
+          vec4 reference = vec4(
+              localShadowReference(face, block, plane, receiverNormal, origin.w),
+              localShadowReference(face, block + vec2(1, 0), plane, receiverNormal, origin.w),
+              localShadowReference(face, block + vec2(0, 1), plane, receiverNormal, origin.w),
+              localShadowReference(face, block + 1, plane, receiverNormal, origin.w));
+          visible = vec4(lessThanEqual(reference, depth));
+        }
+        visibility += dot(weights, visible);
       }
   } else for (int y = 0; y < 4; ++y)
     for (int x = 0; x < 4; ++x) {
@@ -92,16 +105,14 @@ float localShadowVisibility(Light light, vec3 position, vec3 receiverNormal, boo
                          vec2(0), vec2(frame.localSettings.x - 1));
       float reference = localShadowReference(uint(adjacent.z), pixel, plane, receiverNormal, origin.w);
       vec3 coordinate = vec3(adjacent.xy * .5 + .5, float(slot * 6u) + adjacent.z);
-      float depth = textureLod(dynamicLocalShadows, coordinate, 0).r;
+      float depth = includeMoving ? textureLod(dynamicLocalShadows, coordinate, 0).r : 1;
 #ifdef VIEWMODEL_PASS
-      if ((frame.clusterInfo.w & 1u) != 0u) depth = min(depth, textureLod(viewModelLocalShadows, coordinate, 0).r);
+      if (includeMoving && hasViewModelLocalShadows())
+        depth = min(depth, textureLod(viewModelLocalShadows, coordinate, 0).r);
 #endif
       if (includeStatic) depth = min(depth, textureLod(staticLocalShadows, coordinate, 0).r);
       visibility += weight * float(reference <= depth);
     }
   // Selection fades shadowing, never the light's radiance or baked visibility.
-  return mix(visibility, 1, clamp(light.corners[1].w, 0, 1));
-}
-float localShadowVisibility(Light light, vec3 position, vec3 receiverNormal, bool includeStatic) {
-  return localShadowVisibility(light, position, receiverNormal, includeStatic, true);
+  return mix(visibility, 1, clamp(fade, 0, 1));
 }

@@ -79,6 +79,8 @@ namespace remix::forward::bake {
     std::unique_ptr<StyleWork> styles;
     std::vector<uint32_t> styleWords; // original indirect-only cache data
     StyledDirectGroups groupedStyles; // disposable derived publication data
+    std::shared_ptr<const mixed::ChartHighlightField> chartHighlights;
+    void prepareDiffusePublicationData(uint64_t storageRange, const Config &config);
     void prepareGroupedStyles(uint64_t storageRange, const Config &config);
     std::optional<ProbeVisibility> localProbes;
     std::vector<VisibilityTask> localProbeTasks;
@@ -193,7 +195,8 @@ namespace remix::forward::bake {
     enum class Visibility {
       Local, Direct, DirectionalField, Overflow, SurfaceSun, SurfaceSunAntialiasing, ProbeSun, ProbeLocal
     };
-    bool consumeVisibility(uint32_t slot, uint32_t first, uint32_t count, Visibility kind);
+    bool consumeVisibility(uint32_t slot, uint32_t first, uint32_t count, Visibility kind,
+                           std::span<const VisibilityTask> directTasks);
     uint32_t count(Work work, const Config &config, uint32_t remaining, uint32_t samples,
                    uint32_t bounces = 1) {
       return budget.count(work, config.batch, transport->timingSupported() ? config.gpuBudgetMs : 0, samples,

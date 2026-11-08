@@ -26,10 +26,16 @@ namespace remix::forward::viewmodel {
       float span = std::max(box.maximum[c] - box.minimum[c], .01f);
       float centre = (box.minimum[c] + box.maximum[c]) * .5f;
       if (c < 2) {
-        // Two texels for snapping plus the 3x3 shadow filter footprint.
-        span *= float(std::max(resolution, 8u)) / float(std::max(resolution, 8u) - 4);
-        const float texel = span / std::max(resolution, 1u);
-        centre = std::floor(centre / texel) * texel;
+        // A subtexel pose change must not resize the frozen-world map.
+        const float quantum = std::ldexp(1.f, std::ilogb(span) - 7);
+        span = std::ceil(span / quantum) * quantum;
+        const auto mapSize = std::max(resolution, 8u);
+        const auto snapTexels = std::clamp(mapSize / 16u, 1u, 4u);
+        // The nearest grid point moves the center by at most half a step.
+        // Leave two more texels on each side for the 4x4 tent.
+        span *= float(mapSize) / float(mapSize - snapTexels - 4);
+        const float snap = span * float(snapTexels) / float(mapSize);
+        centre = std::round(centre / snap) * snap;
       } else {
         span += std::max(.01f, span * .01f);
       }

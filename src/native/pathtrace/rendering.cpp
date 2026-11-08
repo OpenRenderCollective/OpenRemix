@@ -1776,11 +1776,8 @@ namespace remix {
     const auto stageEnd = lightStart;
     // Storage kept from frame to frame (megabytes with many emissive triangles).
     auto &lights = m_gpu->lightInput;
-    lights.clear();
-    if (options.torchLights) {
-      const auto spheres = resources.sphereLights();
-      lights.assign(spheres.begin(), spheres.end());
-    }
+    if (options.torchLights) resources.copySphereLights(lights);
+    else lights.clear();
     const auto sphereCount = lights.size();
     // The static set's emitters where the set keeps them (scene::mergedEmitters
     // has them in trace order; the light tree orders its input itself), then

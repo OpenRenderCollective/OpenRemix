@@ -5,8 +5,9 @@
 namespace remix::forward::bake {
   SunAntialiasing::SunAntialiasing(const scene::BakeScene &source, const lightmap::Layout &layout,
                                    std::span<const lightmap::Sun> sunlight, std::stop_token cancelled,
-                                   uint32_t sitesPerReceiver)
-      : m_siteCount(sitesPerReceiver), m_sampler(source, layout) {
+                                   uint32_t sitesPerReceiver, float receiverBias)
+      : m_siteCount(sitesPerReceiver), m_source(source), m_layout(layout), m_receiverBias(receiverBias),
+        m_sampler(source, layout) {
     if (m_siteCount != 4 && m_siteCount != 16)
       throw std::invalid_argument("Sunlight quadrature requires four or sixteen sites");
     if (sunlight.size() != layout.points.size() ||
@@ -73,7 +74,16 @@ namespace remix::forward::bake {
     std::vector<Point> result;
     result.resize(size_t(count) * m_siteCount);
     for (uint32_t i = first; i < first + count; ++i) {
-      m_sampler.sample(m_points[i], std::span(result).subspan(size_t(i - first) * m_siteCount, m_siteCount));
+      const auto point = m_points[i];
+      auto sites = std::span(result).subspan(size_t(i - first) * m_siteCount, m_siteCount);
+      m_sampler.sample(point, sites);
+      const auto &center = m_layout.points[point];
+      // Keep the full ray budget on the playable side when a footprint
+      // straddles a solid boundary.
+      if (!lightmap::buriedReceiverSample(m_source, center, m_receiverBias))
+        for (auto &site : sites)
+          if (lightmap::buriedReceiverSample(m_source, site, m_receiverBias))
+            site = center;
     }
     return result;
   }

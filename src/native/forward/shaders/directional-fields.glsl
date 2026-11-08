@@ -47,7 +47,7 @@ bool linearSurfaceDirectionalField(uint chart, uint capturedLight, vec4 coordina
   vec2 fraction = fract(pixel);
   uint encoding = occlusionWord(entry + 5u), data = table + occlusionWord(entry + 6u);
   float sh[9];
-  surfaceBasis(normal, sh);
+  irradianceBasis(normal, sh);
   float a = directionalFieldValue(data, encoding, size.x, low, sh);
   float b = directionalFieldValue(data, encoding, size.x, uvec2(high.x, low.y), sh);
   float c = directionalFieldValue(data, encoding, size.x, uvec2(low.x, high.y), sh);
@@ -55,8 +55,22 @@ bool linearSurfaceDirectionalField(uint chart, uint capturedLight, vec4 coordina
   value = mix(mix(a, b, fraction.x), mix(c, d, fraction.x), fraction.y);
   return true;
 }
+layout(constant_id = 16) const bool DirectionalOwnershipMask = false;
 bool surfaceDirectionalField(uint chart, uint capturedLight, vec4 coordinate, vec3 normal, vec4 bounds,
                               out float value) {
+  if (DirectionalOwnershipMask && chart < frame.occlusion.y && capturedLight != 0u && coordinate.w >= .5) {
+    uint table = frame.clusterInfo.z;
+    uint offset = table != 0u ? occlusionWord(table + 9u) : 0u;
+    if (offset != 0u) {
+      uint stride = occlusionWord(table + 10u);
+      uint light = capturedLight - 1u, column = light / 32u;
+      if (column >= stride ||
+          (occlusionWord(table + offset + chart * stride + column) & (1u << (light % 32u))) == 0u) {
+        value = 0;
+        return false;
+      }
+    }
+  }
   if (!BicubicLightmaps) {
     bool found = linearSurfaceDirectionalField(chart, capturedLight, coordinate, normal, value);
     value = max(value, 0);

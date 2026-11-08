@@ -49,14 +49,23 @@ namespace remix::forward::bake {
 
 
   } // namespace
-  bool Controller::Job::consumeVisibility(uint32_t slot, uint32_t first, uint32_t count, Visibility kind) {
+  bool Controller::Job::consumeVisibility(uint32_t slot, uint32_t first, uint32_t count, Visibility kind,
+                                          std::span<const VisibilityTask> directTasks) {
+    // Keep the initialized scratch extent across batches, including short tails.
+    const auto readBatch = [count](auto &scratch, auto read) {
+      if (scratch.size() < count) scratch.resize(count);
+      const auto values = std::span(scratch).first(count);
+      read(values);
+      return values;
+    };
+    const auto readScalar = [&](std::span<float> values) { transport->readScalarVisibility(slot, values); };
+    const auto readDirectional = [&](std::span<VisibilityResult> values) { transport->readVisibility(slot, values); };
     if (kind == Visibility::Local) {
-      overflowReadback.resize(count);
-      transport->readScalarVisibility(slot, overflowReadback);
+      const auto values = readBatch(overflowReadback, readScalar);
       for (uint32_t i = 0; i < count; ++i) {
-        if (!std::isfinite(overflowReadback[i])) return false;
+        if (!std::isfinite(values[i])) return false;
         const auto &task = mixedLights->tasks[first + i];
-        visibility[task.point][task.channel] = std::clamp(overflowReadback[i], 0.f, 1.f);
+        visibility[task.point][task.channel] = std::clamp(values[i], 0.f, 1.f);
       }
       return true;
     }
@@ -64,25 +73,17 @@ namespace remix::forward::bake {
       if (!localProbes) return false;
       try {
         const auto tasks = std::span(localProbeTasks).subspan(first, count);
-        if (localProbes->directional()) {
-          visibilityReadback.resize(count);
-          transport->readVisibility(slot, visibilityReadback);
-          localProbes->observe(tasks, visibilityReadback);
-        } else {
-          overflowReadback.resize(count);
-          transport->readScalarVisibility(slot, overflowReadback);
-          localProbes->observe(tasks, overflowReadback);
-        }
+        if (localProbes->directional())
+          localProbes->observe(tasks, readBatch(visibilityReadback, readDirectional));
+        else
+          localProbes->observe(tasks, readBatch(overflowReadback, readScalar));
         return true;
       } catch (const std::invalid_argument &) {
         return false;
       }
     }
     if (kind == Visibility::Overflow) {
-      if (overflowReadback.size() < count)
-        overflowReadback.resize(count);
-      const auto values = std::span(overflowReadback).first(count);
-      transport->readScalarVisibility(slot, values);
+      const auto values = readBatch(overflowReadback, readScalar);
       for (uint32_t i = 0; i < count; ++i) {
         if (!std::isfinite(values[i]))
           return false;
@@ -90,10 +91,7 @@ namespace remix::forward::bake {
       }
       return true;
     }
-    if (visibilityReadback.size() < count)
-      visibilityReadback.resize(count);
-    const auto results = std::span(visibilityReadback).first(count);
-    transport->readVisibility(slot, results);
+    const auto results = readBatch(visibilityReadback, readDirectional);
     if (kind == Visibility::DirectionalField) {
       if (!directionalCapture) return false;
       try {
@@ -103,8 +101,8 @@ namespace remix::forward::bake {
         return false;
       }
     }
-    const auto directBatch = kind == Visibility::Direct ? directWork->batch(first, count)
-                                                       : std::vector<VisibilityTask>{};
+    if (kind == Visibility::Direct && directTasks.size() != count)
+      throw std::logic_error("Direct-light readback is missing its submitted tasks");
     for (uint32_t i = 0; i < count; ++i) {
       const auto &value = results[i];
       if (!std::isfinite(value.visibility) ||
@@ -118,7 +116,7 @@ namespace remix::forward::bake {
         probe.irradiance[7][3] = probe.statistics[3] > .5f ? 1.f : 0.f;
         probe.irradiance[8][3] = std::clamp(value.visibility, 0.f, 1.f);
       } else if (kind == Visibility::Direct) {
-        const auto &task = directBatch[i];
+        const auto &task = directTasks[i];
         for (uint32_t coefficient = 0; coefficient < lightmap::irradianceLayers; ++coefficient)
           direct[task.point][coefficient][task.channel] = value.irradiance[coefficient];
       } else {
@@ -185,8 +183,8 @@ namespace remix::forward::bake {
       const auto sourceHash = source->lightingHash(irradianceContents == IrradianceContents::ReceiverDirect
           ? scene::BakeLightScope::ReceiverDirect : scene::BakeLightScope::Combined);
       cacheKey = cache::key(sourceHash, config, lightCutoff, deviceIdentity, directLighting,
-                            fallbackReflections);
-      diffuseReference = {cache::diffuseKey(sourceHash, config, lightCutoff, deviceIdentity, directLighting),
+                            fallbackReflections, source.get());
+      diffuseReference = {cache::diffuseKey(sourceHash, config, lightCutoff, deviceIdentity, directLighting, source.get()),
           cacheKey, config.reflectionProbes, config.reflectionResolution,
           std::bit_cast<uint32_t>(config.reflectionDetailTolerance)};
       try {
@@ -213,7 +211,7 @@ namespace remix::forward::bake {
         if (!cancellation.stop_requested())
           cache::recordLookup(cacheFile, cacheKey, sourceHash,
                                cache::key(0, config, lightCutoff, deviceIdentity, directLighting,
-                                          fallbackReflections), bool(cached));
+                                          fallbackReflections, source.get()), bool(cached));
         if (cached) {
           if (!diffuseRecovery)
             (void)cache::writeDiffuseReference(cacheFile.parent_path(), diffuseReference, cancellation.get_token());
@@ -243,7 +241,7 @@ namespace remix::forward::bake {
                 mixedLights->charts, mixedLights->directCharts);
           dumpReceiverReport(*source, surfaceLayout, surfacePixels, grid, cancellation.get_token());
           prepareSurfaceStorage();
-          prepareGroupedStyles(properties.limits.maxStorageBufferRange, config);
+          prepareDiffusePublicationData(properties.limits.maxStorageBufferRange, config);
           if (reflectionRecovery || (sunDepth && !sunDepth->restored())) {
             // Missing auxiliary components must not retrace cached irradiance/styles.
             Options depthOptions;
@@ -462,7 +460,7 @@ namespace remix::forward::bake {
                           : submission.direct ? Job::Visibility::Direct
                           : submission.sunAntialiasing ? Job::Visibility::SurfaceSunAntialiasing
                           : Job::Visibility::SurfaceSun;
-          if (!job.consumeVisibility(slot, submission.first, submission.count, kind)) {
+          if (!job.consumeVisibility(slot, submission.first, submission.count, kind, submission.directTasks)) {
             job.failed = true;
             status(REMIXAPI_BAKE_FAILED_EXT, "Bake produced non-finite visibility");
           }
@@ -608,7 +606,8 @@ namespace remix::forward::bake {
             "forward-surface-donors-" + std::to_string(++generation), [owner] {
               const auto began = std::chrono::steady_clock::now();
               const auto repaired = lightmap::repairInteriorDonors(
-                  owner->surfaceLayout, owner->surfaces, owner->cancellation.get_token());
+                  owner->surfaceLayout, owner->surfaces, owner->cancellation.get_token(), owner->source.get(),
+                  Options{}.bias / owner->source->sceneScale);
               std::fprintf(stderr, "Forward surface interior donors: %u hidden samples, %u repaired texels, "
                                    "%u charts without an exterior donor, %.3f ms CPU\n",
                            repaired.hiddenSamples, repaired.repairedTexels, repaired.unresolvedCharts,
@@ -719,7 +718,8 @@ namespace remix::forward::bake {
           [owner, sites = config.samples >= 16 ? 16u : 4u] {
             const auto begin = std::chrono::steady_clock::now();
             owner->sunAntialiasing = std::make_unique<SunAntialiasing>(
-                *owner->source, owner->surfaceLayout, owner->sun, owner->cancellation.get_token(), sites);
+                *owner->source, owner->surfaceLayout, owner->sun, owner->cancellation.get_token(), sites,
+                Options{}.bias / owner->source->sceneScale);
             owner->sunAntialiasingCpuMs +=
                 std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - begin).count();
             if (std::getenv("REMIX_DEBUG_BAKE_CAPTURE_PREFIX")) {
@@ -802,15 +802,10 @@ namespace remix::forward::bake {
           job.count(Work::Visibility, config, uint32_t(job.mixedLights->tasks.size() - job.visibilityNext),
                     config.samples);
       const auto batch = std::span(job.mixedLights->tasks).subspan(job.visibilityNext, count);
-      if (job.transport->hasVisibilityReceivers()) {
+      if (job.transport->hasVisibilityReceivers())
         job.transport->recordIndexedVisibility(command, m_slot, batch, config.samples);
-      } else {
-        std::vector<VisibilityPoint> points;
-        points.reserve(count);
-        for (const auto &task : batch)
-          points.push_back({job.surfaceLayout.points[task.point], task.light});
-        job.transport->recordVisibility(command, m_slot, points, config.samples, false);
-      }
+      else
+        job.transport->recordVisibilityTasks(command, m_slot, job.surfaceLayout.points, batch, config.samples);
       submission.job = m_job;
       submission.visibility = true;
       submission.first = job.visibilityNext;
@@ -851,11 +846,10 @@ namespace remix::forward::bake {
       if (submission.job) throw std::logic_error("Direct-light slot reused before its fence");
       const uint32_t count = job.count(Work::Visibility, config,
           job.directWork->size() - job.directNext, config.samples);
-      std::vector<VisibilityPoint> points;
-      points.reserve(count);
-      for (const auto &task : job.directWork->batch(job.directNext, count))
-        points.push_back({job.surfaceLayout.points[task.point], task.light});
-      job.transport->recordVisibility(command, m_slot, points, config.samples, true);
+      auto tasks = job.directWork->batch(job.directNext, count);
+      job.transport->recordVisibilityTasks(command, m_slot, job.surfaceLayout.points,
+                                           tasks, config.samples, true);
+      submission.directTasks = std::move(tasks);
       submission.job = m_job;
       submission.direct = true;
       submission.first = job.directNext;
@@ -912,15 +906,10 @@ namespace remix::forward::bake {
                                        uint32_t(tasks.size() - job.overflowNext), config.samples);
       // Classification needs visibility only, not another set of directional SH.
       const auto batch = tasks.subspan(job.overflowNext, count);
-      if (job.transport->hasVisibilityReceivers()) {
+      if (job.transport->hasVisibilityReceivers())
         job.transport->recordIndexedVisibility(command, m_slot, batch, config.samples);
-      } else {
-        std::vector<VisibilityPoint> points;
-        points.reserve(count);
-        for (const auto &task : batch)
-          points.push_back({job.surfaceLayout.points[task.point], task.light});
-        job.transport->recordVisibility(command, m_slot, points, config.samples, false);
-      }
+      else
+        job.transport->recordVisibilityTasks(command, m_slot, job.surfaceLayout.points, batch, config.samples);
       submission.job = m_job;
       submission.overflowVisibility = true;
       submission.first = job.overflowNext;

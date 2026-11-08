@@ -91,6 +91,33 @@ int main() {
     refused([&] { lm::repairInteriorDonors(invalid, values); });
   }
   {
+    scene::BakeScene source;
+    auto partition = std::make_shared<scene::VisibilityPartition>();
+    partition->closed = true;
+    partition->clusterCount = 1;
+    partition->nodes.push_back({{1, 0, 0, 0}, {-1, -2}, {}});
+    partition->leafClusters = {0, -1};
+    source.partition = partition;
+    lm::Layout terrain;
+    terrain.pageSize = 2;
+    terrain.pages = 1;
+    terrain.charts = {{0, 0, 0, 2, 2}};
+    terrain.points.resize(2);
+    terrain.points[0].position[0] = -.25f;
+    terrain.points[1].position[0] = .25f;
+    terrain.points[0].normal[2] = terrain.points[1].normal[2] = 1;
+    terrain.pointCharts = {0, 0};
+    terrain.owners = {0, 1, 0, 1};
+    const std::vector<forward::bake::Result> values(2);
+    const auto repaired = lm::repairInteriorDonors(terrain, values, {}, &source, .01f);
+    require(repaired.hiddenSamples == 1 && repaired.repairedTexels == 2 &&
+                terrain.owners == std::vector<uint32_t>{1, 1, 1, 1},
+            "Buried terrain donors are replaced even without a backface vote");
+    partition->closed = false;
+    require(!lm::buriedReceiverSample(source, terrain.points[0], .01f),
+            "An open partition cannot discard terrain samples");
+  }
+  {
     lm::Mesh mesh;
     mesh.vertices.resize(4);
     mesh.indices = {0, 1, 2};
@@ -269,6 +296,17 @@ int main() {
     center |= std::abs(p.position[0] - 10) < 1e-5f && std::abs(p.position[1]) < 1e-5f;
   }
   require(center, "Barycentric texel positions follow nonuniform instance transforms");
+  {
+    lm::Layout restored;
+    restored.charts = layout.charts;
+    restored.mappings = layout.mappings;
+    lm::ReceiverSampler sampler(scene, restored);
+    const auto point = sampler.pointAt(0, {2, 2});
+    require(point && std::abs(point->position[0] - 10) < 1e-5f && std::abs(point->position[1]) < 1e-5f &&
+                std::abs(point->position[2] - .5f) < 1e-5f && point->normal[2] < -.99f,
+            "Restored charts recover a representative point and oriented normal without transient bake points");
+    require(!sampler.pointAt(0, {4.5f, 2}), "Chart representatives cannot extrapolate outside the geometry");
+  }
   {
     lm::ReceiverSampler sampler(scene, layout);
     for (uint32_t i = 0; i < layout.points.size(); ++i)

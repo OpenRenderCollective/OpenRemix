@@ -65,13 +65,16 @@ namespace remix::forward {
       check(vkMapMemory(device, memory, 0, VK_WHOLE_SIZE, 0, &mapped));
   }
   void Buffer::write(const void *data, size_t bytes, size_t offset) {
+    copyToMapped(data, bytes, offset);
+    flush();
+  }
+  void Buffer::copyToMapped(const void *data, size_t bytes, size_t offset) {
     if (!mapped)
       throw VK_ERROR_MEMORY_MAP_FAILED;
     if (offset > capacity || bytes > capacity - offset)
       throw VK_ERROR_OUT_OF_HOST_MEMORY;
     if (bytes)
       std::memcpy(static_cast<std::byte *>(mapped) + offset, data, bytes);
-    flush();
   }
   void Buffer::flush() {
     if (!mapped)
@@ -112,6 +115,8 @@ namespace remix::forward {
                      uint32_t layers, uint32_t levels, VkImageViewType viewType) {
     device = target;
     const VkImageCreateInfo info{.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+                                 .flags = (viewType == VK_IMAGE_VIEW_TYPE_CUBE || viewType == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY)
+                                     ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : VkImageCreateFlags(0),
                                  .imageType = VK_IMAGE_TYPE_2D,
                                  .format = format,
                                  .extent = {extent.width, extent.height, 1},

@@ -2,26 +2,48 @@
 // or additional pass is needed. All invocations participate before early exits.
 // One bit per probe matches the current 64-record storage contract.
 shared vec4 probeTilePoints[64];
+shared vec4 probeTileRowMinimum[8];
+shared vec3 probeTileRowMaximum[8];
 shared vec4 probeTileMinimum;
 shared vec3 probeTileMaximum;
 shared uint probeTileMask[2];
 uvec2 probeTileCandidates(vec3 position, bool valid) {
-  if (probeParameters.x == 0u) return uvec2(0); // uniform across the workgroup
+  // Uniform across the workgroup. With one probe, let the receiver's exact
+  // influence test reject it without building tile bounds or synchronizing.
+  if (probeParameters.x <= 1u)
+    return uvec2(probeParameters.x, 0u);
   uint lane = gl_LocalInvocationIndex;
   bool finitePosition = !any(isnan(position)) && !any(isinf(position));
   probeTilePoints[lane] = vec4(valid && finitePosition ? position : vec3(0),
                              !valid ? 0 : finitePosition ? 1 : -1);
   barrier();
-  if (lane == 0u) {
+  // Eight lanes reduce rows in parallel. A separate summary array keeps
+  // these writes independent of the positions other lanes are still reading.
+  if (lane < 8u) {
     vec3 low = vec3(3.402823e38), high = -low;
     float status = 0;
-    for (uint i = 0u; i < 64u; ++i) {
-      vec4 point = probeTilePoints[i];
+    for (uint x = 0u; x < 8u; ++x) {
+      vec4 point = probeTilePoints[lane * 8u + x];
       if (point.w < 0) { status = -1; break; }
       if (point.w == 0) continue;
       status = 1;
       low = min(low, point.xyz);
       high = max(high, point.xyz);
+    }
+    probeTileRowMinimum[lane] = vec4(low, status);
+    probeTileRowMaximum[lane] = high;
+  }
+  barrier();
+  if (lane == 0u) {
+    vec3 low = vec3(3.402823e38), high = -low;
+    float status = 0;
+    for (uint row = 0u; row < 8u; ++row) {
+      vec4 minimum = probeTileRowMinimum[row];
+      if (minimum.w < 0) { status = -1; break; }
+      if (minimum.w == 0) continue;
+      status = 1;
+      low = min(low, minimum.xyz);
+      high = max(high, probeTileRowMaximum[row]);
     }
     probeTileMinimum = vec4(low, status);
     probeTileMaximum = high;

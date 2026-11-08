@@ -12,7 +12,7 @@ void source2Transition(Target &target, remix::forward::Options requested, Render
   requested.baking.reflectionResolution = 8;
   const auto quality = requested;
   presets::applySource2(requested);
-  require(!requested.rtGI && !requested.rtReflections && requested.ssr &&
+  require(!requested.rtGI && !requested.rtReflections && !requested.ssr &&
               requested.samples == quality.samples && requested.baking.samples == quality.baking.samples &&
               requested.baking.reflectionResolution == quality.baking.reflectionResolution,
           "Source 2 replaces live techniques while retaining the chosen quality budgets");

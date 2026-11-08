@@ -3,6 +3,7 @@
 #include "scene/bake_scene.h"
 #include <memory>
 #include <unordered_map>
+#include <utility>
 
 namespace remix::forward::shadows {
   constexpr uint32_t maximumLights = 8, faces = 6;
@@ -20,6 +21,24 @@ namespace remix::forward::shadows {
   using Coverage = std::array<Vec4, faces>;
   Coverage emptyCoverage();
   // Shared projection bound for orthographic sun and perspective local maps.
+  class CoverageProjection {
+  public:
+    explicit CoverageProjection(const Matrix &matrix, float nearPlane = 0)
+        : m_matrix(matrix), m_frustum(matrix), m_nearPlane(nearPlane) {}
+    void include(Vec4 &coverage, const Bounds &bounds) const;
+
+  private:
+    Matrix m_matrix;
+    ClipFrustum m_frustum;
+    float m_nearPlane;
+  };
+  template <size_t Count>
+  std::array<CoverageProjection, Count> coverageProjections(const std::array<Matrix, Count> &matrices,
+                                                              float nearPlane = 0) {
+    return [&]<size_t... Index>(std::index_sequence<Index...>) {
+      return std::array{CoverageProjection(matrices[Index], nearPlane)...};
+    }(std::make_index_sequence<Count>{});
+  }
   void includeCoverage(Vec4 &coverage, const Bounds &bounds, const Matrix &projection, float nearPlane = 0);
   void includeCoverage(Coverage &coverage, const Bounds &bounds, const View &view);
   // Selection is bounded by map memory/render cost, with stable slots for
@@ -40,7 +59,7 @@ namespace remix::forward::shadows {
     Selection update(std::span<const scene::SphereLight> lights, Vec3 eye, uint32_t budget, float cutoff,
                      float distance, float sceneScale, std::shared_ptr<const scene::BakeScene> source,
                      double seconds = 0, float fadeSeconds = 0,
-                     std::span<const uint8_t> fallbackLights = {});
+                     std::span<const uint8_t> fallbackLights = {}, std::span<const LightRange> ranges = {});
     bool captured(const scene::Draw &draw) const;
     const std::shared_ptr<const scene::BakeScene> &source() const { return m_source; }
 
@@ -52,6 +71,6 @@ namespace remix::forward::shadows {
     double m_seconds = 0;
     bool m_clockStarted = false;
     std::shared_ptr<const scene::BakeScene> m_source;
-    std::unordered_multimap<uint64_t, uint32_t> m_instances;
+    std::unordered_multimap<uint64_t, uint32_t> m_drawIndex;
   };
 } // namespace remix::forward::shadows

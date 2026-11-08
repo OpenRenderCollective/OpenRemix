@@ -21,6 +21,7 @@
  */
 
 #include "runtime/runtime.h"
+#include "forward/probes/cube_storage.h"
 #include "upscale/ngx.h"
 #include "upscale/xess.h"
 
@@ -417,6 +418,7 @@ namespace remix {
     }
     // Last: libxess sets fields of the finished chain and links its own
     // structures (upscale/xess.h).
+    features.features.imageCubeArray = forward::probes::nativeCubeStorage(selection.physicalDevice);
     void *featureChain = &features;
     const auto xessUnavailable = upscale::xess::enableDevice(m_instance, selection.physicalDevice, m_instanceApiVersion,
                                                              extensions, featureChain);

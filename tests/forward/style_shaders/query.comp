@@ -7,8 +7,8 @@ layout(set = 0, binding = 1, std140) uniform Weights { vec4 scales[32]; } weight
 #define STYLE_SCALE(style) weights.scales[(style) / 4u][(style) % 4u]
 #include "../../../src/native/forward/shaders/irradiance.glsl"
 #include "../../../src/native/forward/shaders/style-lighting.glsl"
-struct QueryFrame { vec4 localSettings; uvec4 occlusion, clusterInfo; };
-QueryFrame frame = QueryFrame(vec4(0), uvec4(0), uvec4(0));
+struct QueryFrame { vec4 localSettings, sunDirection; uvec4 occlusion, clusterInfo; };
+QueryFrame frame = QueryFrame(vec4(0), vec4(0), uvec4(0), uvec4(0));
 #include "../../../src/native/forward/shaders/lightmap.glsl"
 struct Query { vec4 coordinate, normal; uvec4 control; };
 layout(set = 0, binding = 2, std430) readonly buffer Queries { Query queries[]; };
@@ -20,9 +20,13 @@ void main() {
   Query q = queries[i];
   vec3 normal = normalize(q.normal.xyz), result = vec3(0);
   float sh[9];
-  surfaceBasis(normal, sh);
+  irradianceBasis(normal, sh);
   bool found = true;
-  if (q.control.x == 0u) result = styledSurfaceIrradiance(q.coordinate, sh);
+  if (q.control.x == 0u) {
+    StyledSurfaceLayout styles;
+    if (styledSurfaceLayout(q.coordinate, styles))
+      result = styledSurfaceIrradiance(q.coordinate.xy, styles, sh);
+  }
   else if (q.control.x == 1u) result = styledProbeIrradiance(q.control.y, sh);
   else if (q.control.x == 2u) found = bakedIrradiance(q.coordinate.xyz, normal, result);
   else {

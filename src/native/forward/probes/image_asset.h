@@ -18,8 +18,10 @@ namespace remix::forward::probes {
   // render queue; the caller retains this owner through every sampling fence.
   class ImageAsset {
   public:
+    enum class FaceStorage { Automatic, Stacked, CubeArray };
     ImageAsset(VkPhysicalDevice physical, VkDevice device, const Data &data,
-                 std::stop_token cancelled = {}, ReferenceProvenance reference = {});
+                 std::stop_token cancelled = {}, ReferenceProvenance reference = {},
+                 FaceStorage storage = FaceStorage::Automatic);
     ImageAsset(VkPhysicalDevice physical, VkDevice device, const Composition &composition);
     ImageAsset(VkPhysicalDevice physical, VkDevice device, const CoverageImagePlan &plan);
     ~ImageAsset();
@@ -55,8 +57,10 @@ namespace remix::forward::probes {
     void initialize(VkPhysicalDevice physical, const Header &header, const Normalization &normalization = {});
     void writeMetadata();
     VkDevice m_device;
+    FaceStorage m_storage = FaceStorage::Stacked;
     Header m_header;
     Normalization m_normalization;
+    std::array<Vec4, maxProbes * 6> m_terminalFaces{};
     std::array<ReferenceProvenance, maxProbes> m_references{};
     ReferenceProvenance m_reference; // only known when every sampled layer agrees
     VkDescriptorBufferInfo m_normalizedMetadata{}, m_neutralMetadata{};

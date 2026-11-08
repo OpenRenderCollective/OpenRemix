@@ -1,11 +1,19 @@
 #include "forward/mixed/publication.h"
 #include "forward/mixed/unified_masks.h"
 #include "forward/mixed/mask_lookup.h"
+#include "forward/mixed/directional_fields.h"
 #include "forward/lightmap/upload.h"
 #include <algorithm>
+#include <cstdlib>
+#include <cstdio>
 #include <stdexcept>
 
 namespace remix::forward::mixed {
+  bool bakedLightMasksEnabled() {
+    static const bool enabled = std::getenv("REMIX_DEBUG_DISABLE_BAKED_LIGHT_MASKS") == nullptr;
+    return enabled;
+  }
+
   namespace {
     uint64_t imageAllocation(VkDevice device, VkExtent2D extent, VkFormat format, uint32_t layers) {
       Image probe;
@@ -28,10 +36,34 @@ namespace remix::forward::mixed {
     }
     void allocate(VisibilityPublication &result, VkPhysicalDevice physical, VkDevice device) {
       result.lookupImage = std::make_unique<OcclusionMap>(physical, device,
-          VkExtent2D{result.lookup.width, result.lookup.height});
+          VkExtent2D{result.lookup.width, result.lookup.height}, VK_FORMAT_R32_UINT, result.lookup.layers);
       if (result.pages)
         result.pageImage = std::make_unique<OcclusionMap>(physical, device,
             VkExtent2D{result.pages->size, result.pages->size}, VK_FORMAT_R8_UNORM, result.pages->layers);
+    }
+    // These words exist only in the uploaded lookup. Cache and bake tables
+    // retain the original format and the sparse records remain authoritative.
+    void appendDirectionalOwnership(std::vector<uint32_t> &tail, size_t first,
+                                    std::span<const uint32_t> directional) {
+      if (directional.empty() ||
+          (!bakedLightMasksEnabled() && !std::getenv("REMIX_DEBUG_DIRECTIONAL_OWNERSHIP_MASK"))) return;
+      const uint32_t charts = directional[2], lights = directional[3];
+      const uint32_t stride = uint32_t((uint64_t(lights) + 31u) / 32u);
+      constexpr size_t maximumWords = (8u << 20) / sizeof(uint32_t);
+      const uint64_t words = uint64_t(charts) * stride;
+      if (words == 0 || words > maximumWords || words > UINT32_MAX - tail.size()) return;
+      const size_t mask = tail.size();
+      tail.resize(mask + size_t(words), 0);
+      tail[first + 9] = uint32_t(directional.size());
+      tail[first + 10] = stride;
+      const uint32_t offsets = directional[5], entries = directional[6];
+      for (uint32_t chart = 0; chart < charts; ++chart) {
+        const size_t row = mask + size_t(chart) * stride;
+        for (uint32_t entry = directional[offsets + chart]; entry < directional[offsets + chart + 1u]; ++entry) {
+          const uint32_t light = directional[entries + size_t(entry) * DirectionalFields::entryWords];
+          tail[row + light / 32u] |= 1u << (light % 32u);
+        }
+      }
     }
     VisibilityPublication candidate(VkDevice device, const Plan &plan,
         const Masks &masks, const VkPhysicalDeviceLimits &limits, bool allowPages, uint64_t budget,
@@ -46,12 +78,16 @@ namespace remix::forward::mixed {
         if (first + directional.size() > UINT32_MAX)
           throw std::length_error("Directional lookup exceeds word addressing");
         const auto offset = uint32_t(first);
+        const size_t header = tail.size();
         tail.insert(tail.end(), directional.begin(), directional.end());
+        if (first <= UINT32_MAX - directional.size() - ((8u << 20) / sizeof(uint32_t)))
+          appendDirectionalOwnership(tail, header, directional);
         return directional.empty() ? 0u : offset;
       };
       result.directionalOffset = appendDirectional(words);
-      result.lookup = plan.occlusion.pixels(limits.maxImageDimension2D, words);
-      result.compressedAllocation = imageAllocation(device, {result.lookup.width, result.lookup.height}, VK_FORMAT_R32_UINT, 1);
+      result.lookup = plan.occlusion.pixels(limits.maxImageArrayLayers, words);
+      result.compressedAllocation = imageAllocation(device, {result.lookup.width, result.lookup.height},
+                                                    VK_FORMAT_R32_UINT, result.lookup.layers);
       uint64_t lookupAllocation = result.compressedAllocation, pageAllocation = 0;
       if (allowPages) result.pages = selectMaskPages(masks, charts, limits.maxImageDimension2D,
                                                      limits.maxImageArrayLayers, {}, budget);
@@ -59,8 +95,8 @@ namespace remix::forward::mixed {
         auto pageWords = result.pages->words(charts);
         indexMaskRecords(pageWords, charts);
         const auto directionalOffset = appendDirectional(pageWords);
-        auto lookup = plan.occlusion.pixels(limits.maxImageDimension2D, pageWords);
-        const auto lookupBytes = imageAllocation(device, {lookup.width, lookup.height}, VK_FORMAT_R32_UINT, 1);
+        auto lookup = plan.occlusion.pixels(limits.maxImageArrayLayers, pageWords);
+        const auto lookupBytes = imageAllocation(device, {lookup.width, lookup.height}, VK_FORMAT_R32_UINT, lookup.layers);
         const auto pageBytes = imageAllocation(device, {result.pages->size, result.pages->size},
             VK_FORMAT_R8_UNORM, result.pages->layers);
         if (lookupBytes + pageBytes < result.compressedAllocation) {
@@ -75,7 +111,8 @@ namespace remix::forward::mixed {
     }
   }
   VisibilityPublication prepareVisibility(VkPhysicalDevice physical, VkDevice device,
-      const Plan &plan, const lightmap::Layout &layout, std::span<const uint16_t> pixels,
+      const Plan &plan, const lightmap::Layout &layout,
+      std::span<const uint16_t> pixels,
       bool allowPages, const UnifiedMasks *unified, std::span<const uint32_t> directional,
       bool preferCompleteDirectionals) {
     VkPhysicalDeviceProperties properties;
@@ -118,6 +155,7 @@ namespace remix::forward::mixed {
     // All comparisons used unbound images. Allocate only the winning lookup
     // and optional R8 pages, rather than several large directional candidates.
     try {
+
       allocate(legacy, physical, device);
     } catch (VkResult error) {
       if (error != VK_ERROR_OUT_OF_DEVICE_MEMORY && error != VK_ERROR_OUT_OF_HOST_MEMORY) throw;
@@ -129,6 +167,9 @@ namespace remix::forward::mixed {
         return prepareVisibility(physical, device, plan, layout, pixels, allowPages, nullptr, {});
       throw;
     }
+    if (legacy.directionalOffset != 0u && legacy.lookup.words[legacy.directionalOffset + 9u] != 0u)
+      std::fprintf(stderr, "Forward directional ownership mask: %u words per chart\n",
+                   legacy.lookup.words[legacy.directionalOffset + 10u]);
     return legacy;
   }
 }

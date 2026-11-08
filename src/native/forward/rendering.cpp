@@ -1,5 +1,6 @@
 #include "forward/gpu.h"
 #include "forward/material.h"
+#include "forward/lightmap/upload.h"
 #include "platform/gpu_timers.h"
 #include <algorithm>
 #include <cstdio>
@@ -15,13 +16,35 @@ namespace remix::forward {
       vkCmdSetScissor(command, 0, 1, &scissor);
     }
   } // namespace
+  void Renderer::Gpu::DrawBindings::bind(VkCommandBuffer command, VkPipelineLayout layout,
+      VkDescriptorSet material, VkBuffer vertices, VkBuffer indices) {
+    if (material != m_material) {
+      vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 1, 1, &material, 0, nullptr);
+      m_material = material;
+    }
+    if (vertices != m_vertices) {
+      const VkDeviceSize offset = 0;
+      vkCmdBindVertexBuffers(command, 0, 1, &vertices, &offset);
+      m_vertices = vertices;
+    }
+    if (indices != m_indices) {
+      vkCmdBindIndexBuffer(command, indices, 0, VK_INDEX_TYPE_UINT32);
+      m_indices = indices;
+    }
+  }
+
   void Renderer::Gpu::drawGeometry(VkCommandBuffer command, bool terrain, bool depthOnly, bool indirect) {
     const auto &frame = frames[slot];
     const bool gi = !depthOnly && bool(frame.rayInputs.diffuse);
+    // Publication can fall back to legacy fields on any bake. Only select
+    // the indexed variant from the flags actually supplied to this draw pass.
+    const bool indexed = indexedLightmapPipeline && frame.data.clusterInfo[2] != 0u &&
+        (frame.data.occlusion[0] & lightmap::indexedVisibilityFlag) != 0u;
+    const auto mappedPipeline = indexed ? indexedLightmapPipeline : lightmapPipeline;
     if (depthOnly && frame.depthBatch && frame.depthBatch->indexCount()) {
       vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, depthBatchPipeline);
       vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &frame.scene, 0, nullptr);
-      const VkBuffer buffers[] = {frame.depthBatch->positions().handle, frame.depthBatch->materials().handle};
+      const VkBuffer buffers[] = {frame.depthBatch->positions().handle, frame.depthBatch->tags().handle};
       const VkDeviceSize offsets[] = {0, 0};
       vkCmdBindVertexBuffers(command, 0, 2, buffers, offsets);
       vkCmdBindIndexBuffer(command, frame.depthBatch->indices().handle, 0, VK_INDEX_TYPE_UINT32);
@@ -57,6 +80,8 @@ namespace remix::forward {
                    static_cast<unsigned long long>(receiverRuns[0]),
                    static_cast<unsigned long long>(receiverRuns[1]),
                    static_cast<unsigned long long>(receiverRuns[2]));
+      if (indexed)
+        std::fprintf(stderr, "Forward indexed lightmap world pipeline active\n");
       reported = baking->volume()->hash;
     }
     const auto drawLayout = gi ? giLayout : layout;
@@ -68,8 +93,7 @@ namespace remix::forward {
     // State persists between consecutive draws. Keep this cache local to the
     // pass so other cameras/passes cannot leave stale bindings behind.
     VkPipeline boundPipeline = VK_NULL_HANDLE;
-    VkDescriptorSet boundMaterial = VK_NULL_HANDLE;
-    VkBuffer boundVertices = VK_NULL_HANDLE, boundIndices = VK_NULL_HANDLE;
+    DrawBindings bindings;
     static const bool profileReceivers = std::getenv("REMIX_DEBUG_FORWARD_RECEIVER_TIMINGS") != nullptr;
     const bool receiverTimings = profileReceivers && gpu::timing();
     const bool receiverStatistics = (receiverTimings || fragmentStatistics->enabled()) &&
@@ -78,7 +102,8 @@ namespace remix::forward {
     uint32_t receiverKind = 3;
     auto selectReceiver = [&](VkPipeline pipeline) {
       if (!receiverStatistics) return;
-      const uint32_t kind = pipeline == lightmapPipeline ? 1 : pipeline == partialLightmapPipeline ? 2 : 0;
+      const uint32_t kind = pipeline == mappedPipeline || pipeline == indexedRoughDielectricPipeline
+          ? 1 : pipeline == partialLightmapPipeline ? 2 : 0;
       if (kind == receiverKind) return;
       receiverTime.reset();
       fragmentStatistics->end(command);
@@ -89,13 +114,14 @@ namespace remix::forward {
       receiverKind = kind;
     };
     VkDeviceSize indirectOffset = 0;
-    auto drawIndexed = [&](uint32_t count, uint32_t first, int32_t offset) {
+    auto drawIndexed = [&](const VkDrawIndexedIndirectCommand &range) {
       if (indirect) {
         vkCmdDrawIndexedIndirect(command, frame.indirectDraws->handle, indirectOffset, 1,
                                  sizeof(VkDrawIndexedIndirectCommand));
         indirectOffset += sizeof(VkDrawIndexedIndirectCommand);
       } else {
-        vkCmdDrawIndexed(command, count, 1, first, offset, 0);
+        vkCmdDrawIndexed(command, range.indexCount, range.instanceCount, range.firstIndex,
+                         range.vertexOffset, range.firstInstance);
       }
     };
     auto drawCommand = [&](const Command &draw) {
@@ -106,58 +132,50 @@ namespace remix::forward {
       if (depthOnly) selected = mapped ? depthLightmapPipeline : depthPipeline;
       else if (gi) selected = terrain ? (mapped ? giTerrainLightmapPipeline : giTerrainPipeline)
                                      : (mapped ? giLightmapPipeline : giOpaquePipeline);
-      else if (terrain) selected = !mapped ? terrainPipeline : mapped->fullyMapped ? terrainLightmapPipeline
-                                                                                  : terrainPartialLightmapPipeline;
-      else selected = !mapped ? opaquePipeline : mapped->fullyMapped ? lightmapPipeline : partialLightmapPipeline;
-      if (!depthOnly && !terrain && !gi && !mapped && zeroDiffusePipeline &&
-          zeroDiffuseMaterial(*draw.source.material)) selected = zeroDiffusePipeline;
+      else if (terrain) selected = !mapped ? terrainPipeline : mapped->fullyMapped ? terrainLightmapPipeline : terrainPartialLightmapPipeline;
+      else selected = !mapped ? opaquePipeline : mapped->fullyMapped ? mappedPipeline : partialLightmapPipeline;
+      constexpr uint32_t roughnessOrMetallicTexture = 1u | 2u;
+      const bool roughDielectric = !depthOnly && !terrain && !gi && mapped && indexed &&
+          indexedRoughDielectricPipeline && !(drawScratch[draw.index].maps[0] & roughnessOrMetallicTexture) &&
+          drawScratch[draw.index].pbr[0] == 1.f && drawScratch[draw.index].pbr[1] == 0.f;
+      const VkPipeline drawMapped = roughDielectric ? indexedRoughDielectricPipeline : mappedPipeline;
+      if (selected == mappedPipeline) selected = drawMapped;
       auto bindPipeline = [&](VkPipeline pipeline) {
+        if (pipeline == indexedRoughDielectricPipeline) {
+          static thread_local bool reportedRoughDielectric = false;
+          if (!reportedRoughDielectric && debugDraws) {
+            std::fprintf(stderr, "Forward indexed rough dielectric pipeline active\n");
+            reportedRoughDielectric = true;
+          }
+        }
         selectReceiver(pipeline);
         if (pipeline != boundPipeline) {
           vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
           boundPipeline = pipeline;
         }
       };
-      const bool splitReceivers = mapped && !mapped->receiverRuns.empty() && !depthOnly && !terrain && !gi;
-      if (!splitReceivers) bindPipeline(selected);
-      if (draw.material != boundMaterial) {
-        vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, drawLayout, 1, 1, &draw.material, 0,
-                                nullptr);
-        boundMaterial = draw.material;
-      }
-      const uint32_t push[] = {draw.index, 0};
+      const uint32_t push[] = {draw.index, 0, draw.reflectionCandidates[0], draw.reflectionCandidates[1]};
+      const uint32_t pushBytes = techniquePlan.inlineReflections && !depthOnly && !terrain ? 16u : 8u;
       vkCmdPushConstants(command, drawLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-                         sizeof(push), push);
-      const VkDeviceSize offset = 0;
+                         pushBytes, push);
       const auto vertices = mapped ? mapped->vertices->handle : draw.geometry->vertices->handle;
       const auto indices = mapped ? mapped->indices->handle : draw.geometry->indices->handle;
-      if (vertices != boundVertices) {
-        vkCmdBindVertexBuffers(command, 0, 1, &vertices, &offset);
-        boundVertices = vertices;
-      }
-      if (indices != boundIndices) {
-        vkCmdBindIndexBuffer(command, indices, 0, VK_INDEX_TYPE_UINT32);
-        boundIndices = indices;
-      }
-      if (splitReceivers) {
-        for (const auto &run : mapped->receiverRuns) {
-          bindPipeline(run.coverage == lightmap::ReceiverCoverage::Mapped ? lightmapPipeline
-                     : run.coverage == lightmap::ReceiverCoverage::Unmapped ? unmappedLightmapPipeline
-                                                                          : partialLightmapPipeline);
-          drawIndexed(run.indexCount, run.firstIndex, 0);
-          ++statistics.drawCalls.worldColor;
-        }
-      } else {
-        drawIndexed(mapped ? mapped->count : draw.count, mapped ? 0 : draw.source.firstIndex,
-                    mapped ? 0 : draw.source.vertexOffset);
+      bindings.bind(command, drawLayout, draw.material, vertices, indices);
+      auto emit = [&](const auto &range, auto coverage) {
+        const VkPipeline pipeline = !coverage ? selected
+            : *coverage == lightmap::ReceiverCoverage::Mapped ? drawMapped
+            : *coverage == lightmap::ReceiverCoverage::Unmapped ? unmappedLightmapPipeline : partialLightmapPipeline;
         auto &calls = statistics.drawCalls;
+        bindPipeline(pipeline);
+        drawIndexed(range);
         ++(depthOnly ? calls.worldDepth : terrain ? calls.terrain : calls.worldColor);
         if (depthOnly && draw.captured) {
           ++calls.capturedDepth;
           calls.unconditionalCapturedDepth += uint32_t(draw.unconditionalCoverage);
         }
         if (depthOnly) ++calls.worldDepthLogical;
-      }
+      };
+      draw.forEachIndexRange(!depthOnly && !terrain && !gi, emit);
     };
     // Attribute actual emitted receiver runs, rather than their source mesh.
     // Partial source meshes can use both mapped and probe-only pipelines.
@@ -169,24 +187,29 @@ namespace remix::forward {
     fragmentStatistics->end(command);
   }
 
+  void Renderer::Gpu::submitShadowCaster(VkCommandBuffer command, const Command &draw, uint32_t layer,
+                                        DrawBindings &bindings) {
+    bindings.bind(command, layout, draw.material, draw.geometry->vertices->handle, draw.geometry->indices->handle);
+    const uint32_t push[] = {draw.index, layer};
+    vkCmdPushConstants(command, layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                       sizeof(push), push);
+    vkCmdDrawIndexed(command, draw.count, 1, draw.source.firstIndex, draw.source.vertexOffset, 0);
+  }
+
   void Renderer::Gpu::drawSunCasters(VkCommandBuffer command, uint32_t cascade, bool staticCasters) {
     const auto &frame = frames[slot];
     const auto &commands = staticCasters ? frame.staticCommands : frame.commands;
-    vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipeline);
-    vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &frame.scene, 0, nullptr);
+    const ClipFrustum frustum(frame.data.shadows[cascade]);
     uint32_t draws = 0;
+    DrawBindings bindings;
     for (const auto &draw : commands) {
-      if ((!staticCasters && draw.captured) || !intersectsClip(draw.worldBounds, frame.data.shadows[cascade]))
+      if ((!staticCasters && draw.captured) || !frustum.intersects(draw.worldBounds))
         continue;
-      vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 1, 1, &draw.material, 0,
-                              nullptr);
-      const uint32_t push[] = {draw.index, cascade};
-      vkCmdPushConstants(command, layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-                         sizeof(push), push);
-      const VkDeviceSize offset = 0;
-      vkCmdBindVertexBuffers(command, 0, 1, &draw.geometry->vertices->handle, &offset);
-      vkCmdBindIndexBuffer(command, draw.geometry->indices->handle, 0, VK_INDEX_TYPE_UINT32);
-      vkCmdDrawIndexed(command, draw.count, 1, draw.source.firstIndex, draw.source.vertexOffset, 0);
+      if (draws == 0) {
+        vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipeline);
+        vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &frame.scene, 0, nullptr);
+      }
+      submitShadowCaster(command, draw, cascade, bindings);
       ++draws;
     }
     if (staticCasters) statistics.drawCalls.staticSunShadow += draws;
@@ -199,29 +222,23 @@ namespace remix::forward {
                                        bool staticCasters) {
     const auto &frame = frames[slot];
     const auto &view = shadowSelection.views[lightSlot];
-    vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, localShadowPipeline);
-    vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &frame.scene, 0, nullptr);
-    auto submit = [&](const Command &draw) {
+    const auto &candidates = staticCasters ? frame.staticLocalCasters[lightSlot] : frame.movingLocalCasters[lightSlot];
+    if (candidates.empty()) return;
+    const ClipFrustum frustum(view.matrices[face]);
+    const auto &commands = staticCasters ? frame.staticCommands : frame.commands;
+    auto &counts = statistics.localShadowDraws[lightSlot];
+    auto &faceDraws = (staticCasters ? counts.frozen : counts.moving)[face];
+    DrawBindings bindings;
+    for (uint32_t index : candidates) {
+      const auto &draw = commands[index];
       // Keep seam-crossing bounds on each touched face, including offscreen actors.
-      if (!intersectsClip(draw.worldBounds, view.matrices[face])) return;
-      auto &counts = statistics.localShadowDraws[lightSlot];
-      ++(staticCasters ? counts.frozen : counts.moving)[face];
-      vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 1, 1, &draw.material, 0,
-                              nullptr);
-      const uint32_t push[] = {draw.index, lightSlot * shadows::faces + face};
-      vkCmdPushConstants(command, layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-                         sizeof(push), push);
-      const VkDeviceSize offset = 0;
-      vkCmdBindVertexBuffers(command, 0, 1, &draw.geometry->vertices->handle, &offset);
-      vkCmdBindIndexBuffer(command, draw.geometry->indices->handle, 0, VK_INDEX_TYPE_UINT32);
-      vkCmdDrawIndexed(command, draw.count, 1, draw.source.firstIndex, draw.source.vertexOffset, 0);
+      if (!frustum.intersects(draw.worldBounds)) continue;
+      if (faceDraws++ == 0) {
+        vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, localShadowPipeline);
+        vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &frame.scene, 0, nullptr);
+      }
+      submitShadowCaster(command, draw, lightSlot * shadows::faces + face, bindings);
       ++(staticCasters ? statistics.drawCalls.staticLocalShadow : statistics.drawCalls.movingLocalShadow);
-    };
-    if (staticCasters) {
-      for (const auto &draw : frame.staticCommands)
-        if (shadows::intersects(draw.worldBounds, view)) submit(draw);
-    } else {
-      for (uint32_t index : frame.movingLocalCasters[lightSlot]) submit(frame.commands[index]);
     }
   }
   void Renderer::Gpu::recordWorld(VkCommandBuffer command) {
@@ -233,21 +250,24 @@ namespace remix::forward {
       statistics.localShadowDraws[i].active = shadowSelection.active[i];
       statistics.localShadowDraws[i].lightId = shadowSelection.views[i].id;
     }
-    gpu::GpuScope clusterTime(command, "Forward+ light clustering");
-    vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, clusterPipeline);
-    vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &frame.scene, 0, nullptr);
-    vkCmdDispatch(command, (frame.data.grid[3] + 63) / 64, 1, 1);
-    const VkBufferMemoryBarrier barrier{.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-                                        .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
-                                        .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
-                                        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                                        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                                        .buffer = frame.clusters->handle,
-                                        .offset = 0,
-                                        .size = VK_WHOLE_SIZE};
-    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                         0, 0, nullptr, 1, &barrier, 0, nullptr);
-    clusterTime.close();
+    // Empty receiver lists and unclustered fallback do not read cluster headers.
+    if (statistics.clusterBuildLights != 0) {
+      gpu::GpuScope clusterTime(command, "Forward+ light clustering");
+      vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, clusterPipeline);
+      vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &frame.scene, 0, nullptr);
+      const uint32_t charts = (frame.data.clusterInfo[3] & clusterChartConeFlag) ? frame.data.occlusion[1] : 0;
+      vkCmdDispatch(command, (std::max(frame.data.grid[3], charts) + 63) / 64, 1, 1);
+      const VkBufferMemoryBarrier barrier{.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+                                          .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+                                          .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
+                                          .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                                          .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                                          .buffer = frame.clusters->handle,
+                                          .offset = 0,
+                                          .size = VK_WHOLE_SIZE};
+      vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                           0, 0, nullptr, 1, &barrier, 0, nullptr);
+    }
     // Initialization and enable/source transitions clear every layer. Once
     // disabled, those neutral maps remain valid without repeating empty passes.
     const VkClearValue shadowClear{.depthStencil = {1, 0}};
@@ -296,7 +316,7 @@ namespace remix::forward {
       drawLocalCasters(command, lightSlot, face, staticCasters);
     }, movingDirty);
     localTime.close();
-    const uint32_t visibilityDrawCount = prepareOpaqueVisibility();
+    const uint32_t visibilityBoundCount = prepareOpaqueVisibility();
     fragmentStatistics->reset(command, extent, samples, baking->volume() ? baking->volume()->hash : 0);
     gpu::GpuScope worldTime(command, "Forward+ opaque world shading", extent);
     const VkClearValue clear[] = {{.color = {{0, 0, 0, 0}}},
@@ -316,7 +336,7 @@ namespace remix::forward {
       gpu::GpuScope depthTime(command, "Forward+ opaque depth prepass", extent);
       drawGeometry(command, false, true);
     }
-    const bool useVisibility = visibilityDrawCount != 0;
+    const bool useVisibility = visibilityBoundCount != 0;
     static const bool reportVisibility = std::getenv("REMIX_DEBUG_FORWARD_DRAW_COUNTS") != nullptr;
     if (opaqueResumePass && reportVisibility) {
       static thread_local std::optional<bool> previous;
@@ -328,7 +348,7 @@ namespace remix::forward {
     if (useVisibility) {
       vkCmdNextSubpass(command, VK_SUBPASS_CONTENTS_INLINE);
       vkCmdEndRenderPass(command);
-      recordOpaqueVisibility(command, visibilityDrawCount);
+      recordOpaqueVisibility(command, visibilityBoundCount);
       auto resume = pass;
       resume.renderPass = opaqueResumePass;
       vkCmdBeginRenderPass(command, &resume, VK_SUBPASS_CONTENTS_INLINE);

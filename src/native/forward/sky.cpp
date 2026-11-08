@@ -1,6 +1,7 @@
 #include "forward/gpu.h"
 #include "forward/image_dump.h"
 #include "forward/probes/capture_dump.h"
+#include "scene/images.h"
 #include <algorithm>
 
 namespace remix::forward {
@@ -16,7 +17,15 @@ namespace remix::forward {
     const auto &radiance = dome.enabled ? dome.radiance : resources.skyRadiance();
     std::copy(radiance.begin(), radiance.end(), data.radiance.begin());
     data.radiance[3] = dome.enabled ? 1.f : 0.f;
-    data.target = {float(extent.width), float(extent.height), .002f / options.sceneScale, 0};
+    if (dome.enabled && dome.texture) {
+      if (classifiedSkyTexture.lock() != dome.texture) {
+        skyTextureHasZeroRgb = scene::textureHasZeroRgb(*dome.texture);
+        classifiedSkyTexture = dome.texture;
+      }
+      // Keep the dome's background ownership while making its lack of light explicit.
+      if (skyTextureHasZeroRgb) std::fill_n(data.radiance.begin(), 3, 0.f);
+    }
+    data.target = {float(extent.width), float(extent.height), options.reflectionSampleBias(), 0};
     ensure(frame.skyConstants, sizeof(data),
            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
                (ImageDump::enabled(physical) ? VK_BUFFER_USAGE_TRANSFER_SRC_BIT : 0u));
@@ -44,5 +53,18 @@ namespace remix::forward {
                                             .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                                             .pImageInfo = &image}};
     vkUpdateDescriptorSets(device, 2, writes, 0, nullptr);
+    if (techniquePlan.inlineReflections) {
+      const auto &probes = frame.reflectionProbes;
+      const VkWriteDescriptorSet environmentWrites[] = {
+          {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = frame.scene, .dstBinding = 12,
+           .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &probes.metadata},
+          {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = frame.scene, .dstBinding = 13,
+           .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .pBufferInfo = &buffer},
+          {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = frame.scene, .dstBinding = 14,
+           .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &image},
+          {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = frame.scene, .dstBinding = 19,
+           .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &probes.radiance}};
+      vkUpdateDescriptorSets(device, uint32_t(std::size(environmentWrites)), environmentWrites, 0, nullptr);
+    }
   }
 } // namespace remix::forward

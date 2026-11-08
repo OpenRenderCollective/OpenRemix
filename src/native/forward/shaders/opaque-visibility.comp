@@ -5,7 +5,7 @@
 layout(push_constant) uniform VisibilitySettings {
   mat4 camera;
   uvec2 extent;
-  uint drawCount;
+  uint boundCount;
 };
 const uint TileSize = 32u;
 const uint GroupWidth = 8u;
@@ -24,7 +24,6 @@ layout(set = 0, binding = 1, std430) writeonly buffer TileDepth {
 shared float depthMaxima[64];
 
 float farthestSample(uvec2 pixel) {
-  if (any(greaterThanEqual(pixel, extent))) return 1;
 #ifdef SINGLE_SAMPLE
   return texelFetch(prepassDepth, ivec2(pixel), 0).r;
 #else
@@ -36,12 +35,20 @@ float farthestSample(uvec2 pixel) {
 }
 
 void main() {
-  uvec2 origin = gl_WorkGroupID.xy * TileSize + gl_LocalInvocationID.xy;
+  uvec2 tileOrigin = gl_WorkGroupID.xy * TileSize;
+  uint lane = gl_LocalInvocationIndex;
+  uint tile = gl_WorkGroupID.y * gl_NumWorkGroups.x + gl_WorkGroupID.x;
+  // The original reduction includes every out-of-bounds pixel at depth 1.
+  // A partial tile therefore cannot reject geometry, regardless of its samples.
+  if (any(greaterThan(tileOrigin + TileSize, extent))) {
+    if (lane == 0u) tileDepth[tile] = 1;
+    return;
+  }
+  uvec2 origin = tileOrigin + gl_LocalInvocationID.xy;
   float farthest = 0;
   for (uint y = 0u; y < TileSize; y += GroupWidth)
     for (uint x = 0u; x < TileSize; x += GroupWidth)
       farthest = max(farthest, farthestSample(origin + uvec2(x, y)));
-  uint lane = gl_LocalInvocationIndex;
   depthMaxima[lane] = farthest;
   barrier();
   for (uint stride = 32u; stride > 0u; stride >>= 1u) {
@@ -50,7 +57,7 @@ void main() {
     barrier();
   }
   if (lane == 0u)
-    tileDepth[gl_WorkGroupID.y * gl_NumWorkGroups.x + gl_WorkGroupID.x] = depthMaxima[0];
+    tileDepth[tile] = depthMaxima[0];
 }
 #else
 layout(local_size_x = 64) in;
@@ -58,8 +65,10 @@ layout(set = 0, binding = 1, std430) readonly buffer TileDepth {
   float tileDepth[];
 };
 struct DrawBounds {
-  vec4 minimum; // w is one for a valid conservative bound
-  vec4 maximum;
+  vec3 minimum;
+  uint firstCommand;
+  vec3 maximum;
+  uint commandCount;
 };
 layout(set = 0, binding = 2, std430) readonly buffer Bounds {
   DrawBounds bounds[];
@@ -78,7 +87,6 @@ layout(set = 0, binding = 3, std430) buffer IndirectDraws {
 };
 
 bool canReject(DrawBounds box) {
-  if (box.minimum.w == 0) return false;
   vec2 low = vec2(1), high = vec2(0);
   float nearest = 1;
   for (uint corner = 0u; corner < 8u; ++corner) {
@@ -110,7 +118,10 @@ bool canReject(DrawBounds box) {
 
 void main() {
   uint draw = gl_GlobalInvocationID.x;
-  if (draw < drawCount && canReject(bounds[draw]))
-    draws[draw].indexCount = 0u;
+  if (draw >= boundCount) return;
+  DrawBounds box = bounds[draw];
+  if (!canReject(box)) return;
+  for (uint i = 0u; i < box.commandCount; ++i)
+    draws[box.firstCommand + i].indexCount = 0u;
 }
 #endif

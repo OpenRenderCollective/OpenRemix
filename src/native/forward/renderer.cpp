@@ -1,5 +1,7 @@
 #include "forward/gpu.h"
+#include "forward/bake/storage_options.h"
 #include "forward/bake/transport_memory.h"
+#include "forward/image_dump.h"
 #include "platform/gpu_timers.h"
 #include "runtime/pipelines.h"
 #include <algorithm>
@@ -101,6 +103,7 @@ namespace remix::forward {
     reflections.reset();
     rayLighting.reset();
     for (auto &frame : frames) {
+      if (frame.chartHighlightCopy) vkDestroyEvent(device, frame.chartHighlightCopy, nullptr);
       if (frame.pool)
         vkDestroyDescriptorPool(device, frame.pool, nullptr);
       frame.commands.clear();
@@ -112,8 +115,8 @@ namespace remix::forward {
     }
     geometries.clear();
     spareGeometry.clear();
-    for (auto handle : {opaquePipeline, lightmapPipeline, partialLightmapPipeline, unmappedLightmapPipeline,
-                        depthPipeline, depthLightmapPipeline, depthBatchPipeline, zeroDiffusePipeline,
+    for (auto handle : {opaquePipeline, lightmapPipeline, indexedLightmapPipeline, indexedRoughDielectricPipeline, partialLightmapPipeline, unmappedLightmapPipeline,
+                        depthPipeline, depthLightmapPipeline, depthBatchPipeline,
                         shadowPipeline, localShadowPipeline,
                         clusterPipeline, compositePipeline, viewModelPipeline, viewModelEarlyPipeline, viewModelDepthPipeline,
                         giViewModelPipeline, giViewModelEarlyPipeline, giOpaquePipeline, giLightmapPipeline,
@@ -138,7 +141,7 @@ namespace remix::forward {
     for (auto handle : {worldPass, shadowPass, opaqueResumePass})
       if (handle)
         pipeline::destroyRenderPass(device, handle, nullptr);
-    for (auto handle : {sampler, shadowSampler, surfaceSampler, skySampler})
+    for (auto handle : {sampler, surfaceSampler, skySampler})
       if (handle)
         pipeline::destroySampler(device, handle, nullptr);
   }
@@ -158,6 +161,10 @@ namespace remix::forward {
     auto next = std::make_unique<Gpu>();
     next->physical = physical;
     next->device = device;
+    VkPhysicalDeviceProperties properties{};
+    vkGetPhysicalDeviceProperties(physical, &properties);
+    next->maxStorageBufferRange = properties.limits.maxStorageBufferRange;
+    next->maxComputeGroupsX = properties.limits.maxComputeWorkGroupCount[0];
     if (pipelines) next->localSelectionPreparation = std::make_unique<probes::LocalSelectionPreparation>(physical, device, *pipelines);
     next->extent = extent;
     next->fragmentStatistics = std::make_unique<FragmentStatistics>(physical, device);
@@ -165,6 +172,8 @@ namespace remix::forward {
     next->encodeOutput = encodeOutput;
     next->hardwareSrgb = hardwareSrgb;
     next->capabilities = ray::Provider::capabilities(physical, hardwareRay);
+    next->capabilities.forceReflectionResolve = ImageDump::enabled(physical) ||
+        std::getenv("REMIX_DEBUG_FORWARD_FORCE_REFLECTION_RESOLVE");
     next->techniquePlan = techniques::resolveResources(options, next->capabilities);
     next->rayLighting.initialize(physical, device, next->techniquePlan, next->capabilities);
     next->statistics.rayGI = next->rayLighting.diffuseStatistics();
@@ -209,7 +218,10 @@ namespace remix::forward {
       next->waterPass->initialize(physical, device, extent, next->samples, next->sceneLayout,
                                   next->materialLayout,
                                   {next->color->view, next->depth->view,
-                                   next->resolved ? next->resolved->view : VK_NULL_HANDLE}, next->techniquePlan.rayWater, next->techniquePlan.rayDiffuse(), next->techniquePlan.bakedDirect);
+                                   next->resolved ? next->resolved->view : VK_NULL_HANDLE},
+                                  {.rayReflections = next->techniquePlan.rayWater,
+                                   .liveDiffuse = next->techniquePlan.rayDiffuse(),
+                                   .bakedDirect = next->techniquePlan.composesBakedDirect()});
     }
     next->baking =
         baking ? std::move(baking)

@@ -34,8 +34,9 @@ namespace remix::forward::probe_batch {
       const VkDescriptorSetLayoutCreateInfo setInfo{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
           .bindingCount = 3, .pBindings = bindings};
       check(pipeline::createDescriptorSetLayout(device, &setInfo, nullptr, &set));
+      const VkPushConstantRange dispatch{VK_SHADER_STAGE_COMPUTE_BIT, 0, 2 * sizeof(uint32_t)};
       const VkPipelineLayoutCreateInfo layoutInfo{.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-          .setLayoutCount = 1, .pSetLayouts = &set};
+          .setLayoutCount = 1, .pSetLayouts = &set, .pushConstantRangeCount = 1, .pPushConstantRanges = &dispatch};
       check(pipeline::createPipelineLayout(device, &layoutInfo, nullptr, &layout));
       pipeline::nameCode(gatherShader, "forward.probe-visibility-gather");
       const auto module = shaderModule(device, gatherShader, sizeof(gatherShader));
@@ -77,7 +78,11 @@ namespace remix::forward::probe_batch {
     const uint32_t probes = source ? source->irradianceHeader.dimensions[3] : 0;
     const uint32_t groups = uint32_t((capturedLights.size() + 3) / 4);
     const uint64_t elements = uint64_t(probes) * groups;
-    const uint64_t bytes = 16 + elements * 16;
+    const uint64_t maskBytes = 16 + elements * 16;
+    const auto availableCells = source ? source->probeEndpointCellSides.size() : 0;
+    const auto cellBytes = ((uint64_t(availableCells) * groups + 15) / 16) * 16;
+    const auto cells = uint32_t(maskBytes + cellBytes <= m_byteBudget ? availableCells : 0);
+    const uint64_t bytes = maskBytes + (cells ? cellBytes : 0);
     if (!source || !source->data || probes == 0 || capturedLights.empty() ||
         capturedLights.size() > maximumLights || bytes > m_byteBudget ||
         source->data->device != m_device ||
@@ -108,16 +113,20 @@ namespace remix::forward::probe_batch {
     next->m_lights.assign(capturedLights.begin(), capturedLights.end());
     next->m_probes = probes;
     next->m_groups = groups;
-    std::array<uint32_t, 4 + maximumLights> parameters{};
+    std::vector<uint32_t> parameters(4 + maximumLights + cells);
     parameters[0] = probes;
     parameters[1] = uint32_t(capturedLights.size());
     parameters[2] = groups;
     parameters[3] = 0x56504252u;
     std::copy(capturedLights.begin(), capturedLights.end(), parameters.begin() + 4);
-    next->m_parameters.create(m_physical, m_device, sizeof(parameters), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    if (cells)
+      std::copy(next->m_source->probeEndpointCellSides.begin(), next->m_source->probeEndpointCellSides.end(),
+                parameters.begin() + 4 + maximumLights);
+    const auto parameterBytes = parameters.size() * sizeof(uint32_t);
+    next->m_parameters.create(m_physical, m_device, parameterBytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     next->m_bufferBytes += next->m_parameters.allocationBytes;
     m_resources->account(next->m_parameters.allocationBytes);
-    next->m_parameters.write(parameters.data(), sizeof(parameters));
+    next->m_parameters.write(parameters.data(), parameterBytes);
     next->m_values.create(m_physical, m_device, bytes,
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, Buffer::Memory::Device);
     next->m_bufferBytes += next->m_values.allocationBytes;
@@ -143,7 +152,18 @@ namespace remix::forward::probe_batch {
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, m_resources->pipeline);
     vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, m_resources->layout,
                             0, 1, &next->m_set, 0, nullptr);
+    std::array<uint32_t, 2> dispatch{cells, 0};
+    vkCmdPushConstants(command, m_resources->layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(dispatch), dispatch.data());
     vkCmdDispatch(command, uint32_t((elements + 63) / 64), 1, 1);
+    if (cells) {
+      const VkMemoryBarrier gathered{.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+          .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT, .dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT};
+      vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+          0, 1, &gathered, 0, nullptr, 0, nullptr);
+      dispatch[1] = 1;
+      vkCmdPushConstants(command, m_resources->layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(dispatch), dispatch.data());
+      vkCmdDispatch(command, uint32_t((uint64_t(cells) * groups + 1023) / 1024), 1, 1);
+    }
     ++m_recordedGathers;
     const VkMemoryBarrier visible{.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
         .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT, .dstAccessMask = VK_ACCESS_SHADER_READ_BIT};

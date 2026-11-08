@@ -194,6 +194,8 @@ if get_option('gpu_tests')
     include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
     cpp_args : test_cpp_args)
   test('Hardware diffuse bake transport and textured visibility', bake_transport_test, timeout : 180)
+  test('Hardware bake dielectric sheet transmission', bake_transport_test,
+    args : ['--dielectric-sheet-only'], timeout : 60)
   test('Encoded and linear environment color agree in reflection capture transport', bake_transport_test,
     args : ['--color-capture-only'], timeout : 120)
   test('Receiver-direct and incoming irradiance partitions conserve surface and probe energy', bake_transport_test,
@@ -231,6 +233,7 @@ forward_lightmaps_test = executable('remix-forward-lightmaps-test', 'lightmaps.c
 test('Surface lightmap atlas planning and world texel ownership', forward_lightmaps_test)
 
 forward_mixed_test = executable('remix-forward-mixed-test', 'mixed.cpp',
+  '../../src/native/forward/mixed/chart_highlights.cpp',
   '../../src/native/forward/mixed/data.cpp', '../../src/native/forward/lightmap/layout.cpp', '../../src/native/forward/lightmap/receiver_footprint.cpp', '../../src/native/forward/lightmap/receiver_sampler.cpp', '../../src/native/forward/bake/sun_antialiasing.cpp', '../../src/native/forward/lightmap/packing.cpp', '../../src/native/forward/lightmap/fit.cpp', '../../src/native/forward/lightmap/parameterization.cpp', '../../src/native/forward/lightmap/curved.cpp', '../../src/native/forward/lightmap/harmonic.cpp', '../../src/native/forward/lightmap/fan.cpp', '../../src/native/forward/lightmap/seams.cpp', '../../src/native/forward/lightmap/curved_seams.cpp', '../../src/native/forward/lightmap/seam_mesh.cpp', '../../src/native/forward/lightmap/surface_walk.cpp', '../../src/native/forward/lightmap/coverage.cpp',
   '../../src/native/forward/mixed/refine.cpp', '../../src/native/forward/mixed/direct_work.cpp', '../../src/native/forward/mixed/ownership.cpp', '../../src/native/forward/mixed/directional_links.cpp', '../../src/native/forward/mixed/overflow.cpp', '../../src/native/forward/mixed/occlusion.cpp', '../../src/native/forward/mixed/masks.cpp', '../../src/native/forward/mixed/mask_codec.cpp', '../../src/native/forward/mixed/mask_palette.cpp',
   '../../src/native/forward/ray/capture.cpp', '../../src/native/forward/bake/data.cpp', '../../src/native/forward/bake/policy.cpp',

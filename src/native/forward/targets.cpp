@@ -222,7 +222,7 @@ namespace remix::forward {
         {6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
         {7, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
         {8, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
-        {9, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
+        {9, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
         {10, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
         {11, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
         {12, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
@@ -241,13 +241,13 @@ namespace remix::forward {
                                                     .bindingCount = uint32_t(std::size(sceneBindings)),
                                                     .pBindings = sceneBindings};
     check(pipeline::createDescriptorSetLayout(device, &sceneInfo, nullptr, &sceneLayout));
-    VkDescriptorSetLayoutBinding materialBindings[5];
-    for (uint32_t i = 0; i < 5; ++i)
+    VkDescriptorSetLayoutBinding materialBindings[materialTextureCount];
+    for (uint32_t i = 0; i < materialTextureCount; ++i)
       materialBindings[i] = {i, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT,
                              nullptr};
     const VkDescriptorSetLayoutCreateInfo materialInfo{
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-        .bindingCount = 5,
+        .bindingCount = materialTextureCount,
         .pBindings = materialBindings};
     check(pipeline::createDescriptorSetLayout(device, &materialInfo, nullptr, &materialLayout));
     const VkDescriptorSetLayoutBinding compositeBindings[] = {
@@ -264,7 +264,8 @@ namespace remix::forward {
         .pBindings = compositeBindings};
     check(pipeline::createDescriptorSetLayout(device, &compositeInfo, nullptr, &compositeSetLayout));
     const VkDescriptorSetLayout sets[] = {sceneLayout, materialLayout};
-    const VkPushConstantRange push{VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 8};
+    const VkPushConstantRange push{VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                                   techniquePlan.inlineReflections ? 16u : 8u};
     const VkPipelineLayoutCreateInfo layoutInfo{.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
                                                 .setLayoutCount = 2,
                                                 .pSetLayouts = sets,
@@ -308,10 +309,5 @@ namespace remix::forward {
     samplerInfo.magFilter = samplerInfo.minFilter = VK_FILTER_LINEAR;
     samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
     check(pipeline::createSampler(device, &samplerInfo, nullptr, &skySampler));
-    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-    samplerInfo.magFilter = samplerInfo.minFilter = VK_FILTER_NEAREST;
-    samplerInfo.compareEnable = VK_TRUE;
-    samplerInfo.compareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
-    check(pipeline::createSampler(device, &samplerInfo, nullptr, &shadowSampler));
   }
 } // namespace remix::forward

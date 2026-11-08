@@ -16,19 +16,46 @@ layout(set = PROBE_SET, binding = PROBE_BINDING, std430) readonly buffer Reflect
   ReflectionProbe probes[64];
   vec4 priorityMinimum[64], priorityMaximum[64];
   vec4 normalizationSH[64];
+  vec4 terminalFaces[64 * 6];
+  uint spatialMaskWords[];
 };
+#ifdef INLINE_WORLD_REFLECTIONS
+layout(constant_id = 15) const bool FastTerminalProbe = false;
+layout(constant_id = 18) const bool SpatialProbeMask = false;
+
+uvec2 spatialProbeCandidates(vec3 position, uvec2 candidates) {
+  if (spatialMaskWords.length() < 8) return candidates;
+  vec3 origin = vec3(int(spatialMaskWords[0]), int(spatialMaskWords[1]), int(spatialMaskWords[2]));
+  uvec3 dimensions = uvec3(spatialMaskWords[3], spatialMaskWords[4], spatialMaskWords[5]);
+  vec3 cell = floor(position * (1.0 / 128.0)) - origin;
+  if (!all(greaterThanEqual(cell, vec3(0))) || !all(lessThan(cell, vec3(dimensions))))
+    return candidates;
+  uvec3 c = uvec3(cell);
+  uint offset = 6u + 2u * (c.x + dimensions.x * (c.y + dimensions.y * c.z));
+  return candidates & uvec2(spatialMaskWords[offset], spatialMaskWords[offset + 1u]);
+}
+#endif
 #ifndef PROBE_IMAGE_BINDING
 #error Reflection consumers must bind the HDR radiance image
 #endif
-layout(set = PROBE_SET, binding = PROBE_IMAGE_BINDING) uniform sampler2DArray probeImages;
 #include "cube.glsl"
+#ifdef NATIVE_PROBE_CUBE
+layout(set = PROBE_SET, binding = PROBE_IMAGE_BINDING) uniform samplerCubeArray probeImages;
+#else
+layout(set = PROBE_SET, binding = PROBE_IMAGE_BINDING) uniform sampler2DArray probeImages;
+#endif
 vec3 probeImageFaceTexel(uint probe, uint level, uint size, uint face, ivec2 pixel) {
   if (any(lessThan(pixel, ivec2(0))) || any(greaterThanEqual(pixel, ivec2(size)))) {
     vec3 adjacent = cubeProjection(cubeDirection(face, 2 * (vec2(pixel) + .5) / float(size) - 1));
     face = uint(adjacent.z);
     pixel = clamp(ivec2((adjacent.xy * .5 + .5) * float(size)), ivec2(0), ivec2(size) - 1);
   }
+#ifdef NATIVE_PROBE_CUBE
+  vec2 centre = (2 * (vec2(pixel) + .5) / float(size)) - 1;
+  return textureLod(probeImages, vec4(cubeDirection(face, centre), float(probe)), float(level)).rgb;
+#else
   return texelFetch(probeImages, ivec3(pixel.x, int(face*size) + pixel.y, int(probe)), int(level)).rgb;
+#endif
 }
 vec3 probeImageTexel(uint probe, uint level, uint size, uint face, ivec2 pixel) {
   bvec2 outside = bvec2(pixel.x < 0 || pixel.x >= int(size), pixel.y < 0 || pixel.y >= int(size));
@@ -40,25 +67,76 @@ vec3 probeImageTexel(uint probe, uint level, uint size, uint face, ivec2 pixel) 
   }
   return probeImageFaceTexel(probe, level, size, face, pixel);
 }
-vec3 probeMip(uint probe, uint level, vec3 ray) {
+#ifdef INLINE_WORLD_REFLECTIONS
+vec3 terminalProbeBlend(uint probe, vec2 uv, uint face) {
+  // Across each edge the one-texel mip reads the adjacent face centre.
+  // The corner tap remains the average of the three incident face centres.
+  const uvec4 neighbours[6] = uvec4[6](
+      uvec4(4, 5, 2, 3), uvec4(5, 4, 2, 3), uvec4(1, 0, 5, 4),
+      uvec4(1, 0, 4, 5), uvec4(1, 0, 2, 3), uvec4(0, 1, 2, 3));
+  vec2 pixel = uv - .5;
+  bvec2 negative = lessThan(pixel, vec2(0));
+  uvec4 edges = neighbours[face];
+  uint first = probe * 6u;
+  vec3 centre = terminalFaces[first + face].rgb;
+  vec3 x = terminalFaces[first + (negative.x ? edges.x : edges.y)].rgb;
+  vec3 y = terminalFaces[first + (negative.y ? edges.z : edges.w)].rgb;
+  vec3 corner = (centre + x + y) / 3;
+  vec2 fraction = fract(pixel);
+  vec3 result = vec3(0);
+  for (uint tap = 0u; tap < 4u; ++tap) {
+    bvec2 upper = bvec2((tap & 1u) != 0u, (tap & 2u) != 0u);
+    bvec2 outside = notEqual(upper, negative);
+    vec3 value = outside.x ? (outside.y ? corner : x) : (outside.y ? y : centre);
+    vec2 weight = mix(1 - fraction, fraction, upper);
+    result += value * weight.x * weight.y;
+  }
+  return result;
+}
+#endif
+vec3 probeMip(uint probe, uint level, vec2 uv, uint face) {
   uint size = probeParameters.y >> level;
-  vec3 projected = cubeProjection(ray);
-  vec2 pixel = (projected.xy * .5 + .5) * float(size) - .5;
+#ifdef INLINE_WORLD_REFLECTIONS
+  if (FastTerminalProbe && size == 1u) return terminalProbeBlend(probe, uv, face);
+#endif
+  vec2 pixel = uv * float(size) - .5;
   ivec2 base = ivec2(floor(pixel));
   vec2 fraction = fract(pixel);
   vec3 result = vec3(0);
   for (uint corner = 0; corner < 4u; ++corner) {
     ivec2 upper = ivec2(corner & 1u, (corner >> 1u) & 1u);
     vec2 weight = mix(1 - fraction, fraction, vec2(upper));
-    result += probeImageTexel(probe, level, size, uint(projected.z), base + upper) * weight.x * weight.y;
+    result += probeImageTexel(probe, level, size, face, base + upper) * weight.x * weight.y;
   }
   return result;
 }
-// Candidates may come from screen tiles or a small object's receiver bounds.
-// Unmasked users, including water, keep the contiguous walk. Both paths
-// visit probes in the same header order.
-vec3 probeFeather(ReflectionProbe record, vec3 localPosition) {
-  vec3 halfSize = (record.influenceMaximum.xyz - record.influenceMinimum.xyz) * .5;
+vec3 sampleProbeRadiance(uint probe, float lod, vec3 direction) {
+#ifdef NATIVE_PROBE_CUBE
+  // The 1x1 mip's exact cross-face blend is part of the rough reflection
+  // reference. Face-centre samples keep that reconstruction in full precision.
+  if (lod < float(probeParameters.z - 1u))
+    return textureLod(probeImages, vec4(direction, float(probe)), lod).rgb;
+#endif
+  vec3 projected = cubeProjection(direction);
+  vec2 uv = projected.xy * .5 + .5;
+  uint face = uint(projected.z);
+#ifdef NATIVE_PROBE_CUBE
+  return probeMip(probe, probeParameters.z - 1u, uv, face);
+#else
+  uint low = uint(lod), high = uint(ceil(lod));
+  float halfTexel = .5 / float(probeParameters.y >> high);
+  // The coarser mip has the widest footprint. Within one face the hardware
+  // can filter both mips directly. At seams, remap taps onto adjacent faces.
+  if (all(greaterThan(uv, vec2(halfTexel))) && all(lessThan(uv, vec2(1 - halfTexel)))) {
+    vec2 stackedUv = vec2(uv.x, (projected.z + uv.y) / 6);
+    return textureLod(probeImages, vec3(stackedUv, float(probe)), lod).rgb;
+  }
+  vec3 fine = probeMip(probe, low, uv, face);
+  if (low == high) return fine;
+  return mix(fine, probeMip(probe, high, uv, face), fract(lod));
+#endif
+}
+vec3 probeFeather(ReflectionProbe record, vec3 localPosition, vec3 halfSize) {
   vec3 inverseWidth = vec3(record.maximum.w, record.influenceMinimum.w, record.influenceMaximum.w);
   inverseWidth = mix(1 / (halfSize * .2), inverseWidth, greaterThan(inverseWidth, vec3(0)));
   vec3 distance = min(localPosition - record.influenceMinimum.xyz, record.influenceMaximum.xyz - localPosition);
@@ -82,53 +160,58 @@ vec3 probeParallaxDirection(ReflectionProbe record, vec3 position, vec3 reflecte
                            vec3 localPosition, vec3 localRay) {
   // Influence bounds can extend beyond the proxy. A miss must preserve the
   // unprojected direction, rather than inventing a hit on an unrelated face.
-  float entryDistance = 0, exitDistance = 3.402823e38;
-  bool outside = any(lessThan(localPosition, record.minimum.xyz)) ||
-                 any(greaterThan(localPosition, record.maximum.xyz));
-  for (uint c = 0; c < 3u; ++c) {
-    if (abs(localRay[c]) <= 1e-10) {
-      if (localPosition[c] < record.minimum[c] || localPosition[c] > record.maximum[c])
-        return reflected;
-      continue;
-    }
-    if (outside) {
-      float a = (record.minimum[c] - localPosition[c]) / localRay[c];
-      float b = (record.maximum[c] - localPosition[c]) / localRay[c];
-      entryDistance = max(entryDistance, min(a, b));
-      exitDistance = min(exitDistance, max(a, b));
-      if (exitDistance < entryDistance) return reflected;
-    } else {
-      // Ordinary interior receivers need only the original far-plane division.
-      float plane = localRay[c] > 0 ? record.maximum[c] : record.minimum[c];
-      exitDistance = min(exitDistance, (plane - localPosition[c]) / localRay[c]);
-    }
+  const float farDistance = 3.402823e38;
+  vec3 toMinimum = record.minimum.xyz - localPosition;
+  vec3 toMaximum = record.maximum.xyz - localPosition;
+  bvec3 outside = mix(greaterThan(toMinimum, vec3(0)), bvec3(true),
+                      lessThan(toMaximum, vec3(0)));
+  bvec3 parallel = lessThanEqual(abs(localRay), vec3(1e-10));
+  bvec3 positive = greaterThan(localRay, vec3(0));
+  vec3 ray = mix(localRay, vec3(1), parallel);
+  // Inside the proxy only the exit planes constrain the ray.
+  vec3 exits = mix(mix(toMinimum, toMaximum, positive) / ray, vec3(farDistance), parallel);
+  float exitDistance = min(min(exits.x, exits.y), exits.z);
+  if (any(outside)) {
+    if (any(mix(bvec3(false), outside, parallel))) return reflected;
+    vec3 entries = mix(mix(toMaximum, toMinimum, positive) / ray, vec3(0), parallel);
+    float entryDistance = max(max(entries.x, entries.y), max(entries.z, 0));
+    if (exitDistance < entryDistance) return reflected;
   }
   vec3 corrected = position + reflected * exitDistance - record.position.xyz;
   if (exitDistance <= 0 || dot(corrected, corrected) < 1e-10) corrected = reflected;
   return corrected;
 }
+// Bound and automatic receivers use the same projection and capture reference.
+vec4 sampleProjectedProbe(uint probe, ReflectionProbe record, vec3 position, vec3 localPosition,
+                          vec3 reflected, float lod, vec3 normal, bool normalizeLighting) {
+  vec3 localRay;
+  for (uint c = 0u; c < 3u; ++c)
+    localRay[c] = dot(record.worldToLocal[c].xyz, reflected);
+  vec3 corrected = probeParallaxDirection(record, position, reflected, localPosition, localRay);
+  float reference = normalizeLighting ? max(dot(normalizationSH[probe], vec4(normal, 1)), 0) : 0;
+  return vec4(sampleProbeRadiance(probe, lod, corrected), reference);
+}
 // Explicit receiver assignments bypass influence/priority selection, while
 // retaining the selected capture's projection and roughness-filtered mips.
+bool probeLayerAvailable(uint layer) {
+  return layer != 0u && layer <= probeParameters.x;
+}
 bool boundProbeSample(uint layer, vec3 position, vec3 reflected, float roughness,
                       vec3 normal, bool normalizeLighting, out vec4 result) {
   result = vec4(0);
-  if (layer == 0u || layer > probeParameters.x || dot(reflected, reflected) < 1e-10) return false;
+  if (!probeLayerAvailable(layer) || dot(reflected, reflected) < 1e-10) return false;
   uint probe = layer - 1u;
   ReflectionProbe record = probes[probe];
   reflected = normalize(reflected);
-  vec3 localPosition, localRay;
-  for (uint c = 0u; c < 3u; ++c) {
+  vec3 localPosition;
+  for (uint c = 0u; c < 3u; ++c)
     localPosition[c] = dot(record.worldToLocal[c], vec4(position, 1));
-    localRay[c] = dot(record.worldToLocal[c].xyz, reflected);
-  }
-  vec3 corrected = probeParallaxDirection(record, position, reflected, localPosition, localRay);
   float lod = clamp(roughness, 0, 1) * float(probeParameters.z - 1u);
-  uint low = uint(lod), high = min(low + 1u, probeParameters.z - 1u);
-  float reference = normalizeLighting ? max(dot(normalizationSH[probe], vec4(normal, 1)), 0) : 0;
-  result = vec4(mix(probeMip(probe, low, corrected), probeMip(probe, high, corrected), lod - float(low)), reference);
+  result = sampleProjectedProbe(probe, record, position, localPosition, reflected, lod, normal, normalizeLighting);
   return true;
 }
-#ifdef PROBE_TILE_CANDIDATES
+// Masked and contiguous walks visit probes in the same header order.
+#ifdef MASKED_REFLECTION_PROBES
 bool probeSampleMasked(vec3 position, vec3 reflected, float roughness, uvec2 candidates,
                        vec3 normal, bool normalizeLighting, out vec4 result) {
 #else
@@ -136,6 +219,13 @@ bool probeSample(vec3 position, vec3 reflected, float roughness,
                  vec3 normal, bool normalizeLighting, out vec4 result) {
 #endif
   result = vec4(0);
+#ifdef MASKED_REFLECTION_PROBES
+#ifdef INLINE_WORLD_REFLECTIONS
+  if (SpatialProbeMask && (candidates.x | candidates.y) != 0u)
+    candidates = spatialProbeCandidates(position, candidates);
+#endif
+  if ((candidates.x | candidates.y) == 0u) return false;
+#endif
   if (probeParameters.x == 0u || dot(reflected, reflected) < 1e-10)
     return false;
   reflected = normalize(reflected);
@@ -148,7 +238,7 @@ bool probeSample(vec3 position, vec3 reflected, float roughness,
   // cancels common floor/wall bands instead of washing out their priority.
   if (layered) {
     maximumCoverage = 0;
-#ifdef PROBE_TILE_CANDIDATES
+#ifdef MASKED_REFLECTION_PROBES
     uvec2 pending = candidates;
     while (any(notEqual(pending, uvec2(0)))) {
       uint word = pending.x != 0u ? 0u : 1u;
@@ -169,8 +259,7 @@ bool probeSample(vec3 position, vec3 reflected, float roughness,
   vec4 group = vec4(0);
   float priority = 3.402823e38, remaining = 1, groupCoverage = layered ? 0 : 1;
   bool found = false;
-  uint low = uint(lod), high = min(low + 1u, probeParameters.z - 1u);
-#ifdef PROBE_TILE_CANDIDATES
+#ifdef MASKED_REFLECTION_PROBES
   while (any(notEqual(candidates, uvec2(0)))) {
     uint word = candidates.x != 0u ? 0u : 1u;
     uint probe = word * 32u + uint(findLSB(candidates[word]));
@@ -180,11 +269,9 @@ bool probeSample(vec3 position, vec3 reflected, float roughness,
   for (uint probe = 0; probe < probeParameters.x; ++probe) {
 #endif
     ReflectionProbe record = probes[probe];
-    vec3 localPosition, localRay;
-    for (uint c = 0u; c < 3u; ++c) {
+    vec3 localPosition;
+    for (uint c = 0u; c < 3u; ++c)
       localPosition[c] = dot(record.worldToLocal[c], vec4(position, 1));
-      localRay[c] = dot(record.worldToLocal[c].xyz, reflected);
-    }
     if (any(lessThan(localPosition, record.influenceMinimum.xyz)) ||
         any(greaterThan(localPosition, record.influenceMaximum.xyz))) continue;
     if (record.minimum.w != priority && total > 0) {
@@ -196,11 +283,8 @@ bool probeSample(vec3 position, vec3 reflected, float roughness,
       if (remaining == 0) break;
     }
     priority = record.minimum.w;
-    // Intersect the reflected ray with its parallax proxy. Sampling from the
-    // capture origin toward that hit corrects parallax as the receiver moves.
-    vec3 corrected = probeParallaxDirection(record, position, reflected, localPosition, localRay);
     vec3 halfSize = (record.influenceMaximum.xyz - record.influenceMinimum.xyz) * .5;
-    vec3 feather = probeFeather(record, localPosition);
+    vec3 feather = probeFeather(record, localPosition, halfSize);
     // Independent axis bands retain doorway fades on a shared solid floor.
     // A finite edge limit preserves normalized energy at exact wall corners.
     vec3 edgeFade = max(feather, vec3(1e-4));
@@ -215,9 +299,7 @@ bool probeSample(vec3 position, vec3 reflected, float roughness,
     float confidence = record.position.w > 0 ? record.position.w : 1;
     float spatialWeight = confidence / max(dot(offset, offset), coreSquared);
     float weight = spatialWeight * edge;
-    vec3 radiance = mix(probeMip(probe, low, corrected), probeMip(probe, high, corrected), lod - float(low));
-    float reference = normalizeLighting ? max(dot(normalizationSH[probe], vec4(normal, 1)), 0) : 0;
-    group += vec4(radiance, reference) * weight;
+    group += sampleProjectedProbe(probe, record, position, localPosition, reflected, lod, normal, normalizeLighting) * weight;
     total += weight;
     if (layered) groupCoverage = max(groupCoverage, probePriorityCoverage(probe, record, localPosition));
   }
@@ -248,7 +330,7 @@ bool boundProbeRadiance(uint layer, vec3 position, vec3 reflected, float roughne
 bool boundProbeRadiance(uint layer, vec3 position, vec3 reflected, float roughness, out vec3 result) {
   return boundProbeRadiance(layer, position, reflected, roughness, vec3(0), -1, result);
 }
-#ifdef PROBE_TILE_CANDIDATES
+#ifdef MASKED_REFLECTION_PROBES
 bool probeRadianceMasked(vec3 position, vec3 reflected, float roughness, uvec2 candidates,
                          vec3 normal, float receiverLuma, out vec3 result) {
   vec4 captureSample;

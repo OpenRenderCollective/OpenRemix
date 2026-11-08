@@ -17,5 +17,8 @@ struct ShadingReceiver {
   BakedReceiver baked;
   bool directChannels;
   uint reflectionLayer;
+#ifdef INLINE_WORLD_REFLECTIONS
+  uvec2 reflectionCandidates;
+#endif
   float opacity;
 };

@@ -3,6 +3,7 @@
 #include "cluster_shaders/embedded.h"
 #include "gpu_fixture.h"
 #include <algorithm>
+#include <cmath>
 #include <exception>
 
 using namespace remix;
@@ -60,7 +61,8 @@ int main() try {
   gpu.query = pipeline(gpu, cluster_input::queryShader, sizeof(cluster_input::queryShader));
   gpu.frame.create(fixture.physical, gpu.device, sizeof(FrameData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
   gpu.lights.create(fixture.physical, gpu.device, 513 * sizeof(LightData), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-  gpu.clusters.create(fixture.physical, gpu.device, maximumCells * (64 + clusterHeaderWords) * sizeof(uint32_t),
+  constexpr uint32_t clusterWords = maximumCells * (64 + clusterHeaderWords);
+  gpu.clusters.create(fixture.physical, gpu.device, clusterWords * sizeof(uint32_t),
                        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
   gpu.results.create(fixture.physical, gpu.device, maximumCells * 2 * sizeof(UInt4), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
   const VkDescriptorPoolSize sizes[] = {{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1},
@@ -82,7 +84,7 @@ int main() try {
   vkUpdateDescriptorSets(gpu.device, 4, writes, 0, nullptr);
   uint32_t cases = 0;
   auto run = [&](std::span<const LightData> lights, uint32_t prefix, uint32_t capacity,
-                 bool clustered, float sign, uint32_t columns = 2) {
+                 bool clustered, float sign, uint32_t columns = 2, bool membership = false) {
     FrameData frame{};
     frame.view = frame.inverseProjection = scene::identity();
     frame.view[10] = sign;
@@ -91,6 +93,7 @@ int main() try {
     frame.depth = {.1f, 10, 0, sign};
     frame.target[2] = uint32_t(lights.size());
     frame.clusterInfo = {capacity, prefix == UINT32_MAX ? 0 : prefix + 1, 0, 0};
+    if (membership) frame.occlusion[2] = 0x80000000u;
     if (clustered) frame.clusterInfo[1] |= clusteredBakedTail;
     gpu.frame.write(&frame, sizeof(frame));
     auto prepared = std::vector<LightData>(lights.begin(), lights.end());
@@ -99,7 +102,7 @@ int main() try {
       light.clusterBounds = clusterSphereBounds(frame.view,
           {light.positionRadius[0], light.positionRadius[1], light.positionRadius[2]}, light.shaping[2], radiusScale);
     gpu.lights.write(prepared.data(), prepared.size() * sizeof(LightData));
-    std::vector<uint32_t> cleared(maximumCells * (64 + clusterHeaderWords), 0xdeadbeefu);
+    std::vector<uint32_t> cleared(clusterWords, 0xdeadbeefu);
     gpu.clusters.write(cleared.data(), cleared.size() * sizeof(uint32_t));
     fixture.begin();
     vkCmdBindDescriptorSets(fixture.command, VK_PIPELINE_BIND_POINT_COMPUTE, gpu.layout, 0, 1, &set, 0, nullptr);
@@ -143,7 +146,7 @@ int main() try {
         const auto &selected = fallback ? all : active;
         const bool linear = (fallback && !clustered) || selected.size() > capacity;
         const uint32_t count = linear ? (fallback ? uint32_t(lights.size()) : runtime) : uint32_t(selected.size());
-        const UInt4 expected{count, uint32_t(linear), count == 0 ? UINT32_MAX : linear ? 0u : selected.front(),
+        UInt4 expected{count, uint32_t(linear), count == 0 ? UINT32_MAX : linear ? 0u : selected.front(),
                              count == 0 ? UINT32_MAX : linear ? count - 1 : selected.back()};
         require(results[cell * 2 + receiver] == expected,
                 "Cluster GPU query preserves complete covered/uncovered light selection and overflow");
@@ -152,9 +155,25 @@ int main() try {
             require(cleared[cell * (capacity + clusterHeaderWords) + clusterHeaderWords + i] == selected[i],
                     "Stored cluster indices retain sorted late lights and runtime prefix ownership");
       }
+      if (membership) {
+        uint32_t expectedMembership = 0;
+        for (const auto index : active) expectedMembership |= 1u << index;
+        require(cleared[cell * (capacity + clusterHeaderWords)] == expectedMembership,
+                "Membership header retains each runtime hit, including overflow and bit 31");
+      }
+    }
+    if (clustered ? lights.empty() : runtime == 0) {
+      const uint32_t stride = capacity + clusterHeaderWords;
+      for (uint32_t cell = 0; cell < cells; ++cell) {
+        const uint32_t base = cell * stride;
+        require(cleared[base] == 0 && cleared[base + 1] == 0, "Empty clusters clear both count headers");
+        for (uint32_t i = clusterHeaderWords; i < stride; ++i)
+          require(cleared[base + i] == 0xdeadbeefu, "Empty clusters leave unused indices untouched");
+      }
     }
     ++cases;
   };
+  run({}, UINT32_MAX, 1, false, 1, 17); // Empty final partial workgroup.
   std::vector<LightData> lights(70);
   for (auto &light : lights) { light.positionRadius = {-.5f, -.5f, .5f, .1f}; light.shaping[2] = .1f; }
   for (float sign : {1.f, -1.f})
@@ -210,6 +229,14 @@ int main() try {
   }
   for (auto &light : lights) light.positionRadius[0] = 0;
   run(lights, 1, 64, true, 1, 17);
+  lights.assign(33, {});
+  for (uint32_t i = 0; i < lights.size(); ++i) {
+    auto &light = lights[i];
+    light.positionRadius = {3, 0, 3, .1f};
+    light.shaping[2] = 100;
+  }
+  run(lights, 32, 64, true, 1, 2, true);
+  run(lights, 32, 2, true, 1, 2, true);
   require(validationErrors.load() == 0, "Cluster dispatch and receiver queries remain validation-clean");
   std::printf("Clustered baked-tail GPU membership and independent overflow passed (%u cases)\n", cases);
   return 0;

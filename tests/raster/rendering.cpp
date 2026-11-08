@@ -8,6 +8,8 @@
 #include "forward/bake/sun_depth.h"
 #include "forward/bake/cache_persistence.h"
 #include "forward/bake/cache.h"
+#include "forward/mixed/chart_highlights.h"
+#include "forward/mixed/data.h"
 #include "forward/mixed/directional_fields.h"
 #include "forward/lightmap/denoise.h"
 #include "forward/ray_scene.h"
@@ -1103,13 +1105,15 @@ namespace {
       };
       publish();
       bool redExists = true;
-      auto render = [&](bool dynamic) {
+      auto render = [&](bool dynamic, std::span<const remixapi_LightHandle> extraLights = {}) {
         camera(r);
         r.drawRetained(nullptr);
         if (redExists)
           r.drawLight(red);
         if (dynamic)
           r.drawLight(green);
+        for (auto handle : extraLights)
+          r.drawLight(handle);
         return target.render();
       };
       auto until = [&](const char *phase, bool ready) {
@@ -1150,13 +1154,14 @@ namespace {
         const auto hash = target.forward->statistics().baking.activeHash;
         require(pixels[left] < 3 && pixels[right] < 3,
                 "Initially-off styled light leaves neither direct light nor permanent shared indirect glow");
-        auto setStyle = [&](float redValue, float blueValue = 0) {
+        auto setStyle = [&](float redValue, float blueValue = 0,
+                            std::span<const remixapi_LightHandle> extraLights = {}) {
           info.isDynamic = 0;
           info.radiance = {redValue, 0, blueValue};
           r.updateLight(red, info);
           publish();
           require(r.bakeScene() == frozen, "Live style intensity and colour reuse captured input identity");
-          return render(false);
+          return render(false, extraLights);
         };
         pixels = setStyle(8);
         const auto lit = pixels[right];
@@ -1187,6 +1192,24 @@ namespace {
         pixels = render(false);
         require(std::abs(int(pixels[right]) - int(lit)) < 4,
                 "Styled mixed shadows clear when their dynamic caster is removed");
+        // Exercise the styled receiver while more than four overlapping local
+        // lights are active. The last light is the only green contributor.
+        auto overlappingInfo = info;
+        overlappingInfo.isDynamic = 1;
+        std::array<remixapi_LightHandle, 6> overlapping{};
+        for (size_t i = 0; i < overlapping.size(); ++i) {
+          overlappingInfo.hash = 9820 + i;
+          overlappingInfo.radiance = i + 1 == overlapping.size()
+              ? remixapi_Float3D{0, 3, 0} : remixapi_Float3D{0, 0, .1f};
+          r.createLight(overlappingInfo, overlapping[i]);
+        }
+        for (float intensity : {0.f, 8.f, 0.f, 8.f}) {
+          pixels = setStyle(intensity, 0, overlapping);
+          require(pixels[right + 1] > 20 && (intensity == 0 ? pixels[right] < 3 : pixels[right] > 80) &&
+                      target.forward->statistics().baking.activeHash == hash,
+                  "Overlapping local lights retain the last contribution and respond to alternating styles");
+        }
+        for (auto handle : overlapping) r.destroyLight(handle);
         r.setBakeScene(nullptr);
         for (uint32_t frame = 0; frame < remix::gpuFrameCount + 2; ++frame) render(false);
         publish();
@@ -1919,7 +1942,7 @@ namespace {
     // the injected image rather than the replaced allocation.
     const auto previousOcclusion = volume->occlusionParameters[0];
     const auto previousDirectOffset = volume->surfaceDirectOffset;
-    volume->occlusionParameters[0] &= 0x7fffffffu;
+    volume->occlusionParameters[0] &= 0x1fffffffu;
     volume->surfaceDirectOffset = 0;
     camera(target.raster);
     target.raster.drawRetained(nullptr);
@@ -3012,7 +3035,8 @@ namespace {
         options.baking.samples = 128;
         options.baking.bounces = 1;
         options.baking.batch = 128;
-        options.baking.reflectionProbes = 0;
+        options.baking.reflectionProbes = ssr ? 0 : 1;
+        options.baking.reflectionResolution = 8;
         options.baking.lightmapPageSize = 32;
         options.baking.diskCache = false;
         target.enableForward(options);
@@ -3126,6 +3150,11 @@ namespace {
       options.baking.lightmapPageSize = 32;
       if (saturated)
         options.baking.diskCache = false; // each MSAA case must execute the overflow audit
+      if (saturated && !partialOverflow) {
+        options.bakedLighting = true;
+        options.bakedHighlightLights = 64;
+        options.bakedHighlightFade = 0;
+      }
       target.enableForward(options);
       auto receiverMaterial = material(r, 9701, 1, 1, 1);
       if (saturated) {
@@ -3262,6 +3291,34 @@ namespace {
       if (saturated) {
         require(pixels[center] < 3 && pixels[center + 1] > 30 && pixels[center + 2] < 3,
                 "Hidden overflow lights cannot produce metallic specular after four penumbra slots fill");
+        if (!partialOverflow) {
+          // Analytic lights keep the runtime prefix wide even when the
+          // selected baked-light policy leaves many emitters in the baked tail.
+          auto dynamic = light;
+          dynamic.isDynamic = 1;
+          dynamic.radiance = {0, 0, .1f};
+          for (uint32_t i = 0; i < 33; ++i) {
+            dynamic.hash = 9900 + i;
+            remixapi_LightHandle handle;
+            r.createLight(dynamic, handle);
+            lights.push_back(handle);
+          }
+          const auto reference = render();
+          require(target.forward->statistics().clusteredLights > 32, "Exact visibility fixture uses a wide prefix");
+          // Inject a proof for the occluded triangle so this test exercises
+          // the exact table independently of the ranked chart policy.
+          const auto volume = target.forward->bakeController()->volume();
+          const auto original = volume->chartHighlights;
+          auto exact = std::make_shared<remix::forward::mixed::ChartHighlightField>();
+          remix::forward::mixed::Occlusion proof(2, uint32_t(volume->mixedLights->source->lights.size()));
+          proof.mark(0, 0);
+          exact->exactOcclusion = remix::forward::mixed::BlockedChartLights(proof);
+          volume->chartHighlights = std::move(exact);
+          for (uint32_t frame = 0; frame < 8; ++frame)
+            pixels = render();
+          require(pixels == reference, "Wide chart rejection preserves the complete mixed lighting image");
+          volume->chartHighlights = original;
+        }
         if (partialOverflow) {
           require(pixels[neighbouringChart] > 30,
                   "An overflow mask preserves the exposed part of the same connected chart");
@@ -4163,11 +4220,11 @@ namespace {
       bool rejected = false;
       try { target.forward->updateLighting(options); }
       catch (VkResult status) { rejected = status == VK_ERROR_INITIALIZATION_FAILED; }
-      require(rejected, "Cube fallback attachment changes reject in-place updates");
+      require(rejected, "Cube fallback shader changes reject in-place updates");
       target.enableForward(options);
       render();
-      require(target.forward->statistics().targetBytes > disabledBytes,
-              "Explicit cube fallback allocates reflection targets independently of ray support");
+      require(target.forward->statistics().targetBytes == disabledBytes,
+              "Inline cube fallback needs no reflection guides even when ray support is absent");
     }
   }
   void forwardTests(const std::filesystem::path &directory) {

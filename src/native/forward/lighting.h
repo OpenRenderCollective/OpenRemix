@@ -2,6 +2,7 @@
 #include "scene/types.h"
 #include <remix/remix_native_ext.h>
 #include <array>
+#include <cmath>
 #include <span>
 
 namespace remix::forward {
@@ -10,6 +11,16 @@ namespace remix::forward {
   using scene::Matrix;
   constexpr uint32_t clusterSlices = 24, clusterCapacity = 64, cascadeCount = 4;
   constexpr uint32_t clusterHeaderWords = 2;
+  // FrameData::clusterInfo.w feature bits, mirrored by the shader consumers.
+  constexpr uint32_t viewModelLocalShadowFlag = 1u << 0;
+  constexpr uint32_t viewModelReflectionFlag = 1u << 1;
+  constexpr uint32_t movingSunCoverageFlag = 1u << 2;
+  constexpr uint32_t inactiveLightStylesFlag = 1u << 5;
+  constexpr uint32_t clusterConeMaskFlag = 1u << 7;
+  constexpr uint32_t clusterConeIntervalFlag = 1u << 8;
+  constexpr uint32_t clusterConePlaneFlag = 1u << 9;
+  constexpr uint32_t clusterMovingConeFlag = 1u << 10;
+  constexpr uint32_t clusterChartConeFlag = 1u << 11;
   constexpr uint32_t clusteredBakedTail = 0x80000000u;
   constexpr uint32_t sunShadowLayers = cascadeCount * 2; // frozen geometry, then moving casters
   // Bounded adaptive lists avoid evaluating every uploaded light when a
@@ -22,6 +33,15 @@ namespace remix::forward {
 
   Vec3 transformPoint(const Matrix &matrix, const Vec3 &point);
   Vec3 transformVector(const Matrix &matrix, const Vec3 &vector);
+  inline bool isAxisAlignedAffine(const Matrix &m) {
+    return m[15] == 1 &&
+           m[1] == 0 && m[2] == 0 && m[3] == 0 && m[4] == 0 &&
+           m[6] == 0 && m[7] == 0 && m[8] == 0 && m[9] == 0 && m[11] == 0 &&
+           std::isfinite(m[12]) && std::isfinite(m[13]) && std::isfinite(m[14]);
+  }
+  inline bool isTranslation(const Matrix &m) {
+    return m[0] == 1 && m[5] == 1 && m[10] == 1 && isAxisAlignedAffine(m);
+  }
   Vec3 normalized(Vec3 vector);
   float dot(const Vec3 &a, const Vec3 &b);
   Vec3 cross(const Vec3 &a, const Vec3 &b);
@@ -30,7 +50,7 @@ namespace remix::forward {
     float nearPlane = .1f, farPlane = 1000;
     float sign = 1; // supports cameras looking along either view-space Z axis
   };
-  DepthRange depthRange(const Matrix &projection);
+  DepthRange depthRangeFromInverseProjection(const Matrix &inverseProjection);
   uint32_t depthSlice(float depth, const DepthRange &range);
   float sliceDepth(uint32_t slice, const DepthRange &range);
   inline bool acceptsOpaque(const scene::Draw &d) {
@@ -62,10 +82,24 @@ namespace remix::forward {
     Vec4 splits{};
   };
   // Conservative Vulkan clip-volume test. Unknown bounds remain submitted.
+  class ClipFrustum {
+  public:
+    explicit ClipFrustum(const Matrix &clip);
+    bool intersects(const Bounds &bounds) const;
+
+  private:
+    std::array<Vec4, 6> planes;
+  };
   bool intersectsClip(const Bounds &bounds, const Matrix &clip);
-  Cascades shadowCascades(const Matrix &camera, const Matrix &view, DepthRange range, Vec3 sunDirection,
+  Cascades shadowCascades(const Matrix &inverseCamera, const Matrix &view, DepthRange range, Vec3 sunDirection,
                           const Bounds &casters, float distance, uint32_t resolution);
   // Inner cosine for the renderer's fractional outer-angle spotlight softness.
   float coneInnerCosine(float outerCosine, float softness);
-  float influenceRadius(const scene::SphereLight &light, float cutoff);
+  struct LightRange {
+    float influence, fade;
+  };
+  LightRange localLightRange(const scene::SphereLight &light, float cutoff);
+  inline float influenceRadius(const scene::SphereLight &light, float cutoff) {
+    return localLightRange(light, cutoff).influence;
+  }
 } // namespace remix::forward

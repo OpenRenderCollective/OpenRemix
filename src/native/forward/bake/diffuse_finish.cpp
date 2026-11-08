@@ -6,6 +6,7 @@
 #include "forward/lightmap/data.h"
 #include "forward/lightmap/denoise.h"
 #include "forward/lightmap/upload.h"
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -19,14 +20,21 @@ template <typename T> void releaseStorage(std::vector<T> &values) {
 void Controller::Job::finishDiffuseAssets(
     VkPhysicalDevice physical, VkDevice device, const Config &config,
     const ReflectionFingerprint &reflectionFingerprint) {
+  const bool bakeStyles = config.styledIndirect && !styleIds(*source).empty();
+  std::optional<lightmap::DenoisePlan> denoisePlan;
   if (config.denoiseLightmaps && lightmap::denoiserVersion()) {
     finishStage.store(Job::FinishStage::Denoising, std::memory_order_relaxed);
     auto progress = [this](uint32_t completed, uint32_t total) {
       denoisedCharts.store(completed, std::memory_order_relaxed);
       denoiseChartCount.store(total, std::memory_order_relaxed);
     };
-    const auto filtered = lightmap::denoise(
-        surfaceLayout, surfaces, cancellation.get_token(), std::move(progress));
+    const auto began = std::chrono::steady_clock::now();
+    const auto cancelled = cancellation.get_token();
+    denoisePlan.emplace(surfaceLayout, cancelled);
+    auto filtered = denoisePlan->filter(surfaces, cancelled, std::move(progress));
+    filtered.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - began).count();
+    if (!bakeStyles)
+      denoisePlan.reset();
     std::fprintf(stderr,
                  "Forward lightmap OIDN: %u charts, %llu texels, device type "
                  "%d, %.3f s\n",
@@ -95,7 +103,7 @@ void Controller::Job::finishDiffuseAssets(
   releaseStorage(direct);
   releaseStorage(sun);
   const char *samples = std::getenv("REMIX_DEBUG_BAKE_SURFACE_SAMPLES");
-  if (config.styledIndirect && !styleIds(*source).empty()) {
+  if (bakeStyles) {
     VkPhysicalDeviceProperties limits;
     vkGetPhysicalDeviceProperties(physical, &limits);
     const uint64_t baseBytes = gridBytes(grid);
@@ -107,7 +115,7 @@ void Controller::Job::finishDiffuseAssets(
         std::min(uint64_t(config.styleStorageMiB) << 20,
                  uint64_t(limits.limits.maxStorageBufferRange) - baseBytes -
                      localBytes - 15);
-    styles = std::make_unique<StyleWork>(*source, surfaceLayout, grid, maximum);
+    styles = std::make_unique<StyleWork>(*source, surfaceLayout, grid, maximum, std::move(denoisePlan));
     styles->takeSurfaces(surfaces, surfaceLayout.points.size());
   } else if (!samples || std::strcmp(samples, "1") != 0) {
     releaseStorage(surfaces);
@@ -118,9 +126,10 @@ void Controller::Job::finishDiffuseAssets(
         physical, device, source, surfaceLayout, cancellation.get_token(),
         mixedLights->charts, mixedLights->directCharts);
   prepareSurfaceStorage();
-  VkPhysicalDeviceProperties groupLimits;
-  vkGetPhysicalDeviceProperties(physical, &groupLimits);
-  if (!styles)
-    prepareGroupedStyles(groupLimits.limits.maxStorageBufferRange, config);
+  if (!styles) {
+    VkPhysicalDeviceProperties properties;
+    vkGetPhysicalDeviceProperties(physical, &properties);
+    prepareDiffusePublicationData(properties.limits.maxStorageBufferRange, config);
+  }
 }
 } // namespace remix::forward::bake

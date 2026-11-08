@@ -211,7 +211,7 @@ namespace remix::forward::bake::cache {
     }
   } // namespace
   uint64_t key(uint64_t content, const Config &c, float cutoff, const Device &d, const DirectPolicy &policy,
-               bool fallbackReflections) {
+               bool fallbackReflections, const scene::BakeScene *source) {
     const auto contents = c.irradianceContents;
     static const uint64_t shaders = [] {
       auto hash = scene::fastHash(atlasShader, sizeof(atlasShader));
@@ -248,6 +248,10 @@ namespace remix::forward::bake::cache {
                                d.storageRange};
     const auto hash = scene::fastHash(fields, sizeof(fields), content ^ shaders);
     auto raw = scene::fastHash(d.uuid.data(), d.uuid.size(), hash);
+    if (source && source->partition && source->partition->closed && !source->charts.empty()) {
+      const uint32_t partitionDonors[] = {0x50444f4eu, 1};
+      raw = scene::fastHash(partitionDonors, sizeof(partitionDonors), raw);
+    }
     if (c.directDiffuse) {
       // Previously declined complete fields must be retried with the adaptive
       // codec, even though their storage allowance and transport are unchanged.
@@ -330,12 +334,12 @@ namespace remix::forward::bake::cache {
     return scene::fastHash(filter, sizeof(filter), raw);
   }
   uint64_t diffuseKey(uint64_t content, const Config &config, float cutoff, const Device &device,
-                       const DirectPolicy &policy) {
+                       const DirectPolicy &policy, const scene::BakeScene *source) {
     auto diffuse = config;
     diffuse.reflectionProbes = diffuse.reflectionResolution = 0;
     diffuse.reflectionDetailTolerance = 0;
     const uint64_t domain = 0x4449464655534501ull;
-    return scene::fastHash(&domain, sizeof(domain), key(content, diffuse, cutoff, device, policy)) | 1;
+    return scene::fastHash(&domain, sizeof(domain), key(content, diffuse, cutoff, device, policy, false, source)) | 1;
   }
   uint64_t reflectionKey(uint64_t content, uint64_t plan, std::span<const probes::Capture> captures,
                          const probes::CaptureConfig &config, const Device &device,
@@ -388,7 +392,7 @@ namespace remix::forward::bake::cache {
       if (!masks.entries().empty()) {
         const uint64_t words = 2 + result.mixed.occlusion.words().size() +
                                source->charts.size() * 2 + masks.entries().size() * 4 + masks.bytes().size() / 4;
-        require(words <= uint64_t(device.imageSize) * device.imageSize);
+        require(words <= uint64_t(device.imageLayers) * mixed::occlusionPageSide * mixed::occlusionPageSide);
         for (const auto &entry : masks.entries()) {
           require(result.mixed.lights.retainsVisibility(entry.light));
           require(result.mixed.occlusion.state(entry.chart, entry.light) == mixed::Visibility::Unknown);
@@ -488,14 +492,14 @@ namespace remix::forward::bake::cache {
   std::optional<Snapshot> readDiffuse(const std::filesystem::path &directory, uint64_t content,
       std::shared_ptr<const scene::BakeScene> source, const Config &config, float cutoff,
       const Device &device, std::stop_token cancelled, const DirectPolicy &policy, bool fallbackReflections) {
-    const auto identity = diffuseKey(content, config, cutoff, device, policy);
+    const auto identity = diffuseKey(content, config, cutoff, device, policy, source.get());
     const auto reference = readDiffuseReference(directory, identity, cancelled);
     if (!reference) return {};
     auto stored = config;
     stored.reflectionProbes = reference->reflectionProbes;
     stored.reflectionResolution = reference->reflectionResolution;
     stored.reflectionDetailTolerance = std::bit_cast<float>(reference->toleranceBits);
-    if (key(content, stored, cutoff, device, policy, fallbackReflections) != reference->containerKey) return {};
+    if (key(content, stored, cutoff, device, policy, fallbackReflections, source.get()) != reference->containerKey) return {};
     auto result = read(directory / path(reference->containerKey).filename(), reference->containerKey,
                        std::move(source), stored, device, cancelled, policy, ReflectionRead::DiffuseOnly);
     if (result && !config.reflectionProbes) result->missingReflections = false;

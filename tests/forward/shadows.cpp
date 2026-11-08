@@ -32,6 +32,7 @@ void movingCacheTests(const s::View &view) {
   std::vector<Matrix> pose{scene::identity()};
   casters[0].bones = std::make_shared<const std::vector<Matrix>>(pose);
   require(cache.update(view, casters), "Introducing a skin invalidates depth");
+  require(!cache.update(view, casters), "Reusing an immutable pose object reuses depth");
   casters[0].bones = std::make_shared<const std::vector<Matrix>>(pose);
   require(!cache.update(view, casters), "Equal independently submitted poses reuse depth");
   pose[0][12] = 2;
@@ -97,6 +98,8 @@ void movingCacheTests(const s::View &view) {
   require(cache.update(view, casters), "Reactivated slots never inherit stale contents");
   require(cache.update(view, {}) && !cache.update(view, {}),
           "Leaving casters clear a map once before empty reuse");
+  require(!cache.update(changedView, {}) && cache.update(changedView, casters),
+          "A cleared slot survives projection changes until a caster returns");
   casters.resize(s::MovingCache::maximumCasters + 1, casters[0]);
   require(cache.update(view, casters), "Oversized caster lists retain ordinary rendering");
   casters.resize(1);
@@ -158,6 +161,7 @@ int main() {
   bounds = {};
   bounds.include({50, 50, 50});
   require(!s::intersects(bounds, view), "Distant casters outside the radial range are rejected");
+  const auto preparedProjections = s::coverageProjections(view.matrices, view.nearPlane);
   for (uint32_t face = 0; face < s::faces; ++face) {
     require(intersectsClip({}, view.matrices[face]), "Unknown caster bounds survive every shadow face");
     Bounds nearLight;
@@ -180,6 +184,9 @@ int main() {
               "An axial caster is submitted only to its own translated cube face");
       auto coverage = s::emptyCoverage();
       s::includeCoverage(coverage, axial, view);
+      Vec4 prepared{1, 1, -1, -1};
+      preparedProjections[face].include(prepared, axial);
+      require(prepared == coverage[face], "Prepared and one-shot cube projections produce the same coverage");
       if (face != direction) {
         require(coverage[face][0] > coverage[face][2], "An absent caster leaves face coverage empty");
       } else {
@@ -270,6 +277,7 @@ int main() {
   auto selected = planner.update({&light, 1}, {}, 1, .001f, 100, 1, source);
   const auto slot = selected.slots[0];
   require(slot == 0 && selected.dirty[slot], "First map is dirty");
+  const auto originalProjection = selected.views[slot].matrices;
   require(planner.captured(resources.retained(retained)->records[0]),
           "Explicit immutable membership is recognized");
   {
@@ -290,7 +298,13 @@ int main() {
   draw.blend.factor = 0;
   require(!planner.captured(draw), "A changed legacy material factor cannot reuse static opacity");
   selected = planner.update({&light, 1}, {}, 1, .001f, 100, 1, source);
-  require(!selected.dirty[slot], "Unchanged authored geometry and light reuse the static map");
+  require(!selected.dirty[slot] && selected.views[slot].matrices == originalProjection,
+          "Unchanged authored geometry and light retain the exact cube projection");
+  const LightRange prepared{.5f, 2.f};
+  selected = planner.update({&light, 1}, {}, 1, .001f, 100, 1, source, 0, 0, {}, {&prepared, 1});
+  require(selected.dirty[slot] && selected.views[slot].farPlane == prepared.influence &&
+              selected.views[slot].matrices == s::lightView(light, prepared.influence, 1).matrices,
+          "A changed prepared range rebuilds the cube projection using the effective influence");
   auto moved = light;
   moved.position[0] += 1;
   selected = planner.update({&moved, 1}, {}, 1, .001f, 100, 1, source);

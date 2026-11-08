@@ -1,5 +1,34 @@
 ## Next performance isolation
 
+- Reusing selected probe-visibility vectors in water preserved the checked frame
+  but increased surface shading time in paired shoreline runs. Removed the trial;
+  keep the existing sparse water lookup. Water pipeline setup now takes named
+  technique fields instead of positional booleans, without adding a new setting.
+
+- Water refraction isolation attributes about 0.9 ms to the march in the native-4K
+  Construct shoreline replay. Retaining the sampled upper bracket removed a
+  redundant depth read and preserved checked pixels, but repeated whole-frame
+  timings did not qualify it. The trial was removed. Investigate larger traversal
+  work reductions with shoreline, thin-obstacle and general-projection coverage;
+  keep the existing full-quality refraction path in the playable build.
+
+- Current reflection policy: SSR is off by default. Prioritize parallax cubemaps,
+  opaque/probe shading and remaining water surface costs. A short water-only SSR
+  technique is deferred; it is not required for the current optimization work.
+- Compatible cubemap-only scenes now sample parallax reflections during
+  opaque shading using cached per-draw probe masks. SSR, hardware reflections,
+  live diffuse GI and reflection diagnostics retain their fullscreen route.
+  The playable DLL includes the new default. Broader live-map and hardware
+  coverage remains open.
+- Per-run visibility bounds for split lightmapped draws preserved the checked
+  Black Mesa image but did not establish a repeatable frame-time win. Keep
+  the grouped draw bounds for this workload.
+- Conservative per-draw water probe masks reuse the shared receiver-bounds query.
+  Shoreline, underwater and optional-SSR comparisons preserve the checked images.
+  Isolate refraction and lighting costs before changing their algorithms. Local
+  diffuse irradiance remains necessary for reflection normalization even when
+  transparent surfaces have no diffuse body contribution.
+
 - Native-resolution reflection reconstruction now fetches the matching source texel directly; reduced-resolution modes retain bilateral filtering. Target-owned kernel specialization removes unused upscale work without changing the lighting/material API. This is a small pass-work reduction; continue using full-frame measurements for the FPS target.
 
 - Reuse the viewmodel frozen-world sun fallback for an unchanged bake scene and exact projection. Moving/self shadows remain live; replacement, removal and projection changes invalidate the fallback.
@@ -780,9 +809,10 @@ roadmap. Git history and local test reports retain the consolidated recent detai
 
 # Camera culling audit - 2026-11-01
 
-- Confirmed gap: retained BSP camera-PVS metadata is consumed by path tracing, not Forward+. Forward+ currently has camera frustum checks, camera backface rejection and depth prepass, but no equivalent camera-PVS draw rejection for the retained map.
+- Forward+ defaults use camera frustum, depth and backface culling. Path tracing also uses the retained BSP partition for camera rays.
 - Engine PVS remains in engine traversal, but the relay submits its retained world independently. Do not describe this as full BSP culling in Forward+.
 - Add shared CPU scene visibility policy and camera-visible draw lists. Keep complete retained geometry and independent per-light caster lists so offscreen shadows, bakes and reflections survive camera culling. Preserve skybox exemptions and fail open without valid PVS.
+- Exact BSP leaf-face membership on existing retained world surfaces reduced camera submissions. Controlled Trainstation runs regressed frame time with GPU occlusion enabled and disabled, so the prototype was removed. Revisit after material-compatible color aggregation or with fresh evidence of CPU submission pressure. Keep the current separation between camera, caster and bake visibility.
 - Profile draw/submission/vertex savings on corridor maps and open maps. Keep opaque shader optimization separate; PVS need not reduce already depth-rejected fragment work.
 
 # Current integration and performance focus - 2026-11-01
@@ -4121,6 +4151,8 @@ occupancy effects are hypotheses until measured. No default or deployment change
 
 ### 26 October 2026 - separate zero-diffuse probe shader candidate
 
+The PR candidate dropped this opt-in shader variant. Ordinary metallic shading remains covered by the standard material path.
+
 The replacement for the rejected runtime predicate uses separate fragment blobs
 and an opt-in world pipeline (`REMIX_DEBUG_ZERO_DIFFUSE_MATERIAL=1`). All 22 old
 forward shader blobs compare byte-identical. A conservative material helper proves
@@ -5139,6 +5171,8 @@ independent default scheduling is still a separate architecture decision.
 
 - [x] Profile cached default lighting with and without the physics gun. Opaque shading and reflection transport dominate the GPU budget; shadow-map work is a smaller contributor. Keep complete-frame controls because nested scope costs can shift between operations.
 - [x] Reject selective SSR trace/filter compiler inlining after validation-clean tests but no repeatable full-frame gain. Restore the existing shader payload; retain the prior world-stage compiler optimization.
+- [x] Remove native-resolution SSR trace/probe composition fusion after matched trials. It removed the raw HDR intermediate but the small Construct replay gain did not transfer to Trainstation gameplay. Use the measured roughness coverage to evaluate narrower reductions in unused trace work.
+- [x] Remove the separate-pass sparse SSR radiance trial. Validated camera paths were pixel-identical, but the reduction in writes and reads left the reflection pass flat in matched replays and produced no measurable host-frame improvement in the clean live pair. Focus the next capture on opaque shading.
 - [ ] Isolate selected mixed-light surface-field reconstruction cost with unchanged bytecode before implementing a bounded GPU image representation. Prefer selected-field reuse over allocating every captured light, and retain existing signed coefficients, ownership, chart filtering and cancellation behavior.
 - [ ] Compare compact diffuse-field encodings with the VRF reference using actual receiving normals, colored/HDR lighting and seams. Its directional/compact SH paths are approximations, not lossless replacements for full SH9. Keep the current default until quality and frame-time qualification establish a justified alternative.
 
@@ -5165,6 +5199,9 @@ independent default scheduling is still a separate architecture decision.
 - [x] Rank compact shadow candidates before constructing cube matrices. Build projections only for assigned maps, including outgoing fades; preserve selection/ownership behavior and keep shaders unchanged.
 - [x] Verify projection/selection, moving shadows, viewmodels and stable controllable-light composition with current default quality. Qualify native CPU cost separately from presented FPS.
 - [x] Obtain a representative CPU call-stack profile across the game adapter, engine and native worker. The current host frame gap is larger than the resource submission and native caller work alone; avoid attributing it solely to GPU or draw-call count.
+- [x] Attribute the Crossfire host frame gap to the legacy D3D9 frame-sync wait reached from the material system. The existing GMod `mat_frame_sync_enable` toggle removes that wait in focused tests with matching world captures.
+- [x] Compare GMod frame sync on and off with an armed receiver in live Construct and Trainstation. The tested Construct views are GPU-limited, and Trainstation host throughput regresses with sync off. Keep the engine default and retain `mat_frame_sync_enable 0` as an explicit benchmark comparison.
+- [ ] Before changing frame-sync policy for a specific workload, verify frame pacing and renderer transitions with live UI and texture uploads. Continue opaque-shading work for Construct and compare game submission and native recording in Trainstation.
 - [x] Replace the adapter texture-category reader/writer lock with a plain mutex after sampled main-thread attribution and controlled full-frame/image comparisons. Keep configuration updates synchronized without adding a lookup cache or invalidation scheme.
 - [x] Cache Source material parameter-name indices through existing layout replacement rules; retain live types/values, duplicate order, complete misses and retries for unreadable variables. Validate animated colour/alpha against the uncached runtime. Matching native-symbol CPU capture is available; broader native/GPU optimisation remains open.
 
@@ -5255,8 +5292,15 @@ These are work-reduction paths, not quality presets. General native 1080p 300-40
 - [ ] Investigate field sampling/execution costs with representative material and probe-quality comparisons. Keep previously rejected lazy-coarse and zonal approximations removed; do not claim draw aggregation or extra culling alone will recover the shader budget in this view.
 
 - [x] Reject same-face shadow-tap projection shortcut after seam/plane GPU correctness tests and a fresh focused comparison: whole-frame results were mixed, including an armed regression. Keep the original filter.
+- [x] Remove the static-only point-shadow fetch trial. The existing caster proof preserved filtered visibility, but matched runs showed no repeatable frame-time benefit from omitting the moving depth texture on unbaked receivers.
 - [x] Use existing field-only/albedo diagnostic views to narrow the next investigation: combined direct/mixed-light execution remains substantially more expensive than field-only shading; nested receiver timings shift between controls and are not isolated cost measurements.
-- [ ] Assess a bounded, selected-light texture cache for exact signed directional coefficients, preserving existing bicubic filtering, unknown coverage, publication ownership and fallback. Estimate real eligible chart/light footprint before allocating GPU storage; previous scalar/fused lookup changes remain rejected.
+- [x] Estimate the dense texture footprint for exact signed directional coefficients in three existing bakes. Storing all nonblack fields costs 134 to 337 MiB before packing overhead, compared with 115 to 195 MiB for the current tables. The four largest lights alone cost 20 to 24 MiB. Known-black fields can remain metadata, separate from missing coverage.
+- [x] Capture successful indexed per-light surface field queries on the fixed bm_c1a1b view at 1080p and 1x MSAA with the diagnostic reflection resolve. No successful queries reached the visible opaque output across 1,953,772 marked pixels. An injected query in the left 64 columns produced 69,120 hits across three chart/light pairs. Deprioritize this cache for this view and measure the shared surface irradiance path. Views with moving casters and other maps remain open.
+- [x] Bound the benefit of fewer shared irradiance reads in the fixed native-4K bm_c1a1b replay with a DC-only shader diagnostic. Opaque shading saved 0.21 to 0.27 ms, with a 0.10 to 0.14 ms reduction in median total GPU time across the control/candidate ranges. The image visibly changes and the full SH path remains the default.
+- [x] Fit geometric-normal-anchored compact lighting to 8,192 triangle-weighted nearest-texel samples from bm_c1a1b. At 45-degree normal tilt, normalized RGB absolute error was 11.22% for a shared directional lobe and 5.50% for RGB affine reconstruction. Only 45.7% and 55.7% of samples respectively passed the 10% luminance criterion at every tested direction through 45 degrees. Treat these results as an offline quality screen. Texture interpolation, chart seams, actual normal maps and sun response still need qualification.
+- [x] Bound the screen coverage of exact flat-normal pre-evaluation in the fixed bm_c1a1b and gm_construct replays. At 1080p and 1x MSAA, mapped pixels with a front-facing, locally flat vertex normal and no normal map represented 1.80% and 13.06% of marked opaque pixels. These are upper bounds before proving one normal across an entire chart. Defer an additional atlas for this subset pending a workload with materially greater coverage.
+- [ ] Prototype the reference compact directional surface path as a bake publication format behind the diffuse provider. Use the geometric-normal irradiance as an anchor, retain directionality for normal maps, and preserve styled light and sun ownership. Compare native-4K frame time, receiver normals and seams before considering a default change. Track texture compression and upload costs separately from shader sampling.
+- [ ] Measure which chart/light pairs the mixed-light shader actually queries before choosing entries for a byte-budgeted texture cache. Test GPU-filtered signed coefficients against the existing bicubic result at chart edges, retain the sparse table for cache misses, and qualify publication cost and frame time before enabling it. Keep the previous scalar and fused lookup trials removed.
 
 - [x] Measure actual sparse directional-field storage and current selected-light footprints before designing a cache. All-light expansion is substantially larger than the four selected shadow-light fields; retain a strict budget and uncached fallback.
 - [x] Add frame-only CPU diagnostics so light/draw inspection no longer requires saving a full bake/atlas capture. Preserve existing capture/request gates for legacy tools.
@@ -5265,12 +5309,16 @@ These are work-reduction paths, not quality presets. General native 1080p 300-40
 - Keep packed per-light directional queries as the current path. Selected coefficient expansion has no accepted full-frame performance benefit; do not retain it as another runtime setting. Revisit only with representative frame-time evidence.
 
 - Retain the current standard BRDF path and live viewmodel self-shadow updates. Explicit receiver-term preparation and exact-pose viewmodel shadow reuse have not earned adoption; reduce the measured shading/synchronization cost before adding further cache paths.
+- Keep full-area viewmodel targets and composition. Projected bounds for clears, MSAA resolves, and overlay reads did not establish a repeatable whole-frame gain in the live weapon comparison.
 
 - Reduce receiver-local candidate-light work while preserving finite-emitter direct fields and moving corrections. Simple cone-rejection reorderings have not qualified across Construct and Crossfire; investigate receiver-local influence selection instead.
+- When ranked highlight tiles exceed their preparation budget, exact chart visibility masks reject proven-blocked lights before the fragment loop. The masks intersect the current cluster membership and rebuild when the runtime light indices change. Missing chart coverage and larger runtime prefixes retain the ordinary light list.
 - One-frame image diagnostics latch requests at the first record call after slot selection. Mid-record requests defer to the next frame, preserving a complete fenced image/buffer set.
 
 
-- [ ] Evaluate optional authored maximum influence distances for point/spot lights alongside the existing intensity-derived cutoff. Keep bake/runtime attenuation consistent and compare image quality before changing defaults; do not assume a Source 2 fixed distance without verifying the reference.
+- [x] Audit positive compiled BSP point/spot cutoffs against existing runtime selections and cluster bounds. Construct and Trainstation show fewer cluster memberships, while the captured Crossfire runtime selection has no affected lights. This is an offline membership estimate.
+- [x] Carry explicit BSP light cutoffs separately from emitter size and the intensity-derived fade through Forward+ bake transport, runtime lighting and mixed-shadow admission. The GMod bridge and BSP replay opt in with `OPENREMIX_PROXY_BSP_LIGHT_CUTOFFS=1`. Zero or absent cutoffs preserve bake identity.
+- [ ] Qualify explicit BSP light cutoffs in foreground gameplay across maps and around the cutoff boundary before enabling the bridge option by default. Track frame cost and visual changes separately.
 
 - Compact standard-material cone lists did not qualify consistently across map cases; retain the ordered raw query path while investigating broader candidate-work reduction.
 
@@ -5289,3 +5337,39 @@ These are work-reduction paths, not quality presets. General native 1080p 300-40
 - [ ] Use the newly working NVIDIA hardware-counter capture to distinguish shading, texture traffic and occupancy costs before further shader control-flow experiments.
 
 - Decouple finer near-receiver targets from global fallback-lattice spacing. A denser request can consume the additional budget on coarse background records without reaching finer patches; qualify receiver-focused allocation rather than raising the global probe budget by default.
+
+### Forward+ performance checkpoint
+
+- [x] Pack static depth positions as XYZ. The playable update includes the packed layout, independent depth-batch uploads, and chart-mask reuse. Black Mesa replay GPU time fell by about 0.5 ms at native 1440p. Construct's hall replay gained about 0.04 ms. Each comparison preserved the rendered image.
+- [x] Measure the installed build in foreground Construct at native 1440p, 4x MSAA and SSR off. The fixed hall view reached about 269 to 274 FPS unarmed and 220 FPS with the physics gun. Weapon color took about 0.52 ms. This comparison excludes roaming and Workshop addons.
+- [x] Remove viewmodel SSR specialization and probe-weight factoring trials after live measurements showed no useful reduction in weapon color time. Keep the shared irradiance basis and consolidated descriptor updates in development.
+- [ ] Profile local-light evaluation within viewmodel color, separating probe visibility, shadow sampling and BRDF cost. A range-only shortlist cannot prune any of the 16 baked runtime lights in the measured Construct hall pose. Validate changes with multiple poses and weapons before broadening the claim.
+
+### Source 2 architecture trials
+
+- [x] Trace the CS2 Vulkan capture's subgroup mask traversal to the tile and depth-bin compute producers. The inspected world draw intersected the masks and visited set bits for parallax cubemaps. Its projected-volume loop had zero active words. Capture a scene with active local lights before drawing conclusions about direct lighting.
+- [x] Prototype a filterable packed style contribution during composition handoffs. Cache the largest surface group and retain independent sparse evaluation for other groups. Construct, Black Mesa and Crossfire show transition improvements and other frame-time regressions. Keep the path opt-in.
+- [x] Remove screenshot-mode pacing from timed style replays and correlate pass timings with sampled GPU clocks. The large earlier switch-off gaps coincide with differing power states and mostly disappear uncapped.
+- [ ] Resolve the Crossfire hybrid's slower pre-transition frames with a GPU-saturated warmup, then qualify memory headroom and frame-time tails before promotion.
+- [ ] Measure actual local-light visits and mixed-shadow corrections on Construct's white room and Crossfire, including a style fade and a receiver with at least five genuinely overlapping lights. Record opaque GPU time, candidate counts, and sparse style fallback coverage separately. Include a view with no mixed corrections to measure fast-path overhead.
+- [ ] Compare a compact common-case baked-light index and filtered scalar field against the existing chart/cluster mask intersection. Keep exact spill for additional contributing lights and retain the separate probe receiver path. Reuse scalar layers only where filtered footprints are disjoint, including borders and padding. Check moving casters and style fades at chart seams.
+- [ ] Compare the existing depth batches with VRF-style visibility and indirect submission in a large, visibility-limited scene. Measure CPU recording, depth and opaque draw counts, and total frame time. Keep camera visibility separate from offscreen shadow casters, reflections, and bake inputs. A fixed Construct hall view already shows effective early depth rejection.
+- [x] Compare a VRF-style RGB directional decoder with full SH on the existing atlas in fixed native 4K Construct and Black Mesa replays. The shader-only trial showed modest median savings and reproduced its image differences across repeats. Keep it opt-in.
+- [ ] Pack the compact diffuse field separately from the exact mixed-sun response in GPU publication. Retain indexed local-light visibility and attribution. Qualify normal maps, grazing angles, chart seams and moving mixed shadows before considering a default change. Evaluate probe interpolation separately on moving props across doorways and near walls.
+- [ ] Profile cubemap selection and composition with SSR off, including the cost of preparing shared inputs. Compare any fast path with the same probe blend, normalisation and roughness response.
+- [ ] Judge each trial with repeated native 3840×2160 measurements at matched settings, plus a live armed comparison. Track median and p95 frame times and image differences. At 360 FPS the full presented-frame budget is 2.78 ms.
+
+Use captured CS2 shader bytecode and local map assets as evidence of behaviour. Use
+[VRF lighting](https://github.com/ValveResourceFormat/ValveResourceFormat/blob/master/Renderer/Shaders/common/lighting.slang)
+for inspectable decoding and the
+[s&box shading model](https://sbox.game/dev/doc/rendering/shaders/shading-model)
+for the material-to-lighting interface. Verify the license on any specific
+Facepunch shader before reusing source and preserve its notices.
+
+### Main-branch PR readiness
+
+- [x] Reproduce the cs_office planning failure and qualify the storage fix in live GMod. The candidate published 55,405 generated model charts and 5,649 authored charts with a styled group active. Cold and warm runs published matching bake content hashes.
+- [x] Reproduce the Construct connector wedge and the Dust II CT spawn sunlight seam. The wedge came from flipping smoothed normals at grazing angles. The seam combined buried donor samples and a minimum ray distance that skipped an adjacent wall. Verify additional reported locations as fixtures become available.
+- [x] Measure process commit and renderer allocations across repeated live map transitions. Nine transitions between Dust II and Crossfire showed stable renderer allocation categories after priming. The raster control showed similar process commit drift, so its owner remains open. Construct's separate cache invalidation was traced to changes in the captured painted sky.
+- [ ] Run the final PR candidate through the live playable gates. Verify warm transitions, recheck visual and frame-time behaviour on Construct and Crossfire at 1440p and 4K, and run the relevant transport and lighting suites.
+- [ ] Finish reviewing the renderer and wrapper diffs. Keep qualified lighting defaults, separate experimental paths, and confirm a clean clone can build the staged changes.

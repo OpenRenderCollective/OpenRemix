@@ -2,13 +2,7 @@
 #define OPENREMIX_LOCAL_LIGHT_STORAGE
 // Default local-light records and clustered enumeration. The cluster builder
 // and selected local source share this layout; material passes need not import it.
-struct Light {
-  // shaping: inner-cone cosine, focus, influence radius, captured index + 1.
-  vec4 positionRadius, radiance, directionCone, shaping;
-  vec4 corners[3];
-  vec4 responseWeights;
-  vec4 clusterBounds;
-};
+#include "local-light-record.glsl"
 layout(set = 0, binding = 1, std430) readonly buffer Lights {
   Light lights[];
 };
@@ -22,20 +16,36 @@ layout(set = 0, binding = 2, std430) readonly buffer Clusters {
 };
 #endif
 #define ClusterCapacity frame.clusterInfo.x
-#define ClusterHeaderWords 2u
+bool clusterConeMasksEnabled() { return (frame.clusterInfo.w & 128u) != 0u; }
+bool clusterChartConesEnabled() { return (frame.clusterInfo.w & 2048u) != 0u; }
+#define ClusterHeaderWords (2u + uint(clusterConeMasksEnabled()) + uint(clusterChartConesEnabled()))
 #define ClusterStride (ClusterCapacity + ClusterHeaderWords)
 #define MixedLightPrefix (frame.clusterInfo.y & 0x7fffffffu)
 #define ClusterLightCount (MixedLightPrefix == 0u ? frame.target.z : MixedLightPrefix - 1u)
 #define ClusterBakedTail ((frame.clusterInfo.y & 0x80000000u) != 0u)
+
+// The high bit of the chart table control selects runtime membership in the first
+// cluster header word. Larger lists retain the ordinary prefix count.
+// These flags match mixed::ChartHighlightField.
+const uint ClusterMembershipFlag = 1u << 31u;
+const uint ChartExactVisibilityFlag = 1u << 30u;
+const uint ChartTableOffsetMask = ~(ClusterMembershipFlag | ChartExactVisibilityFlag);
+bool clusterUsesMembership() { return (frame.occlusion.z & ClusterMembershipFlag) != 0u; }
 // Lights are ordered runtime prefix, then baked tail. Each cell stores the
 // prefix count and complete count, followed by their shared ordered indices.
 // Tail overflow must not force covered receivers to evaluate baked lights.
 uint receiverLightCount(uint base, bool aggregateReceiver, out bool linear) {
   bool fallback = !aggregateReceiver && MixedLightPrefix != 0u;
-  uint count = clusters[base + uint(fallback && ClusterBakedTail)];
-  linear = (fallback && !ClusterBakedTail) || count > ClusterCapacity;
+  if (fallback && !ClusterBakedTail) {
+    linear = true;
+    return frame.target.z;
+  }
+  uint count = clusters[base + uint(fallback)];
+  if (!fallback && clusterUsesMembership()) count = uint(bitCount(count));
+  linear = count > ClusterCapacity;
   return linear ? (fallback ? frame.target.z : ClusterLightCount) : count;
 }
+uint clusterChartOwnerOffset() { return frame.grid.w * ClusterStride; }
 float sliceDepth(uint slice) {
   return frame.depth.x * pow(frame.depth.y / frame.depth.x, float(slice) / float(frame.grid.z));
 }

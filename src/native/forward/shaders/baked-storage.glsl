@@ -4,6 +4,7 @@
 // import it; material passes and replacement providers need not declare it.
 #define STYLED_BAKE
 #include "irradiance.glsl"
+#define STYLE_WEIGHTS_ACTIVE ((frame.clusterInfo.w & 32u) == 0u)
 #include "style-lighting.glsl"
 #include "lightmap.glsl"
 #endif

@@ -64,6 +64,7 @@ Renderer::Gpu::geometry(const scene::Draw &draw) {
         found != geometries.end() && !found->second->source.expired())
       return found->second;
   std::shared_ptr<Geometry> result;
+  bool sameSurface = false;
   if (skinned) {
     auto &frame = frames[slot];
     if (frame.posedUsed == frame.posedGeometry.size())
@@ -71,7 +72,8 @@ Renderer::Gpu::geometry(const scene::Draw &draw) {
     result = frame.posedGeometry[frame.posedUsed++];
     // The slot's fence has completed. Like the path tracer, retain an exact
     // unchanged pose instead of skinning and uploading it again.
-    if (result->source.lock() == surface && result->bones == *draw.bones) {
+    sameSurface = result->source.lock() == surface;
+    if (sameSurface && result->bones == *draw.bones) {
       ++statistics.posedUploadReuses;
       return result;
     }
@@ -80,16 +82,18 @@ Renderer::Gpu::geometry(const scene::Draw &draw) {
     result = takeGeometry(surface->vertices.size() * sizeof(scene::Vertex),
                           surface->indices.size() * sizeof(uint32_t));
   }
-  result->source = surface;
   result->bounds = {};
   std::vector<scene::Vertex> vertices;
   auto input = std::span<const scene::Vertex>(surface->vertices);
   if (skinned) {
     vertices = surface->vertices;
-    std::vector<Matrix> normals;
-    normals.reserve(draw.bones->size());
-    for (const auto &bone : *draw.bones)
-      normals.push_back(normalMatrix(bone));
+    if (normalPoseSource != draw.bones.get()) {
+      poseNormals.clear();
+      poseNormals.reserve(draw.bones->size());
+      for (const auto &bone : *draw.bones)
+        poseNormals.push_back(normalMatrix(bone));
+      normalPoseSource = draw.bones.get();
+    }
     for (size_t i = 0; i < vertices.size(); ++i) {
       auto &vertex = vertices[i];
       std::fill_n(vertex.position, 3, 0.f);
@@ -102,26 +106,31 @@ Renderer::Gpu::geometry(const scene::Draw &draw) {
             (*draw.bones)[bone],
             {original.position[0], original.position[1], original.position[2]});
         const auto n = transformVector(
-            normals[bone],
+            poseNormals[bone],
             {original.normal[0], original.normal[1], original.normal[2]});
         for (int c = 0; c < 3; ++c) {
           vertex.position[c] += p[c] * surface->weights[index];
           vertex.normal[c] += n[c] * surface->weights[index];
         }
       }
+      result->bounds.include({vertex.position[0], vertex.position[1], vertex.position[2]});
     }
     input = vertices;
+  } else {
+    for (const auto &vertex : input)
+      result->bounds.include({vertex.position[0], vertex.position[1], vertex.position[2]});
   }
-  for (const auto &vertex : input)
-    result->bounds.include(
-        {vertex.position[0], vertex.position[1], vertex.position[2]});
   ensure(result->vertices, input.size_bytes(),
          VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
   result->vertices->write(input.data(), input.size_bytes());
-  ensure(result->indices, surface->indices.size() * sizeof(uint32_t),
-         VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
-  result->indices->write(surface->indices.data(),
-                         surface->indices.size() * sizeof(uint32_t));
+  // Posing moves vertices only. The frame slot already owns this surface's
+  // index data until it is reused for a different immutable surface.
+  if (!sameSurface) {
+    ensure(result->indices, surface->indices.size() * sizeof(uint32_t),
+           VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+    result->indices->write(surface->indices.data(), surface->indices.size() * sizeof(uint32_t));
+  }
+  result->source = surface;
   if (skinned)
     result->bones = *draw.bones;
   else

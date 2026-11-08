@@ -6,9 +6,12 @@
 
 namespace remix::forward::bake {
   StyleWork::StyleWork(const scene::BakeScene &source, const lightmap::Layout &layout,
-                       const Grid &base, uint64_t maximumBytes)
-      : m_styles(styleIds(source)), m_probes(base.probes.size()),
+                       const Grid &base, uint64_t maximumBytes, std::optional<lightmap::DenoisePlan> denoisePlan)
+      : m_layout(layout), m_denoisePlan(std::move(denoisePlan)), m_styles(styleIds(source)),
+        m_probes(base.probes.size()),
         m_builder({layout.pageSize, layout.pages, uint32_t(base.probes.size())}, maximumBytes) {
+    if (m_denoisePlan && &m_denoisePlan->layout() != &m_layout)
+      throw std::invalid_argument("Styled denoising plan belongs to a different layout");
     for (uint32_t i = 0; i < base.probes.size(); ++i)
       if (base.probes[i].statistics[3] > .5f) m_probeTasks.push_back(i);
     m_probeWritten.resize(m_probeTasks.size());
@@ -40,15 +43,16 @@ namespace remix::forward::bake {
     }
     (surface ? surfaceReceived : probeReceived) += uint32_t(values.size());
   }
-  void StyleWork::encode(const lightmap::Layout &layout, bool filter, std::stop_token cancelled,
+  void StyleWork::encode(bool filter, std::stop_token cancelled,
                          std::function<void(uint32_t, uint32_t)> progress) {
     if (complete() || !received()) throw std::logic_error("Attributed lighting readbacks are incomplete");
     if (filter && !m_surfaces.empty()) {
-      const auto result = lightmap::denoise(layout, m_surfaces, cancelled, std::move(progress));
+      if (!m_denoisePlan) m_denoisePlan.emplace(m_layout, cancelled);
+      const auto result = m_denoisePlan->filter(m_surfaces, cancelled, std::move(progress));
       std::fprintf(stderr, "Forward styled indirect OIDN: style %u, %u charts, %.3f s\n",
                    style(), result.charts, result.seconds);
     }
-    m_builder.add(style(), layout, m_surfaces, m_probes, cancelled);
+    m_builder.add(style(), m_layout, m_surfaces, m_probes, cancelled);
     ++m_current;
     std::fill(m_surfaceWritten.begin(), m_surfaceWritten.end(), 0);
     std::fill(m_probeWritten.begin(), m_probeWritten.end(), 0);
@@ -56,6 +60,7 @@ namespace remix::forward::bake {
   }
   std::vector<uint32_t> StyleWork::finish(std::stop_token cancelled) {
     if (!complete()) throw std::logic_error("Attributed lighting groups are incomplete");
+    m_denoisePlan.reset();
     std::vector<Result>().swap(m_surfaces);
     std::vector<Result>().swap(m_probes);
     return m_builder.serialize(cancelled);

@@ -18,14 +18,18 @@ namespace remix::forward {
         viewModelLocalMaps->initialize(physical, device, shadowPass, options.localShadowLights,
                                        options.localShadowResolution, false);
       }
-      viewModelData.clusterInfo[3] = uint32_t(localShadows) |
-          (uint32_t(techniquePlan.reflectionResolve) << 1) | (data.clusterInfo[3] & 4u);
-      if ((data.clusterInfo[3] & 4u) != 0u) {
+      const uint32_t sunCoverage = data.clusterInfo[3] & movingSunCoverageFlag;
+      const uint32_t sharedLighting = data.clusterInfo[3] & (inactiveLightStylesFlag | clusterConeMaskFlag | clusterChartConeFlag);
+      viewModelData.clusterInfo[3] = (localShadows ? viewModelLocalShadowFlag : 0u) |
+          (techniquePlan.reflectionResolve || techniquePlan.inlineReflections ? viewModelReflectionFlag : 0u) |
+          sunCoverage | sharedLighting;
+      if (sunCoverage != 0u) {
         Vec4 coverage{1, 1, -1, -1};
+        const shadows::CoverageProjection projection(frame.viewModelProjection);
         for (const auto &draw : frame.commands)
-          if (!draw.captured) shadows::includeCoverage(coverage, draw.worldBounds, frame.viewModelProjection);
+          if (!draw.captured) projection.include(coverage, draw.worldBounds);
         for (const auto &draw : frame.viewModelCommands)
-          shadows::includeCoverage(coverage, draw.worldBounds, frame.viewModelProjection);
+          projection.include(coverage, draw.worldBounds);
         viewModelData.movingSunCoverage.fill(coverage);
       }
       viewModelData.shadows.fill(frame.viewModelProjection);
@@ -33,40 +37,11 @@ namespace remix::forward {
       ensure(frame.viewModelConstants, sizeof(FrameData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
       frame.viewModelConstants->write(&viewModelData, sizeof(viewModelData));
       frame.viewModelScene = allocate(frame, sceneLayout);
-      VkCopyDescriptorSet copies[12];
-      for (uint32_t binding = 0; binding < 12; ++binding)
-        copies[binding] = {.sType = VK_STRUCTURE_TYPE_COPY_DESCRIPTOR_SET,
-            .srcSet = frame.scene, .srcBinding = binding, .dstSet = frame.viewModelScene,
-            .dstBinding = binding, .descriptorCount = 1};
-      vkUpdateDescriptorSets(device, 0, nullptr, 12, copies);
-      const VkCopyDescriptorSet probeCopy{.sType = VK_STRUCTURE_TYPE_COPY_DESCRIPTOR_SET,
-          .srcSet = frame.scene, .srcBinding = 22, .dstSet = frame.viewModelScene,
-          .dstBinding = 22, .descriptorCount = 1};
-      vkUpdateDescriptorSets(device, 0, nullptr, 1, &probeCopy);
       const auto constants = frame.viewModelConstants->descriptor();
-      const VkDescriptorImageInfo sun{shadowSampler,
+      const VkDescriptorImageInfo sun{sampler,
           viewModelSun ? viewModelSun->view() : sunMaps->view(), VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL};
-      const VkWriteDescriptorSet overrides[] = {
-          {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = frame.viewModelScene,
-           .dstBinding = 0, .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-           .pBufferInfo = &constants},
-          {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = frame.viewModelScene,
-           .dstBinding = 4, .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-           .pImageInfo = &sun}};
-      vkUpdateDescriptorSets(device, 2, overrides, 0, nullptr);
       const auto &reflectionProbes = frame.reflectionProbes;
       const auto skyConstants = frame.skyConstants->descriptor();
-      const VkWriteDescriptorSet environment[] = {
-          {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = frame.viewModelScene, .dstBinding = 12,
-           .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &reflectionProbes.metadata},
-          {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = frame.viewModelScene, .dstBinding = 13,
-           .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .pBufferInfo = &skyConstants},
-          {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = frame.viewModelScene, .dstBinding = 14,
-           .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &frame.skyImage},
-          {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = frame.viewModelScene, .dstBinding = 19,
-           .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-           .pImageInfo = &reflectionProbes.radiance}};
-      vkUpdateDescriptorSets(device, 4, environment, 0, nullptr);
       // Borrow the completed world hierarchy; viewmodels never enter these guides.
       struct ScreenData {
         Matrix inverseCamera;
@@ -82,41 +57,52 @@ namespace remix::forward {
       }
       const auto *header = reflectionHeader();
       // Match the normal bias in the sky/probe query, not just the mesh bounds.
-      auto candidates = header ? probes::receiverMask(*header, receivers, .002f / options.sceneScale)
+      auto candidates = header ? probes::receiverMask(*header, receivers, options.reflectionSampleBias())
                                : std::array<uint32_t, 2>{};
       static const bool unculled = std::getenv("REMIX_DEBUG_FORWARD_VIEWMODEL_UNCULLED_PROBES") != nullptr;
       if (unculled) candidates = {~0u, ~0u};
       const auto screen = reflections ? reflections->screenInputs() : Reflections::ScreenInputs{};
-      const ScreenData screenData{scene::inverse(data.camera),
+      const ScreenData screenData{screen.depth.imageView ? scene::inverse(data.camera) : scene::identity(),
           {options.ssrDistance / options.sceneScale, options.ssrThickness / options.sceneScale,
-           .002f / options.sceneScale, options.ssrRoughness},
+           options.reflectionSampleBias(), options.ssrRoughness},
           {uint32_t(samples), options.ssrScale, screen.depth.imageView ? options.ssrSteps : 0u,
            uint32_t(std::bit_width(std::max(extent.width, extent.height)))},
           {candidates[0], candidates[1], 0, 0}};
       ensure(frame.viewModelReflectionConstants, sizeof(ScreenData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
       frame.viewModelReflectionConstants->write(&screenData, sizeof(screenData));
       const auto screenConstants = frame.viewModelReflectionConstants->descriptor();
-      const VkWriteDescriptorSet screenBuffer{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-          .dstSet = frame.viewModelScene, .dstBinding = 15, .descriptorCount = 1,
-          .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .pBufferInfo = &screenConstants};
-      vkUpdateDescriptorSets(device, 1, &screenBuffer, 0, nullptr);
       const VkDescriptorImageInfo guides[]{screen.depth.imageView ? screen.depth : frame.skyImage,
           screen.normals.imageView ? screen.normals : frame.skyImage,
           screen.color.imageView ? screen.color : frame.skyImage};
-      VkWriteDescriptorSet screenImages[3];
-      for (uint32_t i = 0; i < 3; ++i)
-        screenImages[i] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-            .dstSet = frame.viewModelScene, .dstBinding = 16 + i, .descriptorCount = 1,
-            .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &guides[i]};
-      vkUpdateDescriptorSets(device, 3, screenImages, 0, nullptr);
-      if (localShadows) {
-        const VkDescriptorImageInfo self{sampler, viewModelLocalMaps->dynamicView(),
-            VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL};
-        const VkWriteDescriptorSet write{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-            .dstSet = frame.viewModelScene, .dstBinding = 11, .descriptorCount = 1,
-            .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &self};
-        vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+      const VkDescriptorImageInfo self{sampler, localShadows ? viewModelLocalMaps->dynamicView() : VK_NULL_HANDLE,
+          VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL};
+      const auto buffer = [&](uint32_t binding, const VkDescriptorBufferInfo &info,
+                              VkDescriptorType type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER) {
+        return VkWriteDescriptorSet{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstSet = frame.viewModelScene, .dstBinding = binding, .descriptorCount = 1,
+            .descriptorType = type, .pBufferInfo = &info};
+      };
+      const auto image = [&](uint32_t binding, const VkDescriptorImageInfo &info) {
+        return VkWriteDescriptorSet{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstSet = frame.viewModelScene, .dstBinding = binding, .descriptorCount = 1,
+            .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &info};
+      };
+      const VkWriteDescriptorSet writes[]{
+          buffer(0, constants), image(4, sun), buffer(12, reflectionProbes.metadata, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER),
+          buffer(13, skyConstants), image(14, frame.skyImage), buffer(15, screenConstants),
+          image(16, guides[0]), image(17, guides[1]), image(18, guides[2]), image(19, reflectionProbes.radiance),
+          image(11, self)};
+      VkCopyDescriptorSet copies[13];
+      uint32_t copyCount = 0;
+      for (uint32_t binding : {1u, 2u, 3u, 5u, 6u, 7u, 8u, 9u, 10u, 22u, 11u}) {
+        // Writes and copies must be disjoint. Without self shadows, binding 11
+        // borrows the world descriptor.
+        if (binding == 11u && localShadows) continue;
+        copies[copyCount++] = {.sType = VK_STRUCTURE_TYPE_COPY_DESCRIPTOR_SET,
+            .srcSet = frame.scene, .srcBinding = binding, .dstSet = frame.viewModelScene,
+            .dstBinding = binding, .descriptorCount = 1};
       }
+      vkUpdateDescriptorSets(device, uint32_t(std::size(writes)) - uint32_t(!localShadows), writes, copyCount, copies);
     }
   }
 } // namespace remix::forward

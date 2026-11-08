@@ -49,15 +49,16 @@ namespace remix::forward::mixed {
     else
       ++m_clearCount;
   }
-  Occlusion::Pixels Occlusion::pixels(uint32_t maximumDimension, std::span<const uint32_t> tail) const {
+  Occlusion::Pixels Occlusion::pixels(uint32_t maximumLayers, std::span<const uint32_t> tail) const {
+    constexpr uint64_t side = occlusionPageSide, pageWords = side * side;
     const uint64_t count = 2 + m_words.size() + tail.size();
-    if (!maximumDimension || count > uint64_t(maximumDimension) * maximumDimension)
+    if (count > uint64_t(maximumLayers) * pageWords)
       throw std::length_error("Mixed-light occlusion exceeds the device texture limit");
-    uint32_t width = uint32_t(std::min(count, uint64_t(std::min(1024u, maximumDimension))));
-    if ((count + width - 1) / width > maximumDimension)
-      width = uint32_t(std::min(count, uint64_t(maximumDimension)));
-    Pixels result{width, uint32_t((count + width - 1) / width), {}};
-    result.words.resize(size_t(result.width) * result.height);
+    const auto width = uint32_t(std::min(count, side));
+    const auto height = uint32_t(std::min((count + width - 1) / width, side));
+    const auto layers = uint32_t((count + pageWords - 1) / pageWords);
+    Pixels result{width, height, layers, {}};
+    result.words.resize(size_t(width) * height * layers);
     auto store = [&](size_t index, uint32_t value) { result.words[index] = value; };
     store(0, m_stride);
     store(1, m_charts);

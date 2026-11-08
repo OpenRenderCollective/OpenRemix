@@ -18,8 +18,9 @@ namespace remix::forward::probes {
     Header captures;
     PriorityBands priority;
     Normalization normalization;
+    std::array<Vec4, maxProbes * 6> terminalFaces{};
   };
-  static_assert(sizeof(GpuHeader) == sizeof(Header) + 3072 &&
+  static_assert(sizeof(GpuHeader) == sizeof(Header) + 3072 + maxProbes * 6 * sizeof(Vec4) &&
                 offsetof(GpuHeader, priority) == sizeof(Header) &&
                 offsetof(GpuHeader, normalization) == sizeof(Header) + sizeof(PriorityBands));
 

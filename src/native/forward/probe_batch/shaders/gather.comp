@@ -7,14 +7,53 @@ layout(set = 0, binding = 1, std430) readonly buffer Selection {
   uvec4 selection; // probes, selected lights, four-light groups, magic
   uint capturedLights[]; // one-based captured IDs, padded to whole groups
 };
-layout(set = 0, binding = 2, std430) writeonly buffer Field {
+layout(set = 0, binding = 2, std430) buffer Field {
   uvec4 fieldHeader;
   vec4 fieldMasks[]; // probe-major groups; negative means unknown
 };
+layout(push_constant) uniform Dispatch { uint cellCount, phase; } dispatch;
+uint certifyEndpoints(uint node, uint group) {
+  const uint side = capturedLights[64u + node];
+  if (side == 0u) return 0u;
+  uvec2 stride = side == 1u ? uvec2(bakeDimensions.x, bakeDimensions.x * bakeDimensions.y)
+                            : uvec2(side, side * side);
+  vec4 endpoint = vec4(-1);
+  bool found = false;
+  for (uint corner = 0u; corner < 8u; ++corner) {
+    uint address = node + (corner & 1u) + ((corner >> 1u) & 1u) * stride.x +
+                   ((corner >> 2u) & 1u) * stride.y;
+    uint record = bakeAddressingMode() >= 2u ? bakeLookupWord(address) : address + 1u;
+    if (record == 0u || record > selection.x || bakeProbeStatistics(record - 1u).w < .5) continue;
+    vec4 masks = fieldMasks[(record - 1u) * selection.z + group];
+    if (found && any(notEqual(masks, endpoint))) return 0u;
+    endpoint = masks;
+    found = true;
+  }
+  if (!found || any(notEqual(endpoint, round(clamp(endpoint, 0, 1))))) return 0u;
+  uvec4 lanes = uvec4(endpoint);
+  return 1u + lanes.x + (lanes.y << 1u) + (lanes.z << 2u) + (lanes.w << 3u);
+}
 void main() {
   uint index = gl_GlobalInvocationID.x;
+  if (dispatch.phase != 0u) {
+    uint cells = dispatch.cellCount * selection.z;
+    if (index * 16u >= cells) return;
+    vec4 codes = vec4(0);
+    for (uint lane = 0u; lane < 4u; ++lane) {
+      uint packed = 0u;
+      for (uint code = 0u; code < 4u; ++code) {
+        uint entry = index * 16u + lane * 4u + code;
+        if (entry < cells)
+          packed |= certifyEndpoints(entry / selection.z, entry % selection.z) << (code * 5u);
+      }
+      // Four five-bit codes fit exactly in the float buffer's mantissa.
+      codes[lane] = float(packed);
+    }
+    fieldMasks[selection.x * selection.z + index] = codes;
+    return;
+  }
   if (index >= selection.x * selection.z) return;
-  if (index == 0u) fieldHeader = selection;
+  if (index == 0u) fieldHeader = selection | uvec4(0, 0, 0, uint(dispatch.cellCount != 0u));
   uint probe = index / selection.z, group = index % selection.z;
   vec4 masks = vec4(-1);
   for (uint lane = 0u; lane < 4u; ++lane) {

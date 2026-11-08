@@ -28,7 +28,11 @@ namespace remix::forward::mixed {
     uint64_t m_wordBudget;
     uint64_t m_completedWork = 0, m_totalWork = 0;
     bool m_initialized = false;
-    std::vector<uint8_t> m_receivers;
+    // Sorted chart IDs that participated in the last round or are ready for
+    // the first round. Exhausted charts leave the list after classification.
+    std::vector<uint32_t> m_activeCharts;
+    // A captured light can appear on many charts or in multiple rounds.
+    std::vector<uint8_t> m_registeredLights;
     // Retained receivers and atlas donors, grouped once rather than scanning
     // the entire map again for every overflow round.
     std::vector<std::vector<uint32_t>> m_chartPoints;

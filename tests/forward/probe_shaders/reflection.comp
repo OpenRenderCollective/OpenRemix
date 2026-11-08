@@ -2,7 +2,7 @@
 #extension GL_GOOGLE_include_directive : require
 #define PROBE_BINDING 0
 #define PROBE_IMAGE_BINDING 3
-#define PROBE_TILE_CANDIDATES
+#define MASKED_REFLECTION_PROBES
 #include "../../../src/native/forward/shaders/probes.glsl"
 #include "../../../src/native/forward/shaders/reflection-guide.glsl"
 #include "../../../src/native/forward/shaders/probe-tiles.glsl"

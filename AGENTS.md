@@ -65,5 +65,8 @@ artifacts without an explicit cleanup scope from the user. Track architecture an
 `.gitignore` allows the existing guides plus `docs/architecture/` and `docs/features/`.
 Add new standalone architecture/feature guides to that allowlist. Required license notices stay tracked.
 Write testing, verification, benchmark, and deployment reports under `_work/reports/`, not tracked docs.
+Keep local benchmark output lean. Reuse the working build, bake cache, and package. Keep compact timing
+summaries and the captures needed to support them. Clean up disposable captures and temporary binaries
+from your own run once verified, and check available space before long runs.
 Legacy reports in `docs/` remain local and ignored. Do not force-add reports or link tracked guides
 to local testing evidence. Historical report paths describe the recorded revisions.

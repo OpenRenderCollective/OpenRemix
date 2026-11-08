@@ -2,7 +2,23 @@
 #ifndef SUN_SHADOW_BINDING
 #define SUN_SHADOW_BINDING 4
 #endif
-layout(set = 0, binding = SUN_SHADOW_BINDING) uniform sampler2DArrayShadow sunShadow;
+layout(set = 0, binding = SUN_SHADOW_BINDING) uniform sampler2DArray sunShadow;
+const uint MovingSunCoverageFlag = 1u << 2;
+vec4 sunShadowBlock(vec2 pixel, vec2 texel, vec2 coord, vec2 slope, float depth, float bias,
+                    float movingLayer, float staticLayer, bool includeStatic) {
+  vec2 centre = (pixel + 1) * texel;
+  vec4 stored = textureGather(sunShadow, vec3(centre, movingLayer)).wzxy;
+  if (includeStatic)
+    stored = min(stored, textureGather(sunShadow, vec3(centre, staticLayer)).wzxy);
+  // The clamp-to-edge gather repeats border texels. Evaluate the receiver
+  // plane at those same clamped centres, with a distinct depth per tap.
+  vec2 low = clamp((pixel + .5) * texel, texel * .5, 1 - texel * .5);
+  vec2 high = clamp((pixel + 1.5) * texel, texel * .5, 1 - texel * .5);
+  vec2 dx = (vec2(low.x, high.x) - coord.x) * 2;
+  vec2 dy = (vec2(low.y, high.y) - coord.y) * 2;
+  vec4 reference = depth + (dx.xyxy * slope.x + dy.xxyy * slope.y) - bias;
+  return vec4(lessThanEqual(reference, stored));
+}
 // Cascades 0..3 contain complete frozen geometry; 4..7 contain current casters
 // outside that snapshot. Matching lightmaps/probes replace the frozen term.
 float sunShadowVisibilityLayers(vec3 p, float depth, bool includeStatic, bool viewModel, vec3 receiverNormal) {
@@ -15,7 +31,7 @@ float sunShadowVisibilityLayers(vec3 p, float depth, bool includeStatic, bool vi
     return 1;
   vec2 coord = q.xy * .5 + .5;
   vec2 texel = 1.0 / vec2(textureSize(sunShadow, 0).xy);
-  if (!includeStatic && (frame.clusterInfo.w & 4u) != 0u) {
+  if (!includeStatic && (frame.clusterInfo.w & MovingSunCoverageFlag) != 0u) {
     // The moving map is clear outside submitted caster bounds. Include the
     // full 4x4 tent footprint; frozen fallback maps remain independent.
     vec4 coverage = frame.movingSunCoverage[cascade];
@@ -41,19 +57,18 @@ float sunShadowVisibilityLayers(vec3 p, float depth, bool includeStatic, bool vi
   vec2 base = floor(receiverPixel) - 1;
   vec4 weightsX = shadowTentWeights(fract(receiverPixel.x));
   vec4 weightsY = shadowTentWeights(fract(receiverPixel.y));
+  // The viewmodel has one close-up pair; the world has four cascade pairs.
+  float movingLayer = viewModel ? 1 : float(cascade + 4);
+  float staticLayer = viewModel ? 0 : float(cascade);
   float visibility = 0;
-  for (int y = 0; y < 4; ++y)
-    for (int x = 0; x < 4; ++x) {
-      float weight = weightsX[x] * weightsY[y];
-      vec2 uv = clamp((base + vec2(x, y) + .5) * texel, texel * .5, 1 - texel * .5);
-      float reference = q.z + dot((uv - coord) * 2, slope) - bias;
-      // The viewmodel has one close-up pair; the world has four cascade pairs.
-      uint movingLayer = viewModel ? 1u : uint(cascade + 4);
-      uint staticLayer = viewModel ? 0u : uint(cascade);
-      float moving = texture(sunShadow, vec4(uv, movingLayer, reference));
-      float frozen = includeStatic ? texture(sunShadow, vec4(uv, staticLayer, reference)) : 1;
-      visibility += weight * min(moving, frozen);
-    }
+  for (int y = 0; y < 4; y += 2) {
+    vec4 left = sunShadowBlock(base + vec2(0, y), texel, coord, slope, q.z, bias,
+                               movingLayer, staticLayer, includeStatic);
+    vec4 right = sunShadowBlock(base + vec2(2, y), texel, coord, slope, q.z, bias,
+                                movingLayer, staticLayer, includeStatic);
+    visibility += dot(weightsX * weightsY[y], vec4(left.xy, right.xy));
+    visibility += dot(weightsX * weightsY[y + 1], vec4(left.zw, right.zw));
+  }
   return visibility;
 }
 

@@ -29,9 +29,10 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
     # supplying declarations to the custom model.
     source = tree / "shaders/forward.frag"
     source.write_bytes((root / "src/native/forward/shaders/forward.frag").read_bytes())
-    model_files = ("standard-shading.glsl", "direct-lighting.glsl", "standard-local-lighting.glsl",
+    model_files = ("standard-shading.glsl", "standard-direct-lighting.glsl", "standard-local-lighting.glsl",
                    "brdf.glsl", "local-light-response.glsl", "sun-response.glsl",
-                   "direct-light.glsl", "local-response-source.glsl")
+                   "direct-light.glsl", "local-response-source.glsl",
+                   "local-accumulation-source.glsl", "chart-light-list.glsl")
     for name in model_files:
         (tree / "shaders" / name).unlink()
     shutil.copyfile(root / "tests/forward/shaders/custom-model.glsl",
@@ -61,7 +62,7 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
     (tree / "shaders/probes.glsl").unlink()
     (tree / "shaders/probe-tiles.glsl").unlink()
     for name in ("shaders/environment.glsl", "shaders/environment-sampling.glsl",
-                 "viewmodel/shaders/environment.glsl", "water/shaders/environment.glsl"):
+                 "shaders/scene-environment.glsl", "water/shaders/environment.glsl"):
         (tree / name).unlink()
     variants = {
         "environment-viewmodel": (source, ["VIEWMODEL_PASS", "REFLECTION_GUIDES"]),
@@ -82,7 +83,7 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
     for name in ("probes.glsl", "probe-tiles.glsl"):
         shutil.copyfile(root / "src/native/forward/shaders" / name, tree / "shaders" / name)
     for name in ("shaders/environment.glsl", "shaders/environment-sampling.glsl",
-                 "viewmodel/shaders/environment.glsl", "water/shaders/environment.glsl"):
+                 "shaders/scene-environment.glsl", "water/shaders/environment.glsl"):
         shutil.copyfile(root / "src/native/forward" / name, tree / name)
     # Replace only the screen/ray transport source. Keep the actual resolve,
     # environment fallback and material Fresnel, with no bilateral source code.
@@ -100,7 +101,6 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
                     tree / "shaders/receiver-lighting.glsl")
     for name, defines in {
         "diffuse-source-world": [],
-        "diffuse-source-metal": ["ZERO_DIFFUSE_MATERIAL", "REFLECTION_GUIDES"],
         "diffuse-source-viewmodel": ["VIEWMODEL_PASS"],
         "diffuse-source-live-viewmodel": ["VIEWMODEL_PASS", "LIVE_GI"],
         "diffuse-source-water": ["WATER_SURFACE"],
@@ -136,7 +136,6 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
     # validates the shader contract only; runtime resource selection is separate.
     for name, defines in {
         "composed-world": [],
-        "composed-metal": ["ZERO_DIFFUSE_MATERIAL"],
         "composed-viewmodel": ["VIEWMODEL_PASS"],
         "composed-water": ["WATER_SURFACE", "RAY_SCENE_SET=3"],
         "composed-water-ray": ["WATER_SURFACE", "WATER_RAY", "RAY_SCENE_SET=3"],
@@ -159,7 +158,6 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
     for name, defines in {
         "incoming-source-world": [],
         "incoming-source-viewmodel": ["VIEWMODEL_PASS"],
-        "incoming-source-metal": ["ZERO_DIFFUSE_MATERIAL"],
         "incoming-source-water": ["WATER_SURFACE"],
     }.items():
         for ray_pass in (False, True):
@@ -189,10 +187,11 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
     # declarations being incidentally imported by the pass/material response.
     # It supplies queries only: the real standard material must acquire its
     # response adapter from the shared material module, not this fixture.
-    (tree / "shaders/light-sample.glsl").unlink()
-    (tree / "shaders/local-light-storage.glsl").unlink()
-    (tree / "shaders/occlusion.glsl").unlink()
-    (tree / "shaders/local-shadows.glsl").unlink()
+    default_local_files = ("light-sample.glsl", "local-light-storage.glsl", "local-light-record.glsl", "occlusion.glsl",
+                           "local-shadows.glsl", "local-response-source.glsl",
+                           "local-accumulation-source.glsl", "chart-light-list.glsl")
+    for name in default_local_files:
+        (tree / "shaders" / name).unlink()
     shutil.copyfile(root / "tests/forward/shaders/custom-local-source.glsl",
                     tree / "shaders/local-lighting.glsl")
     for name, defines in {
@@ -206,9 +205,7 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
                         *["-D" + define for define in defines], str(source),
                         "-o", str(binary)], env=env, check=True)
         subprocess.run([validator, "--target-env", "vulkan1.1", str(binary)], env=env, check=True)
-    shutil.copyfile(root / "src/native/forward/shaders/light-sample.glsl",
-                    tree / "shaders/light-sample.glsl")
-    for name in ("occlusion.glsl", "local-shadows.glsl", "local-light-storage.glsl"):
+    for name in default_local_files:
         shutil.copyfile(root / "src/native/forward/shaders" / name, tree / "shaders" / name)
     shutil.copyfile(root / "src/native/forward/shaders/local-lighting.glsl",
                     tree / "shaders/local-lighting.glsl")
@@ -244,8 +241,8 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
         (tree / "shaders" / name).unlink()
     for name, (stage, defines) in {
         "unified-world": (source, []),
+        "unified-inline-world": (source, ["INLINE_WORLD_REFLECTIONS"]),
         "unified-guides": (source, ["REFLECTION_GUIDES"]),
-        "unified-metal": (source, ["ZERO_DIFFUSE_MATERIAL", "REFLECTION_GUIDES"]),
         "unified-viewmodel": (source, ["VIEWMODEL_PASS", "REFLECTION_GUIDES"]),
         "unified-live": (source, ["LIVE_GI"]),
         "unified-live-viewmodel": (source, ["LIVE_GI", "VIEWMODEL_PASS"]),

@@ -1,6 +1,7 @@
 #include "forward/bake/probe_visibility.h"
 #include <algorithm>
 #include <cmath>
+#include <numeric>
 #include <stdexcept>
 
 namespace remix::forward::bake {
@@ -45,25 +46,26 @@ namespace remix::forward::bake {
     const uint64_t required = (uint64_t(probes) + 1) * sizeof(uint32_t) + pairs.size() * stride;
     if (probes == UINT32_MAX || pairs.size() >= UINT32_MAX || required > byteBudget)
       throw std::length_error("Probe visibility exceeds its storage budget");
-    for (const auto &pair : pairs)
+    m_offsets.resize(size_t(probes) + 1);
+    for (const auto &pair : pairs) {
       if (pair.point >= probes || pair.light >= lights)
         throw std::invalid_argument("Invalid probe visibility pair");
-    std::vector<VisibilityTask> ordered(pairs.begin(), pairs.end());
-    std::sort(ordered.begin(), ordered.end(), [](const auto &a, const auto &b) {
-      return a.point < b.point || (a.point == b.point && a.light < b.light);
-    });
-    for (size_t i = 1; i < ordered.size(); ++i)
-      if (ordered[i].point == ordered[i - 1].point && ordered[i].light == ordered[i - 1].light)
-        throw std::invalid_argument("Duplicate probe visibility pair");
-    m_offsets.resize(size_t(probes) + 1);
-    m_entries.reserve(ordered.size());
-    size_t next = 0;
-    for (uint32_t probe = 0; probe < probes; ++probe) {
-      m_offsets[probe] = uint32_t(next);
-      while (next < ordered.size() && ordered[next].point == probe)
-        m_entries.push_back({ordered[next++].light, -1});
+      ++m_offsets[pair.point];
     }
-    m_offsets.back() = uint32_t(next);
+    // Prefix sums give each probe an exclusive end. Filling each range
+    // backwards turns those ends into the final starts in place.
+    std::partial_sum(m_offsets.begin(), m_offsets.end(), m_offsets.begin());
+    m_entries.resize(pairs.size());
+    for (const auto &pair : pairs)
+      m_entries[--m_offsets[pair.point]] = {pair.light, -1};
+    for (uint32_t probe = 0; probe < probes; ++probe) {
+      const auto first = m_entries.begin() + m_offsets[probe];
+      const auto last = m_entries.begin() + m_offsets[probe + 1];
+      if (last - first < 2) continue;
+      std::sort(first, last, [](const Entry &a, const Entry &b) { return a.light < b.light; });
+      if (std::adjacent_find(first, last, [](const Entry &a, const Entry &b) { return a.light == b.light; }) != last)
+        throw std::invalid_argument("Duplicate probe visibility pair");
+    }
     if (directional) m_direct.resize(m_entries.size());
   }
   uint64_t ProbeVisibility::bytes() const {
@@ -93,41 +95,49 @@ namespace remix::forward::bake {
                                  std::span<const VisibilityResult> results) {
     if (m_direct.empty() || pairs.size() != results.size())
       throw std::invalid_argument("Directional probe readback count mismatch");
-    std::vector<float> visibility;
-    visibility.reserve(results.size());
-    for (const auto &result : results) {
+    const auto indices = readbackIndices(pairs, [&](size_t i) {
+      const auto &result = results[i];
       for (float coefficient : result.irradiance)
         if (!std::isfinite(coefficient))
           throw std::invalid_argument("Non-finite directional probe readback");
-      visibility.push_back(result.visibility);
+      return result.visibility;
+    });
+    for (size_t i = 0; i < indices.size(); ++i) {
+      m_entries[indices[i]].visibility = results[i].visibility;
+      m_direct[indices[i]] = results[i].irradiance;
     }
-    // The scalar observer validates all identities/duplicates before mutation.
-    observeMasks(pairs, visibility);
-    for (size_t i = 0; i < pairs.size(); ++i)
-      m_direct[find(pairs[i].point, pairs[i].light)] = results[i].irradiance;
   }
   void ProbeVisibility::observe(std::span<const VisibilityTask> pairs, std::span<const float> visibility) {
     if (directional())
       throw std::invalid_argument("Directional probes require complete directional readback");
-    observeMasks(pairs, visibility);
-  }
-  void ProbeVisibility::observeMasks(std::span<const VisibilityTask> pairs, std::span<const float> visibility) {
     if (pairs.size() != visibility.size())
       throw std::invalid_argument("Probe visibility readback count mismatch");
+    const auto indices = readbackIndices(pairs, [&](size_t i) { return visibility[i]; });
+    for (size_t i = 0; i < indices.size(); ++i)
+      m_entries[indices[i]].visibility = visibility[i];
+  }
+  template <class VisibilityAt>
+  std::vector<uint32_t> ProbeVisibility::readbackIndices(std::span<const VisibilityTask> pairs,
+                                                        VisibilityAt visibilityAt) const {
     std::vector<uint32_t> indices;
     indices.reserve(pairs.size());
     for (size_t i = 0; i < pairs.size(); ++i) {
       const uint32_t index = find(pairs[i].point, pairs[i].light);
-      if (index == UINT32_MAX || m_entries[index].visibility >= 0 || !std::isfinite(visibility[i]) ||
-          visibility[i] < 0 || visibility[i] > 1)
+      const float visibility = visibilityAt(i);
+      if (index == UINT32_MAX || m_entries[index].visibility >= 0 || !std::isfinite(visibility) ||
+          visibility < 0 || visibility > 1)
         throw std::invalid_argument("Invalid probe visibility readback");
       indices.push_back(index);
     }
-    auto ordered = indices;
-    std::sort(ordered.begin(), ordered.end());
+    std::vector<uint32_t> sorted;
+    std::span<const uint32_t> ordered = indices;
+    if (!std::is_sorted(indices.begin(), indices.end())) {
+      sorted = indices;
+      std::sort(sorted.begin(), sorted.end());
+      ordered = sorted;
+    }
     if (std::adjacent_find(ordered.begin(), ordered.end()) != ordered.end())
       throw std::invalid_argument("Duplicate probe visibility readback");
-    for (size_t i = 0; i < indices.size(); ++i)
-      m_entries[indices[i]].visibility = visibility[i];
+    return indices;
   }
 } // namespace remix::forward::bake

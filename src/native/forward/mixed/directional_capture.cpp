@@ -117,16 +117,6 @@ namespace remix::forward::mixed {
     m_received = 0; m_active = true;
     return uint32_t(count);
   }
-  bake::VisibilityTask DirectionalCapture::task(uint32_t sample) const {
-    require(m_active && !m_failed && sample < m_samples.size());
-    const auto end = std::upper_bound(m_window.begin(), m_window.end(), sample,
-        [](uint32_t point, const Field &field) { return point < field.first; });
-    require(end != m_window.begin());
-    const auto &field = *std::prev(end);
-    require(sample - field.first < field.count);
-    return {m_points[m_offsets[field.owner.chart] + sample - field.first], field.owner.light,
-            uint32_t(m_next + size_t(std::prev(end) - m_window.begin()))};
-  }
   std::vector<bake::VisibilityTask> DirectionalCapture::batch(uint32_t first, uint32_t count) const {
     require(m_active && !m_failed && first <= m_samples.size() && count <= m_samples.size() - first);
     std::vector<bake::VisibilityTask> tasks;
@@ -143,7 +133,19 @@ namespace remix::forward::mixed {
     require(m_active && !m_failed);
     std::vector<bake::VisibilityTask> tasks;
     tasks.reserve(indices.size());
-    for (const auto index : indices) tasks.push_back(task(index));
+    auto field = m_window.end();
+    for (const uint32_t sample : indices) {
+      require(sample < m_samples.size());
+      if (field == m_window.end() || sample < field->first || sample - field->first >= field->count) {
+        const auto next = std::upper_bound(m_window.begin(), m_window.end(), sample,
+            [](uint32_t point, const Field &candidate) { return point < candidate.first; });
+        require(next != m_window.begin());
+        field = std::prev(next);
+        require(sample - field->first < field->count);
+      }
+      tasks.push_back({m_points[m_offsets[field->owner.chart] + sample - field->first], field->owner.light,
+                       uint32_t(m_next + size_t(field - m_window.begin()))});
+    }
     return tasks;
   }
   void DirectionalCapture::observe(uint32_t first, std::span<const bake::VisibilityResult> values,
@@ -165,9 +167,14 @@ namespace remix::forward::mixed {
       std::span<const bake::VisibilityResult> values, std::stop_token cancelled) {
     check(cancelled);
     require(m_active && !m_failed && indices.size() == values.size() && indices.size() <= m_samples.size());
-    std::vector<uint32_t> sorted(indices.begin(), indices.end());
-    std::sort(sorted.begin(), sorted.end());
-    require(std::adjacent_find(sorted.begin(), sorted.end()) == sorted.end());
+    std::vector<uint32_t> sorted;
+    auto ordered = indices;
+    if (!std::is_sorted(indices.begin(), indices.end())) {
+      sorted.assign(indices.begin(), indices.end());
+      std::sort(sorted.begin(), sorted.end());
+      ordered = sorted;
+    }
+    require(std::adjacent_find(ordered.begin(), ordered.end()) == ordered.end());
     for (size_t i = 0; i < values.size(); ++i) {
       if ((i & 1023u) == 0) check(cancelled);
       require(indices[i] < m_samples.size() && !m_seen[indices[i]] && validResult(values[i]));
@@ -181,18 +188,34 @@ namespace remix::forward::mixed {
   bool DirectionalCapture::finish(std::stop_token cancelled) {
     check(cancelled);
     require(m_active && !m_failed && m_received == m_samples.size());
+    size_t maximumTexels = 0;
+    for (const auto &field : m_window) {
+      const auto &chart = m_layout.charts[field.owner.chart];
+      maximumTexels = std::max(maximumTexels, size_t(chart.width) * chart.height);
+    }
+    std::vector<directional::Field> scratch(maximumTexels);
     for (const auto &field : m_window) {
       const auto &r = m_layout.charts[field.owner.chart];
       const auto points = std::span(m_points).subspan(m_offsets[field.owner.chart], field.count);
-      std::vector<directional::Field> rectangle(size_t(r.width) * r.height);
+      auto rectangle = std::span(scratch).first(size_t(r.width) * r.height);
+      uint32_t previousOwner = lightmap::unowned;
+      size_t sampleIndex = 0;
       for (uint32_t y = 0; y < r.height; ++y) {
         check(cancelled);
         for (uint32_t x = 0; x < r.width; ++x) {
           const auto owner = m_layout.owners[(size_t(r.page) * m_layout.pageSize + r.y + y) * m_layout.pageSize + r.x + x];
-          if (owner == lightmap::unowned) continue;
-          const auto found = std::lower_bound(points.begin(), points.end(), owner);
-          require(found != points.end() && *found == owner);
-          rectangle[size_t(y) * r.width + x] = m_samples[field.first + size_t(found - points.begin())];
+          auto &texel = rectangle[size_t(y) * r.width + x];
+          if (owner == lightmap::unowned) {
+            texel = {};
+            continue;
+          }
+          if (owner != previousOwner) {
+            const auto found = std::lower_bound(points.begin(), points.end(), owner);
+            require(found != points.end() && *found == owner);
+            sampleIndex = field.first + size_t(found - points.begin());
+            previousOwner = owner;
+          }
+          texel = m_samples[sampleIndex];
         }
       }
       if (!m_fields.add(field.owner.chart, field.owner.light, r, rectangle, cancelled)) {

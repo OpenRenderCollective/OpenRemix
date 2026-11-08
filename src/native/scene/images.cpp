@@ -179,6 +179,28 @@ namespace remix::scene {
     }
   } // namespace
 
+  bool textureHasZeroRgb(const Texture &texture) {
+    const auto &pixels = texture.pixels;
+    if (texture.dynamic || texture.updates || pixels.compressed || pixels.mips.empty() ||
+        pixels.width > maxTextureDimension || pixels.height > maxTextureDimension)
+      return false;
+    const auto zeroRgb = [&](const auto &mips) {
+      if (mips.size() != pixels.mips.size()) return false;
+      uint32_t width = pixels.width, height = pixels.height;
+      for (const auto &mip : mips) {
+        if (!width || !height || mip.size() != uint64_t(width) * height * 4)
+          return false;
+        for (size_t i = 0; i < mip.size(); i += 4)
+          if (mip[i] != 0 || mip[i + 1] != 0 || mip[i + 2] != 0)
+            return false;
+        width = std::max(1u, width / 2);
+        height = std::max(1u, height / 2);
+      }
+      return true;
+    };
+    return pixels.hdrMips.empty() ? zeroRgb(pixels.mips) : zeroRgb(pixels.hdrMips);
+  }
+
   bool isFloatFormat(remixapi_Format format) {
     return format == REMIXAPI_FORMAT_R16G16B16A16_SFLOAT_EXT || format == REMIXAPI_FORMAT_R32G32B32A32_SFLOAT_EXT;
   }

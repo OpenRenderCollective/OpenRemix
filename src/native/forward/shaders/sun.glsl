@@ -7,7 +7,7 @@ SunLightSample sampleSunLight(vec4 coordinate, vec4 bounds, float unitIrradiance
                              vec3 p, float depth, vec3 n, vec3 receiverNormal, bool allowBakedVisibility) {
   bool baked = allowBakedVisibility && frame.sunDirection.w > .5 && coordinate.w > .5;
   float visibility = baked ? clamp(sampleSurfaceAtlas(surfaceFilter(coordinate, bounds),
-      coordinate.z * SurfaceAtlasLayers + (SurfaceAtlasLayers - 1)).r, 0, 1) : 1;
+      surfaceSunLayer(coordinate.z)).r, 0, 1) : 1;
   bool charted = baked;
   if (allowBakedVisibility && !FullyMappedReceiver && !baked && frame.sunDirection.w > .5) {
     float probeVisibility;
@@ -30,10 +30,6 @@ SunLightSample sampleSunLight(vec4 coordinate, vec4 bounds, float unitIrradiance
                          : frontCosine * visibility;
   vec3 scale = frame.sunRadiance.rgb * sunShadowVisibility(p, depth, !baked, receiverNormal);
   return SunLightSample(l, scale, diffuse, visibility);
-}
-SunLightSample sampleSunLight(vec4 coordinate, vec4 bounds, float unitIrradiance,
-                             vec3 p, float depth, vec3 n, vec3 receiverNormal) {
-  return sampleSunLight(coordinate, bounds, unitIrradiance, p, depth, n, receiverNormal, true);
 }
 // Passes without baked sunlight coverage retain their analytic/CSM policy.
 SunLightSample sampleUnbakedSunLight(vec3 p, float depth, vec3 n, vec3 receiverNormal) {

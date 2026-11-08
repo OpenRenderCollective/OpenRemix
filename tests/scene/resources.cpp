@@ -380,6 +380,16 @@ namespace {
     auto linearHdr = remix::scene::decodeTexture(texture);
     require(!linearHdr.srgb && linearHdr.hdrMips[0] == std::vector<float>({8, .125f, 2, 1}),
             "Immutable float upload preserves linear HDR radiance");
+    remix::scene::Texture panorama;
+    panorama.pixels = {2, 1, false, {{0, 0, 0, 255, 0, 0, 0, 255}, {0, 0, 0, 255}}};
+    require(remix::scene::textureHasZeroRgb(panorama), "Opaque alpha does not make black sky emit");
+    panorama.pixels.hdrMips = {{0, 0, 0, 1, 0, 0, 0, 1}, {0, 0, 0, 1}};
+    require(remix::scene::textureHasZeroRgb(panorama), "All linear HDR levels can prove zero radiance");
+    panorama.pixels.hdrMips[1][1] = .0001f;
+    require(!remix::scene::textureHasZeroRgb(panorama), "A dim HDR mip still emits despite its black byte preview");
+    panorama.pixels.hdrMips[1][1] = 0;
+    panorama.dynamic = true;
+    require(!remix::scene::textureHasZeroRgb(panorama), "Dynamic textures never prove stable zero radiance");
     texture.dataSize = sizeof(hdr) - 1;
     rejected([&] { remix::scene::decodeTexture(texture); });
     const uint16_t halfHdr[] = {0x4800, 0x3000, 0x4000, 0x3c00};

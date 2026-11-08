@@ -76,8 +76,8 @@ namespace remix::forward::test {
     VkShaderModule module;
     check(vkCreateShaderModule(fixture.device, &moduleInfo, nullptr, &module));
     const uint32_t enabled = 1;
-    const VkSpecializationMapEntry entry{5, 0, sizeof(enabled)};
-    const VkSpecializationInfo specialization{1, &entry, sizeof(enabled), &enabled};
+    const VkSpecializationMapEntry entries[]{{5, 0, sizeof(enabled)}, {8, 0, sizeof(enabled)}};
+    const VkSpecializationInfo specialization{2, entries, sizeof(enabled), &enabled};
     const VkComputePipelineCreateInfo pipelineInfo{.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
         .stage = {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
             .stage = VK_SHADER_STAGE_COMPUTE_BIT, .module = module, .pName = "main",

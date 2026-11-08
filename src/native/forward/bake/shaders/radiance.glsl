@@ -75,7 +75,8 @@ bool sampleEmitterAt(RayLight light, vec3 p, vec2 samplePoint, out vec3 directio
   } else {
     vec3 delta = light.positionRadius.xyz - p;
     float d2 = dot(delta, delta), radius = light.positionRadius.w;
-    if (d2 < 1e-12 || radius <= 0)
+    float cutoff = light.corners[0].w;
+    if (d2 < 1e-12 || radius <= 0 || (cutoff > 0 && d2 >= cutoff * cutoff))
       return false;
     float oneMinusCos = sphereOneMinusCos(d2, radius);
     vec3 axis = delta / sqrt(d2);

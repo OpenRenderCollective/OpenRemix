@@ -1,4 +1,5 @@
 #include "forward/lightmap/interior_donors.h"
+#include "forward/lightmap/receiver_sampler.h"
 #include <cmath>
 #include <stdexcept>
 
@@ -17,7 +18,8 @@ namespace remix::forward::lightmap {
     }
   }
   InteriorDonors repairInteriorDonors(Layout &layout, std::span<const bake::Result> results,
-                                      std::stop_token cancelled) {
+                                      std::stop_token cancelled, const scene::BakeScene *source,
+                                      float receiverBias) {
     check(cancelled);
     if (results.size() != layout.points.size() || layout.pointCharts.size() != results.size() ||
         layout.owners.size() != uint64_t(layout.pageSize) * layout.pageSize * layout.pages)
@@ -26,7 +28,8 @@ namespace remix::forward::lightmap {
     std::vector<uint8_t> hidden(results.size());
     for (size_t i = 0; i < results.size(); ++i) {
       if ((i & 1023u) == 0) check(cancelled);
-      hidden[i] = interior(results[i]);
+      hidden[i] = interior(results[i]) ||
+          (source && buriedReceiverSample(*source, layout.points[i], receiverBias));
       summary.hiddenSamples += hidden[i];
     }
     if (!summary.hiddenSamples) return summary;

@@ -1,5 +1,4 @@
 #include "forward/shadows/moving_cache.h"
-#include <algorithm>
 
 namespace remix::forward::shadows {
   namespace {
@@ -13,10 +12,12 @@ namespace remix::forward::shadows {
           a.decodeColor == b.decodeColor && a.sampler == b.sampler && a.samplerState == b.samplerState;
     }
     bool sameCaster(const MovingCaster &a, const MovingCaster &b) {
+      // Scene submission validates the matrices before publishing the pose.
+      // Reused immutable pose objects already prove identical matrices.
       return sameOwner(a.surface, b.surface) && a.model == b.model &&
           a.opaque == b.opaque && (a.opaque || sameAlpha(a.alpha, b.alpha)) &&
           a.firstIndex == b.firstIndex && a.indexCount == b.indexCount && a.vertexOffset == b.vertexOffset &&
-          ((!a.bones && !b.bones) || (a.bones && b.bones && *a.bones == *b.bones));
+          (a.bones == b.bones || (a.bones && b.bones && *a.bones == *b.bones));
     }
   }
   AlphaCoverage alphaCoverage(const DrawData &data, const scene::Material &material, uint64_t sampler) {
@@ -40,9 +41,15 @@ namespace remix::forward::shadows {
     m_casters.clear();
   }
   bool MovingCache::update(const View &view, std::span<const MovingCaster> casters) {
+    // A cleared slot represents empty space for any light projection. Keep
+    // it until a caster returns or the owner explicitly resets the slot.
+    if (m_valid && m_casters.empty() && casters.empty()) return false;
     if (casters.size() > maximumCasters) { reset(); return true; }
+    bool unchanged = m_valid && sameView(m_view, view) && m_view.matrices == view.matrices &&
+                     m_casters.size() == casters.size();
     size_t poseMatrices = 0;
-    for (const auto &caster : casters) {
+    for (size_t i = 0; i < casters.size(); ++i) {
+      const auto &caster = casters[i];
       const size_t count = caster.bones ? caster.bones->size() : 0;
       if ((!caster.opaque && (!caster.alpha.cacheable ||
               (caster.alpha.textured && caster.alpha.texture.expired()))) ||
@@ -51,10 +58,9 @@ namespace remix::forward::shadows {
         return true;
       }
       poseMatrices += count;
+      unchanged = unchanged && sameCaster(m_casters[i], caster);
     }
-    if (m_valid && sameView(m_view, view) && m_view.matrices == view.matrices && m_casters.size() == casters.size() &&
-        std::equal(m_casters.begin(), m_casters.end(), casters.begin(), sameCaster))
-      return false;
+    if (unchanged) return false;
     m_valid = false;
     m_casters.assign(casters.begin(), casters.end());
     m_view = view;

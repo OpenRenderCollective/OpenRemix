@@ -365,6 +365,13 @@ namespace remix {
         return fail(result);
       }
     }
+    if (m_hdrOutput.active()) {
+      const auto &settings = m_profiles.current();
+      const auto nits = HdrNits{settings.hdrPeakNits, settings.hdrPaperWhiteNits, settings.hdrUiNits}.clamped();
+      SDL_Log("OpenRemix display output: HDR10, %.0f nit peak, %.0f nit paper white", nits.peak, nits.paperWhite);
+    } else if (!m_headless) {
+      SDL_Log("OpenRemix display output: SDR (%s)", m_hdrStatus.c_str());
+    }
     return REMIXAPI_ERROR_CODE_SUCCESS;
   }
 

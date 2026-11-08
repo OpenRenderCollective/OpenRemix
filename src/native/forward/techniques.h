@@ -13,7 +13,7 @@ namespace remix::forward::techniques {
     Direct direct = Direct::AggregateBake;
     Diffuse diffuse = Diffuse::SurfaceAndProbes;
     Reflections reflections = Reflections::Cubemaps;
-    bool screenReflections = true;
+    bool screenReflections = false;
     bool sunShadows = true, localShadows = true;
     bool operator==(const Selection &) const = default;
   };

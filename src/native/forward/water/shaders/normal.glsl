@@ -1,5 +1,5 @@
-vec3 waterNormal(Material m, WaterMaterial water, vec2 uv, vec3 p, vec3 n, vec3 v) {
-  if (m.maps.y != 5u) return mappedNormal(m, uv, p, n, v);
+vec3 waterNormal(Material m, WaterMaterial water, vec2 uv, vec3 positionDx, vec3 positionDy, vec3 n, vec3 v) {
+  if (m.maps.y != 5u) return mappedNormal(m, uv, positionDx, positionDy, n, v);
   if ((m.maps.x & 4u) == 0u) return n;
   float seconds = water.optical.y;
   vec3 local = texture(normalMap, uv + water.scroll01.xy * seconds).xyz;
@@ -8,5 +8,5 @@ vec3 waterNormal(Material m, WaterMaterial water, vec2 uv, vec3 p, vec3 n, vec3 
              texture(normalMap, uv.yx * .45 + water.scroll2.xy * seconds).xyz) / 3;
   local = local * 2 - 1;
   if (m.pbr.z > 0) local.z = sqrt(max(0, 1 - dot(local.xy, local.xy)));
-  return tangentNormal(local, uv, p, n, v);
+  return tangentNormal(local, uv, positionDx, positionDy, n, v);
 }

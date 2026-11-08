@@ -36,10 +36,6 @@ namespace remix::forward::probes {
       if (const auto source = standaloneSource(transport)) return source->image.get();
       return nullptr;
     }
-    const Header *header(CaptureTransport transport) const {
-      const auto selected = image(transport);
-      return selected ? &selected->header() : nullptr;
-    }
     float standaloneSceneScale() const { return m_standalone->sceneScale(); }
     // Preserve renderer teardown order: authored workers retire before bake
     // ownership; standalone frame owners remain retained until normal teardown.

@@ -1,4 +1,6 @@
 #include "forward/probes/receiver_mask.h"
+#include "forward/probes/spatial_mask.h"
+#include <bit>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -84,5 +86,43 @@ int main() {
   require(contains(p::receiverMask(header, receivers, 0), 0), "Large-coordinate boundary contact survives");
   header.parameters[0] = 0;
   require(p::receiverMask(header, {}, 0) == std::array<uint32_t, 2>{}, "Empty reflection sets remain empty");
+  // Exercise negative cell coordinates, exact cell faces, both mask words,
+  // and cancellation at the maximum supported translation.
+  header.parameters[0] = 64;
+  constexpr size_t budget = 4 * 1024 * 1024 + 24;
+  for (uint32_t i = 0; i < 64; ++i) {
+    auto &probe = header.probes[i];
+    probe.worldToLocal = p::worldSpace;
+    probe.worldToLocal[0][3] = 1048576;
+    probe.influenceMinimum = {1048576.0f - 256 + float(i * 4), -1, -1, 0};
+    probe.influenceMaximum = {probe.influenceMinimum[0] + 4, 1, 1, 0};
+  }
+  const auto spatial = p::buildSpatialMask(header, budget);
+  require(spatial.size() >= 8, "Translated probes publish spatial masks");
+  for (int32_t sample = -4100; sample <= 4; ++sample) {
+    const Vec3 point{float(sample) / 16, 0, 0};
+    std::array<uint32_t, 3> cell{};
+    for (uint32_t axis = 0; axis < 3; ++axis) {
+      const auto origin = std::bit_cast<int32_t>(spatial[axis]);
+      const auto coordinate = int32_t(std::floor(point[axis] / 128)) - origin;
+      require(coordinate >= 0 && uint32_t(coordinate) < spatial[axis + 3], "Sample spans the published grid");
+      cell[axis] = uint32_t(coordinate);
+    }
+    const size_t offset = 6 + 2 * (cell[0] + spatial[3] * (cell[1] + spatial[4] * cell[2]));
+    const std::array<uint32_t, 2> candidates{spatial[offset], spatial[offset + 1]};
+    for (uint32_t i = 0; i < 64; ++i) {
+      const auto &probe = header.probes[i];
+      const auto local = p::projectionPoint(probe.worldToLocal, point);
+      const bool inside = local[0] >= probe.influenceMinimum[0] && local[0] <= probe.influenceMaximum[0];
+      require(!inside || contains(candidates, i), "Spatial masks preserve float-accepted cell boundaries");
+    }
+  }
+  require(p::buildSpatialMask(header, spatial.size() * sizeof(uint32_t) - 1).empty(),
+          "A storage range below the required size disables the grid");
+  header.probes[0].worldToLocal[0][1] = .25f;
+  require(p::buildSpatialMask(header, budget).empty(), "Non-translation transforms keep the draw mask");
+  header.probes[0].worldToLocal[0][1] = 0;
+  header.probes[0].influenceMaximum[0] = std::numeric_limits<float>::infinity();
+  require(p::buildSpatialMask(header, budget).empty(), "Invalid influence bounds keep the draw mask");
   std::puts("Conservative cubemap receiver masks passed");
 }

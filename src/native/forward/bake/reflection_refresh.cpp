@@ -39,7 +39,7 @@ namespace remix::forward::bake {
     std::copy_n(properties.pipelineCacheUUID, cacheDevice.uuid.size(), cacheDevice.uuid.begin());
     if (config.diskCache) {
       cacheKey = cache::key(source->contentHash, config, cutoff, cacheDevice, options.directLighting,
-                            !source->partition || !source->partition->closed);
+                            !source->partition || !source->partition->closed, source.get());
       try { cacheFile = cache::path(cacheKey); } catch (const std::exception &) {}
     }
     reflectionRecovery = true; // use capture scheduling, skipping every diffuse stage

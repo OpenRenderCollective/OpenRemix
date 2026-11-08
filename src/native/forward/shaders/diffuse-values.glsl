@@ -24,4 +24,9 @@ struct ReceiverLighting {
 vec3 composeDiffuseLight(ReceiverLighting lighting, vec3 diffuseReflectance) {
   return diffuseReflectance * lighting.diffuse;
 }
+LightingReference diffuseLightingReference(ReceiverLighting lighting, uint domain) {
+  float luminance = lighting.reflectionReference
+      ? dot(max(lighting.diffuse, vec3(0)), vec3(.2126, .7152, .0722)) : -1;
+  return LightingReference(luminance, domain);
+}
 #endif

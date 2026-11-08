@@ -1,12 +1,16 @@
+#include "forward/probes/cube_storage.h"
 #include "forward/water/pass.h"
 #include "forward/bake/transport.h"
 #include "forward/resources.h"
 #include "forward/water/ray_shaders/embedded.h"
 #include "forward/water/shaders/embedded.h"
 #include "platform/gpu_frames.h"
+#include "platform/gpu_timers.h"
 #include "runtime/pipelines.h"
 #include <algorithm>
 #include <array>
+#include <cstdlib>
+#include <optional>
 
 namespace remix::forward::water {
   struct Pass::Gpu {
@@ -22,7 +26,7 @@ namespace remix::forward::water {
     VkDescriptorSetLayout raySceneLayout = VK_NULL_HANDLE;
     VkPipelineLayout rayLayout = VK_NULL_HANDLE;
     VkPipeline raySurface = VK_NULL_HANDLE, liveSurface = VK_NULL_HANDLE, liveRaySurface = VK_NULL_HANDLE;
-    bool rayReflections = false, liveDiffuse = false, bakedDirect = false;
+    Techniques techniques;
     VkDescriptorPool pool = VK_NULL_HANDLE;
     struct Frame {
       VkDescriptorSet set = VK_NULL_HANDLE;
@@ -133,17 +137,21 @@ namespace remix::forward::water {
             pipeline::destroyShaderModule(device, module, nullptr);
         }
       } modules{device, {}};
+      const bool nativeCube = probes::nativeCubeStorage(physical);
+      auto reflectionModule = [&](const auto &stacked, const auto &cube) {
+        return nativeCube ? modules.add(cube, sizeof(cube)) : modules.add(stacked, sizeof(stacked));
+      };
       const auto vertex = modules.add(vertShader, sizeof(vertShader));
-      const auto fragment = modules.add(fragShader, sizeof(fragShader));
+      const auto fragment = reflectionModule(fragShader, fragCubeShader);
       const auto rayFragment =
-          rayReflections ? modules.add(hardware::fragShader, sizeof(hardware::fragShader)) : VK_NULL_HANDLE;
-      const auto liveFragment = liveDiffuse
-          ? bakedDirect ? modules.add(hardware::composedDiffuseShader, sizeof(hardware::composedDiffuseShader))
-                        : modules.add(hardware::liveDiffuseShader, sizeof(hardware::liveDiffuseShader))
+          techniques.rayReflections ? reflectionModule(hardware::fragShader, hardware::fragCubeShader) : VK_NULL_HANDLE;
+      const auto liveFragment = techniques.liveDiffuse
+          ? techniques.bakedDirect ? reflectionModule(hardware::composedDiffuseShader, hardware::composedDiffuseCubeShader)
+                        : reflectionModule(hardware::liveDiffuseShader, hardware::liveDiffuseCubeShader)
           : VK_NULL_HANDLE;
-      const auto liveRayFragment = liveDiffuse && rayReflections
-          ? bakedDirect ? modules.add(hardware::composedDiffuseRayShader, sizeof(hardware::composedDiffuseRayShader))
-                        : modules.add(hardware::liveDiffuseRayShader, sizeof(hardware::liveDiffuseRayShader))
+      const auto liveRayFragment = techniques.liveDiffuse && techniques.rayReflections
+          ? techniques.bakedDirect ? reflectionModule(hardware::composedDiffuseRayShader, hardware::composedDiffuseRayCubeShader)
+                        : reflectionModule(hardware::liveDiffuseRayShader, hardware::liveDiffuseRayCubeShader)
           : VK_NULL_HANDLE;
       const auto overlayVertex = modules.add(overlayVertShader, sizeof(overlayVertShader));
       const auto overlayFragment = modules.add(overlayFragShader, sizeof(overlayFragShader));
@@ -251,15 +259,13 @@ namespace remix::forward::water {
   }
   void Pass::initialize(VkPhysicalDevice physical, VkDevice device, VkExtent2D extent,
                         VkSampleCountFlagBits samples, VkDescriptorSetLayout scene,
-                        VkDescriptorSetLayout material, Targets targets, bool rayReflections, bool liveDiffuse, bool bakedDirect) {
+                        VkDescriptorSetLayout material, Targets targets, Techniques techniques) {
     auto next = std::make_unique<Gpu>();
     auto &g = *next;
     g.physical = physical;
     g.device = device;
     g.extent = extent;
-    g.rayReflections = rayReflections;
-    g.liveDiffuse = liveDiffuse;
-    g.bakedDirect = bakedDirect;
+    g.techniques = techniques;
     g.snapshot.initialize(physical, device, extent, samples);
     const VkDescriptorType types[] = {
         VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
@@ -284,11 +290,11 @@ namespace remix::forward::water {
                                                 .pushConstantRangeCount = 1,
                                                 .pPushConstantRanges = &push};
     check(pipeline::createPipelineLayout(device, &layoutInfo, nullptr, &g.layout));
-    if (rayReflections || liveDiffuse) {
+    if (techniques.rayReflections || techniques.liveDiffuse) {
       g.raySceneLayout = bake::Transport::createSceneLayout(device);
       const VkDescriptorSetLayout rayLayouts[] = {scene, material, g.inputs, g.raySceneLayout};
       auto rayInfo = layoutInfo;
-      const VkPushConstantRange rayPush{push.stageFlags, 0, liveDiffuse ? 16u : 8u};
+      const VkPushConstantRange rayPush{push.stageFlags, 0, techniques.liveDiffuse ? 16u : 8u};
       rayInfo.pPushConstantRanges = &rayPush;
       rayInfo.setLayoutCount = 4;
       rayInfo.pSetLayouts = rayLayouts;
@@ -328,7 +334,7 @@ namespace remix::forward::water {
     const VkDescriptorImageInfo images[] = {saved.hdr, saved.depth, lighting.dome};
     const VkDescriptorBufferInfo buffers[] = {frame.parameters->descriptor(), frame.materials->descriptor(),
                                               lighting.probes.metadata, lighting.sky};
-    VkWriteDescriptorSet writes[7]{};
+    std::array<VkWriteDescriptorSet, 11> writes{};
     for (uint32_t i = 0; i < 7; ++i) {
       const bool image = i < 2 || i == 6;
       writes[i] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -341,24 +347,21 @@ namespace remix::forward::water {
                    .pImageInfo = image ? &images[i == 6 ? 2 : i] : nullptr,
                    .pBufferInfo = image ? nullptr : &buffers[i - 2]};
     }
-    vkUpdateDescriptorSets(g.device, 7, writes, 0, nullptr);
-    const VkWriteDescriptorSet probeImage{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+    writes[7] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
         .dstSet = frame.set, .dstBinding = 11, .descriptorCount = 1,
         .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &lighting.probes.radiance};
-    vkUpdateDescriptorSets(g.device, 1, &probeImage, 0, nullptr);
     const VkDescriptorImageInfo screen[] = {
         lighting.reflectionDepth.imageView ? lighting.reflectionDepth : saved.depth,
         lighting.reflectionNormals.imageView ? lighting.reflectionNormals : saved.hdr,
         lighting.reflectionColor.imageView ? lighting.reflectionColor : saved.hdr};
-    VkWriteDescriptorSet screenWrites[3]{};
     for (uint32_t i = 0; i < 3; ++i)
-      screenWrites[i] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+      writes[8 + i] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                          .dstSet = frame.set,
                          .dstBinding = 8 + i,
                          .descriptorCount = 1,
                          .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                          .pImageInfo = &screen[i]};
-    vkUpdateDescriptorSets(g.device, 3, screenWrites, 0, nullptr);
+    vkUpdateDescriptorSets(g.device, uint32_t(writes.size()), writes.data(), 0, nullptr);
   }
   VkDescriptorBufferInfo Pass::parameters(uint32_t slot) const {
     return m_gpu->frames.at(slot).parameters->descriptor();
@@ -366,15 +369,24 @@ namespace remix::forward::water {
   void Pass::record(VkCommandBuffer command, uint32_t slot, Snapshot::Inputs inputs,
                     const std::function<void(VkPipeline, VkPipelineLayout)> &draw, RayInputs rays) {
     auto &g = *m_gpu;
+    static const bool profileWater = std::getenv("REMIX_DEBUG_FORWARD_WATER_TIMINGS") != nullptr;
+    std::optional<gpu::GpuScope> timing;
+    auto stage = [&](const char *name) {
+      timing.reset();
+      if (profileWater && gpu::timing()) timing.emplace(command, name, g.extent);
+    };
+    stage("Forward+ water snapshot");
     g.snapshot.record(command, slot, inputs);
-    const auto source = inputs.reflections.imageView ? inputs.reflections : g.snapshot.output().hdr;
-    const VkWriteDescriptorSet reflection{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-                                          .dstSet = g.frames.at(slot).set,
-                                          .dstBinding = 7,
-                                          .descriptorCount = 1,
-                                          .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                                          .pImageInfo = &source};
-    vkUpdateDescriptorSets(g.device, 1, &reflection, 0, nullptr);
+    timing.reset();
+    const auto waterSet = g.frames.at(slot).set;
+    const bool overlay = inputs.reflections.imageView != VK_NULL_HANDLE;
+    if (overlay) {
+      // Binding 7 is used only by the opaque reflection overlay.
+      const VkWriteDescriptorSet reflection{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+          .dstSet = waterSet, .dstBinding = 7, .descriptorCount = 1,
+          .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &inputs.reflections};
+      vkUpdateDescriptorSets(g.device, 1, &reflection, 0, nullptr);
+    }
     const VkRenderPassBeginInfo begin{.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
                                       .renderPass = g.pass,
                                       .framebuffer = g.target,
@@ -384,15 +396,16 @@ namespace remix::forward::water {
     const VkRect2D scissor{{0, 0}, g.extent};
     vkCmdSetViewport(command, 0, 1, &viewport);
     vkCmdSetScissor(command, 0, 1, &scissor);
-    vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, g.layout, 2, 1, &g.frames[slot].set, 0,
-                            nullptr);
-    if (inputs.reflections.imageView) {
+    if (overlay) {
+      vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, g.layout, 2, 1, &waterSet, 0, nullptr);
+      stage("Forward+ water reflection overlay");
       vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, g.overlay);
       vkCmdDraw(command, 3, 1, 0, 0);
     }
+    stage("Forward+ water surface shading");
     if (rays.diffuse && g.liveSurface) {
-      vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, g.rayLayout, 2, 1, &g.frames[slot].set, 0, nullptr);
-      vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, g.rayLayout, 3, 1, &rays.diffuse, 0, nullptr);
+      const VkDescriptorSet sets[] = {waterSet, rays.diffuse};
+      vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, g.rayLayout, 2, 2, sets, 0, nullptr);
       struct QueryLimits { float distance; uint32_t bounces; };
       static_assert(sizeof(QueryLimits) == 8);
       const QueryLimits limits{rays.reflectionDistance, rays.reflectionBounces};
@@ -400,11 +413,12 @@ namespace remix::forward::water {
                         8, sizeof(limits), &limits);
       draw(rays.reflections && g.liveRaySurface ? g.liveRaySurface : g.liveSurface, g.rayLayout);
     } else if (rays.reflections && g.raySurface) {
-      if (g.liveDiffuse)
-        vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, g.rayLayout, 2, 1, &g.frames[slot].set, 0, nullptr);
-      vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, g.rayLayout, 3, 1, &rays.reflections, 0, nullptr);
+      const VkDescriptorSet sets[] = {waterSet, rays.reflections};
+      vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, g.rayLayout, 2, 2, sets, 0, nullptr);
       draw(g.raySurface, g.rayLayout);
     } else {
+      if (!overlay)
+        vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, g.layout, 2, 1, &waterSet, 0, nullptr);
       draw(g.surface, g.layout);
     }
     vkCmdEndRenderPass(command);

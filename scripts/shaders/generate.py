@@ -32,7 +32,7 @@ OPTIMIZED = {'pathtrace'}
 INLINED = {'bake'}
 # Optimize the expensive depth-primed world shaders without expanding every
 # auxiliary pass. Keep their readable GLSL and the existing word-array ABI.
-INLINED_STAGES = {('forward', 'prepassedFrag'), ('forward', 'prepassedSsrFrag')}
+INLINED_STAGES = {('forward', 'prepassedFrag'), ('forward', 'prepassedSsrFrag'), ('forward', 'inlinePrepassedFrag'), ('forward', 'inlinePrepassedFragCube')}
 BACKENDS = {
     'styled_lighting': ('forward::styled_lighting', 'vulkan1.1', ('compose',)),
     'probe_batch_test': ('forward::test::probe_batch_input', 'vulkan1.1', ('query',)),
@@ -41,7 +41,7 @@ BACKENDS = {
     'cluster_test': ('forward::test::cluster_input', 'vulkan1.1', ('query',)),
     'shadow_test': ('forward::test::shadow_input', 'vulkan1.1', ('query',)),
     'style_test': ('forward::test::style_input', 'vulkan1.1', ('query',)),
-    'probe_test': ('forward::test::probe_input', 'vulkan1.1', ('reflection',)),
+    'probe_test': ('forward::test::probe_input', 'vulkan1.1', ('reflection', 'reflectionCube')),
     'mask_test': ('forward::test::mask_input', 'vulkan1.1', ('decode',)),
     'water_ray': ('forward::water::hardware', 'vulkan1.2', ('frag', 'liveDiffuse', 'liveDiffuseRay', 'composedDiffuse', 'composedDiffuseRay')),
     'water_test': ('forward::test::water_input', 'vulkan1.1', ('vert', 'frag', 'query', 'depth')),
@@ -50,7 +50,7 @@ BACKENDS = {
     'live_ray': ('forward::ray', 'vulkan1.2', ('launch', 'merge')),
     'bake': ('forward::bake', 'vulkan1.2', ('atlas', 'transport', 'parallel', 'visibility', 'aggregate', 'aggregateParallel', 'receiverDirect', 'receiverDirectParallel', 'depth')),
     'forward_test': ('forward::test', 'vulkan1.2', ('comp', 'probes', 'water', 'coarseTransfer')),
-    'forward': ('forward', 'vulkan1.1', ('vert', 'lightmapVert', 'frag', 'prepassedFrag', 'viewModelFrag', 'viewModelEarlyFrag', 'cluster', 'shadowVert', 'shadowFrag', 'opaqueDepthFrag', 'localShadowVert', 'localShadowFrag', 'depthBatchVert', 'depthBatchFrag', 'compositeVert', 'compositeFrag', 'compositeSingle', 'ssrFrag', 'prepassedSsrFrag', 'zeroDiffuseFrag', 'zeroDiffuseSsrFrag', 'zeroDiffusePrepassedFrag', 'zeroDiffusePrepassedSsrFrag', 'ssrResolve', 'ssrResolveSingle', 'ssrReduce', 'ssrTrace', 'ssrFilter', 'opaqueCull', 'opaqueTiles', 'opaqueTilesSingle')),
+    'forward': ('forward', 'vulkan1.1', ('vert', 'lightmapVert', 'frag', 'prepassedFrag', 'inlineFrag', 'inlinePrepassedFrag', 'viewModelFrag', 'viewModelEarlyFrag', 'cluster', 'shadowVert', 'shadowFrag', 'opaqueDepthFrag', 'localShadowVert', 'localShadowFrag', 'depthBatchVert', 'depthBatchFrag', 'compositeVert', 'compositeFrag', 'compositeSingle', 'ssrFrag', 'prepassedSsrFrag', 'ssrResolve', 'ssrResolveSingle', 'ssrReduce', 'ssrTrace', 'ssrFilter', 'ssrFilterSingle', 'opaqueCull', 'opaqueTiles', 'opaqueTilesSingle')),
     # Shared with the raster fallback, which supports Vulkan 1.1 devices.
     'postfx': ('postfx', 'vulkan1.1', ('meter', 'resolve', 'down', 'up')),
     'upscale': ('upscale', 'vulkan1.2', ('comp', 'vert', 'frag', 'hdr10', 'hdrUi')),
@@ -59,6 +59,18 @@ BACKENDS = {
     'denoise': ('denoise', 'vulkan1.2', ('comp', 'sigma', 'local', 'localSigma', 'splitLocal', 'splitLocalSigma')),
     'particles': ('particles', 'vulkan1.1', ('simulate', 'spawn', 'args', 'vert', 'frag', 'light', 'spawnTraced')),
 }
+# Reflection consumers share one image layout per device.
+CUBE_VARIANTS = {
+    'forward': ('inlineFrag', 'inlinePrepassedFrag', 'viewModelFrag', 'viewModelEarlyFrag',
+                'ssrFilter', 'ssrFilterSingle'),
+    'water': ('frag',),
+    'water_ray': BACKENDS['water_ray'][2],
+    'live_gi': ('viewModel', 'viewModelEarly', 'composedViewModel', 'composedViewModelEarly'),
+}
+for backend, variants in CUBE_VARIANTS.items():
+    namespace, target, stages = BACKENDS[backend]
+    BACKENDS[backend] = namespace, target, stages + tuple(stage + 'Cube' for stage in variants)
+
 # Stages that need a newer target than their backend's (ray queries: SPIR-V 1.4).
 STAGE_ENVIRONMENTS = {('particles', 'light'): 'vulkan1.2', ('particles', 'spawnTraced'): 'vulkan1.2'}
 
@@ -109,11 +121,14 @@ def generated_directory(backend):
 
 def defines_for(backend, stage, stages):
     """Preprocessor defines and source file of one embedded stage."""
+    if stage.endswith('Cube') and stage[:-4] in CUBE_VARIANTS.get(backend, ()):
+        defines, source = defines_for(backend, stage[:-4], stages)
+        return defines + ['-DNATIVE_PROBE_CUBE=1'], source
     directory = shader_directory(backend)
     if backend in ('shadow_test', 'cluster_test', 'sun_depth_test', 'probe_batch_test'):
         return [], directory / 'query.comp'
     if backend == 'probe_test':
-        return [], directory / 'reflection.comp'
+        return (['-DNATIVE_PROBE_CUBE=1'] if stage == 'reflectionCube' else []), directory / 'reflection.comp'
     defines = ['-DTEMPORAL=1'] if stage in ('temporal', 'temporalTransparency', 'confidence') else []
     if backend == 'probe_batch':
         return [], directory / (stage + '.comp')
@@ -205,11 +220,10 @@ def defines_for(backend, stage, stages):
             'compositeVert': 'composite.vert', 'compositeFrag': 'composite.frag',
             'compositeSingle': 'composite.frag',
             'ssrFrag': 'forward.frag', 'prepassedFrag': 'forward.frag',
-            'zeroDiffuseFrag': 'forward.frag', 'zeroDiffuseSsrFrag': 'forward.frag',
-            'zeroDiffusePrepassedFrag': 'forward.frag', 'zeroDiffusePrepassedSsrFrag': 'forward.frag',
+            'inlineFrag': 'forward.frag', 'inlinePrepassedFrag': 'forward.frag',
             'prepassedSsrFrag': 'forward.frag', 'viewModelFrag': 'forward.frag', 'viewModelEarlyFrag': 'forward.frag', 'ssrResolve': 'reflections.comp',
             'ssrResolveSingle': 'reflections.comp', 'ssrReduce': 'reflections.comp',
-            'ssrTrace': 'reflections.comp', 'ssrFilter': 'reflections.comp',
+            'ssrTrace': 'reflections.comp', 'ssrFilter': 'reflections.comp', 'ssrFilterSingle': 'reflections.comp',
             'opaqueCull': 'opaque-visibility.comp', 'opaqueTiles': 'opaque-visibility.comp',
             'opaqueTilesSingle': 'opaque-visibility.comp',
         }[stage]
@@ -217,16 +231,17 @@ def defines_for(backend, stage, stages):
         if stage in ('shadowVert', 'shadowFrag'): defines = ['-DSHADOW_PASS=1']
         if stage in ('localShadowVert', 'localShadowFrag'): defines = ['-DSHADOW_PASS=1', '-DLOCAL_SHADOW_PASS=1']
         if stage == 'compositeSingle': defines = ['-DSINGLE_SAMPLE=1']
-        if stage in ('ssrFrag', 'prepassedSsrFrag', 'zeroDiffuseSsrFrag', 'zeroDiffusePrepassedSsrFrag'): defines = ['-DREFLECTION_GUIDES=1']
-        if stage in ('prepassedFrag', 'prepassedSsrFrag', 'zeroDiffusePrepassedFrag', 'zeroDiffusePrepassedSsrFrag'): defines += ['-DPREPASSED_WORLD=1']
-        if stage.startswith('zeroDiffuse'): defines += ['-DZERO_DIFFUSE_MATERIAL=1']
+        if stage in ('ssrFrag', 'prepassedSsrFrag'): defines = ['-DREFLECTION_GUIDES=1']
+        if stage in ('inlineFrag', 'inlinePrepassedFrag'): defines += ['-DINLINE_WORLD_REFLECTIONS=1']
+        if stage in ('prepassedFrag', 'prepassedSsrFrag', 'inlinePrepassedFrag'): defines += ['-DPREPASSED_WORLD=1']
         if stage in ('viewModelFrag', 'viewModelEarlyFrag'): defines = ['-DVIEWMODEL_PASS=1']
         if stage == 'viewModelEarlyFrag': defines += ['-DEARLY_OPAQUE=1']
         if stage in ('ssrResolve', 'ssrResolveSingle'): defines = ['-DSSR_RESOLVE=1']
         if stage == 'ssrResolveSingle': defines += ['-DSINGLE_SAMPLE=1']
         if stage == 'ssrReduce': defines = ['-DSSR_REDUCE=1']
         if stage == 'ssrTrace': defines = ['-DSSR_TRACE=1']
-        if stage == 'ssrFilter': defines = ['-DSSR_FILTER=1']
+        if stage in ('ssrFilter', 'ssrFilterSingle'): defines = ['-DSSR_FILTER=1']
+        if stage == 'ssrFilterSingle': defines += ['-DSINGLE_SAMPLE=1']
         if stage.startswith('opaqueTiles'): defines = ['-DREDUCE_DEPTH=1']
         if stage == 'opaqueTilesSingle': defines += ['-DSINGLE_SAMPLE=1']
     if backend == 'postfx':

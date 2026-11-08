@@ -125,6 +125,8 @@ namespace remix::forward::lightmap::denoising {
       }
       double projected = 0;
       for (auto &batch : batches) {
+        const size_t chartBytes = size_t(batch.width) * batch.height * 3 * sizeof(float) * (coefficientCount + 2);
+        const uint32_t queueCapacity = cpuChartQueueCapacity(chartBytes, queues);
         // Warm each independent binding before timing. Trial writes remain in
         // copied packets; neither device calibration can mutate map lighting.
         for (uint32_t i = 0; i < queues && i < batch.packets.size(); ++i) {
@@ -135,14 +137,20 @@ namespace remix::forward::lightmap::denoising {
         }
         const auto began = std::chrono::steady_clock::now();
         cpuQueues(queues, cancelled, [&](uint32_t index, std::stop_token stop) {
+          uint32_t pending = 0;
           for (size_t i = index; i < batch.packets.size(); i += queues) {
             checkCancellation(stop);
             auto &packet = batch.packets[i];
             std::copy(batch.original[i].begin(), batch.original[i].end(), packet.fields.begin());
             filters[index]->enqueue(packet.fields, batch.width, batch.height, 0, packet.contentWidth,
                                     packet.contentHeight);
+            if (++pending == queueCapacity) {
+              filters[index]->finish();
+              pending = 0;
+            }
           }
-          filters[index]->finish();
+          if (pending)
+            filters[index]->finish();
         });
         const double seconds =
             std::chrono::duration<double>(std::chrono::steady_clock::now() - began).count();

@@ -4,9 +4,7 @@
 #include <array>
 #include <bit>
 #include <cmath>
-#include <span>
 #include <stdexcept>
-#include <vector>
 
 namespace remix::forward::bake {
   // Signed, cosine-convolved L2 irradiance of one unit-radiance emitter.
@@ -50,24 +48,4 @@ namespace remix::forward::bake {
   inline bool zeroUnitDirect(const UnitDirect &coefficients) {
     return std::all_of(coefficients.begin(), coefficients.end(), [](float value) { return value == 0; });
   }
-  // Pair ownership stays in indices; index zero is an exactly black field.
-  // Nonzero records use index + 1, independently of the number of lights.
-  struct UnitDirectRecords {
-    std::vector<uint32_t> indices;
-    std::vector<PackedUnitDirect> records;
-    explicit UnitDirectRecords(std::span<const UnitDirect> fields) {
-      if (fields.size() >= UINT32_MAX) throw std::length_error("Too many unit-direct fields");
-      indices.reserve(fields.size());
-      records.reserve(size_t(std::count_if(fields.begin(), fields.end(),
-          [](const auto &field) { return !zeroUnitDirect(field); })));
-      for (const auto &field : fields) {
-        if (zeroUnitDirect(field)) {
-          indices.push_back(0);
-        } else {
-          records.push_back(packUnitDirect(field));
-          indices.push_back(uint32_t(records.size()));
-        }
-      }
-    }
-  };
 }

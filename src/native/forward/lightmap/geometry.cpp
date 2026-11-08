@@ -1,4 +1,5 @@
 #include "forward/lightmap/geometry.h"
+#include "forward/bake/draw_key.h"
 #include "forward/lightmap/decal.h"
 #include <remix/remix_native_ext.h>
 #include <cstdio>
@@ -41,12 +42,12 @@ namespace remix::forward::lightmap {
         entry.receiver = std::make_unique<ReceiverTriangles>(mesh, cancelled);
         directoryBytes += directoryEstimate;
       }
-      m_instances.emplace(m_source->draws[mesh.draw].instanceId, uint32_t(m_entries.size()));
+      m_drawIndex.emplace(bake::drawLookupKey(m_source->draws[mesh.draw]), uint32_t(m_entries.size()));
       m_entries.push_back(std::move(entry));
     }
   }
   const Geometry::Entry *Geometry::find(const scene::Draw &draw) const {
-    const auto [first, last] = m_instances.equal_range(draw.instanceId);
+    const auto [first, last] = m_drawIndex.equal_range(bake::drawLookupKey(draw));
     const Entry *exact = nullptr;
     for (auto found = first; found != last; ++found) {
       const auto &entry = m_entries[found->second];

@@ -383,6 +383,7 @@ namespace remix {
       // leaves of runs of them (LightBvh::setClusterSize).
       uint64_t group = 0;
       uint32_t rank = 0;
+      float forwardCutoff = 0; // explicit Forward+ cutoff, in scene units
       bool operator==(const SphereLight &) const = default;
     };
     struct DomeLight {

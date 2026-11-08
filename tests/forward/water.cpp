@@ -11,7 +11,8 @@ using namespace remix;
 using namespace remix::forward;
 using remix::forward::test::require;
 namespace {
-  constexpr uint32_t queryCount = 17;
+  constexpr uint32_t obliqueQuery = 17, relaxedRefraction = 18, tightRefraction = 19;
+  constexpr uint32_t queryCount = tightRefraction + 1;
   struct Query {
     Vec4 origin{0, 0, .25f, 1}, incident{0, 0, 1, .005f}, normal{0, 0, -1, 0};
     Vec4 parameters{1, 1, 0, 1}, tint{.5f, .25f, 1, .00001f};
@@ -165,7 +166,7 @@ int main() try {
       queries[i].projection = perspective(sign);
       queries[i].inverseProjection = scene::inverse(queries[i].projection);
     }
-    for (uint32_t i = 9; i < queryCount; ++i) {
+    for (uint32_t i = 9; i < obliqueQuery; ++i) {
       queries[i].normal[3] = .25f;
       queries[i].parameters = {1.5f, 1, 1, 1};
       queries[i].tint = {1, 1, 1, 0};
@@ -181,6 +182,16 @@ int main() try {
     queries[16].parameters[0] = 1;
     queries[16].normal[3] = 3e38f;
     queries[16].incident = {std::sqrt(.96f), 0, .2f, 0};
+    auto &oblique = queries[obliqueQuery];
+    // Clip Z depends on X. Aim down the centre of pixel 12 of the 16-wide depth image.
+    oblique.origin[0] = .5625f;
+    oblique.projection[2] = .125f;
+    oblique.inverseProjection = scene::inverse(oblique.projection);
+    // With a 50-unit march, eight bisections leave a .000488-unit
+    // error at this hit. The tight query needs the longer refinement.
+    queries[relaxedRefraction].origin[3] = queries[tightRefraction].origin[3] = 50;
+    queries[relaxedRefraction].incident[3] = .15f;
+    queries[tightRefraction].incident[3] = .0003f;
     for (uint32_t samples : {1u, 2u, 4u}) {
       const auto values = gpu.run(fixture, queries, samples);
       require(values[0].screen[3] == 1 && std::abs(values[0].screen[2] - .5f) < .0001f,
@@ -238,6 +249,15 @@ int main() try {
       for (uint32_t i : {7u, 8u})
         require(values[i].screen[3] == 1 && std::abs(values[i].screen[2] - (40.f / 13 - 2)) < .0001f,
                 "Perspective depth reconstruction supports both camera Z conventions");
+      const float obliqueDistance = .75f - .125f * oblique.origin[0] - oblique.origin[2];
+      require(values[obliqueQuery].screen[3] == 1 &&
+                  std::abs(values[obliqueQuery].screen[2] - obliqueDistance) < .0001f,
+              "Oblique refraction reconstructs depth using the sampled pixel centre");
+      const auto &relaxed = values[relaxedRefraction].screen;
+      const auto &tight = values[tightRefraction].screen;
+      require(relaxed[3] == 1 && std::abs(relaxed[2] - .5f) < .0031f &&
+                  tight[3] == 1 && std::abs(tight[2] - .5f) < .0003f,
+              "Refraction refinement preserves long-range hits at relaxed and tight tolerances");
       const auto sky = gpu.run(fixture, queries, samples, true);
       require(sky[0].screen[3] == 0 && sky[0].through[0] == 0,
               "A missing opaque layer remains unknown rather than an arbitrary absorbing depth");

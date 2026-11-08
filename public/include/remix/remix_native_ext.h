@@ -18,6 +18,16 @@ typedef struct remixapi_LightInfoBakingEXT {
   remixapi_LightBakingHintEXT hint;
 } remixapi_LightInfoBakingEXT;
 
+// Optional Forward+ sphere light cutoff in scene units, measured from the
+// emitter centre. Zero leaves its reach unchanged. Emitter size and falloff
+// inside the cutoff are independent.
+#define REMIXAPI_STRUCT_TYPE_LIGHT_INFO_FORWARD_CUTOFF_EXT ((remixapi_StructType)0x7fff1074)
+typedef struct remixapi_LightInfoForwardCutoffEXT {
+  remixapi_StructType sType;
+  const void* pNext;
+  float distance;
+} remixapi_LightInfoForwardCutoffEXT;
+
 // Optional pNext on opaque MaterialInfo. Nonzero roughness/metalness constants
 // or a roughness/metalness/normal map automatically select EON + GGX. Completely
 // zero-initialized legacy parameters retain Lambert shading. This override also

@@ -59,6 +59,12 @@ namespace remix {
         << ", \"liveCasters\": " << state.liveCasters
         << ", \"emptyMovingShadowMaps\": " << state.emptyMovingShadowMaps
         << ", \"staticCasterPreparations\": " << state.staticCasterPreparations << '}'
+        << ",\n  \"memory\": {\"imageBytes\": " << state.targetBytes
+        << ", \"bufferBytes\": " << state.bufferBytes
+        << ", \"accelerationBytes\": " << state.accelerationBytes
+        << ", \"geometryBytes\": " << state.geometryBytes
+        << ", \"spareGeometryBytes\": " << state.spareGeometryBytes
+        << ", \"bakeBytes\": " << state.baking.memoryBytes << '}'
         << ",\n  \"geometryUploads\": {\"posed\": " << state.posedUploads
         << ", \"unchangedPoses\": " << state.posedUploadReuses << '}'
         << ",\n  \"geometryDrawCalls\": {\"worldDepth\": " << state.drawCalls.worldDepth

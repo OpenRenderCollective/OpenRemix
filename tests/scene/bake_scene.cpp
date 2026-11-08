@@ -483,6 +483,21 @@ int main() {
   require(resources.bakeScene()->contentHash != bakedHint->contentHash &&
               bakedHint->lights[0].bakeHint == REMIXAPI_LIGHT_BAKING_PREFER_BAKED_EXT,
           "Different valid policy hints cannot reuse one baked content identity");
+  const auto beforeCutoff = resources.bakeScene();
+  remixapi_LightInfoForwardCutoffEXT cutoff{REMIXAPI_STRUCT_TYPE_LIGHT_INFO_FORWARD_CUTOFF_EXT, &baking, 128};
+  sphere.pNext = &cutoff;
+  resources.updateLight(lamp, light);
+  require(!resources.bakeLightsCurrent(), "Changing cutoff invalidates captured light definitions");
+  resources.setBakeScene(&info);
+  require(resources.bakeScene()->lights[0].forwardCutoff == 128 &&
+              resources.bakeScene()->lights[0].radius == beforeCutoff->lights[0].radius &&
+              resources.bakeScene()->contentHash != beforeCutoff->contentHash,
+          "Cutoff participates in bake identity independently of emitter size");
+  cutoff.distance = 0;
+  resources.updateLight(lamp, light);
+  resources.setBakeScene(&info);
+  require(resources.bakeScene()->contentHash == beforeCutoff->contentHash,
+          "Zero cutoff preserves the prior bake identity");
   sphere.pNext = nullptr;
   light.isDynamic = 1;
   resources.updateLight(lamp, light);

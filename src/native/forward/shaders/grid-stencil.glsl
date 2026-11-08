@@ -9,6 +9,7 @@ float localStencilWeights[16];
 uint localStencilFineNodes[8];
 uint localStencilCount = 0u;
 uint localStencilRevision = 0u;
+uvec2 localStencilCellKeys = uvec2(0xffffffffu);
 
 float bakeCellStencil(vec3 position, vec3 normal, uvec3 dimensions, uvec3 start,
                       uint divisor, uint directory, uint first, out float confidence) {
@@ -25,6 +26,8 @@ float bakeCellStencil(vec3 position, vec3 normal, uvec3 dimensions, uvec3 start,
   if (any(isnan(q)) || any(isinf(q)) || any(lessThan(q, vec3(0))) ||
       any(greaterThan(q, vec3(dimensions) - 1))) return 0;
   uvec3 base = min(uvec3(q), dimensions - 2u);
+  localStencilCellKeys[uint(first != 0u)] =
+      directory + (base.z * dimensions.y + base.y) * dimensions.x + base.x;
   vec3 fraction = q - vec3(base);
   float total = 0, support = 0;
   for (uint corner = 0u; corner < 8u; ++corner) {
@@ -79,6 +82,7 @@ bool localProbeStencil(vec3 position, vec3 normal) {
   localStencilPosition = position;
   localStencilNormal = normal;
   localStencilCount = 8u;
+  localStencilCellKeys = uvec2(0xffffffffu);
   if (bakeDimensions.w == 0u) return false;
   float coarseConfidence, fineConfidence;
   float coarseTotal = bakeCellStencil(position, normal, bakeDimensions.xyz, uvec3(0), 1u, 0u, 0u, coarseConfidence);
@@ -131,6 +135,7 @@ bool localProbeStencil(vec3 position, vec3 normal) {
     localStencilWeights[8u + corner] *= blend / fineTotal;
   }
   applyCoarseTransfer(cell, factor, block, localStencilIndices, localStencilFineNodes, localStencilWeights);
+  if (blend == 1) localStencilCellKeys.x = 0xffffffffu;
   localStencilCount = 16u;
   localStencilValid = true;
   return true;

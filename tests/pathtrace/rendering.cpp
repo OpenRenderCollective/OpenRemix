@@ -275,9 +275,11 @@ int main(int argc, char **argv) {
       const auto directory = std::filesystem::absolute(argv[1]);
       std::filesystem::create_directories(directory);
       const auto file = (directory / name).string();
-      ok(remix::test::requestScreenshot(api, file.c_str(), frame));
+      std::filesystem::file_time_type previous;
+      ok(remix::test::requestScreenshot(api, file.c_str(), frame, &previous));
       frame();
       frame();
+      ok(remix::test::waitForScreenshot(api, file.c_str(), previous));
       int w, h, n;
       auto bytes = stbi_load(file.c_str(), &w, &h, &n, 4);
       require(bytes != nullptr, "Missing opacity variant screenshot");

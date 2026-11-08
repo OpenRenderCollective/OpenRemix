@@ -12,7 +12,8 @@ namespace remix::forward::water {
     // IOR, animation seconds, normal layer count, thickness (zero for bodies).
     Vec4 optical{};
     Vec4 scroll01{}, scroll2{}; // scroll2.zw: independent transmission-tint scroll
+    std::array<uint32_t, 4> probeCandidates{~0u, ~0u, 0, 0};
   };
-  static_assert(sizeof(MaterialData) == 64);
+  static_assert(sizeof(MaterialData) == 80);
   MaterialData materialData(const scene::Material &material, double seconds);
 } // namespace remix::forward::water

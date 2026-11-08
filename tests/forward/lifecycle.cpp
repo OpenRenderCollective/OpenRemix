@@ -59,6 +59,7 @@ int main(int argc, char **argv) {
   SDL_free(windows);
   checked(api.SetConfigVariable("rtx.native.forward.shadowResolution", "128"));
   checked(api.SetConfigVariable("rtx.native.forward.reflectionProbes", "0"));
+  checked(api.SetConfigVariable("rtx.native.forward.ssr", "1"));
   checked(api.SetConfigVariable("rtx.native.forward.samples", "4"));
   checked(api.SetConfigVariable("rtx.native.pathtrace.upscaler", "off"));
   checked(api.SetConfigVariable("rtx.native.pathtrace.denoiser", "off"));

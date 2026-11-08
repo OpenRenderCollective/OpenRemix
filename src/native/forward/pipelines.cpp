@@ -1,6 +1,10 @@
+#include "forward/probes/cube_storage.h"
+#include "forward/mixed/chart_highlights.h"
+#include "forward/mixed/publication.h"
 #include "runtime/pipelines.h"
 #include "forward/gpu.h"
 #include "forward/bake/storage_options.h"
+#include "forward/probe_batch/endpoint_cells.h"
 #include "forward/ray/gi_shaders/embedded.h"
 #include "forward/shaders/embedded.h"
 #include "forward/water/shaders/embedded.h"
@@ -32,26 +36,35 @@ namespace remix::forward {
           pipeline::destroyShaderModule(device, module, nullptr);
       }
     } modules{device, {}};
+    const bool nativeCube = probes::nativeCubeStorage(physical);
+    auto reflectionModule = [&](const auto &stacked, const auto &cube) {
+      return nativeCube ? modules.add(cube, sizeof(cube)) : modules.add(stacked, sizeof(stacked));
+    };
     const auto vertex = modules.add(vertShader, sizeof(vertShader));
     const auto lightmapVertex = modules.add(lightmapVertShader, sizeof(lightmapVertShader));
-    const auto fragment = options.depthPrepass
-        ? (techniquePlan.reflectionResolve ? modules.add(prepassedSsrFragShader, sizeof(prepassedSsrFragShader))
-                                 : modules.add(prepassedFragShader, sizeof(prepassedFragShader)))
-        : (techniquePlan.reflectionResolve ? modules.add(ssrFragShader, sizeof(ssrFragShader))
-                                 : modules.add(fragShader, sizeof(fragShader)));
+    const auto fragment = [&] {
+      if (techniquePlan.inlineReflections)
+        return options.depthPrepass ? reflectionModule(inlinePrepassedFragShader, inlinePrepassedFragCubeShader)
+                                    : reflectionModule(inlineFragShader, inlineFragCubeShader);
+      if (techniquePlan.reflectionResolve)
+        return options.depthPrepass ? modules.add(prepassedSsrFragShader, sizeof(prepassedSsrFragShader))
+                                    : modules.add(ssrFragShader, sizeof(ssrFragShader));
+      return options.depthPrepass ? modules.add(prepassedFragShader, sizeof(prepassedFragShader))
+                                  : modules.add(fragShader, sizeof(fragShader));
+    }();
     VkShaderModule giFragment = VK_NULL_HANDLE;
     const auto terrainFragment = modules.add(fragShader, sizeof(fragShader));
     const auto depthFragment = modules.add(opaqueDepthFragShader, sizeof(opaqueDepthFragShader));
     VkShaderModule giTerrainFragment = VK_NULL_HANDLE;
     VkShaderModule giViewModelFragment = VK_NULL_HANDLE, giViewModelEarlyFragment = VK_NULL_HANDLE;
     if (techniquePlan.rayDiffuse()) {
-      const bool composed = techniquePlan.bakedDirect;
+      const bool composed = techniquePlan.composesBakedDirect();
       giViewModelFragment = composed
-          ? modules.add(ray::gi::composedViewModelShader, sizeof(ray::gi::composedViewModelShader))
-          : modules.add(ray::gi::viewModelShader, sizeof(ray::gi::viewModelShader));
+          ? reflectionModule(ray::gi::composedViewModelShader, ray::gi::composedViewModelCubeShader)
+          : reflectionModule(ray::gi::viewModelShader, ray::gi::viewModelCubeShader);
       giViewModelEarlyFragment = composed
-          ? modules.add(ray::gi::composedViewModelEarlyShader, sizeof(ray::gi::composedViewModelEarlyShader))
-          : modules.add(ray::gi::viewModelEarlyShader, sizeof(ray::gi::viewModelEarlyShader));
+          ? reflectionModule(ray::gi::composedViewModelEarlyShader, ray::gi::composedViewModelEarlyCubeShader)
+          : reflectionModule(ray::gi::viewModelEarlyShader, ray::gi::viewModelEarlyCubeShader);
       giTerrainFragment = composed ? modules.add(ray::gi::composedFragShader, sizeof(ray::gi::composedFragShader))
                                    : modules.add(ray::gi::fragShader, sizeof(ray::gi::fragShader));
       giFragment = techniquePlan.reflectionResolve
@@ -117,14 +130,24 @@ namespace remix::forward {
     enum class Pass { Opaque, Shadow, Composite, Terrain, Depth, ViewModel, ViewModelDepth, DepthBatch };
     using Coverage = lightmap::ReceiverCoverage;
     const bool viewModelPrepass = std::getenv("REMIX_DEBUG_VIEWMODEL_DEPTH_PREPASS") != nullptr;
+    const auto *localLightWorkView = std::getenv("REMIX_DEBUG_LOCAL_LIGHT_WORK_VIEW");
+    const uint32_t localLightView = !localLightWorkView ? 0u :
+        std::strcmp(localLightWorkView, "early") == 0 ? 9u :
+        std::strcmp(localLightWorkView, "late") == 0 ? 10u :
+        std::strcmp(localLightWorkView, "members") == 0 ? 11u :
+        std::strcmp(localLightWorkView, "ownership") == 0 ? 12u : 8u;
+    const bool directionalOwnershipMask = mixed::bakedLightMasksEnabled() ||
+        std::getenv("REMIX_DEBUG_DIRECTIONAL_OWNERSHIP_MASK") != nullptr;
     auto graphics = [&](VkShaderModule vs, VkShaderModule fs, VkRenderPass pass, Pass mode = Pass::Opaque,
-                         Coverage coverage = Coverage::Mixed) {
+                         Coverage coverage = Coverage::Mixed, bool indexedLightmap = false,
+                         bool roughDielectric = false) {
       const bool shadow = mode == Pass::Shadow, composite = mode == Pass::Composite;
       const bool terrain = mode == Pass::Terrain;
       const bool batchedDepth = mode == Pass::DepthBatch;
       const bool depthOnly = mode == Pass::Depth || mode == Pass::ViewModelDepth || batchedDepth;
       const VkVertexInputBindingDescription batchBindings[] = {
-          {0, 16, VK_VERTEX_INPUT_RATE_VERTEX}, {1, 4, VK_VERTEX_INPUT_RATE_VERTEX}};
+          {0, sizeof(depth_batch::Position), VK_VERTEX_INPUT_RATE_VERTEX},
+          {1, sizeof(uint32_t), VK_VERTEX_INPUT_RATE_VERTEX}};
       const VkVertexInputAttributeDescription batchAttributes[] = {
           {0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0}, {1, 1, VK_FORMAT_R32_UINT, 0}};
       const VkPipelineVertexInputStateCreateInfo batchInput{
@@ -132,20 +155,36 @@ namespace remix::forward {
           .vertexBindingDescriptionCount = 2, .pVertexBindingDescriptions = batchBindings,
           .vertexAttributeDescriptionCount = 2, .pVertexAttributeDescriptions = batchAttributes};
       const bool viewModel = mode == Pass::ViewModel || mode == Pass::ViewModelDepth;
+      const bool chartHighlights = mixed::chartHighlightsEnabled() && !techniquePlan.rayDiffuse() &&
+          !depthOnly && vs == lightmapVertex && coverage != Coverage::Unmapped;
       // Ordinary vertices have no chart coordinates. Lightmap vertex ranges
       // can specialize either coverage without changing their buffer stride.
       // Mixed triangles retain the generic lightmap/probe selection.
-      const uint32_t values[] = {options.debugView, uint32_t(bake::directionalFieldsRequested()),
+      const uint32_t view = localLightView && mode == Pass::Opaque ? localLightView : options.debugView;
+      const uint32_t values[] = {view, uint32_t(bake::directionalFieldsRequested()),
                                   uint32_t(coverage == Coverage::Mapped),
                                   uint32_t(coverage == Coverage::Unmapped || vs == vertex),
-                                  uint32_t(probeVisibility != nullptr), uint32_t(options.bicubicLightmaps)};
+                                  uint32_t(probeVisibility != nullptr), uint32_t(options.bicubicLightmaps),
+                                  uint32_t(chartHighlights),
+                                  uint32_t(probe_batch::endpointCellsRequested()),
+                                  uint32_t(mode == Pass::Opaque),
+                                  uint32_t(mode == Pass::Opaque && directionalOwnershipMask), uint32_t(indexedLightmap),
+                                  uint32_t(mode == Pass::Opaque && !std::getenv("REMIX_DEBUG_DISABLE_REFLECTION_SPATIAL_MASK")),
+                                  uint32_t(roughDielectric)};
       const VkSpecializationMapEntry entries[] = {{1, 0, sizeof(uint32_t)},
                                                   {2, sizeof(uint32_t), sizeof(uint32_t)},
                                                   {3, 2 * sizeof(uint32_t), sizeof(uint32_t)},
                                                   {4, 3 * sizeof(uint32_t), sizeof(uint32_t)},
                                                   {5, 4 * sizeof(uint32_t), sizeof(uint32_t)},
-                                                  {6, 5 * sizeof(uint32_t), sizeof(uint32_t)}};
-      const VkSpecializationInfo specialization{6, entries, sizeof(values), values};
+                                                  {6, 5 * sizeof(uint32_t), sizeof(uint32_t)},
+                                                  {7, 6 * sizeof(uint32_t), sizeof(uint32_t)},
+                                                  {8, 7 * sizeof(uint32_t), sizeof(uint32_t)},
+                                                  {15, 8 * sizeof(uint32_t), sizeof(uint32_t)},
+                                                  {16, 9 * sizeof(uint32_t), sizeof(uint32_t)},
+                                                  {17, 10 * sizeof(uint32_t), sizeof(uint32_t)},
+                                                  {18, 11 * sizeof(uint32_t), sizeof(uint32_t)},
+                                                  {19, 12 * sizeof(uint32_t), sizeof(uint32_t)}};
+      const VkSpecializationInfo specialization{uint32_t(std::size(entries)), entries, sizeof(values), values};
       const VkPipelineShaderStageCreateInfo stages[] = {
           {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
            .stage = VK_SHADER_STAGE_VERTEX_BIT,
@@ -220,31 +259,28 @@ namespace remix::forward {
     };
     opaquePipeline = graphics(vertex, fragment, worldPass);
     // Private qualification keeps the ordinary compiled fragment path intact.
-    if (options.debugView == 0 && std::getenv("REMIX_DEBUG_ZERO_DIFFUSE_MATERIAL")) {
-      const auto code = options.depthPrepass
-          ? (techniquePlan.reflectionResolve ? zeroDiffusePrepassedSsrFragShader : zeroDiffusePrepassedFragShader)
-          : (techniquePlan.reflectionResolve ? zeroDiffuseSsrFragShader : zeroDiffuseFragShader);
-      const auto bytes = options.depthPrepass
-          ? (techniquePlan.reflectionResolve ? sizeof(zeroDiffusePrepassedSsrFragShader) : sizeof(zeroDiffusePrepassedFragShader))
-          : (techniquePlan.reflectionResolve ? sizeof(zeroDiffuseSsrFragShader) : sizeof(zeroDiffuseFragShader));
-      const auto zeroDiffuse = modules.add(code, bytes);
-      zeroDiffusePipeline = graphics(vertex, zeroDiffuse, worldPass);
-    }
     // Create depth first: colour becomes read-only only when this pipeline exists.
     // The private ablation remains off until whole-frame performance is qualified.
     if (viewModelPrepass)
       viewModelDepthPipeline = graphics(vertex, depthFragment, viewModelTarget->pass(), Pass::ViewModelDepth);
-    const auto viewModelFragment = modules.add(viewModelFragShader, sizeof(viewModelFragShader));
+    const auto viewModelFragment = reflectionModule(viewModelFragShader, viewModelFragCubeShader);
     viewModelPipeline = graphics(vertex, viewModelFragment, viewModelTarget->pass(), Pass::ViewModel);
     if (giViewModelFragment)
       giViewModelPipeline = graphics(vertex, giViewModelFragment, viewModelTarget->pass(), Pass::ViewModel);
     if (!std::getenv("REMIX_DEBUG_DISABLE_VIEWMODEL_EARLY_DEPTH")) {
-      const auto early = modules.add(viewModelEarlyFragShader, sizeof(viewModelEarlyFragShader));
+      const auto early = reflectionModule(viewModelEarlyFragShader, viewModelEarlyFragCubeShader);
       viewModelEarlyPipeline = graphics(vertex, early, viewModelTarget->pass(), Pass::ViewModel);
       if (giViewModelEarlyFragment)
         giViewModelEarlyPipeline = graphics(vertex, giViewModelEarlyFragment, viewModelTarget->pass(), Pass::ViewModel);
     }
     lightmapPipeline = graphics(lightmapVertex, fragment, worldPass, Pass::Opaque, Coverage::Mapped);
+    if (!techniquePlan.rayDiffuse() && bake::directionalFieldsRequested() &&
+        !std::getenv("REMIX_DEBUG_DISABLE_INDEXED_WORLD_PIPELINE"))
+      indexedLightmapPipeline = graphics(lightmapVertex, fragment, worldPass, Pass::Opaque, Coverage::Mapped, true);
+    if (indexedLightmapPipeline && largeOpaqueTarget() &&
+        !std::getenv("REMIX_DEBUG_DISABLE_INDEXED_ROUGH_DIELECTRIC"))
+      indexedRoughDielectricPipeline =
+          graphics(lightmapVertex, fragment, worldPass, Pass::Opaque, Coverage::Mapped, true, true);
     partialLightmapPipeline = graphics(lightmapVertex, fragment, worldPass);
     unmappedLightmapPipeline = graphics(lightmapVertex, fragment, worldPass, Pass::Opaque, Coverage::Unmapped);
     depthPipeline = graphics(vertex, depthFragment, worldPass, Pass::Depth);

@@ -3,6 +3,10 @@
 #include "forward/lightmap/receiver_footprint.h"
 
 namespace remix::forward::lightmap {
+  // Test the same biased origin used by static lighting transport.
+  bool buriedReceiverSample(const scene::BakeScene &source, const bake::Point &point,
+                            float receiverBias);
+
   // Borrowed immutable geometry/layout must outlive this sampler. One caller
   // owns its reusable scratch: no full-map array of four expanded origins.
   // Verified coplanar seam aliases reuse their original receiver footprint;
@@ -12,6 +16,9 @@ namespace remix::forward::lightmap {
     ReceiverSampler(const scene::BakeScene &source, const Layout &layout);
     std::array<bake::Point, 4> sample(uint32_t point);
     void sample(uint32_t point, std::span<bake::Point> sites);
+    // A representative point at an explicit chart UV, including restored
+    // layouts without the temporary per-texel sample arrays.
+    std::optional<bake::Point> pointAt(uint32_t chart, ReceiverFootprint::Uv uv);
     uint64_t memoryBytes() const;
     uint32_t fallbackCount() const { return m_fallbackCount; }
 

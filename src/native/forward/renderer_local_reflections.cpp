@@ -1,18 +1,69 @@
 #include "forward/gpu.h"
+#include "forward/probes/receiver_mask.h"
 #include "raster/renderer.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 
 namespace remix::forward {
+  const probes::ImageAsset *Renderer::Gpu::reflectionImage() const {
+    if (const auto selected = localSelections.active()) return selected->image.get();
+    if (const auto captured = captureProviders.image(techniquePlan.capturePolicy.transport)) return captured;
+    return baking->reflectionImage();
+  }
   const probes::Header *Renderer::Gpu::reflectionHeader() const {
-    if (const auto selected = localSelections.active()) return &selected->image->header();
-    if (const auto captured = captureProviders.header(techniquePlan.capturePolicy.transport)) return captured;
-    return baking->reflectionHeader();
+    const auto *image = reflectionImage();
+    return image ? &image->header() : nullptr;
+  }
+  probes::Descriptors Renderer::Gpu::reflectionDescriptor() const {
+    const auto *image = reflectionImage();
+    if (!image) return baking->reflectionDescriptor();
+    const auto &volume = baking->volume();
+    return image->descriptors(volume ? volume->reflectionReference : probes::ReferenceProvenance{});
   }
   const probes::LayerIdentities *Renderer::Gpu::reflectionIdentities() const {
     if (const auto selected = localSelections.active()) return &selected->identities;
     return captureProviders.authored()->identities();
+  }
+  void Renderer::Gpu::prepareReflectionMasks(std::span<water::MaterialData> waterMaterials) {
+    static const bool unculledWater = std::getenv("REMIX_DEBUG_FORWARD_WATER_UNCULLED_PROBES") != nullptr;
+    const bool maskWater = !waterMaterials.empty() && !unculledWater;
+    if (!techniquePlan.inlineReflections && !maskWater) return;
+    const auto *header = reflectionHeader();
+    if (!header) return;
+    const float bias = options.reflectionSampleBias();
+    // Layer order and projection are immutable within one publication. Compare
+    // contents because the allocator can reuse the address of an old header.
+    if (!reflectionMaskHeader || reflectionMaskBias != bias ||
+        std::memcmp(&*reflectionMaskHeader, header, sizeof(*header)) != 0) {
+      reflectionMaskHeader = *header;
+      reflectionMaskBias = bias;
+      ++reflectionMaskRevision;
+    }
+    const auto mask = [&](const Command &draw) {
+      auto &geometry = *draw.geometry;
+      const auto &bounds = draw.worldBounds;
+      const auto &cached = geometry.reflectionMaskBounds;
+      if (geometry.reflectionMaskRevision != reflectionMaskRevision || bounds.valid != cached.valid ||
+          bounds.minimum != cached.minimum || bounds.maximum != cached.maximum) {
+        geometry.reflectionMask = probes::receiverMask(*header, bounds, bias);
+        geometry.reflectionMaskBounds = bounds;
+        geometry.reflectionMaskRevision = reflectionMaskRevision;
+      }
+      return geometry.reflectionMask;
+    };
+    auto &frame = frames[slot];
+    if (techniquePlan.inlineReflections) {
+      for (auto &draw : frame.commands)
+        if (draw.cameraVisible) draw.reflectionCandidates = mask(draw);
+    }
+    if (maskWater) {
+      for (const auto &draw : frame.waterCommands) {
+        if (!draw.cameraVisible) continue;
+        const auto candidates = mask(draw);
+        waterMaterials[draw.waterIndex].probeCandidates = {candidates[0], candidates[1], 0, 0};
+      }
+    }
   }
   uint32_t Renderer::Gpu::reflectionLayer(uint64_t sceneId, uint64_t volumeId) const {
     if (const auto selected = localSelections.active()) {

@@ -11,6 +11,4 @@ ReceiverLighting evaluateReceiverLighting(vec3 position, vec3 normal, vec3 geome
   vec3 incoming = diffuseRequired ? sampleIncomingDiffuse(position, normal, geometric) : vec3(0);
   return composeDirectAndIncoming(direct, incoming);
 }
-bool needsDiffuseReferenceQuery(bool hasSurfaceField) { return false; }
-float diffuseReferenceLuma(vec3 position, vec3 normal) { return -1; }
 uint diffuseReflectionReferenceDomain() { return NoLightingReference; }

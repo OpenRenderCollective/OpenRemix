@@ -1,7 +1,7 @@
 // Default reflection-source wiring. Alternative providers implement the same
 // sampleEnvironmentReflection(ReflectionReceiver) contract at shader compilation.
 // Viewmodels use environmentReflectionPosition(position, normal) for source bias.
-// World resolve also calls environmentReflectionCandidates(position, valid)
+// World resolve also calls environmentReflectionCandidates(position, valid, layer)
 // uniformly before early returns; a provider without candidates returns zero.
 #include "reflection-values.glsl"
 #include "reflection-environment.glsl"

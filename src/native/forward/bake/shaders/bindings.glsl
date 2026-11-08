@@ -18,7 +18,7 @@ struct RayMaterial {
 };
 struct RayLight {
   vec4 positionRadius, radiance, directionCone, shaping;
-  vec4 corners[3];
+  vec4 corners[3]; // corners[0].w: explicit sphere cutoff, zero when absent
 };
 struct RayPoint {
   vec4 position, normal;

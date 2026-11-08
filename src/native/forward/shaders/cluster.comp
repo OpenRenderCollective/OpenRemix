@@ -3,8 +3,44 @@
 #define CLUSTER_BUILD
 #include "bindings.glsl"
 #include "local-light-storage.glsl"
+#include "emitter.glsl"
+#include "brdf.glsl"
+#include "cube.glsl"
+
+layout(set = 0, binding = 9) uniform usampler2DArray clusterOcclusion;
+uint chartOwnershipWord(uint index) {
+  uint row = index >> 10u;
+  return texelFetch(clusterOcclusion, ivec3(index & 1023u, row & 1023u, row >> 10u), 0).r;
+}
+// Convert the immutable captured-light row to the current runtime prefix.
+// An unavailable ownership table conservatively retains every correction.
+uint coneMovingSlot(Light light);
+void buildChartOwnership(uint chart) {
+  uint table = frame.clusterInfo.z;
+  uint offset = table != 0u ? chartOwnershipWord(table + 9u) : 0u;
+  uint owners = ~0u;
+  if (offset != 0u) {
+    owners = 0u;
+    uint stride = chartOwnershipWord(table + 10u);
+    uint row = table + offset + chart * stride;
+    for (uint index = 0u; index < ClusterLightCount; ++index) {
+      Light light = lights[index];
+      if (coneMovingSlot(light) == 0u) continue;
+      uint captured = uint(light.shaping.w);
+      if (captured == 0u) continue;
+      uint id = captured - 1u, column = id / 32u;
+      if (column < stride && (chartOwnershipWord(row + column) & (1u << (id % 32u))) != 0u)
+        owners |= 1u << index;
+    }
+  }
+  clusters[clusterChartOwnerOffset() + chart] = owners;
+}
 layout(local_size_x = 64) in;
 shared vec4 lightBounds[64];
+shared vec4 coneBounds[64];
+shared mat3 conePlaneBasis[32];
+shared uint coneMovingSlots[32];
+shared vec3 coneMinimum[64], coneMaximum[64];
 shared vec3 cellMinimum[64], cellMaximum[64];
 shared vec3 groupMinimum, groupMaximum;
 shared uint candidateMask[4];
@@ -13,37 +49,177 @@ bool intersects(vec4 sphere, vec3 minimum, vec3 maximum) {
   vec3 delta = sphere.xyz - clamp(sphere.xyz, minimum, maximum);
   return dot(delta, delta) <= sphere.w * sphere.w;
 }
-void appendLight(uint base, uint light, inout uint count, inout uint runtimeCount) {
+// Bound the intersection of the outer cone and the spherical influence range.
+// Negative radius means the receiver must keep the ordinary candidate.
+float coneSupport(vec3 row, vec3 axis, float cosine, float sine) {
+  float lengthRow = length(row);
+  float alignment = dot(row, axis) / max(lengthRow, 1e-20);
+  if (alignment >= cosine) return lengthRow;
+  float edge = cosine * alignment + sine * sqrt(max(0, 1 - alignment * alignment));
+  return lengthRow * max(edge, 0);
+}
+// Zero means the light never needs moving-world shadow work. A slot
+// without published caster bounds remains ineligible for a cone proof.
+uint coneMovingSlot(Light light) {
+  return light.corners[0].w > 0 && light.corners[1].w < 1 && light.responseWeights.y < .5
+      ? uint(light.corners[0].w) : 0u;
+}
+vec4 aggregateConeBounds(Light light, bool intervals, bool movingCones, bool chartCones, out vec3 lower, out vec3 upper) {
+  float axisLength = length(light.directionCone.xyz);
+  float cosine = light.directionCone.w / axisLength;
+  if (!localLightUsesBakedDiffuse(light) ||
+      (coneMovingSlot(light) != 0u && !(chartCones || (movingCones && light.responseWeights.w >= .5))) ||
+      !(cosine > 0 && cosine <= 1)) {
+    lower = vec3(-1e30);
+    upper = vec3(1e30);
+    return vec4(0, 0, 0, -1);
+  }
+  float range = light.shaping.z;
+  bool narrow = cosine >= .70710678;
+  float centre = narrow ? range / (2 * cosine) : range * cosine;
+  float radius = narrow ? centre : range * sqrt(1 - cosine * cosine);
+  vec3 offset = mat3(frame.view) * light.directionCone.xyz * (centre / axisLength);
+  float viewScale = light.clusterBounds.w / range;
+  float guard = 1e-4 * (1 + light.clusterBounds.w + length(light.clusterBounds.xyz));
+  if (intervals) {
+    vec3 axis = light.directionCone.xyz / axisLength;
+    mat3 rows = transpose(mat3(frame.view));
+    float sine = sqrt(max(0, 1 - cosine * cosine));
+    for (uint i = 0u; i < 3u; ++i) {
+      lower[i] = light.clusterBounds[i] - range * coneSupport(-rows[i], axis, cosine, sine) - guard;
+      upper[i] = light.clusterBounds[i] + range * coneSupport(rows[i], axis, cosine, sine) + guard;
+    }
+  } else {
+    lower = vec3(-1e30);
+    upper = vec3(1e30);
+  }
+  return vec4(light.clusterBounds.xyz + offset,
+      radius * viewScale + guard);
+}
+uint coneMissBit(uint index, vec4 sphere, vec3 minimum, vec3 maximum, vec3 lower, vec3 upper) {
+  if (index >= ClusterLightCount || sphere.w < 0) return 0u;
+  // Unordered bounds fail open.
+  vec3 delta = sphere.xyz - clamp(sphere.xyz, minimum, maximum);
+  bool outside = dot(delta, delta) > sphere.w * sphere.w ||
+                 any(lessThan(maximum, lower)) || any(greaterThan(minimum, upper));
+  return outside ? 1u << index : 0u;
+}
+// Build the cone's eight supporting half-spaces in world space and transform
+// their covectors into the same view space as the cell bounds.
+mat3 coneSupportBasis(Light light) {
+  vec3 axis = normalize(light.directionCone.xyz);
+  float cosine = light.directionCone.w / length(light.directionCone.xyz);
+  vec3 tangent = normalize(cross(axis, abs(axis.z) < .9 ? vec3(0, 0, 1) : vec3(0, 1, 0)));
+  vec3 bitangent = cross(axis, tangent);
+  return transpose(inverse(mat3(frame.view))) *
+      mat3(-axis * sqrt(max(0, 1 - cosine * cosine)), tangent * cosine, bitangent * cosine);
+}
+bool outsideConePlanes(mat3 basis, vec3 origin, vec3 minimum, vec3 maximum) {
+  vec3 center = (minimum + maximum) * .5 - origin;
+  vec3 halfExtent = (maximum - minimum) * .5;
+  float guard = 1e-4 * (1 + length(origin) + length(center) + length(halfExtent));
+  const vec2 directions[4] = vec2[4](vec2(1, 0), vec2(.70710678), vec2(0, 1), vec2(-.70710678, .70710678));
+  for (uint i = 0u; i < 4u; ++i) {
+    vec3 side = basis[1] * directions[i].x + basis[2] * directions[i].y;
+    vec3 positive = basis[0] + side, negative = basis[0] - side;
+    if (dot(positive, center) - dot(abs(positive), halfExtent) > guard * length(positive) ||
+        dot(negative, center) - dot(abs(negative), halfExtent) > guard * length(negative))
+      return true;
+  }
+  return false;
+}
+// Every corner must lie on the same face, away from the fragment filter's
+// seam fallback. Inside this convex frustum the projective coordinates have
+// positive denominators, so the eight corners bound the entire receiver box.
+bool outsideMovingCasterCoverage(uint slot, vec3 minimum, vec3 maximum) {
+  mat3 viewToWorld = inverse(mat3(frame.view));
+  vec3 origin = (frame.view * vec4(frame.localPositions[slot - 1u].xyz, 1)).xyz;
+  float margin = 4 / frame.localSettings.x + 1e-3;
+  vec2 low = vec2(1), high = vec2(-1);
+  uint face = 0u;
+  for (uint corner = 0u; corner < 8u; ++corner) {
+    bvec3 upper = notEqual(uvec3(corner) & uvec3(1, 2, 4), uvec3(0));
+    vec3 ray = viewToWorld * (mix(minimum, maximum, upper) - origin);
+    if (!(dot(ray, ray) > 1e-12)) return false;
+    vec3 projected = cubeProjection(ray);
+    if (!all(lessThan(abs(projected.xy), vec2(1 - margin)))) return false;
+    if (corner == 0u) face = uint(projected.z);
+    else if (uint(projected.z) != face) return false;
+    low = min(low, projected.xy);
+    high = max(high, projected.xy);
+  }
+  vec4 coverage = frame.movingShadowCoverage[(slot - 1u) * 6u + face];
+  return any(lessThan(high, coverage.xy - margin)) || any(greaterThan(low, coverage.zw + margin));
+}
+uvec2 sharedConeMissBit(uint index, uint lane, vec3 minimum, vec3 maximum, bool planes, bool movingCones, bool chartCones) {
+  vec4 sphere = coneBounds[lane];
+  uint miss = coneMissBit(index, sphere, minimum, maximum, coneMinimum[lane], coneMaximum[lane]);
+  if (planes && miss == 0u && sphere.w >= 0 && lane < 32u &&
+      outsideConePlanes(conePlaneBasis[lane], lightBounds[lane].xyz, minimum, maximum))
+    miss = 1u << index;
+  if (miss != 0u && (movingCones || chartCones) && coneMovingSlots[lane] != 0u) {
+    if (chartCones) return uvec2(0, miss);
+    if (!outsideMovingCasterCoverage(coneMovingSlots[lane], minimum, maximum)) return uvec2(0);
+  }
+  return uvec2(miss, 0);
+}
+void appendLight(uint base, uint light, inout uint count, inout uint runtimeHeader) {
   if (count < ClusterCapacity)
     clusters[base + ClusterHeaderWords + count] = light;
   ++count;
-  runtimeCount += uint(light < ClusterLightCount);
+  if (clusterUsesMembership()) {
+    if (light < ClusterLightCount) runtimeHeader |= 1u << light;
+  } else runtimeHeader += uint(light < ClusterLightCount);
 }
 
-vec3 viewPoint(vec2 ndc, float depth) {
-  vec4 a = frame.inverseProjection * vec4(ndc, 0, 1), b = frame.inverseProjection * vec4(ndc, .9999, 1);
-  vec3 pa = a.xyz / a.w, pb = b.xyz / b.w;
-  return mix(pa, pb, (depth * frame.depth.w - pa.z) / (pb.z - pa.z));
+void includeTileRay(vec2 ndc, vec2 depth, inout vec3 minimum, inout vec3 maximum) {
+  vec4 nearClip = frame.inverseProjection * vec4(ndc, 0, 1);
+  vec4 farClip = frame.inverseProjection * vec4(ndc, .9999, 1);
+  vec3 nearPoint = nearClip.xyz / nearClip.w;
+  vec3 farPoint = farClip.xyz / farClip.w;
+  vec2 alongRay = (depth - nearPoint.z) / (farPoint.z - nearPoint.z);
+  vec3 first = mix(nearPoint, farPoint, alongRay.x);
+  vec3 last = mix(nearPoint, farPoint, alongRay.y);
+  minimum = min(minimum, min(first, last));
+  maximum = max(maximum, max(first, last));
 }
+
 void main() {
+  bool chartCones = clusterChartConesEnabled();
+  if (chartCones && gl_GlobalInvocationID.x < frame.occlusion.y)
+    buildChartOwnership(gl_GlobalInvocationID.x);
   if (gl_WorkGroupID.x * gl_WorkGroupSize.x >= frame.grid.w) return;
   uint index = gl_GlobalInvocationID.x;
   bool validCell = index < frame.grid.w;
+  uint base = index * ClusterStride;
+  uint lightCount = ClusterBakedTail ? frame.target.z : ClusterLightCount;
+  // Empty lists still publish both headers for the fragment query. This
+  // condition is uniform, so all lanes skip the later shared-memory barriers.
+  if (lightCount == 0u) {
+    if (validCell) {
+      clusters[base] = 0u;
+      clusters[base + 1u] = 0u;
+      if (clusterConeMasksEnabled()) clusters[base + 2u] = 0u;
+      if (chartCones) clusters[base + 3u] = 0u;
+    }
+    return;
+  }
   uvec3 cell = uvec3(index % frame.grid.x, (index / frame.grid.x) % frame.grid.y,
                      index / (frame.grid.x * frame.grid.y));
   vec2 low = vec2(cell.xy) / vec2(frame.grid.xy) * 2 - 1;
   vec2 high = vec2(cell.xy + 1u) / vec2(frame.grid.xy) * 2 - 1;
   vec3 minimum = vec3(1e30), maximum = vec3(-1e30);
-  for (int z = 0; z < 2; ++z)
-    for (int y = 0; y < 2; ++y)
-      for (int x = 0; x < 2; ++x) {
-        vec3 p =
-            viewPoint(vec2(x == 0 ? low.x : high.x, y == 0 ? low.y : high.y), sliceDepth(cell.z + uint(z)));
-        minimum = min(minimum, p);
-        maximum = max(maximum, p);
-      }
-  uint count = 0u, runtimeCount = 0u, base = index * ClusterStride;
-  uint lightCount = ClusterBakedTail ? frame.target.z : ClusterLightCount;
+  vec2 depth = vec2(sliceDepth(cell.z), sliceDepth(cell.z + 1u)) * frame.depth.w;
+  for (int y = 0; y < 2; ++y)
+    for (int x = 0; x < 2; ++x)
+      includeTileRay(vec2(x == 0 ? low.x : high.x, y == 0 ? low.y : high.y), depth, minimum, maximum);
+  uint count = 0u, runtimeHeader = 0u;
+  uvec2 coneMisses = uvec2(0);
+  // The endpoint bins also receive fragments outside the reconstructed range.
+  bool testCones = clusterConeMasksEnabled() && cell.z > 0 && cell.z + 1u < frame.grid.z;
+  bool coneIntervals = (frame.clusterInfo.w & 256u) != 0u;
+  bool conePlanes = (frame.clusterInfo.w & 512u) != 0u;
+  bool movingCones = (frame.clusterInfo.w & 1024u) != 0u;
   // All lanes participate, including the final partial cell workgroup.
   uint lane = gl_LocalInvocationIndex;
   // Reducing the group bounds and sharing masks pays off for large lists.
@@ -63,42 +239,81 @@ void main() {
       groupMaximum = upper;
     }
   }
-  for (uint batch = 0u; batch < lightCount; batch += 64u) {
-    uint size = min(64u, lightCount - batch);
-    if (lane < size) lightBounds[lane] = lights[batch + lane].clusterBounds;
-    barrier();
-    if (shareCandidates) {
-      // The union of these cells rejects a light for the whole group.
-      // Four lanes each encode an ordered block of 16 candidate lights.
-      if (lane < 4u) {
-        uint begin = lane * 16u, mask = 0u;
-        for (uint j = begin; j < min(begin + 16u, size); ++j)
-          if (intersects(lightBounds[j], groupMinimum, groupMaximum))
-            mask |= 1u << (j - begin);
-        candidateMask[lane] = mask;
-      }
-      barrier();
-    }
-    if (validCell) {
-      if (shareCandidates) {
-        for (uint block = 0u; block < 4u; ++block) {
-          uint mask = candidateMask[block];
-          while (mask != 0u) {
-            uint i = block * 16u + uint(findLSB(mask));
-            mask &= mask - 1u;
-            if (intersects(lightBounds[i], minimum, maximum))
-              appendLight(base, batch + i, count, runtimeCount);
+  if (lightCount == 1u) {
+    // A uniform read of the sole bound needs no shared-memory rendezvous.
+    if (validCell && intersects(lights[0].clusterBounds, minimum, maximum)) {
+      appendLight(base, 0u, count, runtimeHeader);
+      if (testCones) {
+        vec3 lower, upper;
+        vec4 sphere = aggregateConeBounds(lights[0], coneIntervals, movingCones, chartCones, lower, upper);
+        coneMisses.x = coneMissBit(0u, sphere, minimum, maximum, lower, upper);
+        if (conePlanes && coneMisses.x == 0u && sphere.w >= 0 &&
+            outsideConePlanes(coneSupportBasis(lights[0]), lights[0].clusterBounds.xyz, minimum, maximum))
+          coneMisses.x = 1u;
+        if ((movingCones || chartCones) && coneMisses.x != 0u) {
+          uint slot = coneMovingSlot(lights[0]);
+          if (slot != 0u) {
+            if (chartCones) coneMisses = uvec2(0, coneMisses.x);
+            else if (!outsideMovingCasterCoverage(slot, minimum, maximum)) coneMisses.x = 0u;
           }
         }
-      } else {
-        for (uint i = 0u; i < size; ++i)
-          if (intersects(lightBounds[i], minimum, maximum))
-            appendLight(base, batch + i, count, runtimeCount);
       }
     }
-    barrier();
+  } else {
+    for (uint batch = 0u; batch < lightCount; batch += 64u) {
+      uint size = min(64u, lightCount - batch);
+      if (lane < size) lightBounds[lane] = lights[batch + lane].clusterBounds;
+      if (clusterConeMasksEnabled() && lane < size && batch + lane < ClusterLightCount) {
+        Light light = lights[batch + lane];
+        coneBounds[lane] = aggregateConeBounds(light, coneIntervals, movingCones, chartCones, coneMinimum[lane], coneMaximum[lane]);
+        if ((movingCones || chartCones) && lane < 32u) coneMovingSlots[lane] = coneMovingSlot(light);
+        if (conePlanes && lane < 32u && coneBounds[lane].w >= 0)
+          conePlaneBasis[lane] = coneSupportBasis(light);
+      }
+      barrier();
+      if (shareCandidates) {
+        // The union of these cells rejects a light for the whole group.
+        // Four lanes each encode an ordered block of 16 candidate lights.
+        if (lane < 4u) {
+          uint begin = lane * 16u, mask = 0u;
+          for (uint j = begin; j < min(begin + 16u, size); ++j)
+            if (intersects(lightBounds[j], groupMinimum, groupMaximum))
+              mask |= 1u << (j - begin);
+          candidateMask[lane] = mask;
+        }
+        barrier();
+      }
+      if (validCell) {
+        if (shareCandidates) {
+          for (uint block = 0u; block < 4u; ++block) {
+            uint mask = candidateMask[block];
+            while (mask != 0u) {
+              uint i = block * 16u + uint(findLSB(mask));
+              mask &= mask - 1u;
+              if (intersects(lightBounds[i], minimum, maximum)) {
+                appendLight(base, batch + i, count, runtimeHeader);
+                if (testCones && batch + i < ClusterLightCount)
+                  coneMisses |= sharedConeMissBit(batch + i, i, minimum, maximum, conePlanes, movingCones, chartCones);
+              }
+            }
+          }
+        } else {
+          for (uint i = 0u; i < size; ++i) {
+            if (intersects(lightBounds[i], minimum, maximum)) {
+              appendLight(base, batch + i, count, runtimeHeader);
+              if (testCones && batch + i < ClusterLightCount)
+                coneMisses |= sharedConeMissBit(batch + i, i, minimum, maximum, conePlanes, movingCones, chartCones);
+            }
+          }
+        }
+      }
+      // Only another batch can overwrite the shared bounds and masks.
+      if (batch + size < lightCount) barrier();
+    }
   }
   if (!validCell) return;
-  clusters[base] = runtimeCount;
+  clusters[base] = runtimeHeader;
   clusters[base + 1u] = count;
+  if (clusterConeMasksEnabled()) clusters[base + 2u] = coneMisses.x;
+  if (chartCones) clusters[base + 3u] = coneMisses.y;
 }

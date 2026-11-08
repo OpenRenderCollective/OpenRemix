@@ -108,11 +108,10 @@ namespace remix::forward::test {
     for (uint32_t side : {16u, 32u, 64u}) {
       constexpr uint32_t fields = 9, charts = 512;
       const size_t plane = size_t(side) * side * 3;
-      // Match production's shared byte budget, including the chart's original
-      // and filtered L0. Large images cannot queue extra packets for free.
+      // Match production's shared packet and byte limits. Include both the
+      // original and filtered L0 in each chart's memory cost.
       const size_t chartBytes = plane * (fields + 2) * sizeof(float);
-      const auto queued = uint32_t(std::min<size_t>(requestedQueued,
-          std::max<size_t>(1, queueBudgetBytes / workers / chartBytes)));
+      const auto queued = std::min(requestedQueued, cpuChartQueueCapacity(chartBytes, workers));
       std::vector<float> original(plane * fields);
       for (uint32_t band = 0; band < fields; ++band)
         for (size_t pixel = 0; pixel < plane; ++pixel)

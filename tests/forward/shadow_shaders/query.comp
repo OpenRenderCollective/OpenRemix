@@ -11,7 +11,7 @@ layout(set = 0, binding = 0, std140) uniform Parameters {
   vec4 movingShadowCoverage[18];
   vec4 movingSunCoverage[4];
 } frame;
-struct Light { vec4 corners[3]; vec4 responseWeights; vec4 positionRadius, shaping, directionCone, radiance; };
+#include "../../../src/native/forward/shaders/local-light-record.glsl"
 #define SUN_SHADOW_BINDING 3
 #define VIEWMODEL_PASS
 #include "../../../src/native/forward/shaders/local-shadows.glsl"
@@ -32,12 +32,14 @@ void main() {
   if (index >= inputData.count) return;
   Query query = queries[index];
   bool fixedVisibility = query.control.y != 0;
+  uint staticLayer = fixedVisibility ? StaticLocalShadowLayer : 0u;
+  uint fullLayers = staticLayer | MovingLocalShadowLayer;
   Light light;
   light.corners[0] = vec4(0, 0, 0, query.control.x + 1u);
   light.corners[1] = vec4(0);
   light.responseWeights = vec4(0);
   float visibility = query.control.z == 0u
-      ? localShadowVisibility(light, query.position.xyz, query.normal.xyz, fixedVisibility)
+      ? localShadowVisibility(light, query.position.xyz, query.normal.xyz, fullLayers, true)
       : sunShadowVisibilityLayers(query.position.xyz, query.position.w, fixedVisibility, query.control.z == 2u, query.normal.xyz);
   // Compare two ownership routes for the same shadowed unit material: a field
   // with unoccluded direct energy plus a moving-caster residual, and a unified
@@ -77,10 +79,16 @@ void main() {
   answers[index + 5u * inputData.count] = query.control.w != 0u
       ? compareLocalResponses(query.position.xyz, query.normal.xyz) : vec4(0);
   light.responseWeights.w = 1;
-  float reference = localShadowVisibility(light, query.position.xyz, query.normal.xyz, false);
+  float reference = localShadowVisibility(light, query.position.xyz, query.normal.xyz, MovingLocalShadowLayer, true);
   bool needed = movingLocalShadowRequired(light, query.position.xyz);
-  float scalar = localShadowVisibility(light, query.position.xyz, query.normal.xyz, fixedVisibility, false);
-  float gathered = localShadowVisibility(light, query.position.xyz, query.normal.xyz, fixedVisibility, true);
+  float scalar = localShadowVisibility(light, query.position.xyz, query.normal.xyz, fullLayers, false);
+  float gathered = localShadowVisibility(light, query.position.xyz, query.normal.xyz, fullLayers, true);
+  uint boundedLayers = staticLayer | (needed ? MovingLocalShadowLayer : 0u);
+  float bounded = localShadowVisibility(light, query.position.xyz, query.normal.xyz, boundedLayers, true);
+  float noLayers = localShadowVisibility(light, query.position.xyz, query.normal.xyz, 0u, true);
+  light.corners[1].w = 1;
+  float faded = localShadowVisibility(light, query.position.xyz, query.normal.xyz, fullLayers, true);
+  float error = max(max(abs(scalar - gathered), abs(bounded - gathered)), max(abs(noLayers - 1), abs(faded - 1)));
   answers[index + 6u * inputData.count] = vec4(reference, needed ? reference : 1, needed ? 1 : 0,
-      abs(scalar - gathered));
+      error);
 }

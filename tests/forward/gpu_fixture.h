@@ -35,7 +35,8 @@ namespace remix::forward::test {
     uint32_t family = 0;
     VkCommandPool pool = VK_NULL_HANDLE;
     VkCommandBuffer command = VK_NULL_HANDLE;
-    Fixture(bool hardware = true, bool graphics = false) {
+    bool cubeArrays = false;
+    Fixture(bool hardware = true, bool graphics = false, bool requestCubeArrays = false) {
       const bool enabled = std::getenv("REMIX_VULKAN_VALIDATION");
       const char *layer = "VK_LAYER_KHRONOS_validation";
       const char *debug = VK_EXT_DEBUG_UTILS_EXTENSION_NAME;
@@ -106,12 +107,17 @@ namespace remix::forward::test {
       const char *extensions[] = {VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
                                   VK_KHR_RAY_QUERY_EXTENSION_NAME,
                                   VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME};
+      VkPhysicalDeviceFeatures available{};
+      if (requestCubeArrays) vkGetPhysicalDeviceFeatures(physical, &available);
+      cubeArrays = requestCubeArrays && available.imageCubeArray;
+      const VkPhysicalDeviceFeatures enabledFeatures{.imageCubeArray = VkBool32(cubeArrays)};
       const VkDeviceCreateInfo deviceInfo{.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
                                           .pNext = hardware ? &vulkan12 : nullptr,
                                           .queueCreateInfoCount = 1,
                                           .pQueueCreateInfos = &queueInfo,
                                           .enabledExtensionCount = hardware ? 3u : 0u,
-                                          .ppEnabledExtensionNames = hardware ? extensions : nullptr};
+                                          .ppEnabledExtensionNames = hardware ? extensions : nullptr,
+                                          .pEnabledFeatures = &enabledFeatures};
       check(vkCreateDevice(physical, &deviceInfo, nullptr, &device));
       vkGetDeviceQueue(device, family, 0, &queue);
       VkPhysicalDeviceProperties properties;

@@ -8,9 +8,5 @@ ReceiverLighting evaluateReceiverLighting(vec3 position, vec3 normal, vec3 geome
 }
 
 // Live diffuse does not advertise a compatible frozen-reflection reference.
-float diffuseReferenceLuma(vec3 position, vec3 normal) {
-  return -1;
-}
-
 // Compatibility describes the selected source, not receiver availability.
 uint diffuseReflectionReferenceDomain() { return NoLightingReference; }

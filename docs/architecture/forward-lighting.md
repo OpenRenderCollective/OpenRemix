@@ -6,8 +6,11 @@ Forward+ is the rendering framework, not a lighting technique. Its default prese
 is named **Source 2**: baked static direct lighting and diffuse irradiance on
 surface lightmaps, volume probes for moving receivers, and parallax-corrected
 cubemap reflections. Dynamic casters modify baked lighting through mixed shadows.
-Full-resolution SSR remains the screen-space reflection layer. MSAA remains the
-default antialiasing method. This describes our preset, not exact engine parity.
+Opaque materials sample parallax cubemaps directly when cubemaps are the only
+reflection source. Conservative per-draw masks limit the probe search. Optional
+SSR and ray reflections use the fullscreen resolve, as do cubemap fallbacks
+with live diffuse GI. SSR is off by default. MSAA is the default antialiasing
+method.
 
 Material authors should initialize a surface, change its properties and call one
 standard shading entry point. Material evaluation must not know the lightmap
@@ -158,6 +161,16 @@ Frame setup snapshots its receiver/highlight policy before light enumeration;
 per-light response preparation does not reinterpret saved options. Capture
 configuration remains independently resolved for reflection transport. `presets::source2()` now constructs the
 runtime default profile under the name Source 2, preserving its previous values.
+
+The combined baked path shortlists optional analytic highlights per lightmap block.
+The bake worker prepares coverage from existing bake data, and the frame worker
+ranks the settled light selection. Mixed-shadow owners retain their full response.
+With up to 32 runtime lights, the chart mask intersects the cluster membership
+mask so the shader visits surviving lights in their original order. Larger
+runtime lists use the ordinary cluster enumeration with captured highlight IDs.
+Unknown coverage, changing lightstyles and incompatible receivers use the full
+light list. `REMIX_DEBUG_CHART_HIGHLIGHTS=0` disables the shortlist for comparisons.
+
 Typed technique selection now lives in `techniques.h`: static direct lighting,
 diffuse transport, reflection fallback, SSR and dynamic shadow requests are separate
 fields. The default preset and UI use this shared selection layer. The F12 Rendering panel now offers Source 2
@@ -210,7 +223,7 @@ visibility, temporal and specular limits must be measured before presets use the
 ## Acceptance
 
 Behavior-preserving steps require shader compilation across world, viewmodel,
-zero-diffuse, live GI, water, MSAA and depth variants, plus relevant GPU readbacks.
+live GI, water, MSAA and depth variants, plus relevant GPU readbacks.
 Use frozen scene comparisons before deployment and measure performance separately.
 Preset switching must preserve styled-light behavior, dynamic shadows, authored
 cubemaps, cache reuse and frame-slot ownership. No public Remix ABI changes are
@@ -246,12 +259,12 @@ The current surface path stores full nine-coefficient SH and performs up to four
 filtered atlas fetches per coefficient with bicubic reconstruction. Exactly-zero
 basis terms skip their fetches; no SH bands or weak nonzero terms are discarded.
 
-A useful next alternative is the compact lightmap representation in the audited
-VRF `Renderer/Shaders/common/lighting.slang`: DC plus luminance or per-channel
-linear directional bands, with a reconstructed zonal band. Its explicit bicubic
-helper covers shadow masks; do not assume all reference irradiance paths use our
-nine-coefficient bicubic reconstruction. This describes that reference profile,
-not every Source 2 game or material.
+The opt-in compact surface path follows the RGB directional profile in VRF
+`Renderer/Shaders/common/lighting.slang`. It samples DC and three linear
+directional bands and reconstructs a zonal band. GPU publication packs the
+exact mixed-sun response into three separate RGBA layers. The persistent bake
+keeps its original SH9 fields, and local-light visibility and attribution keep
+their indexed layout.
 
 Compare encoding error, normal-map response, styled contributions and rough-surface
 reflection behavior before selecting a compact provider by default. Keep material
@@ -297,7 +310,7 @@ does not quantize viewmodel poses or projections.
 ### Standard direct-light composition
 
 The standard material entry point delegates direct illumination to
-`shaders/direct-lighting.glsl`. That module accumulates sun and clustered local
+`shaders/standard-direct-lighting.glsl`. That module accumulates sun and clustered local
 responses in the existing order, including attributed visibility, mixed shadows,
 and specular. World and viewmodel materials share this entry point; exposure,
 emission, and reflection composition stay outside this standard-model accumulator.
@@ -1076,6 +1089,18 @@ provider has no diffuse-controller dependency and never eagerly evaluates the
 shared fallback for an authored or standalone replacement. The frame descriptor
 snapshot still serves world reflections, viewmodels and water.
 
+### Exact chart visibility
+
+The local light source can project whole-chart occlusion proofs onto the current
+runtime light order. Unknown and partially visible lights stay eligible. A
+single-word table can intersect the cluster membership mask before enumeration.
+Small runtime lists can also use the membership header without a chart table.
+Wider tables keep the ordinary cluster list and check each runtime index before
+loading its light record. The projection has an 8 MiB allocation limit and
+publishes only for the matching light order and row width. Until it is ready,
+the original per-light visibility lookup serves the receiver. Entries in the
+baked fallback tail never use runtime-prefix mask bits.
+
 ### Stable styled-light composition
 
 Styled light weights can reconstruct their signed SH9 contributions during
@@ -1088,11 +1113,18 @@ unchanged.
 Publication matches both the immutable source and exact weights. Until a
 matching composition completes and passes finite/range checks, the original
 descriptors and reconstruction path remain active. The cache waits 100 ms for
-stable weights and records at most 131,072 elements per chunk. A chunk advances
-only after its owning frame fence and completion event; cancelled recordings
-retry. Output allocations, including retired frame owners, are capped at 512 MiB
-or one eighth of the largest device-local heap, whichever is smaller. Frequent
-changes, unsupported layouts and overflowing outputs retain the original path.
+stable weights. Each chunk covers at most 131,072 elements, or 262,144 for a
+bake with one style group. A chunk advances after its owning frame fence and
+completion event. Cancelled recordings retry. Output allocations, including
+retired frame owners, are capped at 512 MiB or one eighth of the largest
+device-local heap, whichever is smaller. Frequent changes, unsupported
+layouts and overflowing outputs retain the original path.
+
+When all style weights are zero, receivers sample the immutable base and skip
+sparse style lookups. The last completed result may be retained for up to two
+seconds on the base field when its allocation fits within half the cache
+budget. Returning to the same source and weights can reuse it without a
+dispatch. Source changes and allocation pressure retire it.
 Only a complete surface-and-probe publication can clear the existing styled
 payload flag. Preserve signed coefficients, sunlight metadata, visibility tables
 and chart boundaries. Compose full current contributions rather than subtracting
@@ -1104,12 +1136,24 @@ composed fields also inherit hardware filtering's subtexel weight precision.
 This is a bounded precision change, not a claim of bit-identical samples.
 Experimental coarse-transfer sampling currently declines composition.
 
+The surface format owns the layout of the uploaded lighting fields. Upload
+planning and composition derive the diffuse prefix length from that format.
+Compact diffuse adds current style contributions to four bands before zonal
+reconstruction. The opt-in packed RGB format for sunless bakes stores all
+nine RGB coefficients in seven layers. Probe lighting composes full SH9
+with either format. The surface pass preserves sunlight and local-light
+fields outside the diffuse prefix.
+
+Compact diffuse also supports opt-in sparse patches. Patches include the
+border texels required for bilinear filtering. The planner uses dense
+composition when the padded patches would dispatch as many texels as the
+full atlas.
+
 The cache is the normal baked-lighting path, with the original representation
 retained as its correctness fallback. `REMIX_DEBUG_DISABLE_STYLE_COMPOSITION`
-provides a diagnostic control. It adds no material API, fragment shader branch
-or persistent bake format. Whole-frame performance and image comparisons must
-continue across additional maps; frequent styled animation still uses the
-original per-sample reconstruction.
+provides a diagnostic control. Dense composition uses the existing shader
+bindings and preserves the material API and persistent bake format. Frequent
+styled animation still uses per-sample reconstruction.
 
 
 ## Conservative moving-shadow coverage

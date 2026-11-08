@@ -62,9 +62,11 @@ namespace remix::forward {
       c /= length;
     return v;
   }
+  static float transformComponent(const Matrix &m, const Vec3 &v, uint32_t row) {
+    return m[row] * v[0] + m[4 + row] * v[1] + m[8 + row] * v[2];
+  }
   Vec3 transformVector(const Matrix &m, const Vec3 &v) {
-    return {m[0] * v[0] + m[4] * v[1] + m[8] * v[2], m[1] * v[0] + m[5] * v[1] + m[9] * v[2],
-            m[2] * v[0] + m[6] * v[1] + m[10] * v[2]};
+    return {transformComponent(m, v, 0), transformComponent(m, v, 1), transformComponent(m, v, 2)};
   }
   Vec3 transformPoint(const Matrix &m, const Vec3 &v) {
     auto p = transformVector(m, v);
@@ -73,10 +75,9 @@ namespace remix::forward {
       p[i] = (p[i] + m[12 + i]) / w;
     return p;
   }
-  DepthRange depthRange(const Matrix &projection) {
-    const auto inverse = scene::inverse(projection);
-    const float a = transformPoint(inverse, {0, 0, 0})[2];
-    const float b = transformPoint(inverse, {0, 0, 1})[2];
+  DepthRange depthRangeFromInverseProjection(const Matrix &inverseProjection) {
+    const float a = transformPoint(inverseProjection, {0, 0, 0})[2];
+    const float b = transformPoint(inverseProjection, {0, 0, 1})[2];
     DepthRange range;
     range.sign = std::isfinite(a) && a < 0 ? -1.f : 1.f;
     range.nearPlane = std::isfinite(a) ? std::max(std::abs(a), .001f) : .1f;
@@ -118,6 +119,44 @@ namespace remix::forward {
     // directly when there is no model transform; no corner transforms are needed.
     static const Matrix identity = scene::identity();
     if (bounds.valid && model == identity) return bounds;
+    if (bounds.valid && isAxisAlignedAffine(model)) {
+      Bounds scaled;
+      scaled.valid = true;
+      for (uint32_t axis = 0; axis < 3; ++axis) {
+        const float scale = model[axis * 5], offset = model[12 + axis];
+        const float scaledMinimum = scale * bounds.minimum[axis];
+        const float scaledMaximum = scale * bounds.maximum[axis];
+        const float a = scaledMinimum + offset, b = scaledMaximum + offset;
+        if (!std::isfinite(a) || !std::isfinite(b)) {
+          scaled.valid = false;
+          break;
+        }
+        scaled.minimum[axis] = std::min(a, b);
+        scaled.maximum[axis] = std::max(a, b);
+      }
+      // Retain finite corners if an endpoint overflows.
+      if (scaled.valid) return scaled;
+    } else if (bounds.valid && model[3] == 0 && model[7] == 0 && model[11] == 0 && model[15] == 1) {
+      Bounds affine;
+      affine.valid = true;
+      for (uint32_t row = 0; row < 3; ++row) {
+        Vec3 low, high;
+        // Each row is monotone along each input axis. Select the two
+        // extremal corners and evaluate in the ordinary transform's order.
+        for (uint32_t axis = 0; axis < 3; ++axis) {
+          const bool reversed = model[axis * 4 + row] < 0;
+          low[axis] = reversed ? bounds.maximum[axis] : bounds.minimum[axis];
+          high[axis] = reversed ? bounds.minimum[axis] : bounds.maximum[axis];
+        }
+        affine.minimum[row] = transformComponent(model, low, row) + model[12 + row];
+        affine.maximum[row] = transformComponent(model, high, row) + model[12 + row];
+        if (!std::isfinite(affine.minimum[row]) || !std::isfinite(affine.maximum[row])) {
+          affine.valid = false;
+          break;
+        }
+      }
+      if (affine.valid) return affine;
+    }
     Bounds result;
     if (bounds.valid)
       for (uint32_t corner = 0; corner < 8; ++corner) {
@@ -128,18 +167,19 @@ namespace remix::forward {
       }
     return result;
   }
-  bool intersectsClip(const Bounds &bounds, const Matrix &clip) {
-    if (!bounds.valid)
-      return true;
-    // Extract inward planes in world space: -w <= x,y <= w, 0 <= z <= w.
-    // The positive AABB vertex maximizes each signed distance. Reject only
-    // when even that vertex lies outside; touching and crossing boxes survive.
-    for (uint32_t plane = 0; plane < 6; ++plane) {
+  namespace {
+    // Inward world-space planes: -w <= x,y <= w, 0 <= z <= w.
+    Vec4 clipPlane(const Matrix &clip, uint32_t plane) {
       const uint32_t row = plane / 2;
       const float sign = plane % 2 ? -1.f : 1.f;
       Vec4 coefficients;
       for (uint32_t c = 0; c < 4; ++c)
         coefficients[c] = (plane == 4 ? 0.f : clip[c * 4 + 3]) + sign * clip[c * 4 + row];
+      return coefficients;
+    }
+    // The positive AABB vertex maximizes signed distance. Touching and
+    // crossing boxes survive, with room for floating-point error.
+    bool outsideClipPlane(const Bounds &bounds, const Vec4 &coefficients) {
       double distance = coefficients[3], scale = std::abs(distance);
       for (uint32_t c = 0; c < 3; ++c) {
         const double term =
@@ -147,15 +187,28 @@ namespace remix::forward {
         distance += term;
         scale += std::abs(term);
       }
-      if (distance < -1e-5 * std::max(1., scale))
-        return false;
+      return distance < -1e-5 * std::max(1., scale);
     }
+  } // namespace
+  ClipFrustum::ClipFrustum(const Matrix &clip) {
+    for (uint32_t plane = 0; plane < planes.size(); ++plane)
+      planes[plane] = clipPlane(clip, plane);
+  }
+  bool ClipFrustum::intersects(const Bounds &bounds) const {
+    if (!bounds.valid) return true;
+    for (const auto &plane : planes)
+      if (outsideClipPlane(bounds, plane)) return false;
     return true;
   }
-  Cascades shadowCascades(const Matrix &camera, const Matrix &view, DepthRange range, Vec3 direction,
+  bool intersectsClip(const Bounds &bounds, const Matrix &clip) {
+    if (!bounds.valid) return true;
+    for (uint32_t plane = 0; plane < 6; ++plane)
+      if (outsideClipPlane(bounds, clipPlane(clip, plane))) return false;
+    return true;
+  }
+  Cascades shadowCascades(const Matrix &inverseCamera, const Matrix &view, DepthRange range, Vec3 direction,
                           const Bounds &casters, float distance, uint32_t resolution) {
     Cascades result;
-    const auto inverse = scene::inverse(camera);
     const auto z = normalized(direction);
     const auto x = normalized(cross(std::abs(z[2]) < .99f ? Vec3{0, 0, 1} : Vec3{0, 1, 0}, z));
     const auto y = cross(z, x);
@@ -166,30 +219,62 @@ namespace remix::forward {
       basis[i * 4 + 2] = z[i];
     }
     const float cascadeFar = std::clamp(distance, range.nearPlane * 1.01f, range.farPlane);
-    float previous = range.nearPlane;
+    struct ReceiverRay {
+      Vec3 nearPoint, farPoint;
+      float nearDepth, farDepth;
+    };
+    // Each split intersects the same four world-space camera rays.
+    std::array<ReceiverRay, 4> rays;
+    uint32_t rayIndex = 0;
+    for (float sx : {-1.f, 1.f})
+      for (float sy : {-1.f, 1.f}) {
+        const auto a = transformPoint(inverseCamera, {sx, sy, 0});
+        const auto b = transformPoint(inverseCamera, {sx, sy, .9999f});
+        rays[rayIndex++] = {a, b, transformPoint(view, a)[2] * range.sign,
+                                 transformPoint(view, b)[2] * range.sign};
+      }
+    struct ReceiverCorner {
+      Vec3 world, light;
+    };
+    const auto receiverBoundary = [&](float depth) {
+      std::array<ReceiverCorner, 4> boundary;
+      for (uint32_t i = 0; i < rays.size(); ++i) {
+        const auto &ray = rays[i];
+        const float t = (depth - ray.nearDepth) / (ray.farDepth - ray.nearDepth);
+        auto &point = boundary[i];
+        for (uint32_t axis = 0; axis < 3; ++axis)
+          point.world[axis] = ray.nearPoint[axis] + (ray.farPoint[axis] - ray.nearPoint[axis]) * t;
+        point.light = transformPoint(basis, point.world);
+      }
+      return boundary;
+    };
+    auto previous = receiverBoundary(range.nearPlane);
+    // Offscreen casters contribute the same light-space depth to every split.
+    float casterNear = std::numeric_limits<float>::infinity();
+    float casterFar = -casterNear;
+    if (casters.valid)
+      for (uint32_t corner = 0; corner < 8; ++corner) {
+        Vec3 point;
+        for (uint32_t axis = 0; axis < 3; ++axis)
+          point[axis] = (corner & (1u << axis)) ? casters.maximum[axis] : casters.minimum[axis];
+        const float depth = transformPoint(basis, point)[2];
+        casterNear = std::min(casterNear, depth);
+        casterFar = std::max(casterFar, depth);
+      }
     for (uint32_t c = 0; c < cascadeCount; ++c) {
       const float fraction = float(c + 1) / cascadeCount;
       const float split = .65f * range.nearPlane * std::pow(cascadeFar / range.nearPlane, fraction) +
                           .35f * (range.nearPlane + (cascadeFar - range.nearPlane) * fraction);
       result.splits[c] = split;
+      const auto next = receiverBoundary(split);
       Bounds box;
       std::array<Vec3, 8> receiverCorners;
-      uint32_t receiverCorner = 0;
-      for (float sx : {-1.f, 1.f})
-        for (float sy : {-1.f, 1.f}) {
-          const auto a = transformPoint(inverse, {sx, sy, 0});
-          const auto b = transformPoint(inverse, {sx, sy, .9999f});
-          const float az = transformPoint(view, a)[2] * range.sign;
-          const float bz = transformPoint(view, b)[2] * range.sign;
-          for (float depth : {previous, split}) {
-            Vec3 p;
-            const float t = (depth - az) / (bz - az);
-            for (int i = 0; i < 3; ++i)
-              p[i] = a[i] + (b[i] - a[i]) * t;
-            receiverCorners[receiverCorner++] = p;
-            box.include(transformPoint(basis, p));
-          }
-        }
+      for (uint32_t i = 0; i < previous.size(); ++i) {
+        receiverCorners[i * 2] = previous[i].world;
+        receiverCorners[i * 2 + 1] = next[i].world;
+        box.include(previous[i].light);
+        box.include(next[i].light);
+      }
       // A tight light-space AABB changes size as the camera turns. Fit a
       // rotation-invariant receiver sphere so snapping also stabilizes texel
       // size. Round outward to absorb small inverse-camera rounding changes.
@@ -209,17 +294,8 @@ namespace remix::forward {
         box.minimum[axis] = lightCentre[axis] - radius;
         box.maximum[axis] = lightCentre[axis] + radius;
       }
-      // All submitted casters contribute Z bounds, including off-screen ones.
-      // XY remains fitted to this cascade to keep texel density useful.
-      if (casters.valid)
-        for (uint32_t corner = 0; corner < 8; ++corner) {
-          Vec3 p;
-          for (int i = 0; i < 3; ++i)
-            p[i] = (corner & (1u << i)) ? casters.maximum[i] : casters.minimum[i];
-          const float depth = transformPoint(basis, p)[2];
-          box.minimum[2] = std::min(box.minimum[2], depth);
-          box.maximum[2] = std::max(box.maximum[2], depth);
-        }
+      box.minimum[2] = std::min(box.minimum[2], casterNear);
+      box.maximum[2] = std::max(box.maximum[2], casterFar);
       Matrix projection = scene::identity();
       for (int i = 0; i < 3; ++i) {
         float span = std::max(box.maximum[i] - box.minimum[i], .01f);
@@ -235,7 +311,7 @@ namespace remix::forward {
         projection[12 + i] = -center * projection[i * 4 + i] + (i == 2 ? .5f : 0.f);
       }
       result.matrices[c] = scene::multiply(projection, basis);
-      previous = split;
+      previous = next;
     }
     return result;
   }
@@ -244,7 +320,7 @@ namespace remix::forward {
     return std::cos(std::acos(std::clamp(outerCosine, -1.f, 1.f)) *
                     (1.f - std::clamp(softness, 0.f, 1.f)));
   }
-  float influenceRadius(const scene::SphereLight &light, float cutoff) {
+  LightRange localLightRange(const scene::SphereLight &light, float cutoff) {
     const float power = std::max({light.radiance[0], light.radiance[1], light.radiance[2], 0.f});
     float area = light.radius * light.radius * 3.14159265359f;
     if (light.triangle) {
@@ -256,6 +332,7 @@ namespace remix::forward {
       const auto n = cross(a, b);
       area = .5f * std::sqrt(dot(n, n));
     }
-    return std::sqrt(power * area / std::max(cutoff, 1e-8f));
+    const float fade = std::sqrt(power * area / std::max(cutoff, 1e-8f));
+    return {light.forwardCutoff > 0 ? std::min(fade, light.forwardCutoff) : fade, fade};
   }
 } // namespace remix::forward

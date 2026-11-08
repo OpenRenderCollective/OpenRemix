@@ -18,22 +18,37 @@ namespace remix::forward::mixed::directional {
     }
     size_t wordCount(size_t fields) { return (fields * 9 + 1) / 2; }
     uint32_t columns(uint32_t width, uint32_t side) { return (width + side - 1) / side; }
+    uint32_t packPair(uint16_t low, uint16_t high) {
+      return uint32_t(low) | (uint32_t(high) << 16);
+    }
     void append(std::vector<uint32_t> &words, std::span<const Field> fields) {
       const auto first = words.size();
-      words.resize(first + wordCount(fields.size()), 0);
-      size_t half = 0;
-      for (const auto &field : fields)
-        for (auto coefficient : field) {
-          words[first + half / 2] |= uint32_t(coefficient) << ((half & 1u) * 16);
-          ++half;
+      words.resize(first + wordCount(fields.size()));
+      auto output = words.begin() + first;
+      for (size_t i = 0; i < fields.size(); i += 2) {
+        const auto &a = fields[i];
+        for (size_t c = 0; c + 1 < a.size(); c += 2)
+          *output++ = packPair(a[c], a[c + 1]);
+        if (i + 1 == fields.size()) {
+          *output = a.back(); // The final high half is zero padding.
+          break;
         }
+        // Nine coefficients put the field boundary inside this word.
+        const auto &b = fields[i + 1];
+        *output++ = packPair(a.back(), b.front());
+        for (size_t c = 1; c < b.size(); c += 2)
+          *output++ = packPair(b[c], b[c + 1]);
+      }
     }
     void validateFields(std::span<const uint32_t> words, size_t first, size_t count) {
-      const size_t halves = count * 9, size = wordCount(count);
+      const size_t size = wordCount(count);
       require(first <= words.size() && size <= words.size() - first);
-      for (size_t i = 0; i < halves; ++i)
-        require(((words[first + i / 2] >> ((i & 1u) * 16)) & 0x7c00u) != 0x7c00u);
-      if (halves & 1u) require((words[first + size - 1] >> 16) == 0);
+      constexpr uint32_t lowExponent = 0x7c00u, highExponent = lowExponent << 16;
+      const auto fieldWords = words.subspan(first, size);
+      for (uint32_t word : fieldWords)
+        require((word & lowExponent) != lowExponent && (word & highExponent) != highExponent);
+      // Each field has nine halves, so an odd field count leaves one pad half.
+      if (count & 1u) require((fieldWords.back() >> 16) == 0);
     }
     Encoded rawImage(std::span<const Field> fields, std::stop_token cancelled) {
       Encoded result;
@@ -47,42 +62,45 @@ namespace remix::forward::mixed::directional {
     }
     Field read(std::span<const uint32_t> words, size_t first, size_t field) {
       Field result;
-      for (uint32_t c = 0; c < result.size(); ++c) {
-        const auto half = field * 9 + c;
-        result[c] = uint16_t(words[first + half / 2] >> ((half & 1u) * 16));
+      const size_t firstHalf = field * result.size();
+      auto input = words.begin() + first + firstHalf / 2;
+      size_t coefficient = 0;
+      if (firstHalf & 1u)
+        result[coefficient++] = uint16_t(*input++ >> 16);
+      for (; coefficient + 1 < result.size(); coefficient += 2) {
+        const uint32_t pair = *input++;
+        result[coefficient] = uint16_t(pair);
+        result[coefficient + 1] = uint16_t(pair >> 16);
       }
+      if (coefficient < result.size()) result[coefficient] = uint16_t(*input);
       return result;
     }
     std::optional<Encoded> encodeTiles(std::span<const Field> fields, uint32_t width, uint32_t height,
         std::stop_token cancelled, uint64_t maximumWords, uint32_t side, uint32_t encoding) {
-      const size_t descriptors = size_t(columns(width, side)) * columns(height, side);
-      const size_t rawWords = wordCount(fields.size());
-      if (std::min(descriptors, rawWords) > maximumWords)
-        return std::nullopt;
-      if (descriptors >= rawWords) return rawImage(fields, cancelled);
+      const uint32_t tilesX = columns(width, side), tilesY = columns(height, side);
+      const size_t descriptors = size_t(tilesX) * tilesY;
+      if (descriptors > maximumWords) return std::nullopt;
       Encoded result{encoding, std::vector<uint32_t>(descriptors)};
       std::array<Field, tileFields> block;
       const uint32_t blockFields = side * side;
-      for (uint32_t ty = 0; ty < columns(height, side); ++ty) {
+      for (uint32_t ty = 0; ty < tilesY; ++ty) {
         check(cancelled);
-        for (uint32_t tx = 0; tx < columns(width, side); ++tx) {
-          bool black = true, constant = true;
+        for (uint32_t tx = 0; tx < tilesX; ++tx) {
+          bool constant = true;
           for (uint32_t y = 0; y < side; ++y)
             for (uint32_t x = 0; x < side; ++x) {
               const auto px = std::min(tx * side + x, width - 1);
               const auto py = std::min(ty * side + y, height - 1);
               const auto &field = fields[size_t(py) * width + px];
               block[y * side + x] = field;
-              constant &= field == block[0];
-              black &= std::all_of(field.begin(), field.end(), [](uint16_t value) { return value == 0; });
+              constant = constant && field == block[0];
             }
-          if (black) continue;
+          // Only a constant tile can be entirely zero.
+          if (constant && block[0] == Field{}) continue;
           const size_t next = result.words.size() + wordCount(constant ? 1 : blockFields);
-          if (std::min(next, rawWords) > maximumWords)
-            return std::nullopt;
-          if (next >= rawWords) return rawImage(fields, cancelled);
+          if (next > maximumWords) return std::nullopt;
           require(result.words.size() <= offsetMask);
-          result.words[ty * columns(width, side) + tx] = uint32_t(result.words.size()) | (constant ? 1u : 2u) << 30;
+          result.words[ty * tilesX + tx] = uint32_t(result.words.size()) | (constant ? 1u : 2u) << 30;
           append(result.words, std::span(block).first(constant ? 1 : blockFields));
         }
       }
@@ -98,13 +116,17 @@ namespace remix::forward::mixed::directional {
       if ((i & 1023u) == 0) check(cancelled);
       for (auto coefficient : fields[i]) require((coefficient & 0x7c00u) != 0x7c00u);
     }
-    auto best = encodeTiles(fields, width, height, cancelled, maximumWords, tileSide, tiled);
-    // Preserve the old layout on ties and avoid allocating a losing candidate.
-    const auto limit = best ? std::min<uint64_t>(maximumWords, best->words.size() - 1) : maximumWords;
+    // Tiled candidates must beat raw storage. Materialize the raw payload
+    // only if neither tile size wins, and prefer the larger tiles on ties.
+    const auto rawWords = wordCount(fields.size());
+    const auto tiledLimit = std::min<uint64_t>(maximumWords, rawWords - 1);
+    auto best = encodeTiles(fields, width, height, cancelled, tiledLimit, tileSide, tiled);
+    const auto limit = best ? best->words.size() - 1 : tiledLimit;
     if (auto compact = encodeTiles(fields, width, height, cancelled, limit, 4, tiledSmall))
       best = std::move(compact);
-    if (!best) throw std::length_error("Directional field exceeds its encoding budget");
-    return std::move(*best);
+    if (best) return std::move(*best);
+    if (rawWords <= maximumWords) return rawImage(fields, cancelled);
+    throw std::length_error("Directional field exceeds its encoding budget");
   }
   size_t validate(std::span<const uint32_t> words, uint32_t width, uint32_t height, uint32_t encoding) {
     const size_t count = fieldCount(width, height);

@@ -885,6 +885,12 @@ namespace {
     const auto blue = sample(0, {&light, 1});
     require(blue[2] > .01f && blue[0] == 0,
             "A completed slot streams changed light colour without a scene rebuild");
+    light.corners[0][3] = 1;
+    const auto outsideCutoff = sample(0, {&light, 1});
+    require(outsideCutoff[2] == 0, "A finite sphere cutoff clips indirect transport at the shading point");
+    light.corners[0][3] = 3;
+    require(sample(0, {&light, 1}) == blue, "Inside the cutoff, emitter energy and sampling are unchanged");
+    light.corners[0][3] = 0;
     std::vector<TransportLight> many(65, light);
     const auto resized = sample(0, many);
     require(resized[2] > .01f && resized[0] == 0,
@@ -1301,6 +1307,20 @@ namespace {
     const bake::VisibilityPoint points[] = {{{{-.6f, 0, 0, 0}, {0, 0, -1, 0}}, 0},
                                             {{{0, 0, 0, 0}, {0, 0, -1, 0}}, 0},
                                             {{{.6f, 0, 0, 0}, {0, 0, -1, 0}}, 0}};
+    // The normal offset puts the receiver and probe at the same origin.
+    // Their sun queries still use independent near distances.
+    const float bias = options.bias / source->sceneScale;
+    const bake::Point contactSurface[] = {{{-1, 0, -.5f + 1.5f * bias, 0}, {0, 0, -1, 0}}};
+    const bake::Point contactProbe[] = {{{-1, 0, -.5f + .5f * bias, 0}, {0, 0, 0, 0}}};
+    fixture.begin();
+    transport.recordSun(fixture.command, 0, contactSurface, 64);
+    transport.recordSun(fixture.command, 1, contactProbe, 64);
+    fixture.finish();
+    bake::VisibilityResult surfaceContact{}, probeContact{};
+    transport.readVisibility(0, {&surfaceContact, 1});
+    transport.readVisibility(1, {&probeContact, 1});
+    require(surfaceContact.visibility == 0 && probeContact.visibility == 1,
+            "Offset surface sunlight catches a near blocker while probe sunlight retains its minimum");
     indexedVisibilityTests(fixture, pipelines, world, source);
     fixture.begin();
     transport.recordVisibility(fixture.command, 0, points, 1024);
@@ -2747,6 +2767,11 @@ int main(int argc, char **argv) try {
     vkGetPhysicalDeviceProperties(fixture.physical, &properties);
     pipeline::Service pipelines(fixture.device, properties, false);
     World world(fixture);
+    if (argc == 2 && std::strcmp(argv[1], "--dielectric-sheet-only") == 0) {
+      dielectricSheetTransport(fixture, pipelines, world);
+      require(test::validationErrors == 0, "Dielectric sheet transport is validation clean");
+      return 0;
+    }
     if (argc == 2 && std::strcmp(argv[1], "--color-capture-only") == 0) {
       encodedCapture(fixture, pipelines, world);
       require(test::validationErrors == 0, "Color capture is validation clean");

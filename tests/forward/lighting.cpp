@@ -25,6 +25,17 @@ int main() {
     specialized.depthPrepass = !defaults.depthPrepass;
     require(!defaults.sameTargets(specialized) && defaults.baking == specialized.baking,
             "Depth-prepass changes rebuild shader and depth-write policy together");
+    for (auto view : {LightingView::BakedIrradiance, LightingView::Albedo,
+                      LightingView::IrradianceWithoutNormalMaps, LightingView::BakeCoverage}) {
+      auto diagnostic = defaults;
+      diagnostic.debugView = uint32_t(view);
+      diagnostic.baking.reflectionProbes = 0;
+      auto captured = diagnostic;
+      captured.baking.reflectionProbes = 1;
+      require(diagnostic.sameTargets(captured) &&
+                  !techniques::resolveResources(captured, {}).reflectionResolve,
+              "Diagnostics without reflectance retain their targets when capture is enabled");
+    }
     for (auto direct : {techniques::Direct::Analytic, techniques::Direct::AttributedBake,
                         techniques::Direct::AggregateBake})
       for (auto diffuse : {techniques::Diffuse::SurfaceAndProbes, techniques::Diffuse::RayQueries,
@@ -78,21 +89,35 @@ int main() {
             disabledCaptures.baking.reflectionProbes = 0;
             require(techniques::resolveResources(disabledCaptures, capabilities).capturePolicy.transport == resources.capturePolicy.transport,
                     "Disabling images preserves the capture retirement owner");
-            require(resources.bakedDirect == (resources.liveDiffuse() && lighting.bakedReceivers),
+            require(resources.composesBakedDirect() == (resources.liveDiffuse() && lighting.bakedReceivers),
                     "Live incoming composes only with an explicitly selected baked direct field");
-            require(!resources.bakedDirect ||
+            require(!resources.composesBakedDirect() ||
                         (lighting.baking.irradianceContents == bake::IrradianceContents::ReceiverDirect &&
                          lighting.baking.bounces == 1 && !lighting.baking.styledIndirect &&
                          !lighting.baking.reflectionProbes && lighting.selectedMixedLights),
                     "Composed resources require direct-only transport and independent capture ownership");
-            if (!resources.rayDiffuse())
+            if (resources.rayDiffuse())
+              require(resources.diffuse == (lighting.bakedReceivers ? techniques::Diffuse::RayIncoming
+                                                                    : techniques::Diffuse::RayQueries),
+                      "Resolved diffuse technique identifies the live shader family");
+            else
               require(resources.diffuse == (options.baking.enabled ? techniques::Diffuse::SurfaceAndProbes
                                                                    : techniques::Diffuse::Disabled),
                       "Unavailable live GI retains the configured baked or disabled fallback");
             require(resources.screenReflections == options.ssr,
                     "Resolved screen source selection is independent of ray and baked capabilities");
-            require(resources.reflectionResolve == (options.ssr || resources.rayReflections || options.baking.reflectionProbes != 0),
+            auto resolveCapabilities = capabilities;
+            resolveCapabilities.forceReflectionResolve = true;
+            const auto resolve = techniques::resolveResources(options, resolveCapabilities);
+            const bool inlineCubes = options.baking.reflectionProbes != 0 && !resources.screenReflections &&
+                                     !resources.rayReflections && !resources.liveDiffuse();
+            require(!resolve.inlineReflections &&
+                        resolve.reflectionResolve == (options.ssr || resources.rayReflections || options.baking.reflectionProbes != 0),
                     "Only supported reflection sources allocate guides and resolve");
+            require(resources.inlineReflections == inlineCubes &&
+                        resources.reflectionResolve == (resolve.reflectionResolve && !inlineCubes) &&
+                        resources.capturePolicy == resolve.capturePolicy,
+                    "Inline cubemaps replace only the resolve and retain the selected capture provider");
           }
           const auto live = options.lightingPlan(options.rtGI);
           require(!options.rtGI || !live.bakedReceivers ||
@@ -126,9 +151,9 @@ int main() {
     cubeBudget.baking.reflectionProbes = 3;
     require(cubeFallback.sameTargets(cubeBudget), "Nonzero cube budget edits preserve target resources");
     require(defaults == presets::source2() && presets::source2Name == "Source 2" &&
-                defaults.ssr && !defaults.rtGI && !defaults.rtReflections &&
+                !defaults.ssr && !defaults.rtGI && !defaults.rtReflections &&
                 defaults.baking.reflectionProbes > 0 && defaults.lightingPlan(false).bakedReceivers,
-            "Runtime Source 2 defaults select baked lighting, probe volumes and cubemap/SSR reflections");
+            "Runtime Source 2 defaults select baked lighting, probe volumes and cubemap reflections");
     auto quality = defaults;
     quality.samples = 1;
     quality.ssrScale = 2;
@@ -145,7 +170,8 @@ int main() {
     require(presets::isSource2(quality), "Quality, display and authored-volume choices do not change technique identity");
     auto custom = quality;
     custom.rtGI = custom.rtReflections = true;
-    custom.ssr = custom.shadows = custom.localShadows = false;
+    custom.ssr = true;
+    custom.shadows = custom.localShadows = false;
     custom.bakedLighting = custom.baking.enabled = custom.baking.directDiffuse = false;
     custom.baking.styledIndirect = false;
     require(!presets::isSource2(custom), "Changing techniques derives Custom without separate stored preset state");
@@ -258,6 +284,19 @@ int main() {
     const auto offscreen = transformPoint(extended, {0, 0, -50});
     require(offscreen[2] > 0 && offscreen[2] < 1,
             "Close-up cascade depth retains upstream world occluders");
+    Bounds pose, jittered;
+    pose.include({1200.371f, -813.27f, 1});
+    pose.include({1201.013f, -812.4f, 2});
+    jittered.include({1200.3711f, -813.2701f, 1});
+    jittered.include({1201.0129f, -812.3999f, 2});
+    const auto stable = viewmodel::sunProjection(pose, world, {0, 0, 1}, 1024);
+    require(stable == viewmodel::sunProjection(jittered, world, {0, 0, 1}, 1024),
+            "Subtexel viewmodel pose jitter preserves the fitted sun projection");
+    const auto lower = transformPoint(stable, jittered.minimum);
+    const auto upper = transformPoint(stable, jittered.maximum);
+    for (uint32_t axis = 0; axis < 2; ++axis)
+      require(std::max(std::abs(lower[axis]), std::abs(upper[axis])) <= 1 - 4.f / 1024,
+              "Snapped viewmodel projection retains padding for the shadow footprint");
   }
   {
     HighlightSelection selection;
@@ -581,7 +620,8 @@ int main() {
   const auto identity = scene::identity();
   const auto origin = transformPoint(identity, {1, 2, 3});
   require(origin == Vec3{1, 2, 3}, "Column-major transform");
-  require(intersectsClip({}, identity), "Missing bounds must not remove a caster");
+  const ClipFrustum frustum(identity);
+  require(intersectsClip({}, identity) && frustum.intersects({}), "Missing bounds must not remove a caster");
   Bounds enclosing{{-2, -2, -2}, {2, 2, 2}, true};
   require(intersectsClip(enclosing, identity), "A box enclosing the clip volume survives without inside corners");
   const auto unchangedBounds = transformBounds(enclosing, identity);
@@ -592,16 +632,52 @@ int main() {
   translated[12] = 3;
   const auto translatedBounds = transformBounds(enclosing, translated);
   require(translatedBounds.minimum == Vec3{1, -2, -2} && translatedBounds.maximum == Vec3{5, 2, 2},
-          "Nonidentity geometry retains the ordinary corner transformation");
+          "Translation shifts both bounds without changing their extent");
+  const float largest = std::numeric_limits<float>::max();
+  translated[12] = largest;
+  const auto overflowBounds = transformBounds({{0, 0, 0}, {largest, 1, 1}, true}, translated);
+  require(overflowBounds.valid && overflowBounds.minimum == Vec3{largest, 0, 0} &&
+              overflowBounds.maximum == Vec3{largest, 1, 1},
+          "An overflowing translation retains finite corners");
+  const Bounds asymmetric{{-1.25f, .31f, -3.2f}, {4.4f, 2.7f, .125f}, true};
+  const auto checkCornerBounds = [&](const Matrix &model) {
+    Bounds reference;
+    for (uint32_t corner = 0; corner < 8; ++corner) {
+      const Vec3 point{corner & 1u ? asymmetric.maximum[0] : asymmetric.minimum[0],
+                       corner & 2u ? asymmetric.maximum[1] : asymmetric.minimum[1],
+                       corner & 4u ? asymmetric.maximum[2] : asymmetric.minimum[2]};
+      reference.include(transformPoint(model, point));
+    }
+    const auto result = transformBounds(asymmetric, model);
+    require(result.valid == reference.valid && result.minimum == reference.minimum &&
+                result.maximum == reference.maximum,
+            "Fast bounds match the corner path, including mirroring, collapse and overflow");
+  };
+  for (float scale : {-3.1f, 0.f, .73f, 2.8f, largest}) {
+    auto model = identity;
+    model[0] = scale;
+    model[5] = -.4f;
+    model[10] = 1.1f;
+    model[12] = .37f;
+    checkCornerBounds(model);
+    model[1] = .71f;
+    model[4] = -.36f;
+    model[8] = .93f;
+    checkCornerBounds(model);
+    model[3] = .025f;
+    checkCornerBounds(model);
+  }
   for (uint32_t axis = 0; axis < 3; ++axis)
     for (float side : {-1.f, 1.f}) {
       Bounds outside{{-.1f, -.1f, .4f}, {.1f, .1f, .6f}, true};
       outside.minimum[axis] = side < 0 ? -3.f : 2.f;
       outside.maximum[axis] = side < 0 ? -2.f : 3.f;
-      require(!intersectsClip(outside, identity), "Each Vulkan clip plane rejects a separated caster");
+      require(!intersectsClip(outside, identity) && !frustum.intersects(outside),
+              "Each Vulkan clip plane rejects a separated caster");
       outside.minimum[axis] = side < 0 ? -2.f : 1.f;
       outside.maximum[axis] = side < 0 ? (axis == 2 ? 0.f : -1.f) : 2.f;
-      require(intersectsClip(outside, identity), "Casters touching a clip plane must survive");
+      require(intersectsClip(outside, identity) && frustum.intersects(outside),
+              "Casters touching a clip plane must survive");
     }
   Matrix oblique = identity;
   oblique[0] = oblique[4] = .70710678f;
@@ -636,6 +712,11 @@ int main() {
   light.radiance[0] = light.radiance[1] = light.radiance[2] = 4;
   require(std::abs(influenceRadius(light, .01f) - 2 * radius) < 1e-4f,
           "Influence radius follows inverse square power");
+  light.forwardCutoff = radius;
+  const auto bounded = localLightRange(light, .01f);
+  require(bounded.influence == radius && std::abs(bounded.fade - 2 * radius) < 1e-4f,
+          "Explicit cutoff shortens admission without moving the intensity fade");
+  light.forwardCutoff = 0;
   light.radius *= .0254f;
   require(std::abs(influenceRadius(light, .01f) - 2 * radius * .0254f) < 1e-5f,
           "Changing length units scales emitter influence without changing radiance");
@@ -666,7 +747,7 @@ int main() {
         view[2] = -std::sin(angle); view[8] = std::sin(angle);
         view[12] = pose * .031f; view[13] = -float(pose) * .017f;
         const auto camera = scene::multiply(lens, view);
-        const auto fitted = shadowCascades(camera, view, range, {.3f, .7f, 1}, bounds, 100, 2048);
+        const auto fitted = shadowCascades(scene::inverse(camera), view, range, {.3f, .7f, 1}, bounds, 100, 2048);
         for (uint32_t c = 0; c < cascadeCount; ++c) {
           const auto &m = fitted.matrices[c];
           const float scale = std::sqrt(m[0] * m[0] + m[4] * m[4] + m[8] * m[8]);

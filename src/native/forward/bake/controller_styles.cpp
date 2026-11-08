@@ -19,12 +19,11 @@ namespace remix::forward::bake {
       job.ticket = m_pipelines->prepare(
           "forward-style-" + std::to_string(++styleGeneration),
           [owner, config, storageRange] {
-            owner->styles->encode(owner->surfaceLayout, config.denoiseLightmaps,
-                                  owner->cancellation.get_token());
+            owner->styles->encode(config.denoiseLightmaps, owner->cancellation.get_token());
             if (owner->styles->complete()) {
               owner->styleWords = owner->styles->finish(owner->cancellation.get_token());
               owner->styles.reset();
-              owner->prepareGroupedStyles(storageRange, config);
+              owner->prepareDiffusePublicationData(storageRange, config);
               owner->filtering = true;
             }
           });

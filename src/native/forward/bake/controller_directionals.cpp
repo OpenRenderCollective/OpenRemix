@@ -141,11 +141,9 @@ namespace remix::forward::bake {
       if (submission.job) throw std::logic_error("Directional window slot reused before its fence");
       const auto count = job.count(Work::Visibility, config,
           job.directionalCount - job.directionalNext, config.samples);
-      std::vector<VisibilityPoint> points;
-      points.reserve(count);
-      for (const auto &task : job.directionalCapture->batch(std::span(job.directionalPending).subspan(job.directionalNext, count)))
-        points.push_back({job.surfaceLayout.points[task.point], task.light});
-      job.transport->recordVisibility(command, m_slot, points, config.samples, true);
+      const auto pending = std::span(job.directionalPending).subspan(job.directionalNext, count);
+      const auto tasks = job.directionalCapture->batch(pending);
+      job.transport->recordVisibilityTasks(command, m_slot, job.surfaceLayout.points, tasks, config.samples, true);
       submission.job = m_job;
       submission.directionalField = true;
       submission.first = job.directionalNext;

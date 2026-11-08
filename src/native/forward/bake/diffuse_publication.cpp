@@ -6,9 +6,11 @@
 #include "forward/mixed/ownership.h"
 #include "forward/mixed/publication.h"
 #include "forward/probes/capture_dump.h"
+#include "forward/probe_batch/endpoint_cells.h"
 #include "forward/probes/source2_reference.h"
 #include <algorithm>
 #include <bit>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -34,6 +36,8 @@ namespace remix::forward::bake {
     volume->hash = m_hash;
     volume->sceneScale = m_source->sceneScale;
     volume->irradianceHeader = grid.header;
+    if (probe_batch::endpointCellsRequested())
+      volume->probeEndpointCellSides = probe_batch::endpointCellSides(grid);
     volume->coarseTransferWords = m_job->coarseTransferWords;
     volume->usableIrradianceProbes = uint32_t(std::count_if(
         grid.probes.begin(), grid.probes.end(), [](const Result &probe) { return probe.statistics[3] >= .5f; }));
@@ -58,6 +62,7 @@ namespace remix::forward::bake {
     const size_t styleBytes = publishedStyles.size() * sizeof(uint32_t);
     volume->styledLighting = styleBytes != 0;
     volume->groupedStyles = m_job->groupedStyles.styles;
+    volume->chartHighlights = m_job->chartHighlights;
     const auto localWords = m_job->localProbes ? m_job->localProbes->words() : std::vector<uint32_t>{};
     const size_t localBytes = localWords.size() * sizeof(uint32_t);
     auto transfer = coarseTransferSamplingRequested() ? volume->coarseTransferWords : nullptr;
@@ -104,9 +109,11 @@ namespace remix::forward::bake {
     const auto segments = lightmap::uploadSegments(surfaceLayout, visibility.indexed, visibility.indexedDirect);
     const size_t surfaceBytes = m_job->surfacePixels.empty() ? 0 : size_t(surfaceLayout.pageSize) *
         surfaceLayout.pageSize * surfaceLayout.pages * surfaceLayers * 4 * sizeof(uint16_t);
-    if (styleBytes && !transferBytes && surfaceBytes && baseBytes % 16 == 0)
+    if (styleBytes && !transferBytes && surfaceBytes && baseBytes % 16 == 0) {
       volume->compositionLayout = {uint32_t(baseBytes / 16), uint32_t(localOffset / 16),
           uint32_t(localWords.size()), surfaceLayout.pageSize, surfaceLayout.pages, surfaceLayers};
+      volume->compositionLayout.styleGroups = publishedStyles[sparse::groupCountWord];
+    }
     std::fprintf(stderr, "Forward indexed visibility: %u, %llu -> %llu GPU bytes, %llu primary texels, max error %.9g\n",
         unsigned(visibility.indexed), static_cast<unsigned long long>(visibility.legacyAllocation),
         static_cast<unsigned long long>(visibility.totalAllocation),
@@ -124,7 +131,7 @@ namespace remix::forward::bake {
                               m_job->mixedLights->masks.bytes().size_bytes());
     volume->occlusionParameters = {m_job->mixedLights->occlusion.wordsPerChart() |
                                        (visibility.indexed ? lightmap::indexedVisibilityFlag : 0u),
-                                   m_job->mixedLights->occlusion.chartCount(), occlusion.width,
+                                   m_job->mixedLights->occlusion.chartCount(), 0,
                                    visibility.hasMasks ? uint32_t(2 + m_job->mixedLights->occlusion.words().size()) : 0u};
     const size_t occlusionBytes = occlusion.words.size() * sizeof(uint32_t);
     volume->content.staticOcclusion = scene::fastHash(occlusion.words.data(), occlusionBytes) | 1;
@@ -140,7 +147,7 @@ namespace remix::forward::bake {
         compressedAllocation, volume->occlusion->bytes() +
             (volume->visibilityPages ? volume->visibilityPages->bytes() : 0)};
     probes::dumpPublishedData(".visibility-pages.bin", pageStatistics, sizeof(pageStatistics));
-    std::vector<std::byte> data(bytes);
+    std::vector<std::byte> data(baseBytes);
     auto gpuHeader = publicationHeader(grid.header, grid.lookup.size());
     gpuHeader.settings[3] = publicationSettings(0, false, !grid.depth.empty(), transferBytes != 0);
     std::memcpy(data.data(), &gpuHeader, sizeof(GridHeader));
@@ -164,50 +171,56 @@ namespace remix::forward::bake {
     volume->content.grid = scene::fastHash(data.data(), baseBytes) | 1;
     if (styleBytes) {
       volume->content.styledIndirect = scene::fastHash(publishedStyles.data(), styleBytes) | 1;
-      std::memcpy(data.data() + baseBytes, publishedStyles.data(), styleBytes);
-      auto header = gpuHeader;
-      header.settings[3] = publicationSettings(0, true, !grid.depth.empty(), transferBytes != 0);
-      std::memcpy(data.data(), &header, sizeof(header));
       probes::dumpPublishedData(".styled-irradiance.bin", publishedStyles.data(), styleBytes);
     }
     if (localBytes) {
-      std::memcpy(data.data() + localOffset, localWords.data(), localBytes);
-      auto header = gpuHeader;
-      header.settings[3] = publicationSettings((localOffset - sizeof(GridHeader)) / 16, styleBytes != 0, !grid.depth.empty(), transferBytes != 0);
-      std::memcpy(data.data(), &header, sizeof(header));
       volume->content.grid = scene::fastHash(localWords.data(), localBytes, volume->content.grid) | 1;
       probes::dumpPublishedData(".local-probe-visibility.bin", localWords.data(), localBytes);
     }
-    if (surfaceBytes) {
-      if (!visibility.indexed) volume->content.surfaces = scene::fastHash(m_job->surfacePixels.data(), surfaceBytes) | 1;
-      else {
-        uint64_t hash = 0;
-        for (const auto &segment : segments)
-          hash = scene::fastHash(m_job->surfacePixels.data() + segment.source,
-                                segment.values * sizeof(uint16_t), hash);
-        volume->content.surfaces = hash | 1;
-      }
+    if (styleBytes || localBytes) {
+      const size_t localRecords = localBytes ? (localOffset - sizeof(GridHeader)) / 16 : 0;
+      gpuHeader.settings[3] = publicationSettings(localRecords, styleBytes != 0,
+                                                   !grid.depth.empty(), transferBytes != 0);
+      std::memcpy(data.data(), &gpuHeader, sizeof(gpuHeader));
     }
     if (surfaceBytes) {
       const auto &atlas = m_job->surfaceLayout;
       volume->surfaceAtlas = std::make_unique<Image>();
       volume->surfaceAtlas->create(
           m_physical, m_device, {atlas.pageSize, atlas.pageSize}, VK_FORMAT_R16G16B16A16_SFLOAT,
-          VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_SAMPLE_COUNT_1_BIT,
+          VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+          VK_SAMPLE_COUNT_1_BIT,
           VK_IMAGE_ASPECT_COLOR_BIT, atlas.pages * surfaceLayers);
       volume->surfaces = m_job->surfaceGeometry;
     }
     volume->staging = std::make_unique<Buffer>();
     volume->staging->create(m_physical, m_device, visibilityOffset + visibilityBytes,
                             VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
-    volume->staging->write(data.data(), data.size());
-    if (surfaceBytes)
+    volume->staging->copyToMapped(data.data(), data.size());
+    if (styleBytes)
+      volume->staging->copyToMapped(publishedStyles.data(), styleBytes, baseBytes);
+    const size_t payloadEnd = baseBytes + styleBytes;
+    if (const size_t padding = localOffset - payloadEnd) {
+      const std::byte zero[16]{};
+      volume->staging->copyToMapped(zero, padding, payloadEnd);
+    }
+    if (localBytes)
+      volume->staging->copyToMapped(localWords.data(), localBytes, localOffset);
+    if (surfaceBytes) {
+      uint64_t hash = 0;
+      const auto upload = [&](std::span<const uint16_t> values, size_t destination) {
+        hash = scene::fastHash(values.data(), values.size_bytes(), hash);
+        volume->staging->copyToMapped(values.data(), values.size_bytes(), bytes + destination * sizeof(uint16_t));
+      };
+      const std::span<const uint16_t> pixels(m_job->surfacePixels);
       for (const auto &segment : segments)
-        volume->staging->write(m_job->surfacePixels.data() + segment.source,
-            segment.values * sizeof(uint16_t), bytes + segment.destination * sizeof(uint16_t));
-    volume->staging->write(occlusion.words.data(), occlusionBytes, occlusionOffset);
+        upload(pixels.subspan(segment.source, segment.values), segment.destination);
+      volume->content.surfaces = hash | 1;
+    }
+    volume->staging->copyToMapped(occlusion.words.data(), occlusionBytes, occlusionOffset);
     if (visibilityBytes)
-      volume->staging->write(visibilityPages->texels.data(), visibilityBytes, visibilityOffset);
+      volume->staging->copyToMapped(visibilityPages->texels.data(), visibilityBytes, visibilityOffset);
+    volume->staging->flush();
     volume->data = std::make_unique<Buffer>();
     volume->data->create(m_physical, m_device, bytes,
                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |

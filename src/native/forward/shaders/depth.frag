@@ -12,5 +12,5 @@ void main() {
   // Constant alpha comparisons need no material texture fetch in a depth-only pass.
   if (m.state.y == 7u) return;
   if (m.state.y == 0u) discard;
-  alphaTest(m, surfaceColor(m, uv, vertexColor).a);
+  alphaTest(m, surfaceAlpha(m, uv, vertexColor.a));
 }

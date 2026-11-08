@@ -28,9 +28,10 @@ namespace remix::forward::bake::cache {
   // Fallback reflection placement is used without a closed spatial partition;
   // its coverage policy must not invalidate fitted BSP or diffuse-only bakes.
   uint64_t key(uint64_t content, const Config &config, float cutoff, const Device &device,
-               const DirectPolicy &policy = {}, bool fallbackReflections = false);
+               const DirectPolicy &policy = {}, bool fallbackReflections = false,
+               const scene::BakeScene *source = nullptr);
   uint64_t diffuseKey(uint64_t content, const Config &config, float cutoff, const Device &device,
-                       const DirectPolicy &policy = {});
+                       const DirectPolicy &policy = {}, const scene::BakeScene *source = nullptr);
   // Versioned procedural ray/projection identity; excludes diffuse atlas/grid settings.
   uint64_t reflectionKey(uint64_t content, uint64_t plan, std::span<const probes::Capture> captures,
                          const probes::CaptureConfig &config, const Device &device,

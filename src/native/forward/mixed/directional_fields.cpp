@@ -68,18 +68,26 @@ namespace remix::forward::mixed {
     const uint32_t header[] = {magic, version, m_charts, m_lights, uint32_t(m_entries.size()),
         offsets, entries, data, uint32_t(result.size()), 0, 0, 0};
     std::copy(std::begin(header), std::end(header), result.begin());
-    std::vector<uint32_t> order(m_entries.size());
-    std::iota(order.begin(), order.end(), 0u);
-    std::sort(order.begin(), order.end(), [&](uint32_t a, uint32_t b) {
-      const auto &x = m_entries[a], &y = m_entries[b];
-      return x.chart < y.chart || (x.chart == y.chart && x.light < y.light);
-    });
+    const auto before = [](const Entry &a, const Entry &b) {
+      return a.chart < b.chart || (a.chart == b.chart && a.light < b.light);
+    };
+    std::vector<uint32_t> order;
+    if (!std::is_sorted(m_entries.begin(), m_entries.end(), before)) {
+      order.resize(m_entries.size());
+      std::iota(order.begin(), order.end(), 0u);
+      std::sort(order.begin(), order.end(), [&](uint32_t a, uint32_t b) {
+        return before(m_entries[a], m_entries[b]);
+      });
+    }
+    const auto entryAt = [&](uint32_t i) -> const Entry & {
+      return m_entries[order.empty() ? i : order[i]];
+    };
     uint32_t next = 0;
     for (uint32_t chart = 0; chart < m_charts; ++chart) {
       check(cancelled);
       result[offsets + chart] = next;
-      while (next < order.size() && m_entries[order[next]].chart == chart) {
-        const auto &entry = m_entries[order[next]];
+      while (next < m_entries.size() && entryAt(next).chart == chart) {
+        const auto &entry = entryAt(next);
         const uint32_t record[] = {entry.light, entry.x, entry.y, entry.width, entry.height,
             entry.encoding, data + entry.first, entry.count};
         std::copy(std::begin(record), std::end(record), result.begin() + entries + size_t(next) * entryWords);
@@ -104,28 +112,46 @@ namespace remix::forward::mixed {
         words[9] == 0 && words[10] == 0 && words[11] == 0 && words[7] <= words.size());
     const uint32_t offsets = words[5], entries = words[6];
     require(words[offsets] == 0 && words[offsets + charts] == words[4]);
+    const auto recordAt = [&](uint32_t index) {
+      return words.subspan(entries + size_t(index) * entryWords, entryWords);
+    };
     std::vector<std::pair<uint32_t, uint32_t>> ranges;
-    ranges.reserve(words[4]);
+    uint64_t cursor = words[7];
     for (uint32_t chart = 0; chart < charts; ++chart) {
       const auto first = words[offsets + chart], end = words[offsets + chart + 1];
       require(first <= end && end <= words[4]);
       uint32_t previous = 0;
       for (uint32_t i = first; i < end; ++i) {
-        const auto record = words.subspan(entries + size_t(i) * entryWords, entryWords);
+        const auto record = recordAt(i);
         require(record[0] < lights && (i == first || record[0] > previous) &&
             record[3] > 0 && record[3] <= 4096 && record[4] > 0 && record[4] <= 4096 &&
             record[1] <= 4096 - record[3] && record[2] <= 4096 - record[4] &&
             record[6] >= words[7] && record[6] <= words.size() && record[7] <= words.size() - record[6]);
         previous = record[0];
         require(directional::validate(words.subspan(record[6], record[7]), record[3], record[4], record[5]) == record[7]);
-        ranges.emplace_back(record[6], record[7]);
+        if (ranges.empty() && record[6] == cursor) {
+          cursor += record[7];
+        } else {
+          // Payload order may differ from directory order. Only allocate the
+          // range list when a gap or reordering requires the general check.
+          if (ranges.empty()) {
+            ranges.reserve(words[4]);
+            for (uint32_t j = 0; j < i; ++j) {
+              const auto previousRecord = recordAt(j);
+              ranges.emplace_back(previousRecord[6], previousRecord[7]);
+            }
+          }
+          ranges.emplace_back(record[6], record[7]);
+        }
       }
     }
-    std::sort(ranges.begin(), ranges.end());
-    uint64_t cursor = words[7];
-    for (const auto &[first, count] : ranges) {
-      require(first == cursor);
-      cursor += count;
+    if (!ranges.empty()) {
+      std::sort(ranges.begin(), ranges.end());
+      cursor = words[7];
+      for (const auto &[first, count] : ranges) {
+        require(first == cursor);
+        cursor += count;
+      }
     }
     require(cursor == words.size());
   }
@@ -155,25 +181,30 @@ namespace remix::forward::mixed {
     if ((uint64_t(DirectionalFields::headerWords) + layout.charts.size() + 1) * 4 > budget) return {};
     DirectionalFields result(uint32_t(layout.charts.size()), uint32_t(plan.lights.source->lights.size()), budget);
     std::vector<directional::Field> fields;
-    const size_t layerPixels = size_t(layout.pageSize) * layout.pageSize;
+    const size_t rowValues = size_t(layout.pageSize) * channels;
+    const size_t layerValues = rowValues * layout.pageSize;
     for (uint32_t chart = 0; chart < layout.charts.size(); ++chart) {
       check(cancelled);
       const auto &rectangle = layout.charts[chart];
       require(rectangle.page < layout.pages && rectangle.width > 0 && rectangle.width <= layout.pageSize &&
           rectangle.height > 0 && rectangle.height <= layout.pageSize &&
           rectangle.x <= layout.pageSize - rectangle.width && rectangle.y <= layout.pageSize - rectangle.height);
+      const size_t chartBase = (size_t(rectangle.page) * lightmap::atlasLayers + lightmap::directLayer) *
+          layerValues + rectangle.y * rowValues + size_t(rectangle.x) * channels;
       for (uint32_t channel = 0; channel < channels; ++channel) {
         const auto light = plan.directCharts[chart][channel];
         if (light == none) continue;
         fields.resize(size_t(rectangle.width) * rectangle.height);
         for (uint32_t y = 0; y < rectangle.height; ++y) {
           check(cancelled);
+          const size_t sourceRow = chartBase + y * rowValues + channel;
+          const size_t targetRow = size_t(y) * rectangle.width;
           for (uint32_t x = 0; x < rectangle.width; ++x) {
-            auto &field = fields[size_t(y) * rectangle.width + x];
-            const size_t texel = size_t(rectangle.y + y) * layout.pageSize + rectangle.x + x;
-            for (uint32_t c = 0; c < field.size(); ++c)
-              field[c] = pixels[((size_t(rectangle.page) * lightmap::atlasLayers + lightmap::directLayer + c) *
-                  layerPixels + texel) * 4 + channel];
+            size_t source = sourceRow + size_t(x) * channels;
+            for (auto &coefficient : fields[targetRow + x]) {
+              coefficient = pixels[source];
+              source += layerValues;
+            }
           }
         }
         if (!result.add(chart, light, rectangle, fields, cancelled)) return {};

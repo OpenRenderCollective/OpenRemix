@@ -58,7 +58,7 @@ namespace remix::forward::bake {
     std::vector<Direct> m_direct; // optional; same probe/light ordering as entries
     uint32_t m_lights = 0;
     uint32_t find(uint32_t probe, uint32_t light) const;
-    std::vector<uint32_t> maskWords() const;
-    void observeMasks(std::span<const VisibilityTask> pairs, std::span<const float> visibility);
+    template <class VisibilityAt>
+    std::vector<uint32_t> readbackIndices(std::span<const VisibilityTask> pairs, VisibilityAt visibilityAt) const;
   };
 } // namespace remix::forward::bake

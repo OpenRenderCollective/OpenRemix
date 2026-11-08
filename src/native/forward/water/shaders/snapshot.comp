@@ -13,16 +13,39 @@ layout(set = 0, binding = 4, r32f) writeonly uniform image2D savedDepth;
 layout(push_constant) uniform Settings { uvec4 target; }; // width, height, samples, flags: reflections/standard samples
 #ifndef SINGLE_SAMPLE
 layout(constant_id = 0) const uint DepthSamples = 4u;
-vec4 waterDepthSamples(ivec2 pixel) {
+layout(constant_id = 1) const bool UseDepthTile = true;
+vec4 fetchDepthSamples(ivec2 pixel) {
   vec4 values = vec4(texelFetch(opaqueDepth, pixel, 0).r, texelFetch(opaqueDepth, pixel, 1).r, 1, 1);
   if (DepthSamples == 4u)
     values.zw = vec2(texelFetch(opaqueDepth, pixel, 2).r, texelFetch(opaqueDepth, pixel, 3).r);
   return values;
 }
+// The plane check reads a cross of neighbouring pixels. Cache the tile and
+// its one-pixel border once so adjacent invocations can share those samples.
+const uint DepthTileSide = gl_WorkGroupSize.x + 2u;
+shared vec4 depthTile[DepthTileSide * DepthTileSide];
+ivec2 depthTileOrigin() { return ivec2(gl_WorkGroupID.xy * gl_WorkGroupSize.xy) - 1; }
+void loadDepthTile() {
+  const uint lanes = gl_WorkGroupSize.x * gl_WorkGroupSize.y;
+  for (uint index = gl_LocalInvocationIndex; index < DepthTileSide * DepthTileSide; index += lanes) {
+    ivec2 offset = ivec2(index % DepthTileSide, index / DepthTileSide);
+    ivec2 pixel = clamp(depthTileOrigin() + offset, ivec2(0), ivec2(target.xy) - 1);
+    depthTile[index] = fetchDepthSamples(pixel);
+  }
+  barrier();
+}
+vec4 waterDepthSamples(ivec2 pixel) {
+  if (!UseDepthTile) return fetchDepthSamples(pixel);
+  uvec2 offset = uvec2(pixel - depthTileOrigin());
+  return depthTile[offset.y * DepthTileSide + offset.x];
+}
 #include "depth.glsl"
 #endif
 void main() {
   ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+#ifndef SINGLE_SAMPLE
+  if (UseDepthTile) loadDepthTile();
+#endif
   if (any(greaterThanEqual(pixel, ivec2(target.xy)))) return;
   vec4 hdr = texelFetch(opaqueHdr, pixel, 0);
   // Match display composition before tone mapping. HDR is premultiplied by

@@ -1,3 +1,4 @@
+#include "forward/probes/cube_storage.h"
 #include "forward/reflections.h"
 #include "forward/image_dump.h"
 #include "forward/probes/capture_dump.h"
@@ -50,8 +51,9 @@ namespace remix::forward {
   struct Reflections::Gpu {
     VkDevice device = VK_NULL_HANDLE;
     VkExtent2D extent{}, traceExtent{};
-    uint32_t levels = 1, colorLevels = 1, samples = 1, scale = 1;
-    bool screenSpace = false;
+    uint32_t levels = 1, samples = 1, scale = 1;
+    bool screenSpace = false, tracedRadiance = false;
+    bool dummyImagesInitialized = false;
     uint64_t imageBytes = 0, allocationBytes = 0;
     VkDescriptorSetLayout setLayout = VK_NULL_HANDLE;
     VkPipelineLayout layout = VK_NULL_HANDLE;
@@ -71,7 +73,7 @@ namespace remix::forward {
     std::array<Frame, gpuFrameCount> frames;
     void createImages(VkPhysicalDevice physical);
     void createLayouts();
-    void createPipelines();
+    void createPipelines(VkPhysicalDevice physical);
     void createDescriptors(VkPhysicalDevice physical, Inputs inputs);
     ~Gpu() {
       if (pool)
@@ -107,14 +109,14 @@ namespace remix::forward {
     g.scale = options.ssrScale;
     g.screenSpace = plan.screenReflections;
     g.traceExtent = {(extent.width + g.scale - 1) / g.scale, (extent.height + g.scale - 1) / g.scale};
-    g.levels = std::bit_width(std::max(extent.width, extent.height));
-    g.colorLevels = g.screenSpace ? g.levels : 1;
+    g.levels = g.screenSpace ? std::bit_width(std::max(extent.width, extent.height)) : 1;
     g.hdr = inputs.hdrImage;
     if (ImageDump::enabled(physical))
       g.dump = std::make_unique<ImageDump>(physical, device);
+    g.tracedRadiance = g.screenSpace || plan.rayReflections || bool(g.dump);
     g.createImages(physical);
     g.createLayouts();
-    g.createPipelines();
+    g.createPipelines(physical);
     g.createDescriptors(physical, inputs);
     m_gpu = std::move(next);
   }
@@ -128,14 +130,16 @@ namespace remix::forward {
       imageBytes += result->bytes;
       return result;
     };
-    normals = image(extent, VK_FORMAT_R16G16B16A16_SFLOAT);
-    reflectance = image(extent, VK_FORMAT_R16G16B16A16_SFLOAT);
+    const VkExtent2D guideExtent = tracedRadiance ? extent : VkExtent2D{1, 1};
+    normals = image(guideExtent, VK_FORMAT_R16G16B16A16_SFLOAT);
+    reflectance = image(guideExtent, VK_FORMAT_R16G16B16A16_SFLOAT);
     // Traversal needs only the nearest depth per cell. R32F keeps the hierarchy
     // compact and requires no extended storage-image-format feature.
-    depth = image(extent, VK_FORMAT_R32_SFLOAT, levels);
+    depth = image(guideExtent, VK_FORMAT_R32_SFLOAT, levels);
     // Probe/RT-only targets need only a valid dummy colour descriptor.
-    color = image(screenSpace ? extent : VkExtent2D{1, 1}, VK_FORMAT_R16G16B16A16_SFLOAT, colorLevels);
-    raw = image(traceExtent, VK_FORMAT_R16G16B16A16_SFLOAT);
+    color = image(screenSpace ? extent : VkExtent2D{1, 1}, VK_FORMAT_R16G16B16A16_SFLOAT, levels);
+    // The cubemap-only filter needs a valid descriptor but never samples it.
+    raw = image(tracedRadiance ? traceExtent : VkExtent2D{1, 1}, VK_FORMAT_R16G16B16A16_SFLOAT);
     filtered = image(extent, VK_FORMAT_R16G16B16A16_SFLOAT);
     for (uint32_t level = 0; level < levels; ++level) {
       const VkImageViewCreateInfo info{.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -147,7 +151,7 @@ namespace remix::forward {
       check(vkCreateImageView(device, &info, nullptr, &view));
       depthViews.push_back(view);
     }
-    for (uint32_t level = 0; level < colorLevels; ++level) {
+    for (uint32_t level = 0; level < levels; ++level) {
       const VkImageViewCreateInfo info{.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
                                        .image = color->handle,
                                        .viewType = VK_IMAGE_VIEW_TYPE_2D,
@@ -176,7 +180,7 @@ namespace remix::forward {
                                                 .pPushConstantRanges = &push};
     check(pipeline::createPipelineLayout(device, &layoutInfo, nullptr, &layout));
   }
-  void Reflections::Gpu::createPipelines() {
+  void Reflections::Gpu::createPipelines(VkPhysicalDevice physical) {
     auto compute = [&](const uint32_t *code, size_t bytes, const VkSpecializationInfo *specialization = nullptr) {
       const auto module = shaderModule(device, code, bytes);
       const VkComputePipelineCreateInfo info{
@@ -194,17 +198,24 @@ namespace remix::forward {
       check(status);
       return result;
     };
-    resolve = samples == VK_SAMPLE_COUNT_1_BIT
+    if (tracedRadiance) resolve = samples == VK_SAMPLE_COUNT_1_BIT
                   ? compute(ssrResolveSingleShader, sizeof(ssrResolveSingleShader))
                   : compute(ssrResolveShader, sizeof(ssrResolveShader));
-    reduce = compute(ssrReduceShader, sizeof(ssrReduceShader));
-    trace = compute(ssrTraceShader, sizeof(ssrTraceShader));
-    // Scale is immutable for this target. Native reconstruction needs no
-    // upscale footprint, so keep that code out of the native filter kernel.
-    const VkBool32 nativeResolution = scale == 1;
-    const VkSpecializationMapEntry nativeEntry{0, 0, sizeof(nativeResolution)};
-    const VkSpecializationInfo nativeSpecialization{1, &nativeEntry, sizeof(nativeResolution), &nativeResolution};
-    filter = compute(ssrFilterShader, sizeof(ssrFilterShader), &nativeSpecialization);
+    if (levels > 1) reduce = compute(ssrReduceShader, sizeof(ssrReduceShader));
+    if (tracedRadiance) trace = compute(ssrTraceShader, sizeof(ssrTraceShader));
+    // Specialise out reconstruction when the target has no trace provider.
+    const VkBool32 filterSettings[] = {scale == 1, tracedRadiance};
+    const VkSpecializationMapEntry filterEntries[] = {
+        {0, 0, sizeof(VkBool32)}, {1, sizeof(VkBool32), sizeof(VkBool32)}};
+    const VkSpecializationInfo filterSpecialization{2, filterEntries, sizeof(filterSettings), filterSettings};
+    auto filterPipeline = [&](const auto &stacked, const auto &cube) {
+      return probes::nativeCubeStorage(physical)
+          ? compute(cube, sizeof(cube), &filterSpecialization)
+          : compute(stacked, sizeof(stacked), &filterSpecialization);
+    };
+    filter = samples == VK_SAMPLE_COUNT_1_BIT
+        ? filterPipeline(ssrFilterSingleShader, ssrFilterSingleCubeShader)
+        : filterPipeline(ssrFilterShader, ssrFilterCubeShader);
     const VkSamplerCreateInfo samplerInfo{.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
                                           .magFilter = VK_FILTER_NEAREST,
                                           .minFilter = VK_FILTER_NEAREST,
@@ -217,11 +228,11 @@ namespace remix::forward {
     auto colorInfo = samplerInfo;
     colorInfo.magFilter = colorInfo.minFilter = VK_FILTER_LINEAR;
     colorInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-    colorInfo.maxLod = float(colorLevels - 1);
+    colorInfo.maxLod = float(levels - 1);
     check(pipeline::createSampler(device, &colorInfo, nullptr, &colorSampler));
   }
   void Reflections::Gpu::createDescriptors(VkPhysicalDevice physical, Inputs inputs) {
-    const uint32_t setCount = gpuFrameCount * (colorLevels + 2);
+    const uint32_t setCount = gpuFrameCount * (levels + 2 * uint32_t(tracedRadiance));
     const VkDescriptorPoolSize sizes[] = {{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, setCount * 2},
                                           {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, setCount * 10},
                                           {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, setCount * 4},
@@ -276,12 +287,12 @@ namespace remix::forward {
         vkUpdateDescriptorSets(device, 13, writes, 0, nullptr);
         return set;
       };
-      frame.resolve = descriptor(depth->view, depthViews[0], colorViews[0], inputs.hdr,
+      if (tracedRadiance) frame.resolve = descriptor(depth->view, depthViews[0], colorViews[0], inputs.hdr,
                                  VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-      for (uint32_t level = 1; level < colorLevels; ++level)
+      for (uint32_t level = 1; level < levels; ++level)
         frame.reduce.push_back(
             descriptor(depthViews[level - 1], depthViews[level], colorViews[level], colorViews[level - 1]));
-      frame.trace = descriptor(depth->view, depthViews[0], raw->view, color->view);
+      if (tracedRadiance) frame.trace = descriptor(depth->view, depthViews[0], raw->view, color->view);
       frame.filter = descriptor(depth->view, depthViews[0], filtered->view, color->view);
     }
   }
@@ -327,7 +338,7 @@ namespace remix::forward {
         source.view,
         source.cameraPosition,
         {options.ssrDistance / options.sceneScale, options.ssrThickness / options.sceneScale,
-         .002f / options.sceneScale, options.ssrRoughness},
+         options.reflectionSampleBias(), options.ssrRoughness},
         {g.samples, g.scale, g.screenSpace ? options.ssrSteps : 0u, g.levels},
         {g.extent.width, g.extent.height, g.traceExtent.width, g.traceExtent.height}};
     probes::dumpFrameData(".reflection-frame.bin", &constants, sizeof(constants));
@@ -350,18 +361,28 @@ namespace remix::forward {
       passTime.reset();
       if (profileReflections && gpu::timing()) passTime.emplace(command, name, extent);
     };
-    stage("Forward+ reflection guides", g.extent);
-    for (auto *image : {g.normals.get(), g.reflectance.get(), g.raw.get(), g.filtered.get()})
-      imageBarrier(command, image->handle, 1, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+    if (g.tracedRadiance) stage("Forward+ reflection guides", g.extent);
+    auto discard = [&](Image &image, uint32_t levels = 1) {
+      imageBarrier(command, image.handle, levels, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                    VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
                    VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_UNDEFINED);
-    imageBarrier(command, g.depth->handle, g.levels, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
-                 VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_UNDEFINED);
-    imageBarrier(command, g.color->handle, g.colorLevels, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
-                 VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_UNDEFINED);
+    };
+    discard(*g.filtered);
+    if (g.tracedRadiance) {
+      discard(*g.normals);
+      discard(*g.reflectance);
+      discard(*g.raw);
+      discard(*g.depth, g.levels);
+      discard(*g.color, g.levels);
+    } else if (!g.dummyImagesInitialized) {
+      // The cubemap-only variant retains compatible descriptors for the trace inputs.
+      for (auto *image : {g.normals.get(), g.reflectance.get(), g.raw.get(), g.depth.get(), g.color.get()})
+        imageBarrier(command, image->handle, 1, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                     VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, VK_ACCESS_SHADER_READ_BIT,
+                     VK_IMAGE_LAYOUT_UNDEFINED);
+      g.dummyImagesInitialized = true;
+    }
     auto dispatch = [&](VkPipeline pipeline, VkDescriptorSet set, VkExtent2D size) {
       vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
       vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, g.layout, 0, 1, &set, 0, nullptr);
@@ -372,11 +393,13 @@ namespace remix::forward {
                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
                    VK_ACCESS_SHADER_READ_BIT);
     };
-    dispatch(g.resolve, frame.resolve, g.extent);
-    readable(*g.normals);
-    readable(*g.reflectance);
-    readable(*g.depth, g.levels);
-    readable(*g.color, g.colorLevels);
+    if (g.tracedRadiance) {
+      dispatch(g.resolve, frame.resolve, g.extent);
+      readable(*g.normals);
+      readable(*g.reflectance);
+      readable(*g.depth, g.levels);
+      readable(*g.color, g.levels);
+    }
     if (g.dump) {
       g.dump->record(command, slot, "normals", g.normals->handle, VK_FORMAT_R16G16B16A16_SFLOAT, g.extent,
                      VK_IMAGE_LAYOUT_GENERAL);
@@ -386,11 +409,11 @@ namespace remix::forward {
                      VK_IMAGE_LAYOUT_GENERAL);
     }
     if (g.screenSpace) stage("Forward+ reflection hierarchy", g.extent);
-    for (uint32_t level = 1; g.screenSpace && level < g.levels; ++level) {
+    for (uint32_t level = 1; level < g.levels; ++level) {
       const VkExtent2D size{std::max(1u, g.extent.width >> level), std::max(1u, g.extent.height >> level)};
       dispatch(g.reduce, frame.reduce[level - 1], size);
       readable(*g.depth, g.levels);
-      readable(*g.color, g.colorLevels);
+      readable(*g.color, g.levels);
       if (g.dump && g.dump->fullImages()) {
         const auto name = "depth-mip" + std::to_string(level);
         g.dump->record(command, slot, name.c_str(), g.depth->handle, VK_FORMAT_R32_SFLOAT, size,
@@ -400,12 +423,14 @@ namespace remix::forward {
                        VK_IMAGE_LAYOUT_GENERAL, level);
       }
     }
-    stage("Forward+ reflection screen trace", g.traceExtent);
-    dispatch(g.trace, frame.trace, g.traceExtent);
-    if (g.dump)
-      g.dump->record(command, slot, "ssr", g.raw->handle, VK_FORMAT_R16G16B16A16_SFLOAT, g.traceExtent,
-                     VK_IMAGE_LAYOUT_GENERAL);
-    readable(*g.raw);
+    if (g.tracedRadiance) {
+      stage("Forward+ reflection screen trace", g.traceExtent);
+      dispatch(g.trace, frame.trace, g.traceExtent);
+      if (g.dump)
+        g.dump->record(command, slot, "ssr", g.raw->handle, VK_FORMAT_R16G16B16A16_SFLOAT, g.traceExtent,
+                       VK_IMAGE_LAYOUT_GENERAL);
+      readable(*g.raw);
+    }
     if (hardware) {
       stage("Forward+ reflection hardware trace", g.extent);
       hardware->record(command, {g.normals->view, g.depthViews[0], g.raw->view, g.extent, g.traceExtent},

@@ -330,10 +330,19 @@ namespace remix::forward::test {
       const auto expected = probes::sample(quantized, {q.position[0], q.position[1], q.position[2]},
                                            {q.reflected[0], q.reflected[1], q.reflected[2]}, q.reflected[3]);
       require((values[i][3] > .5f) == bool(expected), "GPU probe influence matches the CPU reference");
-      if (expected)
-        for (uint32_t c = 0; c < 3; ++c)
-          require(std::abs(values[i][c] - (*expected)[c]) < 2e-4f,
-                  "GPU cube projection/filter matches the CPU reference");
+      if (expected) {
+        for (uint32_t c = 0; c < 3; ++c) {
+          const float error = std::abs(values[i][c] - (*expected)[c]);
+          // Stacked face interiors use hardware interpolation. Keep the
+          // coarsest mip, which always uses software seam filtering, strict.
+          const float tolerance = q.reflected[3] == 1 ? 2e-4f
+              : std::max(.004f, std::abs((*expected)[c]) * .0015f);
+          if (!(error < tolerance))
+            std::fprintf(stderr, "Cube query %u channel %u, roughness %g: expected %.9g, actual %.9g, error %.9g\n",
+                         i, c, q.reflected[3], (*expected)[c], values[i][c], error);
+          require(error < tolerance, "GPU cube projection/filter matches the CPU reference");
+        }
+      }
     }
   }
 } // namespace remix::forward::test

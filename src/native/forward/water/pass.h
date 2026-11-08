@@ -16,6 +16,11 @@ namespace remix::forward::water {
   // renderer keeps its existing MSAA colour/depth attachments and draw owners.
   class Pass {
   public:
+    struct Techniques {
+      bool rayReflections = false;
+      bool liveDiffuse = false;
+      bool bakedDirect = false;
+    };
     struct Targets {
       VkImageView color, depth, resolved;
     };
@@ -30,7 +35,7 @@ namespace remix::forward::water {
     static bool supportsRayReflections(VkPhysicalDevice physical);
     void initialize(VkPhysicalDevice physical, VkDevice device, VkExtent2D extent,
                     VkSampleCountFlagBits samples, VkDescriptorSetLayout scene,
-                    VkDescriptorSetLayout material, Targets targets, bool rayReflections = false, bool liveDiffuse = false, bool bakedDirect = false);
+                    VkDescriptorSetLayout material, Targets targets, Techniques techniques);
     // The selected slot's fence has completed. All provider inputs and draw
     // owners must remain alive through the next completion of that fence.
     void prepare(uint32_t slot, const Parameters &parameters, std::span<const MaterialData> materials,

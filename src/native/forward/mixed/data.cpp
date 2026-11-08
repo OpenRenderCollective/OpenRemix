@@ -7,6 +7,8 @@
 #include <tuple>
 namespace remix::forward::mixed {
   namespace {
+    constexpr size_t overflowIndexBudget = (64u << 20) / sizeof(uint32_t);
+
     void check(std::stop_token cancelled) {
       if (cancelled.stop_requested())
         throw std::runtime_error("Mixed light planning superseded");
@@ -49,7 +51,7 @@ namespace remix::forward::mixed {
         if (!std::equal(std::begin(a.corners[corner]), std::end(a.corners[corner]), b.corners[corner]))
           return false;
       return std::equal(std::begin(a.position), std::end(a.position), b.position) && a.radius == b.radius &&
-             a.triangle == b.triangle &&
+             a.triangle == b.triangle && a.forwardCutoff == b.forwardCutoff &&
              std::equal(std::begin(a.direction), std::end(a.direction), b.direction) &&
              a.coneCos == b.coneCos && a.softness == b.softness && a.focus == b.focus;
     }
@@ -116,6 +118,7 @@ namespace remix::forward::mixed {
         result.lights.identities.emplace(light.id, i);
       }
     }
+    std::vector<std::pair<float, uint32_t>> candidates;
     for (uint32_t index = 0; index < result.charts.size(); ++index) {
       check(cancelled);
       const auto &chart = result.lights.source->charts[index];
@@ -135,7 +138,7 @@ namespace remix::forward::mixed {
         bounds.minimum[c] -= receiverBias;
         bounds.maximum[c] += receiverBias;
       }
-      std::vector<std::pair<float, uint32_t>> candidates;
+      candidates.clear();
       for (uint32_t light = 0; light < radii.size(); ++light) {
         if ((light & 1023u) == 0)
           check(cancelled);
@@ -162,7 +165,11 @@ namespace remix::forward::mixed {
                    bid = result.lights.source->lights[b.second].id;
         return std::tie(aid, a.second) < std::tie(bid, b.second);
       });
-      for (uint32_t channel = 0; channel < std::min(size_t(channels), candidates.size()); ++channel) {
+      const size_t channelCount = std::min(size_t(channels), candidates.size());
+      const size_t overflowCount = candidates.size() - channelCount;
+      if (overflowCount > overflowIndexBudget - result.overflow)
+        throw std::length_error("Mixed-light overflow indices exceed the 64 MiB planning budget");
+      for (uint32_t channel = 0; channel < channelCount; ++channel) {
         const auto light = candidates[channel].second;
         result.charts[index][channel] = light;
         if (!selected[light]) {
@@ -170,11 +177,11 @@ namespace remix::forward::mixed {
           result.lights.identities.emplace(result.lights.source->lights[light].id, light);
         }
       }
-      result.overflow += uint32_t(candidates.size() - std::min(size_t(channels), candidates.size()));
-      if (result.overflow > 4u * 1024 * 1024)
-        throw std::length_error("Mixed-light candidates exceed the planning budget");
-      for (size_t candidate = channels; candidate < candidates.size(); ++candidate)
-        result.remaining[index].push_back(candidates[candidate].second);
+      auto &remaining = result.remaining[index];
+      remaining.reserve(overflowCount);
+      for (size_t candidate = channelCount; candidate < candidates.size(); ++candidate)
+        remaining.push_back(candidates[candidate].second);
+      result.overflow += uint32_t(overflowCount);
     }
     for (uint32_t point = 0; point < layout.points.size(); ++point) {
       if ((point & 1023u) == 0)

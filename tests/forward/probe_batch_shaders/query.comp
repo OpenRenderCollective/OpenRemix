@@ -24,11 +24,16 @@ void main() {
   localStencilCount = query.control.x;
   for (uint phase = 0u; phase < 2u; ++phase) {
     ++localStencilRevision;
+    float total = 0;
     for (uint i = 0u; i < localStencilCount; ++i) {
       uint source = phase == 0u ? i : localStencilCount - 1u - i;
       localStencilWeights[i] = query.weights[source / 4u][source % 4u];
       localStencilIndices[i] = query.indices[i / 4u][i % 4u];
+      total += max(localStencilWeights[i], 0);
     }
+    localStencilCellKeys = total >= 1e-4 ? uvec2(0) : uvec2(0xffffffffu);
+    if (localStencilCount == 16u && phase == 1u)
+      localStencilCellKeys.y = 1u; // The adjacent uncertified cell forces the ordinary blended lookup.
     for (uint iteration = 0u; iteration <= selectedProbeHeader.y; ++iteration) {
       uint slot = iteration == selectedProbeHeader.y ? 0u :
           (iteration % 2u == 0u ? iteration / 2u : selectedProbeHeader.y - 1u - iteration / 2u);

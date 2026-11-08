@@ -1,4 +1,5 @@
 #include "forward/lightmap/data.h"
+#include "forward/mixed/chart_highlights.h"
 #include "forward/mixed/data.h"
 #include "forward/mixed/direct_work.h"
 #include "forward/mixed/ownership.h"
@@ -10,6 +11,7 @@
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
+#include <thread>
 using namespace remix;
 using namespace remix::test;
 namespace m = remix::forward::mixed;
@@ -17,6 +19,101 @@ namespace lm = remix::forward::lightmap;
 #include "direct_work_cases.h"
 int main() {
   sparseDirectWorkTests();
+  {
+    using namespace std::chrono_literals;
+    auto field = std::make_shared<m::ChartHighlightField>();
+    m::Occlusion proof(2, 3);
+    proof.mark(0, 0, m::Visibility::Blocked);
+    field->exactOcclusion = m::BlockedChartLights(proof);
+    forward::LightData lights[3]{};
+    lights[0].shaping[3] = 1;
+    lights[1].shaping[3] = 2;
+    lights[2].shaping[3] = 3;
+
+    m::ChartHighlightWork work;
+    const auto waitForTable = [&](std::span<const forward::LightData> selected) {
+      const auto deadline = std::chrono::steady_clock::now() + 5s;
+      do {
+        auto table = work.prepare(field, selected);
+        if (table.words) return table.words;
+        std::this_thread::sleep_for(1ms);
+      } while (std::chrono::steady_clock::now() < deadline);
+      throw std::runtime_error("Chart mask worker did not finish");
+    };
+    const auto first = waitForTable(std::span(lights).first<2>());
+    require(*first == std::vector<uint32_t>{~1u, ~0u}, "Chart worker publishes the blocked runtime slot");
+    require(work.prepare(field, lights).words == first, "Unrelated lights reuse the published mask");
+
+    std::swap(lights[0], lights[1]);
+    require(!work.prepare(field, lights).words, "A changed blocked slot immediately invalidates the old mask");
+    std::swap(lights[0], lights[1]);
+    require(work.prepare(field, lights).words == first, "Returning to the last published selection reuses its mask");
+    std::swap(lights[0], lights[1]);
+    const auto reordered = waitForTable(lights);
+    require(*reordered == std::vector<uint32_t>{~2u, ~0u}, "Rebuilt mask follows the new runtime slot");
+    std::array<forward::LightData, 65> wide{};
+    wide[32].shaping[3] = wide[64].shaping[3] = 1;
+    require(!work.prepare(field, wide).words, "Changing row width invalidates the single-word chart table");
+    const auto wideTable = waitForTable(wide);
+    require(*wideTable == std::vector<uint32_t>{~0u, ~1u, ~1u, ~0u, ~0u, ~0u},
+            "Wide chart masks reject proven blocked slots across word boundaries");
+    require(work.prepare(field, wide).flags == m::ChartHighlightField::exactVisibilityFlag,
+            "Wide exact tables preserve the ordinary cluster headers");
+    require(!work.prepare({}, lights).words, "Removing the proof immediately removes the mask");
+  }
+  {
+    m::ChartHighlightField field;
+    m::Occlusion proof(2, 17);
+    proof.mark(0, 16, m::Visibility::Blocked);
+    proof.mark(0, 15, m::Visibility::Clear);
+    proof.mark(1, 15, m::Visibility::Blocked);
+    field.exactOcclusion = m::BlockedChartLights(proof);
+    const m::ChartHighlightLight selected[]{{16, {}, 0, 31}, {15, {}, 0, 2}};
+    require(field.rank(selected, 0x80000005u) == std::vector<uint32_t>{5, 0x80000001u},
+            "Exact chart masks reject blocked lights and retain unknown, clear and uncaptured lights");
+    const m::ChartHighlightLight reordered[]{{15, {}, 0, 31}, {16, {}, 0, 2}, {16, {}, 0, 32}};
+    require(field.rank(reordered, 0x80000005u) == std::vector<uint32_t>{0x80000001u, 5},
+            "Chart masks follow the current runtime indices and ignore out-of-range slots");
+    const m::ChartHighlightLight unaffected[]{{14, {}, 0, 0}, {16, {}, 0, 1}};
+    require(field.rank(unaffected, 1u).empty(),
+            "Unknown lights and blocked lights outside the runtime mask need no chart table");
+    require(!field.exactOcclusion.mayBlock(14) && field.exactOcclusion.mayBlock(16) &&
+                field.rank(selected, ~0u) == std::vector<uint32_t>{0x7fffffffu, 0xfffffffbu},
+            "Exact proofs depend on blocked slots and leave spare runtime slots eligible");
+  }
+  {
+    auto source = std::make_shared<scene::BakeScene>();
+    source->lights.resize(1);
+    source->lights.front().position[2] = 2;
+    source->lights.front().radius = 1;
+    m::ChartHighlightField field;
+    field.source = source;
+    field.chartOffsets = {1};
+    field.points.resize(1);
+    field.points.front().normal = {0, 0, 1, 1};
+    field.stride = 1;
+    const m::ChartHighlightLight selected[]{{0, {1, 1, 1}, 4, 31}};
+    field.visibility = {m::ChartHighlightField::unknown};
+    require(field.rank(selected).empty(), "A fully unknown chart does not publish a fallback-only table");
+    field.visibility = {0};
+    require(field.rank(selected) == std::vector<uint32_t>{1, 0},
+            "Known blocked highlights still publish a valid empty shortlist");
+    field.points.push_back(field.points.front());
+    field.visibility = {m::ChartHighlightField::unknown, 254};
+    require(field.rank(selected) == std::vector<uint32_t>{1, m::ChartHighlightField::fallback, 1},
+            "A useful shortlist preserves its neighbouring unknown fallback");
+    require(field.rank(selected, 1u) == std::vector<uint32_t>{1, m::ChartHighlightField::fallback, 0x80000001u},
+            "Membership shortlist combines required lights with the ranked runtime index");
+    m::Occlusion proof(1, 1);
+    proof.mark(0, 0, m::Visibility::Blocked);
+    field.exactOcclusion = m::BlockedChartLights(proof);
+    field.visibility = {m::ChartHighlightField::unknown, 0};
+    require(!field.exactVisibility() &&
+                field.rank(selected, 1u) == std::vector<uint32_t>{1, 0x7fffffffu, 1},
+            "Unknown ranked tiles reject proven blocked slots and retain other lights");
+    require(field.rank(selected) == std::vector<uint32_t>{1, m::ChartHighlightField::fallback, 0},
+            "Packed light IDs cannot consume membership proofs");
+  }
   {
     auto source = std::make_shared<scene::BakeScene>();
     source->lights.resize(6);
@@ -119,6 +216,23 @@ int main() {
     require(task.light == plan.charts[layout.pointCharts[task.point]][task.channel],
             "Each visibility task retains its exact light and surface-channel "
             "provenance");
+  {
+    auto dense = std::make_shared<scene::BakeScene>(*source);
+    constexpr uint32_t chartCount = 32769, overflowPerChart = 128;
+    dense->charts.resize(chartCount, source->charts.front());
+    dense->lights.resize(m::channels + overflowPerChart, source->lights.front());
+    for (uint32_t light = 0; light < dense->lights.size(); ++light)
+      dense->lights[light].id = light;
+    lm::Layout denseLayout;
+    denseLayout.charts.resize(chartCount);
+    const auto densePlan = m::plan(dense, denseLayout);
+    require(densePlan.overflow == chartCount * overflowPerChart &&
+                densePlan.charts.back()[m::channels - 1] == m::channels - 1 &&
+                densePlan.remaining.back().size() == overflowPerChart &&
+                densePlan.remaining.back().front() == m::channels &&
+                densePlan.remaining.back().back() == dense->lights.size() - 1,
+            "Dense maps retain ranked overflow beyond the old four-million-pair limit");
+  }
   {
     const uint32_t baked[] = {0};
     const auto policy = forward::bake::directPolicy(*source, baked);
@@ -512,6 +626,35 @@ int main() {
       noSpace.observe(task, .5f, layout);
     require(!noSpace.nextRound(budgeted, layout) && budgeted.overflow == 1 && budgeted.masks.entries().empty(),
             "Exhausted mask space remains an explicit fallback instead of suppressing a light");
+    m::Plan staggered;
+    staggered.lights.source = source;
+    staggered.remaining = {{0}, {0, 2}, {3}, {}};
+    staggered.charts.resize(staggered.remaining.size());
+    staggered.next.resize(staggered.remaining.size());
+    staggered.overflow = 4;
+    staggered.occlusion = m::Occlusion(uint32_t(staggered.charts.size()), uint32_t(source->lights.size()));
+    lm::Layout sparseLayout;
+    sparseLayout.pointCharts = {0, 1, 3};
+    sparseLayout.points.resize(sparseLayout.pointCharts.size());
+    m::OverflowAudit sparse;
+    require(sparse.nextRound(staggered, sparseLayout) && sparse.tasks().size() == 2 && sparse.totalWork() == 3,
+            "Only charts with receivers and pending lights enter the overflow work list");
+    sparse.observe(0, 0, sparseLayout);
+    sparse.observe(1, 1, sparseLayout);
+    require(sparse.nextRound(staggered, sparseLayout) && sparse.tasks().size() == 1 &&
+                sparse.tasks()[0].point == 1 && sparse.tasks()[0].light == 2,
+            "Finishing one chart leaves the remaining chart in the next round");
+    sparse.observe(0, 0, sparseLayout);
+    require(!sparse.nextRound(staggered, sparseLayout) && !sparse.nextRound(staggered, sparseLayout) &&
+                sparse.completedWork() == 3 && staggered.overflow == 1 &&
+                staggered.occlusion.state(0, 0) == m::Visibility::Blocked &&
+                staggered.occlusion.state(1, 0) == m::Visibility::Clear &&
+                staggered.occlusion.state(1, 2) == m::Visibility::Blocked &&
+                staggered.occlusion.state(2, 3) == m::Visibility::Unknown,
+            "Retiring charts preserves the last classification and leaves unsampled geometry unknown");
+    require(staggered.lights.identities.count(source->lights[0].id) == 1 &&
+                staggered.lights.match(source->lights[0]) == 0,
+            "An overflow light shared by multiple charts retains a single runtime binding");
     m::Masks scalar;
     std::vector<float> fractions(layout.points.size(), .5f);
     require(!scalar.add(0, 0, layout, fractions, 0) && scalar.entries().empty(),
@@ -633,7 +776,7 @@ int main() {
       sparse.directCharts = {{m::none, 1, m::none, 2},
                              {m::none, m::none, m::none, m::none}, {0, m::none, 3, 4}};
       lm::Layout interleaved;
-      interleaved.pointCharts = {1, 0, 0, 1, 2, 0, 2, 1, 2, 2, 1};
+      interleaved.pointCharts = {1, 0, 0, 1, 1, 1, 1, 2, 0, 2, 1, 2, 2, 1};
       interleaved.points.resize(interleaved.pointCharts.size());
       std::vector<m::Task> expected;
       for (uint32_t point = 0; point < interleaved.points.size(); ++point)
@@ -690,9 +833,9 @@ int main() {
     for (uint32_t light : {1u, 5u, 9u, 13u, 17u, 33u, 62u}) mask.mark(0, light, m::Visibility::Clear);
     mask.mark(1, 5);
     mask.mark(1, 5);
-    const auto pixels = mask.pixels(4);
+    const auto pixels = mask.pixels(1);
     const uint32_t tail[] = {0u, 0xffffffffu, 0x80000000u, 0x12345678u};
-    const auto integers = mask.pixels(4, tail);
+    const auto integers = mask.pixels(1, tail);
     require(integers.words[0] == mask.wordsPerChart() && integers.words[1] == mask.chartCount() &&
                 std::equal(mask.words().begin(), mask.words().end(), integers.words.begin() + 2) &&
                 std::equal(std::begin(tail), std::end(tail),
@@ -700,11 +843,19 @@ int main() {
             "Integer metadata preserves state words, high bits and payload without float conversion");
     require(mask.count() == 13 && mask.clearCount() == 7 && mask.contains(1, 5) && !mask.contains(0, 5) &&
                 mask.state(0, 5) == m::Visibility::Clear && mask.state(2, 0) == m::Visibility::Unknown &&
-                pixels.width == 4 && pixels.height == 3 &&
+                pixels.width == 10 && pixels.height == 1 && pixels.layers == 1 &&
                 pixels.words[2] == 0x49494949u && pixels.words[3] == 0x40000009u &&
                 (pixels.words[4] & 255u) == 9u && (pixels.words[5] >> 24u) == 96u &&
                 ((pixels.words[6] >> 8u) & 255u) == 4u,
             "Two-bit states preserve chart boundaries, all byte lanes and 16-light word seams");
+    constexpr size_t side = m::occlusionPageSide, pageWords = side * side;
+    std::vector<uint32_t> multiPageTail(pageWords);
+    multiPageTail[pageWords - 11] = 0x12345678u;
+    multiPageTail[pageWords - 10] = 0x80000000u;
+    const auto multiPage = mask.pixels(2, multiPageTail);
+    require(multiPage.width == side && multiPage.height == side && multiPage.layers == 2 &&
+                multiPage.words[pageWords - 1] == 0x12345678u && multiPage.words[pageWords] == 0x80000000u,
+            "Word addressing is contiguous across visibility pages");
   }
   auto changed = source->lights[1];
   changed.radiance[0] = 20;

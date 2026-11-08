@@ -7,7 +7,7 @@ vec3 sampleEnvironmentReflection(ReflectionReceiver receiver) {
 
 // Alternative sources need no cubemap candidate list. Called uniformly by the
 // world resolve, before lanes outside the dispatch image return.
-uvec2 environmentReflectionCandidates(vec3 position, bool valid) {
+uvec2 environmentReflectionCandidates(vec3 position, bool valid, uint layer) {
   return uvec2(0);
 }
 

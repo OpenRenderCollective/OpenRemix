@@ -1,27 +1,43 @@
 #include "forward/probes/image_asset.h"
 #include "forward/probes/priority_bands.h"
+#include "forward/probes/spatial_mask.h"
 #include "forward/probes/coverage_image_plan.h"
+#include "forward/probes/cube_storage.h"
+#include "forward/half.h"
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <algorithm>
 #include <bit>
 #include <stdexcept>
 
 namespace remix::forward::probes {
+  namespace {
+    ImageAsset::FaceStorage deviceStorage(VkPhysicalDevice physical) {
+      return nativeCubeStorage(physical) ? ImageAsset::FaceStorage::CubeArray : ImageAsset::FaceStorage::Stacked;
+    }
+  }
   ImageAsset::ImageAsset(VkPhysicalDevice physical, VkDevice device, const Data &data,
-                          std::stop_token cancelled, ReferenceProvenance reference) : m_device(device) {
+                          std::stop_token cancelled, ReferenceProvenance reference, FaceStorage storage)
+      : m_device(device), m_storage(storage == FaceStorage::Automatic ? deviceStorage(physical) : storage) {
     auto packed = prepareImage(data, cancelled);
     const uint32_t count = packed.header.parameters[0];
+    const bool cube = m_storage == FaceStorage::CubeArray;
     m_levels = std::max(packed.header.parameters[2], 1u);
     if (!count) {
-      packed.pixels.resize(4); // A valid black descriptor before a map bake exists.
-      m_copies.push_back({.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
+      packed.pixels.resize(cube ? 24 : 4); // A valid black descriptor before a map bake exists.
+      m_copies.push_back({.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, cube ? 6u : 1u},
                           .imageExtent = {1, 1, 1}});
     } else {
+      const size_t terminalOffset = packed.levels.back().byteOffset / sizeof(uint16_t);
+      for (uint32_t face = 0; face < count * 6; ++face)
+        for (uint32_t channel = 0; channel < 3; ++channel)
+          m_terminalFaces[face][channel] = half::decode(packed.pixels[terminalOffset + face * 4 + channel]);
       for (uint32_t level = 0; level < m_levels; ++level) {
         const auto &mip = packed.levels[level];
         m_copies.push_back({.bufferOffset = mip.byteOffset,
-                            .imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, level, 0, count},
-                            .imageExtent = {mip.faceSize, 6*mip.faceSize, 1}});
+                            .imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, level, 0, cube ? count * 6 : count},
+                            .imageExtent = {mip.faceSize, cube ? mip.faceSize : 6*mip.faceSize, 1}});
       }
     }
     m_staging = std::make_unique<Buffer>();
@@ -32,13 +48,14 @@ namespace remix::forward::probes {
     if (count) m_reference = reference;
   }
   ImageAsset::ImageAsset(VkPhysicalDevice physical, VkDevice device, const Composition &composition)
-      : m_device(device), m_layerCopies(composition.layers) {
+      : m_device(device), m_storage(deviceStorage(physical)), m_layerCopies(composition.layers) {
     if (m_layerCopies.empty() || m_layerCopies.size() != composition.header.parameters[0])
       throw std::invalid_argument("Invalid reflection composition layer count");
     initialize(physical, composition.header);
   }
   ImageAsset::ImageAsset(VkPhysicalDevice physical, VkDevice device, const CoverageImagePlan &plan)
-      : m_device(device), m_selectionSources(std::make_unique<std::array<Header, 2>>(plan.sources)) {
+      : m_device(device), m_storage(deviceStorage(physical)),
+        m_selectionSources(std::make_unique<std::array<Header, 2>>(plan.sources)) {
     if (plan.copies.empty() || plan.copies.size() != plan.header.parameters[0])
       throw std::invalid_argument("Invalid reflection selection layer count");
     for (const auto &copy : plan.copies) {
@@ -56,9 +73,10 @@ namespace remix::forward::probes {
         header.parameters[2] != std::bit_width(size) ||
         header.parameters[3] != levelOffset(size, header.parameters[2]))))
       throw std::invalid_argument("Invalid reflection image metadata");
-    m_layers = std::max(count, 1u);
+    const bool cube = m_storage == FaceStorage::CubeArray;
+    m_layers = std::max(count, 1u) * (cube ? 6 : 1);
     m_levels = std::max(header.parameters[2], 1u);
-    const VkExtent2D extent = count ? VkExtent2D{size, 6*size} : VkExtent2D{1, 1};
+    const VkExtent2D extent = count ? VkExtent2D{size, cube ? size : 6*size} : VkExtent2D{1, 1};
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(physical, &properties);
     if (sizeof(GpuHeader) > properties.limits.maxStorageBufferRange ||
@@ -68,34 +86,46 @@ namespace remix::forward::probes {
     VkFormatProperties format;
     vkGetPhysicalDeviceFormatProperties(physical, VK_FORMAT_R16G16B16A16_SFLOAT, &format);
     constexpr VkFormatFeatureFlags required = VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
+        VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT |
         VK_FORMAT_FEATURE_TRANSFER_DST_BIT | VK_FORMAT_FEATURE_TRANSFER_SRC_BIT;
     if ((format.optimalTilingFeatures & required) != required)
       throw std::runtime_error("Device cannot sample uploaded RGBA16F reflection images");
     // Both views share one allocation and the existing descriptor layout.
     // Empty fallback images need only their already-neutral header.
     const auto alignment = properties.limits.minStorageBufferOffsetAlignment;
-    const auto stride = (sizeof(GpuHeader) + alignment - 1) / alignment * alignment;
+    const auto grid = std::getenv("REMIX_DEBUG_DISABLE_REFLECTION_SPATIAL_MASK") ? std::vector<uint32_t>{}
+        : buildSpatialMask(header, properties.limits.maxStorageBufferRange - sizeof(GpuHeader));
+    const auto gridBytes = grid.size() * sizeof(uint32_t);
+    const auto metadataBytes = sizeof(GpuHeader) + gridBytes;
+    const auto stride = (metadataBytes + alignment - 1) / alignment * alignment;
     const auto neutralOffset = count ? stride : 0;
     m_metadata = std::make_unique<Buffer>();
-    m_metadata->create(physical, m_device, neutralOffset + sizeof(GpuHeader),
+    m_metadata->create(physical, m_device, neutralOffset + metadataBytes,
                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
-    m_normalizedMetadata = {m_metadata->handle, 0, sizeof(GpuHeader)};
-    m_neutralMetadata = {m_metadata->handle, neutralOffset, sizeof(GpuHeader)};
+    m_normalizedMetadata = {m_metadata->handle, 0, metadataBytes};
+    m_neutralMetadata = {m_metadata->handle, neutralOffset, metadataBytes};
     writeMetadata();
+    if (!grid.empty()) {
+      m_metadata->write(grid.data(), gridBytes, sizeof(GpuHeader));
+      m_metadata->write(grid.data(), gridBytes, neutralOffset + sizeof(GpuHeader));
+      if (std::getenv("REMIX_DEBUG_FORWARD_DRAW_COUNTS"))
+        std::fprintf(stderr, "Forward reflection spatial mask published: %zu bytes for %u probes\n", gridBytes, count);
+    }
     m_image = std::make_unique<Image>();
     m_image->create(physical, m_device, extent, VK_FORMAT_R16G16B16A16_SFLOAT,
                      VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
-                     VK_SAMPLE_COUNT_1_BIT, VK_IMAGE_ASPECT_COLOR_BIT, m_layers, m_levels, VK_IMAGE_VIEW_TYPE_2D_ARRAY);
+                     VK_SAMPLE_COUNT_1_BIT, VK_IMAGE_ASPECT_COLOR_BIT, m_layers, m_levels,
+                     cube ? VK_IMAGE_VIEW_TYPE_CUBE_ARRAY : VK_IMAGE_VIEW_TYPE_2D_ARRAY);
     const VkSamplerCreateInfo sampler{.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-        .magFilter = VK_FILTER_NEAREST, .minFilter = VK_FILTER_NEAREST,
-        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
+        .magFilter = VK_FILTER_LINEAR, .minFilter = VK_FILTER_LINEAR,
+        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
         .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
         .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
         .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, .maxLod = float(m_levels-1)};
     check(vkCreateSampler(m_device, &sampler, nullptr, &m_sampler));
   }
   void ImageAsset::writeMetadata() {
-    GpuHeader metadata{m_header, priorityBands(m_header), m_normalization};
+    GpuHeader metadata{m_header, priorityBands(m_header), m_normalization, m_terminalFaces};
     m_metadata->write(&metadata, sizeof(metadata));
     if (m_neutralMetadata.offset) {
       metadata.normalization = {};
@@ -140,20 +170,24 @@ namespace remix::forward::probes {
         this == &first || this == &second || m_device != first.m_device || m_device != second.m_device)
       throw std::logic_error("Reflection composition requires uploaded independent sources");
     std::array<std::vector<VkImageCopy>, 2> copies;
+    const uint32_t faces = m_storage == FaceStorage::CubeArray ? 6u : 1u;
     const ImageAsset *sources[]{&first, &second};
     for (uint32_t layer = 0; layer < m_layerCopies.size(); ++layer) {
       const auto source = m_layerCopies[layer];
       const auto &asset = *sources[source.automatic];
       if (source.layer >= asset.m_header.parameters[0] ||
-          asset.m_header.parameters[1] != m_header.parameters[1] || asset.m_levels != m_levels)
+          asset.m_header.parameters[1] != m_header.parameters[1] || asset.m_levels != m_levels ||
+          asset.m_storage != m_storage)
         throw std::invalid_argument("Reflection composition source dimensions or layer mismatch");
       m_normalization.coefficients[layer] = asset.m_normalization.coefficients[source.layer];
+      std::copy_n(asset.m_terminalFaces.begin() + source.layer * 6, 6, m_terminalFaces.begin() + layer * 6);
       m_references[layer] = asset.m_references[source.layer];
       for (uint32_t level = 0; level < m_levels; ++level) {
         const auto size = std::max(m_header.parameters[1] >> level, 1u);
         copies[source.automatic].push_back({
-            .srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, level, source.layer, 1},
-            .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, level, layer, 1}, .extent = {size, 6*size, 1}});
+            .srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, level, source.layer * faces, faces},
+            .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, level, layer * faces, faces},
+            .extent = {size, faces == 6u ? size : 6u * size, 1}});
       }
     }
     // Mixed input/domain sets remain sampleable, but their image-wide binding

@@ -69,7 +69,9 @@ namespace remix::forward::ray {
     g.statistics.rays = 0;
     g.statistics.sceneBuilds = 0;
     const float distance = g.reflectionBatches ? options.rtReflectionDistance : options.rtGIDistance;
-    auto snapshot = capture(resources.bakeScene().get(), resources.draws(), resources.sphereLights(),
+    std::vector<scene::SphereLight> lightScratch;
+    const auto lightsView = resources.sphereLightView(lightScratch);
+    auto snapshot = capture(resources.bakeScene().get(), resources.draws(), lightsView,
                             resources.light(), resources.dome(), options.sceneScale, seconds);
     const auto sun = snapshot.source->sun;
     const auto dome = snapshot.source->dome;

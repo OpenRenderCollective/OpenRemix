@@ -153,7 +153,9 @@ std::array<uint8_t, 3> styledIndirectTests(bool directGroups = false, bool inclu
             "Initially-off attributed map publishes style storage without residual indirect glow");
     require(target.forward->statistics().activeStyledGroups == 0,
             "Off groups report no active styled contributors while retaining their bake");
-    if (composition) require(settled(true)[at] < 3, "Composed off-state has no residual surface light");
+    if (composition)
+      require(!target.forward->statistics().composedStyledLighting,
+              "The initial off-state uses the unmodified baked field");
     if (directGroups)
       require(volume->groupedStyles == std::vector<uint32_t>{32},
               "Complete grouped direct publication retains its independent style identity");
@@ -182,7 +184,17 @@ std::array<uint8_t, 3> styledIndirectTests(bool directGroups = false, bool inclu
                              "Composed partial light preserves rendered energy");
     set(0);
     require(render(true)[at] < 3, "Surface indirect switches fully off");
-    if (composition) require(settled(true)[at] < 3, "An on-to-off composition has no cancellation residue");
+    if (composition) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(120));
+      require(render(true)[at] < 3 && !target.forward->statistics().composedStyledLighting,
+              "The settled off-state stays on the base bake without cancellation residue");
+      const auto chunks = target.forward->statistics().styledCompositionChunks;
+      set(.5f);
+      require(std::abs(int(render(true)[at]) - int(partial[at])) <= 1 &&
+                  target.forward->statistics().composedStyledLighting &&
+                  target.forward->statistics().styledCompositionChunks == chunks,
+              "Returning to a completed style reuses its exact publication without dispatch");
+    }
     set(1);
     const auto probeOn = render(false);
     if (composition) require(std::abs(int(settled(false)[at]) - int(probeOn[at])) <= 1,
@@ -215,7 +227,7 @@ std::array<uint8_t, 3> styledIndirectTests(bool directGroups = false, bool inclu
       auto refresh = [&](uint32_t captures) {
         options.baking.reflectionProbes = captures;
         options.baking.reflectionResolution = 8;
-        target.enableForward(options, true); // Reflection enable changes pass attachments, not diffuse ownership.
+        target.forward->updateLighting(options); // Indirect diagnostics need no reflection attachments.
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
         std::vector<uint8_t> image;
         do {

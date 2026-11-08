@@ -64,6 +64,11 @@ namespace {
     const auto outsideFine = planProbeVisibility(grid, std::span(&light, 1), .001f, 1);
     require(outsideFine && outsideFine->tasks.size() == 1 && outsideFine->tasks[0].point == 1,
             "Fine-only records avoid coarse-radius work while shared coarse corners retain full support");
+    grid.probes[1].statistics[3] = 0;
+    const auto fineOnly = planProbeVisibility(grid, std::span(&light, 1), .001f, 1);
+    require(fineOnly && fineOnly->tasks.empty() && fineOnly->candidates == 0,
+            "Unusable coarse probes do not widen the fine-only candidate sweep");
+    grid.probes[1].statistics[3] = 1;
     std::fill_n(light.position, 3, 0);
     grid.points[centre].position = {5.8f, 5.8f, 5.8f, 0};
     const auto relocated = planProbeVisibility(grid, std::span(&light, 1), .001f, 2);
@@ -243,6 +248,9 @@ int main() {
     require(directionalWire[1] == 7 && directionalWire[9] == 2 &&
                 directionalWire.size() * 4 == wideDirectional.gpuBytes(),
             "Compact directional records also wrap the bounded sorted-entry fallback");
+    require(directionalWire[3] == bounded.size() &&
+                std::equal(bounded.begin(), bounded.end(), directionalWire.begin() + 8),
+            "Wrapped fallback masks match the standalone payload including padding");
     const auto directIndices = 8 + directionalWire[3];
     const auto directOffset = directIndices + directionalWire[4];
     for (uint32_t i = 0; i < dense.size(); ++i) {
@@ -279,6 +287,8 @@ int main() {
     require(wire[1] == 7 && wire[9] == 3 && wire[4] == pairs.size() && wire[6] == 6 && wire[7] == 0 &&
                 wire.size() * 4 == directional.gpuBytes(),
             "Directional wrapper preserves ranked scalar masks and exact padded allocation");
+    require(wire[3] == packed.size() && std::equal(packed.begin(), packed.end(), wire.begin() + 8),
+            "Wrapped ranked masks match the standalone payload including padding");
     const auto indices = 8 + wire[3];
     const auto coefficientOffset = indices + wire[4];
     for (size_t i = 0; i < directional.direct().size(); ++i) {

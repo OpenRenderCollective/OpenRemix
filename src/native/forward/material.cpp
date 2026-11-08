@@ -20,14 +20,25 @@ namespace remix::forward {
     // Static world draws commonly use identity linear transforms. Preserve the
     // complete inverse transpose, including its unused translation row, without
     // running the general pivoted inverse for every draw.
-    if (model[0] == 1 && model[5] == 1 && model[10] == 1 && model[15] == 1 &&
-        model[1] == 0 && model[2] == 0 && model[3] == 0 && model[4] == 0 &&
-        model[6] == 0 && model[7] == 0 && model[8] == 0 && model[9] == 0 && model[11] == 0 &&
-        std::isfinite(model[12]) && std::isfinite(model[13]) && std::isfinite(model[14])) {
+    if (isTranslation(model)) {
       auto result = scene::identity();
       result[3] = 0.f - model[12];
       result[7] = 0.f - model[13];
       result[11] = 0.f - model[14];
+      return result;
+    }
+    const auto validScale = [](float scale) {
+      return std::isfinite(scale) && std::abs(double(scale)) >= 1e-15;
+    };
+    if (isAxisAlignedAffine(model) && validScale(model[0]) && validScale(model[5]) && validScale(model[10])) {
+      auto result = scene::identity();
+      // Match the general inverse's double-precision division and elimination.
+      for (size_t axis = 0; axis < 3; ++axis) {
+        const size_t diagonal = axis * 5;
+        const double reciprocal = 1.0 / double(model[diagonal]);
+        result[diagonal] = float(reciprocal);
+        result[axis * 4 + 3] = float(0.0 - double(model[12 + axis]) * reciprocal);
+      }
       return result;
     }
     const auto inverse = scene::inverse(model);
@@ -36,14 +47,6 @@ namespace remix::forward {
       for (int c = 0; c < 4; ++c)
         result[c * 4 + r] = inverse[r * 4 + c];
     return result;
-  }
-  bool zeroDiffuseMaterial(const scene::Material &m) {
-    if (!m.metallicTexture && m.metallic == 1) return true;
-    if (m.tint[0] == 0 && m.tint[1] == 0 && m.tint[2] == 0) return true;
-    // No emission map supplies the constant white texel in emissionLobes.
-    // Albedo-alpha self illumination remains spatially varying and is refused.
-    return !m.emissionTexture && (m.selfIllumination == 1 || m.selfIllumination == 3) &&
-           std::isfinite(m.selfIlluminationScale) && m.selfIlluminationScale >= 1;
   }
   DrawData materialData(const scene::Draw &draw, double seconds) {
     const auto &m = *draw.material;
@@ -62,7 +65,7 @@ namespace remix::forward {
     data.state[0] = (b.colorOp & 3u) | (b.colorOp & 4u) << 10 | (b.alphaOpTexture & 4u) << 11 |
                     b.color1 << 2 | b.color2 << 4 | (b.alphaOpTexture & 3u) << 6 | b.alpha1 << 8 |
                     b.alpha2 << 10;
-    data.state[1] = draw.ignoreAlpha ? 7 : draw.alphaOverride ? draw.compare : m.compare;
+    data.state[1] = alphaComparison(draw);
     data.state[2] = std::bit_cast<uint32_t>(draw.alphaOverride ? draw.reference : m.reference);
     data.state[3] = uint32_t(draw.ignoreAlpha) | uint32_t(draw.doubleSided) << 1 |
                     (m.selfIllumination ? uint32_t(m.selfIllumination - 1) << 2 : 0) |

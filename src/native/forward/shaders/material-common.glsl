@@ -16,14 +16,19 @@ vec4 combine(uint op, vec4 a, vec4 b) {
                                                     : 1),
                           vec4(1));
 }
+// Shared with the alpha-only depth and shadow shaders. Keep these as
+// expressions so changing the raster path does not change the bake bytecode.
+#define FORWARD_ALPHA_OP(s) ((((s) >> 6) & 3u) | (((s) >> 11) & 4u))
+#define FORWARD_ALPHA_FIRST(s) (((s) >> 8) & 3u)
+#define FORWARD_ALPHA_SECOND(s) (((s) >> 10) & 3u)
 vec4 surfaceColorValues(uvec4 state, vec4 factor, vec4 tint, vec4 texel, vec4 vertexColor) {
   vec4 vertex = vec4(linearColor(vertexColor.rgb), vertexColor.a);
   uint s = state.x;
   vec4 a = argument((s >> 2) & 3u, texel, vertex, factor), b = argument((s >> 4) & 3u, texel, vertex, factor);
   uint op = (s & 3u) | ((s >> 10) & 4u);
   vec4 rgb = op == 7u ? vec4(mix(a.rgb, min(a.rgb * b.rgb, vec3(1)), a.a), a.a) : combine(op, a, b);
-  vec4 alpha = combine(((s >> 6) & 3u) | ((s >> 11) & 4u), argument((s >> 8) & 3u, texel, vertex, factor),
-                       argument((s >> 10) & 3u, texel, vertex, factor));
+  vec4 alpha = combine(FORWARD_ALPHA_OP(s), argument(FORWARD_ALPHA_FIRST(s), texel, vertex, factor),
+                       argument(FORWARD_ALPHA_SECOND(s), texel, vertex, factor));
   return vec4(rgb.rgb, alpha.a) * tint;
 }
 bool alphaPass(uint op, float ref, float alpha) {

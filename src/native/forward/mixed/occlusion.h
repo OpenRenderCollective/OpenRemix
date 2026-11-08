@@ -4,6 +4,7 @@
 #include <vector>
 
 namespace remix::forward::mixed {
+  constexpr uint32_t occlusionPageSide = 1024; // mirrored in shaders/occlusion.glsl
   enum class Visibility : uint32_t { Unknown, Blocked, Clear };
   // Two bits per chart/light pair. Only exactly constant sampled visibility is
   // recorded; partial visibility stays in filtered maps.
@@ -21,12 +22,12 @@ namespace remix::forward::mixed {
     uint32_t wordsPerChart() const { return m_stride; }
     uint32_t chartCount() const { return m_charts; }
     struct Pixels {
-      uint32_t width, height;
+      uint32_t width, height, layers;
       std::vector<uint32_t> words;
     };
     // Header words (stride, chart count), chart-major bitsets, then lookup/payload.
-    // Each packed word occupies one exact R32_UINT texel.
-    Pixels pixels(uint32_t maximumDimension, std::span<const uint32_t> tail = {}) const;
+    // Each packed word occupies one exact R32_UINT texel in a fixed-pitch page.
+    Pixels pixels(uint32_t maximumLayers, std::span<const uint32_t> tail = {}) const;
 
   private:
     uint32_t m_charts = 0, m_lights = 0, m_stride = 0, m_count = 0, m_clearCount = 0;

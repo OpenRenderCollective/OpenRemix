@@ -12,7 +12,7 @@ void autoExposureTests() {
     options.ambient = .018f;
     options.shadows = options.localShadows = options.ssr = options.water = false;
     options.baking.enabled = false;
-    options.baking.reflectionProbes = 0;
+    options.baking.reflectionProbes = 1; // Meter the visible sky with inline reflections enabled.
     target.enableForward(options);
     remixapi_LightInfoDomeEXT dome{};
     dome.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DOME_EXT;

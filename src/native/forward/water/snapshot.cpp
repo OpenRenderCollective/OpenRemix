@@ -90,9 +90,10 @@ namespace remix::forward::water {
     const auto module = samples == VK_SAMPLE_COUNT_1_BIT
                             ? shaderModule(device, snapshotSingleShader, sizeof(snapshotSingleShader))
                             : shaderModule(device, snapshotShader, sizeof(snapshotShader));
-    const uint32_t depthSamples = uint32_t(samples);
-    const VkSpecializationMapEntry depthSamplesEntry{0, 0, sizeof(depthSamples)};
-    const VkSpecializationInfo specialization{1, &depthSamplesEntry, sizeof(depthSamples), &depthSamples};
+    const uint32_t depthSettings[] = {uint32_t(samples), uint32_t(g.standardSamples)};
+    const VkSpecializationMapEntry depthEntries[] = {{0, 0, sizeof(uint32_t)},
+                                                      {1, sizeof(uint32_t), sizeof(uint32_t)}};
+    const VkSpecializationInfo specialization{2, depthEntries, sizeof(depthSettings), depthSettings};
     const VkComputePipelineCreateInfo compute{
         .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
         .stage = {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,

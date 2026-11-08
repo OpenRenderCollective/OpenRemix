@@ -1,6 +1,6 @@
 #define PROBE_BINDING 12
 #define PROBE_IMAGE_BINDING 19
-#define PROBE_TILE_CANDIDATES
+#define MASKED_REFLECTION_PROBES
 #include "../../shaders/reflection-lighting.glsl"
 layout(set = 0, binding = 15, std140) uniform ViewModelScreen {
   mat4 inverseCamera;
@@ -28,8 +28,5 @@ vec3 viewModelReflectionRadiance(vec3 position, vec3 n, vec3 v, float roughness,
   radiance = resolveReflection(ReflectionSample(hit.rgb, hit.a), radiance);
   return radiance;
 }
-bool viewModelReflectionsDisabled() { return (frame.clusterInfo.w & 2u) == 0u; }
-vec3 sampleViewModelReflection(vec3 position, vec3 n, vec3 v, float roughness, uint layer, LightingReference reference) {
-  if (viewModelReflectionsDisabled()) return vec3(0);
-  return viewModelReflectionRadiance(position, n, v, roughness, layer, reference);
-}
+const uint ViewModelReflectionFlag = 1u << 1;
+bool viewModelReflectionsDisabled() { return (frame.clusterInfo.w & ViewModelReflectionFlag) == 0u; }

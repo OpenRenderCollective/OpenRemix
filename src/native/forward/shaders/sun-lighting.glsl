@@ -4,7 +4,7 @@
 // inputs stay here; a material model supplies its own response to the sample.
 SunLightSample sampleReceiverSunLight(ShadingReceiver receiver, vec3 normal, float unitIrradiance) {
   return sampleSunLight(receiver.baked.coordinate, receiver.baked.bounds, unitIrradiance,
-      receiver.position, receiver.depth, normal, normalize(receiver.geometric));
+      receiver.position, receiver.depth, normal, normalize(receiver.geometric), true);
 }
 
 // Keep optical visibility policy in the source adapter, not the water material.
@@ -14,7 +14,7 @@ SunLightSample sampleReceiverSunLight(ShadingReceiver receiver, vec3 normal, flo
 SunLightSample sampleOpticalReceiverSunLight(ShadingReceiver receiver, vec3 normal) {
 #ifdef OPENREMIX_BAKED_DIRECT_LIVE_INDIRECT
   return sampleSunLight(vec4(0), vec4(0), 0, receiver.position, receiver.depth, normal,
-      normalize(receiver.geometric));
+      normalize(receiver.geometric), true);
 #else
   return sampleUnbakedSunLight(receiver.position, receiver.depth, normal, normalize(receiver.geometric));
 #endif

@@ -26,4 +26,9 @@ float sphereOneMinusCos(float distanceSquared, float radius) {
   float sineSquared = min(1, radius * radius / max(distanceSquared, 1e-20));
   return sineSquared / (1 + sqrt(max(0, 1 - sineSquared)));
 }
+float emitterRangeFade(float distance, float influence, float sphereFadeRange, bool triangle) {
+  // Triangle vertices occupy the sphere's optional uncapped range field.
+  float range = triangle ? influence : max(influence, sphereFadeRange);
+  return pow(clamp(1 - pow(distance / range, 4), 0, 1), 2);
+}
 #endif

@@ -1,5 +1,6 @@
 #version 450
 #extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_control_flow_attributes : require
 layout(local_size_x = 64) in;
 #define IRRADIANCE_BINDING 0
 #include "../../shaders/irradiance.glsl"
@@ -16,17 +17,31 @@ layout(set = 0, binding = 4, rgba16f) uniform writeonly image2DArray outputSurfa
 layout(set = 0, binding = 5, std430) buffer Status { uint invalid; } status;
 layout(push_constant) uniform Chunk { uint phase, first, count; } chunk;
 
-vec3 contribution(uint index, uint coefficient, bool surface, uint page, uvec2 pixel) {
+vec3 probeContribution(uint index, uint coefficient) {
   vec3 result = vec3(0);
   for (uint group = 0u; group < styleWord(3u); ++group) {
     uint entry = 12u + group * 8u;
     float scale = STYLE_SCALE(styleWord(entry));
     if (scale == 0) continue;
-    uint record = surface ? styledSurfaceRecord(styleWord(entry + 1u), page, pixel,
-        (parameters.surfaceLayout.x + 15u) / 16u) : styleWord(styleWord(entry + 2u) + index);
+    uint record = styleWord(styleWord(entry + 2u) + index);
     result += scale * styledCoefficient(styleWord(entry + 3u), record, coefficient);
   }
   return result;
+}
+void surfaceContributions(uint page, uvec2 pixel, uint size, out vec3 result[9]) {
+  [[unroll]] for (uint band = 0u; band < 9u; ++band) result[band] = vec3(0);
+  uint wide = (size + 15u) / 16u;
+  for (uint group = 0u; group < styleWord(3u); ++group) {
+    uint entry = 12u + group * 8u;
+    float scale = STYLE_SCALE(styleWord(entry));
+    if (scale == 0) continue;
+    uint record = styledSurfaceRecord(styleWord(entry + 1u), page, pixel, wide);
+    if (record == 0u) continue;
+    uint pool = styleWord(entry + 3u);
+    [[unroll]] for (uint band = 0u; band < 9u; ++band) {
+      result[band] += scale * styledCoefficient(pool, record, band);
+    }
+  }
 }
 void checkValue(vec4 value, bool halfValue) {
   if (any(isnan(value)) || any(isinf(value)) || (halfValue && any(greaterThan(abs(value), vec4(65504)))))
@@ -46,6 +61,11 @@ float roundedHalf(float value) {
   bits += 0xfffu + ((bits >> 13u) & 1u);
   return uintBitsToFloat(bits & ~0x1fffu);
 }
+void storeSurface(ivec3 coordinate, vec4 value) {
+  checkValue(value, true);
+  value = vec4(roundedHalf(value.x), roundedHalf(value.y), roundedHalf(value.z), roundedHalf(value.w));
+  imageStore(outputSurface, coordinate, value);
+}
 void main() {
   uint thread = gl_GlobalInvocationID.x;
   if (thread >= chunk.count) return;
@@ -62,7 +82,7 @@ void main() {
       } else if (index >= 3u && index - 3u < bakeDimensions.w * 16u && (index - 3u) % 16u < 9u) {
         uint probe = (index - 3u) / 16u, coefficient = (index - 3u) % 16u;
         vec4 combined = uintBitsToFloat(value);
-        combined.rgb += contribution(probe, coefficient, false, 0u, uvec2(0));
+        combined.rgb += probeContribution(probe, coefficient);
         checkValue(combined, false);
         value = floatBitsToUint(combined);
       }
@@ -75,15 +95,21 @@ void main() {
     outputData.records[index] = value;
   } else {
     uint size = parameters.surfaceLayout.x;
+    uint layers = parameters.surfaceLayout.z;
     uint page = index / (size * size);
     uvec2 pixel = uvec2(index % size, (index / size) % size);
-    for (uint layer = 0u; layer < parameters.surfaceLayout.z; ++layer) {
-      ivec3 coordinate = ivec3(pixel, page * parameters.surfaceLayout.z + layer);
+    uint firstLayer = page * layers;
+    vec3 contributions[9];
+    surfaceContributions(page, pixel, size, contributions);
+    [[unroll]] for (uint band = 0u; band < 9u; ++band) {
+      ivec3 coordinate = ivec3(pixel, firstLayer + band);
       vec4 value = texelFetch(sourceSurface, coordinate, 0);
-      if (layer < 9u) value.rgb += contribution(0u, layer, true, page, pixel);
-      checkValue(value, true);
-      value = vec4(roundedHalf(value.x), roundedHalf(value.y), roundedHalf(value.z), roundedHalf(value.w));
-      imageStore(outputSurface, coordinate, value);
+      value.rgb += contributions[band];
+      storeSurface(coordinate, value);
+    }
+    for (uint layer = 9u; layer < layers; ++layer) {
+      ivec3 coordinate = ivec3(pixel, firstLayer + layer);
+      storeSurface(coordinate, texelFetch(sourceSurface, coordinate, 0));
     }
   }
 }

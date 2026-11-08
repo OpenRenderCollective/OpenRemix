@@ -9,7 +9,7 @@ namespace remix::forward::bake {
   public:
     SunAntialiasing(const scene::BakeScene &source, const lightmap::Layout &layout,
                     std::span<const lightmap::Sun> sunlight, std::stop_token cancelled = {},
-                    uint32_t sitesPerReceiver = 16);
+                    uint32_t sitesPerReceiver = 16, float receiverBias = 0);
     uint32_t siteCount() const { return m_siteCount; }
     uint32_t count() const { return uint32_t(m_points.size()); }
     uint32_t receiver(uint32_t task) const { return m_points.at(task); }
@@ -20,6 +20,9 @@ namespace remix::forward::bake {
 
   private:
     uint32_t m_siteCount;
+    const scene::BakeScene &m_source;
+    const lightmap::Layout &m_layout;
+    float m_receiverBias;
     std::vector<uint32_t> m_points;
     lightmap::ReceiverSampler m_sampler;
   };

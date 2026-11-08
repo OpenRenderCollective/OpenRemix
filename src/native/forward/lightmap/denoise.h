@@ -35,6 +35,23 @@ namespace remix::forward::lightmap {
     uint32_t cpuQueues = 1, cpuThreadsPerQueue = 0;
     double parallelCpuEstimateSeconds = 0;
   };
+  // Reusable geometry preparation for multiple fields on one immutable layout.
+  // The layout must outlive the plan. Device calibration stays field-specific.
+  class DenoisePlan {
+  public:
+    explicit DenoisePlan(const Layout &layout, std::stop_token cancelled = {});
+    DenoisePlan(Layout &&layout, std::stop_token cancelled = {}) = delete;
+    const Layout &layout() const { return m_layout; }
+    DenoiseStatistics filter(std::span<bake::Result> results, std::stop_token cancelled = {},
+        std::function<void(uint32_t, uint32_t)> progress = {}, HostTransfers transfers = HostTransfers::Pinned,
+        FilterDispatch dispatch = FilterDispatch::Automatic) const;
+
+  private:
+    const Layout &m_layout;
+    std::vector<std::vector<uint32_t>> m_chartPoints;
+    std::vector<uint32_t> m_order;
+    size_t m_largestImage = 0;
+  };
   // Chart-heavy CUDA workloads may compare bounded real-chart CPU/GPU trials
   // before filtering. A CPU win needs a 35% projected margin; small maps,
   // workloads dominated by large images, other default devices and OIDN_DEFAULT_DEVICE keep normal selection.

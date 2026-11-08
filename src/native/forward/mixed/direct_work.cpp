@@ -23,7 +23,6 @@ namespace remix::forward::mixed {
       m_chartOffsets.push_back(uint32_t(m_owners.size()));
       for (uint32_t channel = 0; channel < channels; ++channel) {
         if (chart[channel] == none) continue;
-        if (m_owners.size() == UINT32_MAX) throw std::length_error("Too many direct-light owners");
         m_owners.push_back({chart[channel], channel});
       }
     }
@@ -51,6 +50,7 @@ namespace remix::forward::mixed {
       if (cancelled.stop_requested()) throw std::runtime_error("Direct lighting superseded");
       const auto first = m_chartOffsets[chart], end = m_chartOffsets[chart + 1];
       if (first > end || end > m_owners.size()) throw std::invalid_argument("Invalid direct-light chart range");
+      if (first == end) continue;
       lights.clear(); outputs.clear();
       for (uint32_t i = first; i < end; ++i) {
         if ((i & 1023u) == 0 && cancelled.stop_requested())
@@ -66,13 +66,15 @@ namespace remix::forward::mixed {
           throw std::invalid_argument("Duplicate direct-light owner or output");
       }
     }
-    m_receivers.reserve(layout.points.size() + 1);
+    const bool hasOwners = !m_owners.empty();
+    if (hasOwners) m_receivers.reserve(layout.points.size() + 1);
     uint64_t total = 0;
     for (size_t point = 0; point < layout.points.size(); ++point) {
       if ((point & 1023u) == 0 && cancelled.stop_requested())
         throw std::runtime_error("Direct lighting superseded");
       const auto chart = layout.pointCharts[point];
       if (chart >= m_chartOffsets.size() - 1) throw std::invalid_argument("Invalid direct-light receiver chart");
+      if (!hasOwners) continue;
       m_receivers.push_back({uint32_t(total), chart});
       total += m_chartOffsets[chart + 1] - m_chartOffsets[chart];
       if (total > UINT32_MAX) throw std::length_error("Too many retained direct-light receivers");
@@ -87,17 +89,25 @@ namespace remix::forward::mixed {
     std::vector<Task> tasks;
     if (!count) return tasks;
     tasks.reserve(count);
-    const auto start = std::upper_bound(m_receivers.begin(), m_receivers.end(), first,
-        [](uint32_t task, const Receiver &receiver) { return task < receiver.first; });
-    auto point = size_t(start - m_receivers.begin() - 1);
-    uint32_t skip = first - m_receivers[point].first;
-    for (; point + 1 < m_receivers.size(); ++point) {
-      const auto chart = m_receivers[point].chart;
-      for (uint32_t i = m_chartOffsets[chart]; i < m_chartOffsets[chart + 1]; ++i) {
+    const auto taskBeforeReceiver = [](uint32_t task, const Receiver &receiver) {
+      return task < receiver.first;
+    };
+    auto receiver = std::upper_bound(m_receivers.begin(), m_receivers.end(), first, taskBeforeReceiver) - 1;
+    uint32_t ownerOffset = first - receiver->first;
+    while (receiver + 1 != m_receivers.end()) {
+      const auto chart = receiver->chart;
+      const auto point = uint32_t(receiver - m_receivers.begin());
+      for (uint32_t i = m_chartOffsets[chart] + ownerOffset; i < m_chartOffsets[chart + 1]; ++i) {
         const auto &owner = m_owners[i];
-        if (skip) { --skip; continue; }
-        tasks.push_back({uint32_t(point), owner.light, owner.output});
+        tasks.push_back({point, owner.light, owner.output});
         if (tasks.size() == count) return tasks;
+      }
+      ownerOffset = 0;
+      ++receiver;
+      if (m_receivers.end() - receiver > 2 && receiver->first == (receiver + 2)->first) {
+        // Empty receivers repeat the same task prefix. Jump to the last one
+        // with that prefix, which owns the next task.
+        receiver = std::upper_bound(receiver + 2, m_receivers.end(), receiver->first, taskBeforeReceiver) - 1;
       }
     }
     throw std::logic_error("Incomplete direct-light prefix index");

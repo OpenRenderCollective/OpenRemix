@@ -1,8 +1,3 @@
-struct IrradianceProbe {
-  vec4 irradiance[9];
-  vec4 moments[6];
-  vec4 statistics;
-};
 #ifndef IRRADIANCE_BINDING
 #define IRRADIANCE_BINDING 5
 #endif
@@ -34,13 +29,12 @@ vec3 styledProbeIrradiance(uint index, float sh[9]);
 #include "probe-depth.glsl"
 #include "coarse-transfer.glsl"
 #include "grid-stencil.glsl"
+#include "irradiance-basis.glsl"
 bool bakedIrradiance(vec3 position, vec3 normal, out vec3 result) {
   if (!localProbeStencil(position, normal))
     return false;
-  float sh[9] = float[9](.2820947918, .4886025119 * normal.y, .4886025119 * normal.z, .4886025119 * normal.x,
-                         1.092548431 * normal.x * normal.y, 1.092548431 * normal.y * normal.z,
-                         .3153915653 * (3 * normal.z * normal.z - 1), 1.092548431 * normal.x * normal.z,
-                         .5462742153 * (normal.x * normal.x - normal.y * normal.y));
+  float sh[9];
+  irradianceBasis(normal, sh);
   result = vec3(0);
   float total = 0;
   for (uint corner = 0u; corner < localStencilCount; ++corner) {
@@ -114,11 +108,9 @@ bool bakedLocalProbeResponse(vec3 position, vec3 normal, vec3 shadingNormal, uin
   uint table = reference.table, light = reference.light;
   uint direct = reference.direct, records = reference.records;
   if (!localProbeStencil(position, normal)) return false;
-  float sh[9] = float[9](.2820947918, .4886025119 * shadingNormal.y, .4886025119 * shadingNormal.z,
-      .4886025119 * shadingNormal.x, 1.092548431 * shadingNormal.x * shadingNormal.y,
-      1.092548431 * shadingNormal.y * shadingNormal.z, .3153915653 * (3 * shadingNormal.z * shadingNormal.z - 1),
-      1.092548431 * shadingNormal.x * shadingNormal.z,
-      .5462742153 * (shadingNormal.x * shadingNormal.x - shadingNormal.y * shadingNormal.y));
+  bool hasDiffuse = directional && direct != 0u;
+  float sh[9];
+  if (hasDiffuse) irradianceBasis(shadingNormal, sh);
   float diffuse = 0;
   visibility = 0;
   float total = 0;
@@ -133,13 +125,13 @@ bool bakedLocalProbeResponse(vec3 position, vec3 normal, vec3 shadingNormal, uin
       continue;
     }
     visibility += weight * mask;
-    if (directional && direct != 0u)
+    if (hasDiffuse)
       diffuse += weight * localProbeDirect(direct, records, entry, sh);
     total += weight;
   }
   if (total < 1e-4) return false;
   visibility = clamp(visibility / total, 0, 1);
-  if (directional && direct != 0u) unitDiffuse = max(diffuse / total, 0);
+  if (hasDiffuse) unitDiffuse = max(diffuse / total, 0);
   return true;
 }
 bool bakedLocalProbeVisibility(vec3 position, vec3 normal, uint capturedLight, out float visibility) {

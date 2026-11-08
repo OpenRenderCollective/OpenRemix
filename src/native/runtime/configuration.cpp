@@ -105,31 +105,25 @@ namespace remix {
                             bool emissive) {
       // Only changes to resource/pipeline contracts replace the renderer.
       // Continuous lighting and display edits keep their temporal state.
-      config::Settings resources;
-      resources.backend = settings.backend;
-      auto &out = resources.trace;
-      const auto &in = settings.trace;
-      out.accumulate = in.accumulate;
-      out.validation = in.validation;
-      out.denoiser = in.denoiser;
-      out.taa = in.taa;
-      out.sigma = in.sigma;
-      out.localDenoiser = in.localDenoiser;
-      out.separateLocalLighting = normalized(in).separateLocalLighting;
-      out.restir = in.restir;
-      out.upscaler = in.upscaler;
-      out.dlssQuality = in.dlssQuality;
-      out.fsrQuality = in.fsrQuality;
-      out.xessQuality = in.xessQuality;
-      out.dlssRayReconstruction = in.dlssRayReconstruction;
-      out.sharc = in.sharc;
-      out.sharcDebug = in.sharcDebug;
-      out.sharcCapacityLog2 = in.sharcCapacityLog2;
-      out.bounces = in.bounces ? 1 : 0;
-      out.rasterPrimary = in.rasterPrimary;
-      return config::serialize(resources) + std::to_string(extent.width) + ":" + std::to_string(extent.height) + ":" +
-             std::to_string(perspective) + ":" + std::to_string(local) + ":" +
-             std::to_string(emissive && out.separateLocalLighting != 0);
+      const auto &trace = settings.trace;
+      const uint32_t separateLocal = normalized(trace).separateLocalLighting;
+      const uint32_t fields[] = {
+          settings.backend, trace.accumulate, trace.validation, trace.denoiser, trace.taa,
+          trace.sigma, trace.localDenoiser, separateLocal, trace.restir, uint32_t(trace.upscaler),
+          trace.dlssQuality, trace.fsrQuality, trace.xessQuality, trace.dlssRayReconstruction,
+          trace.sharc, trace.sharcDebug, trace.sharcCapacityLog2, trace.bounces != 0, trace.rasterPrimary,
+          extent.width, extent.height, perspective, local, emissive && separateLocal != 0};
+      // A delimited integer tuple preserves the same resource distinctions
+      // without serializing profile fields that cannot affect this key.
+      std::string key;
+      key.reserve(std::size(fields) * 11);
+      for (const uint32_t field : fields) {
+        char value[10];
+        const auto result = std::to_chars(std::begin(value), std::end(value), field);
+        key.append(value, result.ptr);
+        key.push_back(':');
+      }
+      return key;
     }
   } // namespace
   bool RemixNativeRuntime::preparationPending() const {

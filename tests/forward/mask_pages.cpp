@@ -90,7 +90,10 @@ int main() {
         std::vector<uint16_t> source(2 * 20 * 64);
         for (uint32_t i = 0; i < source.size(); ++i) source[i] = uint16_t(i);
         std::vector<uint16_t> target(2 * layers * 64, 0xffff);
-        for (const auto &segment : lightmap::uploadSegments(layout, masksIndexed, directIndexed)) {
+        const auto segments = lightmap::uploadSegments(layout, masksIndexed, directIndexed);
+        require(segments.size() == (masksIndexed || directIndexed ? 2u * layout.pages : 1u),
+                "Compacted pages upload one contiguous range on each side of the removed layers");
+        for (const auto &segment : segments) {
           require(segment.source + segment.values <= source.size() &&
                       segment.destination + segment.values <= target.size(),
                   "Every compact-atlas upload segment fits its source and destination");

@@ -6,7 +6,6 @@
 #include <algorithm>
 #include <chrono>
 #include <memory>
-#include <numeric>
 #include <stdexcept>
 #include <utility>
 #ifdef REMIX_OIDN
@@ -53,8 +52,9 @@ namespace remix::forward::lightmap {
       std::vector<PendingChart> pending;
       Filter filter(statistics, largestImage, transfers, dispatch, choice.device, choice.cpuThreads);
       filter.initialize(cancelled);
-      const auto total = uint32_t(std::count_if(chartPoints.begin(), chartPoints.end(),
-                                                [](const auto &points) { return !points.empty(); }));
+      const auto total = uint32_t(std::ranges::count_if(order, [&](uint32_t chart) {
+        return !chartPoints[chart].empty();
+      }));
       if (progress)
         progress(0, total);
       uint64_t pendingBytes = 0;
@@ -187,8 +187,9 @@ namespace remix::forward::lightmap {
       std::vector<DenoiseStatistics> workers(device.cpuQueues);
       std::mutex progressMutex;
       uint32_t completed = 0;
-      const auto total = uint32_t(std::count_if(chartPoints.begin(), chartPoints.end(),
-                                                [](const auto &points) { return !points.empty(); }));
+      const auto total = uint32_t(std::ranges::count_if(order, [&](uint32_t chart) {
+        return !chartPoints[chart].empty();
+      }));
       if (progress)
         progress(0, total);
       denoising::cpuQueues(device.cpuQueues, cancelled, [&](uint32_t index, std::stop_token stop) {
@@ -209,50 +210,74 @@ namespace remix::forward::lightmap {
     }
   }
 #endif
-  DenoiseStatistics denoise(const Layout &layout, std::span<bake::Result> results, std::stop_token cancelled,
-                            std::function<void(uint32_t, uint32_t)> progress, HostTransfers transfers,
-                            FilterDispatch dispatch) {
+  DenoisePlan::DenoisePlan(const Layout &layout, std::stop_token cancelled) : m_layout(layout) {
+#ifndef REMIX_OIDN
+    throw std::runtime_error("Lightmap denoising requires a build configured with oidn_root");
+#else
+    if (layout.pointCharts.size() != layout.points.size() || layout.addresses.size() != layout.points.size() ||
+        layout.owners.size() != uint64_t(layout.pageSize) * layout.pageSize * layout.pages)
+      throw std::invalid_argument("Incomplete lightmap denoising layout");
+    if (layout.points.empty())
+      return;
+    checkCancellation(cancelled);
+    m_chartPoints.resize(layout.charts.size());
+    for (uint32_t i = 0; i < layout.points.size(); ++i) {
+      if ((i & 1023u) == 0) checkCancellation(cancelled);
+      if (layout.pointCharts[i] >= m_chartPoints.size())
+        throw std::invalid_argument("Invalid denoising chart");
+      m_chartPoints[layout.pointCharts[i]].push_back(i);
+    }
+    m_order.reserve(layout.charts.size());
+    std::vector<std::pair<uint32_t, uint32_t>> shapes(layout.charts.size());
+    for (uint32_t chart = 0; chart < layout.charts.size(); ++chart) {
+      if ((chart & 1023u) == 0) checkCancellation(cancelled);
+      const auto &a = layout.charts[chart];
+      if (!a.width || !a.height || a.page >= layout.pages || uint64_t(a.x) + a.width > layout.pageSize ||
+          uint64_t(a.y) + a.height > layout.pageSize)
+        throw std::invalid_argument("Invalid denoising allocation");
+      if (m_chartPoints[chart].empty()) continue;
+      const auto [width, height] = shapes[chart] = imageShape(a);
+      const size_t fieldBytes = size_t(width) * height * 3 * sizeof(float);
+      m_largestImage = std::max(m_largestImage, fieldBytes * denoising::batchFields(fieldBytes));
+      m_order.push_back(chart);
+    }
+    // Chart-local donors make charts independent. Group equal image shapes so
+    // the same committed network can serve all of them without re-preparation.
+    std::stable_sort(m_order.begin(), m_order.end(), [&](uint32_t a, uint32_t b) {
+      return shapes[a] > shapes[b];
+    });
+#endif
+  }
+
+  DenoiseStatistics DenoisePlan::filter(std::span<bake::Result> results, std::stop_token cancelled,
+      std::function<void(uint32_t, uint32_t)> progress, HostTransfers transfers, FilterDispatch dispatch) const {
 #ifndef REMIX_OIDN
     throw std::runtime_error("Lightmap denoising requires a build configured with oidn_root");
 #else
     const auto start = std::chrono::steady_clock::now();
-    if (results.size() != layout.points.size() || layout.pointCharts.size() != results.size() ||
-        layout.addresses.size() != results.size() ||
-        layout.owners.size() != uint64_t(layout.pageSize) * layout.pageSize * layout.pages)
-      throw std::invalid_argument("Incomplete lightmap denoising layout");
+    if (results.size() != m_layout.points.size())
+      throw std::invalid_argument("Incomplete lightmap denoising results");
     DenoiseStatistics statistics;
     if (results.empty())
       return statistics;
     checkCancellation(cancelled);
-    std::vector<uint32_t> order(layout.charts.size());
-    std::iota(order.begin(), order.end(), 0u);
-    size_t largestImage = 0;
-    for (const auto &a : layout.charts) {
-      if (!a.width || !a.height || a.page >= layout.pages || uint64_t(a.x) + a.width > layout.pageSize ||
-          uint64_t(a.y) + a.height > layout.pageSize)
-        throw std::invalid_argument("Invalid denoising allocation");
-      const auto [width, height] = imageShape(a);
-      const size_t fieldBytes = size_t(width) * height * 3 * sizeof(float);
-      largestImage = std::max(largestImage, fieldBytes * denoising::batchFields(fieldBytes));
-    }
-    // Chart-local donors make charts independent. Group equal image shapes so
-    // the same committed network can serve all of them without re-preparation.
-    std::stable_sort(order.begin(), order.end(), [&](uint32_t a, uint32_t b) {
-      const auto &first = layout.charts[a], &second = layout.charts[b];
-      return imageShape(first) > imageShape(second);
-    });
-    std::vector<std::vector<uint32_t>> chartPoints(layout.charts.size());
-    for (uint32_t i = 0; i < results.size(); ++i) {
-      if (layout.pointCharts[i] >= chartPoints.size())
-        throw std::invalid_argument("Invalid denoising chart");
-      chartPoints[layout.pointCharts[i]].push_back(i);
-    }
-    const auto device = denoising::chooseDevice(layout, results, chartPoints, imageAlignment, largestImage,
+    const auto device = denoising::chooseDevice(m_layout, results, m_chartPoints, imageAlignment, m_largestImage,
                                                 transfers, dispatch, cancelled, statistics);
-    denoising::filterChartQueues(layout, results, order, chartPoints, largestImage, device, transfers,
+    denoising::filterChartQueues(m_layout, results, m_order, m_chartPoints, m_largestImage, device, transfers,
                                  dispatch, cancelled, statistics, progress);
     statistics.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
     return statistics;
 #endif
+  }
+
+  DenoiseStatistics denoise(const Layout &layout, std::span<bake::Result> results, std::stop_token cancelled,
+      std::function<void(uint32_t, uint32_t)> progress, HostTransfers transfers, FilterDispatch dispatch) {
+    const auto start = std::chrono::steady_clock::now();
+    if (results.size() != layout.points.size())
+      throw std::invalid_argument("Incomplete lightmap denoising results");
+    auto statistics = DenoisePlan(layout, cancelled).filter(results, cancelled, std::move(progress), transfers, dispatch);
+    if (!results.empty())
+      statistics.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+    return statistics;
   }
 } // namespace remix::forward::lightmap

@@ -40,7 +40,7 @@ int main() {
     try { operation(); } catch (const std::exception &) { rejected = true; }
     require(rejected, "Invalid or cancelled attributed work is refused");
   };
-  refused([&] { work.encode(layout, false, {}); });
+  refused([&] { work.encode(false, {}); });
   refused([&] { work.finish({}); });
   b::Result first, last;
   first.irradiance[0] = {1, 2, 3, 123};
@@ -59,14 +59,14 @@ int main() {
   require(work.received(), "Fence completion order need not match submission order");
   std::stop_source stop;
   stop.request_stop();
-  refused([&] { work.encode(layout, false, stop.get_token()); });
+  refused([&] { work.encode(false, stop.get_token()); });
   require(work.style() == 32 && work.received(), "Cancelled encoding does not advance or partially publish the group");
-  work.encode(layout, false, {});
+  work.encode(false, {});
   require(work.style() == 97 && work.ordinal() == 2 && !work.received(), "Next style reuses workspace with independent readback ownership");
   const b::Result black[2]{};
   work.consume(97, true, 0, black);
   work.consume(97, false, 0, black);
-  work.encode(layout, false, {});
+  work.encode(false, {});
   require(work.complete(), "Every captured group must finish before serialization");
   const auto words = work.finish({});
   const uint32_t styles[] = {32, 97};

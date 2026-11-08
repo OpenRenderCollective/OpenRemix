@@ -117,7 +117,8 @@ void main() {
 #endif
   if (rayFrame.control.z != 1u && rayFrame.control.z != 7u && rayFrame.control.z != 8u &&
       dot(point.normal.xyz, point.normal.xyz) > 1e-10)
-    origin += normalize(point.normal.xyz) * rayFrame.trace.y;
+    origin += normalize(point.normal.xyz) *
+        ((rayFrame.control.z == 5u || rayFrame.control.z == 6u) ? rayFrame.trace.z : rayFrame.trace.y);
   RayResult outputValue;
   for (uint i = 0; i < 9; ++i)
     outputValue.irradiance[i] = vec4(0);

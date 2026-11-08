@@ -20,16 +20,16 @@ namespace {
     bake::ProbeVisibility masks;
     uint32_t last;
   };
-  Source source(Fixture &fixture, bool sorted, bool directional, uint32_t seed = 0) {
+  Source source(Fixture &fixture, bool sorted, bool directional, uint32_t seed = 0, bool endpoints = false) {
     const uint32_t lights = sorted ? 2097153u : 66u;
     std::vector<bake::VisibilityTask> pairs;
     std::vector<bake::VisibilityResult> values;
     for (uint32_t probe = 0; probe < 8; ++probe)
       for (uint32_t light : {0u, 1u, 64u, lights - 1}) {
-        if (probe == 0 && light == 1) continue;
+        if (!endpoints && probe == 0 && light == 1) continue;
         pairs.push_back({probe, light, 0});
         bake::VisibilityResult value;
-        value.visibility = float((probe + light % 5 + seed) % 7) / 6;
+        value.visibility = endpoints ? float(light & 1u) : float((probe + light % 5 + seed) % 7) / 6;
         value.irradiance[0] = 1;
         value.irradiance[2] = -.25f;
         values.push_back(value);
@@ -58,11 +58,16 @@ namespace {
                           VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     volume->data->write(&header, sizeof(header));
     std::array<bake::Result, 8> probes{};
+    if (endpoints) {
+      volume->probeEndpointCellSides = {1, 0, 0, 0, 0, 0, 0, 0};
+      for (auto &probe : probes) probe.statistics[3] = 1;
+    }
     volume->data->write(probes.data(), sizeof(probes), sizeof(header));
     volume->data->write(words.data(), words.size() * 4, offset);
     return {std::move(volume), std::move(masks), lights - 1};
   }
-  void readback(Fixture &fixture, const probe_batch::Field &field, const bake::ProbeVisibility &masks) {
+  void readback(Fixture &fixture, const probe_batch::Field &field, const bake::ProbeVisibility &masks,
+                uint32_t endpointCode = 0) {
     Buffer host;
     const auto descriptor = field.descriptor();
     host.create(fixture.physical, fixture.device, descriptor.range,
@@ -81,7 +86,7 @@ namespace {
     std::vector<uint32_t> words(size_t(descriptor.range / 4));
     host.read(words.data(), words.size() * 4);
     require(words[0] == field.probes() && words[1] == field.lights().size() &&
-                words[2] == field.groups() && words[3] == 0x56504252u,
+                words[2] == field.groups() && words[3] == (0x56504252u | uint32_t(endpointCode != 0)),
             "GPU batch header describes exact immutable ownership");
     for (uint32_t probe = 0; probe < field.probes(); ++probe)
       for (uint32_t slot = 0; slot < field.groups() * 4; ++slot) {
@@ -91,6 +96,12 @@ namespace {
         require(actual == std::bit_cast<uint32_t>(expected.value_or(-1)),
                 "Vector gather preserves exact floats, holes, black masks, duplicate IDs and padding");
       }
+    if (endpointCode) {
+      const auto begin = words.begin() + 4 + field.probes() * field.groups() * 4;
+      require(*begin == std::bit_cast<uint32_t>(float(endpointCode)) &&
+                  std::all_of(begin + 1, words.end(), [](uint32_t word) { return word == 0; }),
+              "Only the complete endpoint group in the valid cell is certified");
+    }
   }
 }
 int main() try {
@@ -195,6 +206,18 @@ int main() try {
     readback(fixture, *submittedOwner, temporarySource.masks);
     submittedOwner.reset();
     require(retained.expired(), "Completed consumers release obsolete source volumes without a cache leak");
+  }
+  {
+    auto input = source(fixture, false, false, 0, true);
+    const std::array<uint32_t, 12> lights{1, 2, 65, input.last + 1, 0, 1, 2, 65,
+                                          2, 1, input.last + 1, 65};
+    probe_batch::Cache cache(fixture.physical, fixture.device);
+    prepare(cache);
+    fixture.begin();
+    auto field = cache.record(fixture.command, input.volume, lights);
+    require(bool(field), "Endpoint metadata fits the optional field");
+    readback(fixture, *field, input.masks, 11u | (6u << 10));
+    queryField(fixture, *input.volume, input.masks, *field);
   }
   require(validationErrors == 0, "Gather, cancellation, reuse and replacement are Vulkan validation clean");
   std::puts("Selected probe visibility: exact gather, weighted receiver coverage, group reuse and owners passed");

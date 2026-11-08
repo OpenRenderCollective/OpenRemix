@@ -70,6 +70,10 @@ namespace {
     const auto draws = api.draws();
     const auto lights = api.sphereLights();
     require(lights.size() == 1, "Fixture light");
+    std::vector<scene::SphereLight> scratch;
+    const auto synchronousLights = api.sphereLightView(scratch);
+    require(synchronousLights.data() == scratch.data() && scratch == lights,
+            "Synchronous reads collect lights into caller-owned storage");
     api.publishFrame(frame);
     require(api.draws().empty() && api.pendingDrawCount() == 0 && !api.hasSphereLights() && api.sphereLights().empty(),
             "The API frame was not finished");
@@ -81,6 +85,10 @@ namespace {
     require(frame.camera() == api.camera() && frame.view() == api.view() && frame.cameraValid(),
             "Published camera differs");
     require(frame.hasSphereLights() && frame.sphereLights() == lights, "Published lights differ");
+    const auto publishedLights = frame.sphereLightView(scratch);
+    require(publishedLights.data() != scratch.data() && publishedLights.size() == lights.size() &&
+                publishedLights.front() == lights.front(),
+            "Published reads borrow the immutable light list");
     // Lights resolve at publication: destroying one afterwards does not
     // reach the published frame.
     api.destroyLight(light);

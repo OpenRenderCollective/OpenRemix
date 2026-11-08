@@ -1,16 +1,20 @@
 #include "forward/shadows/plan.h"
+#include "forward/bake/draw_key.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
 #include <stdexcept>
 
 namespace remix::forward::shadows {
-  View lightView(const scene::SphereLight &light, float range, float sceneScale) {
+  static View viewParameters(const scene::SphereLight &light, float range, float sceneScale) {
     View result;
     result.id = light.id;
     std::copy_n(light.position, 3, result.position.begin());
     result.nearPlane = .001f / sceneScale;
     result.farPlane = std::max(range, result.nearPlane * 2);
+    return result;
+  }
+  static void projectFaces(View &result) {
     const Vec3 forward[] = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
     const Vec3 right[] = {{0, 0, -1}, {0, 0, 1}, {1, 0, 0}, {1, 0, 0}, {1, 0, 0}, {-1, 0, 0}};
     const Vec3 down[] = {{0, -1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}, {0, -1, 0}, {0, -1, 0}};
@@ -28,7 +32,11 @@ namespace remix::forward::shadows {
       matrix[14] = -dot(forward[face], result.position) * a - result.nearPlane * a;
       matrix[15] = -dot(forward[face], result.position);
     }
-    return result;
+  }
+  View lightView(const scene::SphereLight &light, float range, float sceneScale) {
+    auto view = viewParameters(light, range, sceneScale);
+    projectFaces(view);
+    return view;
   }
   bool sameView(const View &a, const View &b) {
     return a.id == b.id && a.position == b.position && a.nearPlane == b.nearPlane && a.farPlane == b.farPlane;
@@ -48,33 +56,38 @@ namespace remix::forward::shadows {
     result.fill({1, 1, -1, -1});
     return result;
   }
-  void includeCoverage(Vec4 &coverage, const Bounds &bounds, const Matrix &matrix, float nearPlane) {
-    if (!intersectsClip(bounds, matrix)) return;
+  static void projectCoverage(Vec4 &coverage, const Bounds &bounds, const Matrix &matrix, float nearPlane) {
     Vec4 rectangle{1, 1, -1, -1};
     bool full = !bounds.valid;
     for (uint32_t corner = 0; corner < 8 && !full; ++corner) {
-      double clip[4]{}, roundoff[4]{}, magnitude = 1;
-      for (uint32_t row = 0; row < 4; ++row) {
-        clip[row] = matrix[12 + row];
-        roundoff[row] = std::abs(clip[row]);
-        for (uint32_t axis = 0; axis < 3; ++axis) {
-          const float value = corner & (1u << axis) ? bounds.maximum[axis] : bounds.minimum[axis];
-          const double term = double(matrix[axis * 4 + row]) * value;
-          clip[row] += term;
-          roundoff[row] += std::abs(term);
-          magnitude = std::max(magnitude, double(std::abs(value)));
-        }
+      Vec3 point;
+      double magnitude = 1;
+      for (uint32_t axis = 0; axis < 3; ++axis) {
+        point[axis] = corner & (1u << axis) ? bounds.maximum[axis] : bounds.minimum[axis];
+        magnitude = std::max(magnitude, double(std::abs(point[axis])));
       }
-      if (!std::isfinite(clip[3]) || clip[3] <= nearPlane) { full = true; break; }
+      const auto component = [&](uint32_t row) {
+        double clip = matrix[12 + row], roundoff = std::abs(clip);
+        for (uint32_t axis = 0; axis < 3; ++axis) {
+          const double term = double(matrix[axis * 4 + row]) * point[axis];
+          clip += term;
+          roundoff += std::abs(term);
+        }
+        return std::pair{clip, roundoff};
+      };
+      // Frustum testing already handled Z. The rectangle only needs X/Y/W.
+      const auto [w, wRoundoff] = component(3);
+      if (!std::isfinite(w) || w <= nearPlane) { full = true; break; }
       // Cover float transform/subtraction error, including distant origins.
-      const double margin = 32 * std::numeric_limits<float>::epsilon() * magnitude / clip[3];
+      const double margin = 32 * std::numeric_limits<float>::epsilon() * magnitude / w;
       for (uint32_t axis = 0; axis < 2; ++axis) {
-        const double value = clip[axis] / clip[3];
+        const auto [clip, roundoff] = component(axis);
+        const double value = clip / w;
         if (!std::isfinite(value)) { full = true; break; }
         // Narrow orthographic projections can amplify cancellation at distant
         // origins. Also bound transform/divide error in projected coordinates.
         const double error = std::max(margin, 32 * std::numeric_limits<float>::epsilon() *
-            (roundoff[axis] + std::abs(value) * roundoff[3]) / clip[3]);
+            (roundoff + std::abs(value) * wRoundoff) / w);
         rectangle[axis] = std::min(rectangle[axis], float(value - error));
         rectangle[axis + 2] = std::max(rectangle[axis + 2], float(value + error));
       }
@@ -85,6 +98,12 @@ namespace remix::forward::shadows {
       coverage[axis + 2] = std::max(coverage[axis + 2], rectangle[axis + 2]);
     }
   }
+  void CoverageProjection::include(Vec4 &coverage, const Bounds &bounds) const {
+    if (m_frustum.intersects(bounds)) projectCoverage(coverage, bounds, m_matrix, m_nearPlane);
+  }
+  void includeCoverage(Vec4 &coverage, const Bounds &bounds, const Matrix &matrix, float nearPlane) {
+    if (intersectsClip(bounds, matrix)) projectCoverage(coverage, bounds, matrix, nearPlane);
+  }
   void includeCoverage(Coverage &coverage, const Bounds &bounds, const View &view) {
     for (uint32_t face = 0; face < faces; ++face)
       includeCoverage(coverage[face], bounds, view.matrices[face], view.nearPlane);
@@ -92,17 +111,19 @@ namespace remix::forward::shadows {
   Selection Planner::update(std::span<const scene::SphereLight> lights, Vec3 eye, uint32_t budget,
                             float cutoff, float distance, float sceneScale,
                             std::shared_ptr<const scene::BakeScene> source, double seconds, float fadeSeconds,
-                            std::span<const uint8_t> fallbackLights) {
+                            std::span<const uint8_t> fallbackLights, std::span<const LightRange> ranges) {
     if (!fallbackLights.empty() && fallbackLights.size() != lights.size())
       throw std::invalid_argument("Shadow fallback policy does not match submitted lights");
+    if (!ranges.empty() && ranges.size() != lights.size())
+      throw std::invalid_argument("Shadow ranges do not match submitted lights");
     if (source && !source->ready)
       source.reset();
     if (m_source != source) {
       m_source = std::move(source);
-      m_instances.clear();
+      m_drawIndex.clear();
       if (m_source)
         for (uint32_t i = 0; i < m_source->draws.size(); ++i)
-          if (!m_source->receiverOnly(i)) m_instances.emplace(m_source->draws[i].instanceId, i);
+          if (!m_source->receiverOnly(i)) m_drawIndex.emplace(bake::drawLookupKey(m_source->draws[i]), i);
       m_valid.fill(false);
       m_assigned.fill(false);
       m_strength.fill(0);
@@ -116,7 +137,7 @@ namespace remix::forward::shadows {
     std::vector<Candidate> candidates;
     candidates.reserve(lights.size());
     for (uint32_t i = 0; i < lights.size(); ++i) {
-      const float range = influenceRadius(lights[i], cutoff);
+      const float range = ranges.empty() ? influenceRadius(lights[i], cutoff) : ranges[i].influence;
       if (!std::isfinite(range) || range <= 0)
         continue;
       Vec3 delta;
@@ -210,13 +231,16 @@ namespace remix::forward::shadows {
       if (slot == UINT32_MAX) continue;
       // Projection matrices are needed only by lights that own a map. Keep
       // the ranked candidates compact instead of sorting six matrices each.
-      const auto view = lightView(lights[candidate.index], std::min(candidate.range, distance / sceneScale), sceneScale);
+      auto view = viewParameters(lights[candidate.index], std::min(candidate.range, distance / sceneScale), sceneScale);
       result.active[slot] = true;
       result.strength[slot] = m_strength[slot];
-      result.views[slot] = view;
       result.dirty[slot] = !m_valid[slot] || !sameView(m_views[slot], view);
-      m_views[slot] = view;
-      m_valid[slot] = true;
+      if (result.dirty[slot]) {
+        projectFaces(view);
+        m_views[slot] = view;
+        m_valid[slot] = true;
+      }
+      result.views[slot] = m_views[slot];
     }
     // Inactive cached maps remain reusable until their slots are overwritten.
     return result;
@@ -224,7 +248,7 @@ namespace remix::forward::shadows {
   bool Planner::captured(const scene::Draw &draw) const {
     if (!m_source)
       return false;
-    const auto [first, last] = m_instances.equal_range(draw.instanceId);
+    const auto [first, last] = m_drawIndex.equal_range(bake::drawLookupKey(draw));
     for (auto i = first; i != last; ++i)
       if (scene::matchesBakeDraw(*m_source, i->second, draw))
         return true;

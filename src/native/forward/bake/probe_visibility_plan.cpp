@@ -43,7 +43,7 @@ namespace remix::forward::bake {
       for (size_t i = 0; i < candidates.size(); ++i) {
         if ((i & 1023u) == 0) check(cancelled);
         const auto &candidate = candidates[i];
-        const uint32_t style = completeStyleGroups ? lights[candidate.light].style : 0;
+        const uint32_t style = lights[candidate.light].style;
         size_t group = groups.size();
         if (style) group = styles.try_emplace(style, group).first->second;
         if (group == groups.size()) groups.emplace_back();
@@ -51,6 +51,8 @@ namespace remix::forward::bake {
         groups[group].pairs += candidate.count;
         groups[group].firstLight = std::min(groups[group].firstLight, candidate.light);
       }
+      // A group larger than the full budget cannot fit even after eviction.
+      std::erase_if(groups, [maximumPairs](const Group &group) { return group.pairs > maximumPairs; });
       // A controllable component can only replace runtime lights when every
       // member has a complete volume. Rank cost per light, not total group cost:
       // otherwise a large useful group is always considered last and stranded.
@@ -63,7 +65,6 @@ namespace remix::forward::bake {
       for (size_t i = 0; i < groups.size(); ++i) {
         check(cancelled);
         auto &group = groups[i];
-        if (group.pairs > maximumPairs) continue;
         if (group.pairs > maximumPairs - pairs) {
           // Repair a nearly fitting component by trading the most expensive
           // selected suffix for it, only if that retires strictly more lights.
@@ -149,6 +150,7 @@ namespace remix::forward::bake {
     // A trilinear corner can be sqrt(3) cells from the receiver. Relocation
     // moves it at most .45 cells per axis; include the receiver's normal bias.
     const double halo = std::sqrt(3.) * 1.45 * spacing + bias;
+    double sweepHalo = halo;
     std::vector<double> probeHalos;
     if (adaptive(grid.header)) {
       // A fine-only record cannot contribute to a coarse stencil. Directory
@@ -160,9 +162,23 @@ namespace remix::forward::bake {
       for (const auto &origin : origins)
         probeHalos.push_back(std::sqrt(3.) * 1.45 * origin.relocationSpacing +
                              double(bias) * origin.relocationSpacing / spacing);
+      // Only usable probes participate in the sweep. Bound their exact halos,
+      // so fine-only regions do not inherit the coarse grid's search width.
+      sweepHalo = 0;
+      for (uint32_t probe : sorted)
+        sweepHalo = std::max(sweepHalo, probeHalos[probe]);
     }
-    const auto receiverReach = [&](double radius, uint32_t probe) {
-      return radius + (probeHalos.empty() ? halo : probeHalos[probe]);
+    const auto coversProbe = [&](const scene::SphereLight &light, double radius,
+                                 double uniformReachSquared, uint32_t probe) {
+      const auto &position = grid.points[probe].position;
+      double distanceSquared = 0;
+      for (uint32_t axis = 0; axis < 3; ++axis) {
+        const double delta = double(position[axis]) - light.position[axis];
+        distanceSquared += delta * delta;
+      }
+      if (probeHalos.empty()) return distanceSquared <= uniformReachSquared;
+      const double reach = radius + probeHalos[probe];
+      return distanceSquared <= reach * reach;
     };
     for (uint32_t lightIndex = 0; lightIndex < lights.size(); ++lightIndex) {
       check(cancelled);
@@ -177,28 +193,27 @@ namespace remix::forward::bake {
       const float radius = influenceRadius(light, cutoff);
       if (!std::isfinite(radius))
         throw std::invalid_argument("Invalid local light influence radius");
-      if (radius <= 0)
+      if (radius <= 0 || sorted.empty())
         continue;
       const double reach = double(radius) + halo;
+      const double reachSquared = reach * reach;
+      const double sweepReach = double(radius) + sweepHalo;
       const auto first = std::lower_bound(
-          sorted.begin(), sorted.end(), double(light.position[sweepAxis]) - reach,
+          sorted.begin(), sorted.end(), double(light.position[sweepAxis]) - sweepReach,
           [&](uint32_t probe, double x) { return grid.points[probe].position[sweepAxis] < x; });
       const auto end = std::upper_bound(
-          first, sorted.end(), double(light.position[sweepAxis]) + reach,
+          first, sorted.end(), double(light.position[sweepAxis]) + sweepReach,
           [&](double x, uint32_t probe) { return x < grid.points[probe].position[sweepAxis]; });
       uint64_t count = 0;
+      auto firstHit = end;
+      auto pastLastHit = end;
       for (auto entry = first; entry != end; ++entry) {
-        const auto &position = grid.points[*entry].position;
         if ((result.candidates++ & 1023u) == 0)
           check(cancelled);
-        double distanceSquared = 0;
-        for (uint32_t axis = 0; axis < 3; ++axis) {
-          const double delta = double(position[axis]) - light.position[axis];
-          distanceSquared += delta * delta;
-        }
-        const double localReach = receiverReach(radius, *entry);
-        if (distanceSquared > localReach * localReach)
+        if (!coversProbe(light, radius, reachSquared, *entry))
           continue;
+        if (!count) firstHit = entry;
+        pastLastHit = entry + 1;
         // A single light larger than the entire budget cannot be selected.
         // Stop counting it, but continue examining later, cheaper volumes.
         if (++count > maximumPairs)
@@ -206,7 +221,7 @@ namespace remix::forward::bake {
       }
       if (count)
         candidates.push_back(
-            {lightIndex, size_t(first - sorted.begin()), size_t(end - sorted.begin()), count, radius});
+            {lightIndex, size_t(firstHit - sorted.begin()), size_t(pastLastHit - sorted.begin()), count, radius});
     }
     result.eligibleLights = uint32_t(candidates.size());
     std::sort(candidates.begin(), candidates.end(), [](const Candidate &a, const Candidate &b) {
@@ -223,17 +238,12 @@ namespace remix::forward::bake {
     for (size_t index : selected) {
       const auto &candidate = candidates[index];
       const auto &light = lights[candidate.light];
+      const double reach = double(candidate.radius) + halo;
+      const double reachSquared = reach * reach;
       for (size_t i = candidate.first; i < candidate.end; ++i) {
         if ((result.candidates++ & 1023u) == 0)
           check(cancelled);
-        const auto &position = grid.points[sorted[i]].position;
-        double distanceSquared = 0;
-        for (uint32_t axis = 0; axis < 3; ++axis) {
-          const double delta = double(position[axis]) - light.position[axis];
-          distanceSquared += delta * delta;
-        }
-        const double localReach = receiverReach(candidate.radius, sorted[i]);
-        if (distanceSquared <= localReach * localReach)
+        if (coversProbe(light, candidate.radius, reachSquared, sorted[i]))
           result.tasks.push_back({sorted[i], candidate.light, 0});
       }
     }

@@ -9,25 +9,17 @@ ReceiverLightContext prepareReceiverLighting(ShadingReceiver receiver, vec3 norm
 ReceiverLightContext prepareVolumeReceiverLighting(ShadingReceiver receiver, vec3 normal) {
   return ReceiverLightContext(receiver.geometric);
 }
-bool receiverNeedsDiffuseReference(ReceiverLightContext context) {
-  return false;
-}
+bool receiverUsesSurfaceLighting(ReceiverLightContext context) { return false; }
 ReceiverLighting sampleDiffuseLighting(ShadingReceiver receiver, vec3 normal,
                                       ReceiverLightContext context, bool diffuseRequired) {
   return evaluateReceiverLighting(receiver.position, normal, context.geometric,
       diffuseRequired, frame.ambientExposure.rgb);
 }
-float receiverSunVisibility(ReceiverLightContext context) {
+float receiverSunIrradiance(ReceiverLightContext context) {
   return 0; // no surface-chart unit irradiance in this source
 }
-// These legacy views explicitly inspect the baked reference field. Ordinary
+// The irradiance view explicitly inspects the baked reference field. Ordinary
 // live shading never prepares that chart lookup just to populate its context.
-vec3 receiverBakedCoverage(ShadingReceiver receiver, vec3 normal, ReceiverLightContext context) {
-  vec4 chart;
-  bool charted = surfaceIrradiance(receiver.baked.coordinate, normal, receiver.baked.bounds, chart);
-  bool covered = charted || localProbeStencil(receiver.position, normal);
-  return charted ? vec3(0, 0, 1) : covered ? vec3(0, 1, 0) : vec3(1, 0, 0);
-}
 vec3 receiverBakedDiffuse(ShadingReceiver receiver, vec3 normal, ReceiverLightContext context, vec3 fallback) {
   vec4 chart;
   if (surfaceIrradiance(receiver.baked.coordinate, normal, receiver.baked.bounds, chart)) return chart.rgb / Pi;

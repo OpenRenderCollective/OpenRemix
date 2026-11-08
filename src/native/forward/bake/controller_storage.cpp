@@ -2,6 +2,7 @@
 #include "forward/bake/cache.h"
 #include "forward/bake/receiver_report.h"
 #include "forward/bake/storage_options.h"
+#include "forward/mixed/chart_highlights.h"
 #include "forward/mixed/directional_links.h"
 #include <algorithm>
 #include <chrono>
@@ -11,6 +12,27 @@
 #include <new>
 
 namespace remix::forward::bake {
+  void Controller::Job::prepareDiffusePublicationData(uint64_t storageRange, const Config &config) {
+    prepareGroupedStyles(storageRange, config);
+    if (!mixed::chartHighlightsEnabled() || !config.aggregateDiffuse ||
+        irradianceContents != IrradianceContents::Combined) return;
+
+    const auto start = std::chrono::steady_clock::now();
+    try {
+      chartHighlights = mixed::ChartHighlightField::prepare(*mixedLights, surfaceLayout, surfacePixels,
+          groupedStyles.styles, cancellation.get_token());
+    } catch (const std::bad_alloc &) {
+      chartHighlights.reset(); // The ordinary light list needs no optional field.
+    }
+    if (const auto &field = chartHighlights) {
+      const auto bytes = field->visibility.size() + field->points.size() * sizeof(Point) +
+                         field->chartOffsets.size() * sizeof(uint32_t) + field->exactOcclusion.bytes();
+      std::fprintf(stderr, "Forward chart highlight worker: %zu blocks, %zu bytes, %.3f ms\n",
+          field->points.size(), bytes, std::chrono::duration<double, std::milli>(
+              std::chrono::steady_clock::now() - start).count());
+    }
+  }
+
   void Controller::Job::prepareGroupedStyles(uint64_t storageRange, const Config &config) {
     if (!config.groupedStyledDirect || !directionalFieldsRequested() || !completeDirectionals ||
         !localProbes || !localProbes->directional() || styleIds(*source).empty()) return;
