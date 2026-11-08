@@ -125,6 +125,9 @@ namespace remix {
                                                           bool spriteVertices, uint64_t &bytes);
     void adoptMesh(uint64_t hash, std::vector<std::shared_ptr<scene::Surface>> surfaces, remixapi_MeshHandle &handle);
     void destroyMesh(remixapi_MeshHandle handle);
+    // remixapi_UpdateMeshVerticesEXT: a new version of a registered mesh with
+    // only these surfaces' positions (normals, texture coordinates) replaced.
+    void updateMeshVertices(remixapi_MeshHandle handle, uint32_t count, const remixapi_MeshVerticesEXT *surfaces);
     void createTexture(const remixapi_TextureInfo &info, remixapi_TextureHandle &handle);
     // Stores pixels prepared outside the API mutex (see scene::compressTexture).
     void createTexture(const remixapi_TextureInfo &info, scene::Pixels &&pixels, remixapi_TextureHandle &handle);

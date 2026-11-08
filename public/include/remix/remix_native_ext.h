@@ -1241,6 +1241,22 @@ typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_GetTextureStatisticsEXT)(
     remixapi_TextureStatisticsEXT *statistics);
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetTextureStatisticsEXT(remixapi_TextureStatisticsEXT *statistics);
 
+// The last presented frame (the game's image, without OpenRemix's own UI) as
+// 8-bit BGRA with alpha 255, sRGB-encoded SDR: HDR10 output tone mapped as an
+// SDR screenshot is. Fills width x height pixels, rowPitch bytes apart,
+// scaled (nearest) from the presented size, which presentedWidth and
+// presentedHeight report. Waits for the GPU: for occasional readbacks, such as
+// a D3D9 host's screenshot of its own back buffer, which OpenRemix never draws.
+// FEATURE_UNAVAILABLE: nothing presented yet (or the swapchain cannot be
+// copied from).
+typedef struct remixapi_PresentedImageEXT {
+  uint32_t width, height, rowPitch;
+  void *pixels;                             // rowPitch * height bytes
+  uint32_t presentedWidth, presentedHeight; // out
+} remixapi_PresentedImageEXT;
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_ReadPresentedImageEXT)(remixapi_PresentedImageEXT *image);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_ReadPresentedImageEXT(remixapi_PresentedImageEXT *image);
+
 typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_SetVisibilityPartitionEXT)(
     const remixapi_VisibilityPartitionEXT *partition);
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL
@@ -1295,6 +1311,35 @@ typedef struct remixapi_MeshInfoDeformEXT {
   remixapi_StructType sType;
   const void *pNext;
 } remixapi_MeshInfoDeformEXT;
+
+// A deformation (as MeshInfoDeformEXT) that sends only what changed: new
+// positions, and optionally normals and texture coordinates, for surfaces of
+// the mesh registered under `mesh`. Indices, colours, skinning, sprite data and
+// materials stay as registered, so the mesh keeps its topology and, while
+// "rtx.native.meshes.refreshInPlace" is on, its identity: the tracer refits
+// its acceleration structure and motion vectors follow each vertex. (With the
+// setting off the result is a new registration under the same hash, as
+// CreateMesh would make.) Draws already queued keep the previous vertices.
+// Arrays are tightly packed floats, vertexCount long; vertexCount must equal
+// the surface's. Normals are normalized as CreateMesh does (a zero or
+// non-finite one leaves the vertex without a normal); positions and texture
+// coordinates must be finite. INVALID_ARGUMENTS: an unknown mesh, a surface
+// index out of range or given twice, another vertex count, a missing or
+// non-finite position. Nothing is changed then. For hosts that re-skin or
+// morph meshes on the CPU every frame (a D3D9 game's flexed faces).
+typedef struct remixapi_MeshVerticesEXT {
+  uint32_t surface;       // index into the mesh's surfaces
+  uint32_t vertexCount;   // the surface's vertex count
+  const float *positions; // vertexCount * 3
+  const float *normals;   // vertexCount * 3, or null: unchanged
+  const float *texcoords; // vertexCount * 2, or null: unchanged
+} remixapi_MeshVerticesEXT;
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_UpdateMeshVerticesEXT)(remixapi_MeshHandle mesh,
+                                                                             uint32_t surfaceCount,
+                                                                             const remixapi_MeshVerticesEXT *surfaces);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_UpdateMeshVerticesEXT(remixapi_MeshHandle mesh,
+                                                                         uint32_t surfaceCount,
+                                                                         const remixapi_MeshVerticesEXT *surfaces);
 
 // Optional InstanceInfo pNext (DrawInstance, AddSceneInstancesEXT,
 // SetSceneInstanceEXT): every surface of the mesh is shaded with this material

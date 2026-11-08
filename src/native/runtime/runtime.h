@@ -90,11 +90,15 @@ namespace remix {
     const std::string &postProcessingFailure() const { return m_postFailure; }
     remixapi_ErrorCode present(const remixapi_PresentInfo *info);
     bool lowLatencySupported() const { return m_lowLatencySupported; }
+    // The device builds opacity micromaps (rtx.native.pathtrace.opacityMicromaps).
+    bool opacityMicromapsSupported() const { return m_opacityMicromaps; }
     remixapi_ErrorCode requestScreenshot(const char *path);
     // A screenshot set (PresentedScreenshot::requestSet) in the profiles
     // directory's screenshots folder, named by the local time.
     remixapi_ErrorCode requestScreenshotSet();
     void completeScreenshot();
+    // remixapi_ReadPresentedImageEXT: the last-frame snapshot, read back now.
+    remixapi_ErrorCode readPresentedImage(remixapi_PresentedImageEXT &image);
     const PresentedScreenshot &screenshot() const { return m_screenshot; }
     int configureSharedFrame(remixapi_EditorSharedFrame &frame);
     bool modsDisabled() const { return m_disableMods; }
@@ -532,6 +536,7 @@ namespace remix {
     bool m_forwardSupported = false;
     bool m_forwardRaySupported = false;
     bool m_textureCompression = false; // textureCompressionBC enabled on m_device.
+    bool m_opacityMicromaps = false;   // VK_EXT_opacity_micromap enabled on m_device.
     bool m_memoryBudget = false;       // VK_EXT_memory_budget queries available.
     uint32_t m_memoryShortFrames = 0;
     bool m_memoryShort = false;

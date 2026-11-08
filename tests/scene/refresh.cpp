@@ -1,5 +1,6 @@
 #include "scene/fixtures.h"
 #include "scene/temporal.h"
+#include <cmath>
 #include <memory>
 
 // remixapi_MeshInfoDeformEXT (repeated CreateMesh
@@ -166,6 +167,79 @@ int main() {
     require(previous && previous->draw.surface->vertices[0].position[0] == -1.1f,
             "Refreshed surface lost temporal correspondence");
     r.destroyRetained(&retained, 1);
+  }
+  // remixapi_UpdateMeshVerticesEXT: positions (normals, texture coordinates)
+  // only, the rest kept; a lineage like a deform's; invalid calls change nothing.
+  {
+    Morph m(50, red, true);
+    m.vertices[2].color = 0xff336699;
+    m.vertices[2].texcoord[0] = .25f;
+    m.info.surfaces_count = 2;
+    auto handle = m.submit(r);
+    auto created = current(r, handle);
+    float positions[4][3] = {{-2, -1, 1}, {1, -1, 1}, {1, 1, 1}, {-1, 1, 1}};
+    float normals[4][3] = {{0, 0, 2}, {0, 0, 0}, {0, 3, 0}, {1, 0, 0}};
+    remixapi_MeshVerticesEXT update = {1, 4, &positions[0][0], &normals[0][0], nullptr};
+    r.updateMeshVertices(handle, 1, &update);
+    auto next = current(r, handle);
+    const auto &s = *next->surfaces[1];
+    require(next != created && created->retired && next->updateStream && next->motionCorrespondence,
+            "Vertex update did not start an update lineage");
+    require(next->surfaces[0] == created->surfaces[0], "Vertex update copied a surface it did not change");
+    require(s.vertices[0].position[0] == -2 && s.vertices[0].normal[2] == 1 && s.vertices[1].normal[2] == 0 &&
+                s.vertices[2].normal[1] == 1,
+            "Vertex update lost positions or normals");
+    require(s.vertices[2].uv[0] == .25f && s.vertices[2].color[3] == 1 &&
+                s.vertices[2].color[0] == created->surfaces[1]->vertices[2].color[0] && s.indices.size() == 6 &&
+                s.bonesPerVertex == 1 && s.weights.size() == 4,
+            "Vertex update lost what it does not send");
+    require(created->surfaces[1]->vertices[0].position[0] == -1, "Vertex update mutated the queued version");
+    require(s.center[0] == -.5f, "Vertex update kept the old bounds centre");
+
+    float texcoords[4][2] = {{.5f, .5f}, {}, {}, {}};
+    update.normals = nullptr;
+    update.texcoords = &texcoords[0][0];
+    r.updateMeshVertices(handle, 1, &update);
+    auto third = current(r, handle);
+    require(third->updateStream == next->updateStream && third->surfaces[1]->vertices[0].uv[0] == .5f &&
+                third->surfaces[1]->vertices[0].normal[2] == 1,
+            "Texture coordinate update lost the lineage or the normals");
+    r.updateMeshVertices(handle, 1, &update);
+    require(current(r, handle) == third && !third->retired, "Identical vertex update replaced the mesh");
+
+    auto rejected = [&](remixapi_MeshHandle h, const remixapi_MeshVerticesEXT &u, uint32_t count = 1) {
+      bool threw = false;
+      const remixapi_MeshVerticesEXT twice[2] = {u, u};
+      try {
+        r.updateMeshVertices(h, count, count == 2 ? twice : &u);
+      } catch (remixapi_ErrorCode) {
+        threw = true;
+      }
+      require(threw && current(r, handle) == third, "Invalid vertex update was accepted or changed the mesh");
+    };
+    auto bad = update;
+    bad.surface = 2;
+    rejected(handle, bad);
+    bad = update;
+    bad.vertexCount = 3;
+    rejected(handle, bad);
+    bad = update;
+    bad.positions = nullptr;
+    rejected(handle, bad);
+    rejected(handle, update, 2); // the same surface twice
+    positions[3][1] = NAN;
+    rejected(handle, update);
+    positions[3][1] = 1;
+    rejected(reinterpret_cast<remixapi_MeshHandle>(uintptr_t(999)), update);
+
+    // Refresh off: a plain re-registration under the same hash.
+    r.setRefreshGeometry(false);
+    positions[0][0] = -3;
+    r.updateMeshVertices(handle, 1, &update);
+    auto plain = current(r, handle);
+    require(plain != third && !plain->updateStream && plain->surfaces[1]->vertices[0].position[0] == -3,
+            "Vertex update with refresh off was not a plain replacement");
+    r.setRefreshGeometry(true);
   }
   std::puts("Mesh refresh: fork semantics, update lineage, retained replay and temporal correspondence passed");
   return 0;

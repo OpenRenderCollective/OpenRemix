@@ -74,6 +74,17 @@ REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_RequestPresentedScreenshot(co
   }
 }
 
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_ReadPresentedImageEXT(remixapi_PresentedImageEXT *image) {
+  if (!image || !image->pixels || !image->width || !image->height || image->rowPitch < image->width * 4u)
+    return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
+  try {
+    std::lock_guard lock(g_apiMutex);
+    return g_runtime.readPresentedImage(*image);
+  } catch (...) {
+    return REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
+  }
+}
+
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetPresentationCount(uint64_t *outCount) {
   if (!outCount)
     return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;

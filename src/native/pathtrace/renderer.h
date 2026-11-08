@@ -50,6 +50,9 @@ namespace remix::trace {
     double decide = 0, fill = 0, write = 0, storage = 0, topRecord = 0, storageInstances = 0, storageAccel = 0;
     uint64_t written = 0;
     uint32_t created = 0, bottomBuilds = 0, topInstances = 0, staticFilled = 0;
+    // Of bottomBuilds: refits, and the triangles built and refitted.
+    uint32_t bottomRefits = 0;
+    uint64_t builtTriangles = 0, refitTriangles = 0;
     bool update = false, staticChanged = false, keptPrefix = false;
   };
   inline AccelCosts g_accelNow, g_accelCosts;
@@ -86,8 +89,11 @@ namespace remix {
     static constexpr uint32_t textureLimit = 4096;
     PathTracer();
     ~PathTracer();
+    // opacityMicromaps: VK_EXT_opacity_micromap and synchronization2 are
+    // enabled on the device.
     void initialize(VkPhysicalDevice physical, VkDevice device, uint32_t queueFamily, bool preparing = false,
-                    bool rasterPrimary = true, std::shared_ptr<postfx::State> exposureState = {});
+                    bool rasterPrimary = true, std::shared_ptr<postfx::State> exposureState = {},
+                    bool opacityMicromaps = false);
     std::shared_ptr<postfx::State> exposureState() const;
     VkExtent2D renderExtent() const;
     void setPostProcessing(postfx::Renderer *renderer, bool retainExposure = false);

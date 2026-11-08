@@ -4,6 +4,8 @@
 #if !defined(REMIX_METAL)
 #include <vulkan/vulkan.h>
 #endif
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <mutex>
@@ -16,6 +18,11 @@ namespace remix {
   struct ScreenshotFormats {
     bool hdrPng = true, jxr = true, exr = true;
   };
+
+  // HDR10's back buffer texels (RGBA16F: gamma 2.2, BT.709, 1.0 at paper
+  // white, tone mapped up to `nits`' peak) as 8-bit RGBA, the image SDR
+  // output would have shown.
+  void sdrFromHdr10(const uint16_t *halves, size_t pixels, HdrNits nits, uint8_t *rgba);
 
   // One on-demand readback. All GPU access is on the presentation thread;
   // encoding and writing run on a worker of their own. Metal builds record
