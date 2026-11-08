@@ -409,7 +409,8 @@ namespace remix {
     };
     std::unordered_map<VkPipeline, LightingPipeline> lightingPipelines;
     // Variant key bits (selectedLightingKey). Sparse launch mode occupies the
-    // two bits from variantSparseShift.
+    // two bits from variantSparseShift. variantNoPaint and variantNoSubsurface
+    // compile paint and subsurface scattering out (scenes without either).
     enum VariantBit : uint32_t {
       variantSplit = 8,
       variantCombinedDirect = 16,
@@ -417,6 +418,8 @@ namespace remix {
       variantSeparateIndirect = 1024,
       variantEarlyOut = 8192,
       variantSparseShift = 14,
+      variantNoPaint = 1u << 16,
+      variantNoSubsurface = 1u << 17,
     };
     // The options the lighting pipelines were last configured with
     // (beginFrame): the settings the scene variants are prewarmed for.
@@ -472,6 +475,8 @@ namespace remix {
     void finishPbrReuse(VkCommandBuffer command);
     bool localFirstHitActive = false;
     bool decalMaterialsActive = false;
+    bool subsurfaceActive = false; // a subsurface material in the frame, subsurface scattering on
+    uint32_t leanLighting = 0;     // variantNoPaint | variantNoSubsurface for the frame's scene
     bool shadowEarlyOutActive = false; // rtx.native.pathtrace.shadowEarlyOut
     bool localIlluminationActive = false;
     bool localResamplingActive = false;

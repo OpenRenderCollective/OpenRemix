@@ -442,9 +442,11 @@ namespace remix::trace {
       // (static, smoother than the policy's roughness) or sharcDynamicSurfaces
       // (moving; sharp ones need both).
       bool sharpReceivers = false, dynamicReceivers = false, dynamicSharpReceivers = false;
+      bool subsurface = false; // a material scatters below its surface (scene::Material::subsurface)
       Flags &operator|=(const Flags &o) {
         blended |= o.blended;
         decal |= o.decal;
+        subsurface |= o.subsurface;
         receivers |= o.receivers;
         sharpReceivers |= o.sharpReceivers;
         dynamicReceivers |= o.dynamicReceivers;
@@ -763,6 +765,7 @@ namespace remix::trace {
       Flags f;
       f.blended = surface.blend.enabled;
       f.decal = surface.decal;
+      f.subsurface = material.subsurface.weight > 0;
       const bool rough =
           !material.pbr || material.roughnessTexture || material.roughness >= REMIX_SHARC_PBR_MIN_ROUGHNESS;
       const bool opaque = !surface.blend.enabled, fixed = surface.classification == 0;

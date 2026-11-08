@@ -64,7 +64,13 @@ layout(set=0,binding=15,rgba16f) uniform image2D meterMaterial;
 // specialization constants: as variants each cost a 20-45 s compile, while
 // trimming code only, not registers (168 on Turing with all five dynamic).
 layout(push_constant) uniform Features { layout(offset=28) uint bits; } features;
-#define enableDecals ((features.bits&1u)!=0u)
+// Paint and subsurface scattering are variants too (Gpu::selectLightingPipeline
+// turns them off in scenes without either): compiled in, the decal peel in
+// every closest() and the subsurface copy of a Hit spill on every trace
+// (the separate indirect pass 272 -> 176 bytes; RTX 5080, 6% of a frame).
+layout(constant_id=14) const bool paintCapable=true;
+layout(constant_id=15) const bool subsurfaceCapable=true;
+#define enableDecals (paintCapable&&(features.bits&1u)!=0u)
 #define enableRussianRoulette ((features.bits&2u)!=0u)
 #define enablePbrReuse ((features.bits&4u)!=0u)
 #define enableAngularEmitters ((features.bits&8u)!=0u)
@@ -318,7 +324,7 @@ vec3 burleyScaling(vec3 color,float g) {
 // lobe (negated where it is too thin to be a volume), and minus the weight.
 void surfaceSubsurface(Surface s,vec2 uv,inout Hit hit) {
   hit.sss=vec4(0);
-  if(!subsurfaced(s))return;
+  if(!subsurfaceCapable||!subsurfaced(s))return;
   uvec3 maps=(frame.pathConfig.w&0x2000u)==0u?s.subsurfaceMaps.xyz:uvec3(0);
   vec3 color=maps.x!=0u?materialTexel(s,maps.x-1,uv).rgb:s.subsurfaceColor.rgb;
   if(s.subsurfaceMaps.w==1u) {
@@ -1582,7 +1588,7 @@ IndirectResult traceIndirect(Hit primary,ivec2 pixel,vec3 diffuseFactor,vec3 spe
     // from the scene enter where the profile carries them from too, as the
     // primary's direct light does. One probe for the pixel's samples.
     Hit lit=primary;vec3 sssTint=vec3(1);float sssSpecular=1;bool sssMoved=false;
-    if(primary.sss.w!=0&&random()<abs(primary.sss.w))sssMoved=subsurfaceMove(lit,sssTint,sssSpecular);
+    if(subsurfaceCapable&&primary.sss.w!=0&&random()<abs(primary.sss.w))sssMoved=subsurfaceMove(lit,sssTint,sssSpecular);
     for(uint i=0;i<frame.config.x;++i) {
       vec3 firstDir,sampleSpecular;float pathDistance;
 #ifdef TEMPORAL
@@ -2146,7 +2152,7 @@ void main() {
     // carries them from, as direct() gathers the sun and the sky; reuse and
     // confidences stay with the visible point.
     Hit lit=hit;vec3 sssTint=vec3(1);float sssSpecular=1;bool sssMoved=false;
-    if(hit.sss.w!=0) {
+    if(subsurfaceCapable&&hit.sss.w!=0) {
       rng=hash(state^0x73737321u);
       if(random()<abs(hit.sss.w))sssMoved=subsurfaceMove(lit,sssTint,sssSpecular);
     }
@@ -2324,7 +2330,7 @@ void main() {
     // reflection kept, unless the light came through to a thin object's far
     // side (which also takes its own sun shadow).
     Hit lit=primary;vec3 sssTint=vec3(1);float sssSpecular=1;bool sssMoved=false;
-    if(primary.sss.w!=0&&random()<abs(primary.sss.w))sssMoved=subsurfaceMove(lit,sssTint,sssSpecular);
+    if(subsurfaceCapable&&primary.sss.w!=0&&random()<abs(primary.sss.w))sssMoved=subsurfaceMove(lit,sssTint,sssSpecular);
     sunTransmittance=sunVisibility(primary,pixel,blockerDistance);
     // Through to the far side (no reflection): that side's own sun shadow.
     if(sssSpecular==0)sunTransmittance=shadow(offsetRay(lit.p,lit.ng),-frame.lightDirection.xyz);

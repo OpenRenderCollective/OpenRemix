@@ -165,6 +165,18 @@ namespace remix {
          (flags.dynamicReceivers || (options.sharcGlossySurfaces && flags.dynamicSharpReceivers)));
     const bool hasBlendedGeometry = flags.blended;
     decalMaterialsActive = flags.decal;
+    subsurfaceActive = flags.subsurface && options.subsurface;
+    // Without paint or subsurface scattering in the scene, the lighting
+    // stages compile those out (selectLightingPipeline): prewarmed on a change.
+    if (const uint32_t lean = (decalMaterialsActive ? 0u : uint32_t(variantNoPaint)) |
+                              (subsurfaceActive ? 0u : uint32_t(variantNoSubsurface));
+        lean != leanLighting) {
+      leanLighting = lean;
+      prewarmPending = true;
+      if (std::getenv("REMIX_LEAN_DIAGNOSTICS"))
+        std::fprintf(stderr, "Lighting variants: paint %s, subsurface %s\n", decalMaterialsActive ? "on" : "off",
+                     subsurfaceActive ? "on" : "off");
+    }
     shadowEarlyOutActive = options.shadowEarlyOut;
     // Texture descriptors in first-use order: the static prefix's (resolved
     // again only when the prefix changes) and the frame's other materials.
