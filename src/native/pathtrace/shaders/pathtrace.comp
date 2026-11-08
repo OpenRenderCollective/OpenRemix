@@ -1384,10 +1384,13 @@ float nearestDistance(float a,float b) { return a>0&&b>0?min(a,b):max(a,b); }
 // one BRDF-mixture sample (legacy surfaces; no REBLUR; DLSS-RR; and while the
 // local firefly filter keeps REBLUR's diffuse prepass off, which probabilistic
 // signals require).
-int primaryLobe(Hit primary,ivec2 pixel,uint sequence,uint sampleIndex,out float probability) {
+// The diffuse lobe's probability at a primary, negative without a selection.
+float primaryDiffuseProbability(Hit primary) {
+  return !primary.pbr||temporal.translucency.w==0?-1:1-specularProbability(primary);
+}
+int primaryLobe(float diffuseProbability,ivec2 pixel,uint sequence,uint sampleIndex,out float probability) {
   probability=1;
-  if(!primary.pbr||temporal.translucency.w==0)return -1;
-  float diffuseProbability=1-specularProbability(primary);
+  if(diffuseProbability<0)return -1;
   uvec2 p=uvec2(pixel)&3u;
   uint bayer=(((p.y&1u)<<2)|((p.x&1u)<<3)|((p.y&2u)>>1)|(p.x&2u))+(bitfieldReverse(sequence)>>28);
   // Several samples of one pixel are spread evenly over the choice.
@@ -1396,6 +1399,9 @@ int primaryLobe(Hit primary,ivec2 pixel,uint sequence,uint sampleIndex,out float
   bool diffuseLobe=choice<diffuseProbability;
   probability=diffuseLobe?diffuseProbability:1-diffuseProbability;
   return diffuseLobe?0:1;
+}
+int primaryLobe(Hit primary,ivec2 pixel,uint sequence,uint sampleIndex,out float probability) {
+  return primaryLobe(primaryDiffuseProbability(primary),pixel,sequence,sampleIndex,probability);
 }
 // Local NEE's specular lobe on a PBR surface joins the PBR specular history,
 // which the specular denoiser needs (the local pass is diffuse only). Its
@@ -1562,9 +1568,16 @@ void clearIndirect(ivec2 pixel,float specularHit) {
 // packed signal stays live across the next sample's ray queries. A zero hit
 // distance marks a sample its lobe did not receive; several samples keep the
 // nearest valid one.
+// Past the paths' start only the primary's few values below stay live (not
+// the Hit beside the one its paths carry: both across the path queries
+// spilled the indirect pass).
 IndirectResult traceIndirect(Hit primary,ivec2 pixel,vec3 diffuseFactor,vec3 specularFactor) {
   IndirectResult result=IndirectResult(vec3(0),rng,0);
   if(primary.t<1e30&&!primary.blended) {
+#ifdef TEMPORAL
+    bool pbr=primary.pbr;vec3 factor=materialFactor(primary);float roughness=primary.rm.x;
+    float z=abs((temporal.view*vec4(primary.p,1)).z),diffuseProbability=primaryDiffuseProbability(primary);
+#endif
     // Subsurface scattering (subsurface.glsl): the sky and the light bounced
     // from the scene enter where the profile carries them from too, as the
     // primary's direct light does. One probe for the pixel's samples.
@@ -1574,7 +1587,7 @@ IndirectResult traceIndirect(Hit primary,ivec2 pixel,vec3 diffuseFactor,vec3 spe
       vec3 firstDir,sampleSpecular;float pathDistance;
 #ifdef TEMPORAL
       float probability;
-      int lobe=primaryLobe(primary,pixel,frame.config.z,i,probability);
+      int lobe=primaryLobe(diffuseProbability,pixel,frame.config.z,i,probability);
       vec3 sampleLight=continuation(lit,lobe,probability,firstDir,pathDistance,sampleSpecular);
 #else
       vec3 sampleLight=continuation(lit,firstDir,pathDistance,sampleSpecular);
@@ -1592,28 +1605,28 @@ IndirectResult traceIndirect(Hit primary,ivec2 pixel,vec3 diffuseFactor,vec3 spe
 #ifdef TEMPORAL
       // The selection is a function of the pixel and frame: not carried
       // through the path either.
-      lobe=primaryLobe(primary,pixel,frame.config.z,i,probability);
+      lobe=primaryLobe(diffuseProbability,pixel,frame.config.z,i,probability);
       // DLSS-RR's specular hit distance: a mixture sample counts only where
       // the specular lobe carries most of its weight (mostly a diffuse ray's
       // distance otherwise). Pixels without one are filled from neighbours
       // (denoise.comp, mode 6).
-      if(primary.pbr&&(lobe==1||(lobe<0&&firstSpecularShare>=.5)))result.distance=nearestDistance(result.distance,pathDistance);
+      if(pbr&&(lobe==1||(lobe<0&&firstSpecularShare>=.5)))result.distance=nearestDistance(result.distance,pathDistance);
       if(temporal.hitDistance.w!=0)continue;
       // A surface seen in a mirror is denoised in its virtual space, like its guides.
       Mirror mirror=loadMirror(pixel);
       if(mirror.replaced)firstDir=mirrorVector(mirror,firstDir);
       Screen screen=loadScreen(pixel);
       if(portalView(screen))firstDir=portalVirtualVector(screen,firstDir);
-      float z=abs((temporal.view*vec4(primary.p,1)).z),scale=1/float(frame.config.x);
+      float scale=1/float(frame.config.x);
       vec4 diffuse0=vec4(0),diffuse1=vec4(0),specular0=vec4(0),specular1=vec4(0);
       if(lobe!=1) {
-        vec3 diffuse=primary.pbr?max(sampleLight-sampleSpecular,vec3(0))*materialFactor(primary)/diffuseFactor:sampleLight;
+        vec3 diffuse=pbr?max(sampleLight-sampleSpecular,vec3(0))*factor/diffuseFactor:sampleLight;
         diffuse0=REBLUR_FrontEnd_PackSh(diffuse,REBLUR_FrontEnd_GetNormHitDist(pathDistance,z,temporal.hitDistance.xyz,1),firstDir,diffuse1,true);
         diffuse0.rgb*=scale;diffuse1*=scale;
       }
-      if(primary.pbr&&lobe!=0) {
-        specular0=REBLUR_FrontEnd_PackSh(sampleSpecular*materialFactor(primary)/specularFactor,
-          REBLUR_FrontEnd_GetNormHitDist(pathDistance,z,temporal.hitDistance.xyz,primary.rm.x),firstDir,specular1,true);
+      if(pbr&&lobe!=0) {
+        specular0=REBLUR_FrontEnd_PackSh(sampleSpecular*factor/specularFactor,
+          REBLUR_FrontEnd_GetNormHitDist(pathDistance,z,temporal.hitDistance.xyz,roughness),firstDir,specular1,true);
         specular0.rgb*=scale;specular1*=scale;
       }
       if(i!=0) {
@@ -1630,7 +1643,7 @@ IndirectResult traceIndirect(Hit primary,ivec2 pixel,vec3 diffuseFactor,vec3 spe
     }
 #ifdef TEMPORAL
     if(temporal.hitDistance.w!=0)
-      clearIndirect(pixel,primary.pbr?REBLUR_FrontEnd_GetNormHitDist(result.distance,abs((temporal.view*vec4(primary.p,1)).z),temporal.hitDistance.xyz,primary.rm.x):0);
+      clearIndirect(pixel,pbr?REBLUR_FrontEnd_GetNormHitDist(result.distance,z,temporal.hitDistance.xyz,roughness):0);
 #endif
   }
   result.state=rng;
