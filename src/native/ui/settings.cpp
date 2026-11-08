@@ -1128,7 +1128,8 @@ namespace remix {
                                     ? "Alpha-tested surfaces (foliage, fences, grates) carry opacity micromaps:\n"
                                       "traversal skips the parts proven cut out and accepts the parts proven\n"
                                       "solid, so fewer rays run the shader's alpha test. Same image. Applies at\n"
-                                      "the next frame: alpha-tested meshes are proved again and rebuild their BLAS.\n"
+                                      "the next frame; micromaps bake in the background and reach each mesh's BLAS\n"
+                                      "a few frames later.\n"
                                       "rtx.native.pathtrace.opacityMicromaps"
                                     : "This GPU or driver does not support VK_EXT_opacity_micromap.\n"
                                       "rtx.native.pathtrace.opacityMicromaps");

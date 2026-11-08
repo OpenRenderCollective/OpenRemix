@@ -7,7 +7,7 @@ extension and are greyed out without it.
 ## Opacity micromaps
 
 `rtx.native.pathtrace.opacityMicromaps` (0/1, default 0) and
-`rtx.native.pathtrace.opacityMicromapLevel` (1-8, default 4) attach
+`rtx.native.pathtrace.opacityMicromapLevel` (1-8, default 8) attach
 `VK_EXT_opacity_micromap` data to alpha-tested geometry. Traversal settles
 micro-triangles that are always opaque or always cut out; only the rest reach
 the shader's alpha test (`acceptCandidate`). The device needs
@@ -20,8 +20,12 @@ the shader's alpha test (`acceptCandidate`). The device needs
   `OpacityCache::bakeMicromap` applies the same interval proof to each
   micro-triangle's texel footprint, and also proves "always fails" from the
   footprint's alpha range (a min/max pyramid of mip 0). Anything unproved is
-  stored as unknown-opaque, so the shader still decides it. Compressed and
-  dynamic textures and moving texture coordinates prove nothing from texels.
+  stored as unknown-opaque, so the shader still decides it. Textures kept
+  block-compressed ("Keep BC textures compressed") have no decoded copy:
+  `compressTexture` records each mip-0 4x4 block's alpha range instead
+  (`CompressedPixels::alphaBlocks`, widened by one step for hardware decoding
+  differences), and the pyramid starts at block cells. Dynamic textures and
+  moving texture coordinates prove nothing from texels.
 - **Eligible surfaces** are those the opaque-triangle split already handles:
   double-sided (or one-sided with hardware face culling), not blended, no
   transmission, compare LESS/LEQUAL/GREATER/GEQUAL. Decals are excluded because
@@ -49,9 +53,36 @@ the shader's alpha test (`acceptCandidate`). The device needs
   measured on an RTX 5080 with `tools/vulkan-probes/shaders/micromap.comp`
   (the probe tool has no host mode for it yet).
 
+- **Level.** Foliage cards span many texels per triangle, so low levels leave
+  most micro-triangles straddling a cutout edge. On `ep2_outland_06a`'s forest
+  (Garry's Mod, RTX 5080) level 4 left 76% of micro-triangles unknown and level
+  8 34%, which removed 66% of the shader alpha tests; level 8 added no
+  measurable VRAM. Hence the default of 8.
+- **Background baking.** The triangle partition is proved on the frame path
+  as before, but the tracer bakes micromaps on two background threads
+  (`OpacityCache::setAsyncMicromaps`): `partition()` returns the partition at
+  once, marked `micromapPending` and traced with the shader's alpha test, and
+  `collectMicromaps()` (start of `prepareScene`) installs finished bakes as
+  replacement partitions. Frame draws find them on their next lookup; units of
+  the persistent static set holding a pending partition take the replacement
+  and are rebuilt (`StaticScene::sync`), so their BLAS gets the micromap a few
+  frames later. A level change drops queued bakes (an epoch); a pending entry
+  whose bake was dropped counts as a miss for `find()` and is queued again by
+  `partition()`. At level 8 the forest bakes in about 7 s without lowering the
+  frame rate, where the synchronous bake stalled the game for about 3 s.
+  `REMIX_SYNC_MICROMAPS` bakes within the frame (the GPU micromap test).
+- **Content reuse.** Bakes are also keyed by surface content (indices, texture
+  coordinates, vertex alpha) with the cache key and partition. A mesh uploaded
+  again with new positions only (swaying foliage, every frame) takes the
+  micromap of an earlier copy, or waits for its bake in flight, instead of
+  baking again: in the background, a bake per copy never caught up with the
+  next copy.
+
 Baking runs on the CPU when a surface's partition is first proved, so enabling
 micromaps (or a new alpha-tested mesh) costs one proof per surface. Changing
-either setting proves the kept static set again.
+either setting proves the kept static set again. `REMIX_OPACITY_DIAGNOSTICS`
+prints the frame's micromap counts (micro-triangles opaque, transparent and
+unknown) and the bakes queued and installed so far.
 
 One difference from the shader-only path: subsurface probe rays
 (`subsurface.glsl`) count every surface crossing without an alpha test, so a

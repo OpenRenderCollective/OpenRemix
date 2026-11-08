@@ -1,6 +1,11 @@
 #include "scene/opacity.h"
 #include "scene/images.h"
+#include "platform/workers.h"
 #include <algorithm>
+#include <atomic>
+#include <condition_variable>
+#include <deque>
+#include <thread>
 #include <cmath>
 #include <limits>
 
@@ -56,42 +61,47 @@ namespace remix::scene {
   OpacityCache::OpacityCache(uint32_t subTexelPrecisionBits, bool profile)
       : profile(profile), texelMargin(std::ldexp(2.f, -int(std::min(subTexelPrecisionBits, 24u)))) {}
 
-  OpacityCache::TextureEntries &OpacityCache::coverage(const std::shared_ptr<Texture> &texture) {
+  const std::shared_ptr<OpacityCache::TextureEntries> &
+  OpacityCache::coverage(const std::shared_ptr<Texture> &texture) {
     auto &cache = textures[texture.get()];
-    if (sameOwner(cache.owner, texture))
+    if (cache && sameOwner(cache->owner, texture))
       return cache;
     if (profile)
       ++statistics.textures;
     const auto &p = texture->pixels;
-    TextureEntries next{texture, p.width, {}};
+    // A new object, never one a background bake may still read.
+    auto next = std::make_shared<TextureEntries>();
+    next->owner = texture;
+    next->width = p.width;
     if (texture->dynamic) {
-      next.dynamic = true;
+      next->dynamic = true;
       cache = std::move(next);
       return cache;
     }
-    // Compressed textures carry only a mip-0 bitmask of non-opaque texels. A
-    // fully opaque one needs no summed-area table (empty prefix = all solid).
+    // Compressed textures carry a mip-0 bitmask of non-opaque texels (and
+    // per-block alpha ranges for micromaps). A fully opaque one needs no
+    // summed-area table (empty prefix = all solid).
     if (p.compressed && p.compressed->transparent.empty()) {
       cache = std::move(next);
       return cache;
     }
     const size_t stride = size_t(p.width) + 1;
-    next.prefix.resize(stride * (size_t(p.height) + 1));
+    next->prefix.resize(stride * (size_t(p.height) + 1));
     for (uint32_t y = 0; y < p.height; ++y) {
       uint32_t row = 0;
       for (uint32_t x = 0; x < p.width; ++x) {
         row += p.compressed ? p.compressed->transparentTexel(x, y, p.width)
                             : p.mips[0][4 * (size_t(y) * p.width + x) + 3] != 255;
-        next.prefix[(size_t(y) + 1) * stride + x + 1] = next.prefix[size_t(y) * stride + x + 1] + row;
+        next->prefix[(size_t(y) + 1) * stride + x + 1] = next->prefix[size_t(y) * stride + x + 1] + row;
       }
     }
     cache = std::move(next);
     return cache;
   }
 
-  OpacityPartition::Reason OpacityCache::footprint(const Draw &draw, const std::array<float, 4> &uv,
+  OpacityPartition::Reason OpacityCache::footprint(float texelMargin, const Draw &draw, const std::array<float, 4> &uv,
                                                    const std::array<std::array<float, 2>, 3> &corners,
-                                                   std::array<Region, 4> &regions, unsigned &count) const {
+                                                   std::array<Region, 4> &regions, unsigned &count) {
     using P = OpacityPartition;
     const auto &p = draw.material->texture->pixels;
     using Interval = std::array<uint32_t, 2>;
@@ -173,7 +183,7 @@ namespace remix::scene {
     }
     std::array<Region, 4> footprints;
     unsigned count = 0;
-    if (const auto reason = footprint(draw, uv, corners, footprints, count); reason != P::Solid)
+    if (const auto reason = footprint(texelMargin, draw, uv, corners, footprints, count); reason != P::Solid)
       return reason;
     for (unsigned i = 0; i < count; ++i) {
       const bool solid = texture->solid(footprints[i]);
@@ -238,7 +248,8 @@ namespace remix::scene {
     if (cache == surfaces.end() || !sameOwner(cache->second.owner, draw.surface))
       return nullptr;
     const auto found = cache->second.entries.find(key);
-    if (found == cache->second.entries.end() || !sameOwner(found->second.texture, draw.material->texture))
+    if (found == cache->second.entries.end() || !sameOwner(found->second.texture, draw.material->texture) ||
+        abandoned(found->second))
       return nullptr;
     return found->second.partition;
   }
@@ -261,10 +272,11 @@ namespace remix::scene {
       result->reasons[P::Invalid] = result->triangles;
       return result;
     }
+    const bool usesTexture = (b.alphaOpTexture != 2 && b.alpha1 == 1) || (b.alphaOpTexture != 1 && b.alpha2 == 1);
     TextureEntries *pixels = nullptr;
     auto getPixels = [&]() -> TextureEntries * {
       if (!pixels && dimensions[0])
-        pixels = &coverage(texture);
+        pixels = coverage(texture).get();
       return pixels;
     };
     auto &cache = surfaces[draw.surface.get()];
@@ -281,11 +293,11 @@ namespace remix::scene {
       // Weak ownership still prevents an address-reused snapshot from skipping
       // validation. Queued frames keep their immutable partition independently.
       // A micromap reads more of the texture than these predicates: only the
-      // same texture keeps it.
+      // same texture keeps it (or the one still being baked).
       const bool sameTexture = sameOwner(entry.texture, texture);
       const bool same =
           sameTexture ||
-          (!entry.partition->micromap &&
+          (!entry.partition->micromap && !entry.partition->micromapPending &&
            (entry.regions.empty() ||
             (getPixels() && std::all_of(entry.regions.begin(), entry.regions.end(), [&](const auto &region) {
                return pixels->solid(region.first) == region.second;
@@ -293,12 +305,17 @@ namespace remix::scene {
       if (same) {
         if (!sameTexture)
           entry.texture = texture;
+        if (abandoned(entry))
+          entry.bakeEpoch = queueBake(draw, uv, key, entry.partition,
+                                      usesTexture && getPixels() ? coverage(texture) : nullptr, usesTexture,
+                                      contentHash(*draw.surface));
         if (profile)
           ++statistics.hits;
         return entry.partition;
       }
     }
     std::map<Region, bool> regions;
+    uint64_t bakeEpoch = 0;
     if (profile)
       ++statistics.proofs;
     auto result = std::make_shared<P>();
@@ -319,7 +336,6 @@ namespace remix::scene {
         statistics.triangles += result->triangles;
       result->key.assign(1 + (result->triangles + 7) / 8, 0);
       result->key[0] = 2;
-      const bool usesTexture = (b.alphaOpTexture != 2 && b.alpha1 == 1) || (b.alphaOpTexture != 1 && b.alpha2 == 1);
       if (usesTexture)
         getPixels();
       for (uint32_t triangle = 0; triangle < result->triangles; ++triangle) {
@@ -349,26 +365,62 @@ namespace remix::scene {
       if (!result->reasons[P::Solid] || result->reasons[P::Solid] == result->triangles)
         result->key.assign(1, result->reasons[P::Solid] ? 1 : 0);
       // Decals are skipped by visibility rays before their alpha test.
-      if (micromapLevel && !draw.decal && result->key[0] != 1)
-        result->micromap = bakeMicromap(draw, uv, *result, usesTexture ? pixels : nullptr, usesTexture);
+      if (micromapLevel && !draw.decal && result->key[0] != 1) {
+        const TextureEntries *proof = usesTexture ? pixels : nullptr;
+        const uint64_t hash = contentHash(*draw.surface);
+        auto *shared = content(hash, texture, key, *result);
+        if (shared && shared->ready)
+          result->micromap = shared->micromap;
+        else if (baker) {
+          result->micromapPending = true;
+          if (shared) {
+            // Another copy's bake is in flight: wait for it.
+            shared->waiters.push_back({draw.surface, draw.surface.get(), key, result});
+            bakeEpoch = shared->epoch;
+          } else
+            bakeEpoch = queueBake(draw, uv, key, result, proof ? coverage(texture) : nullptr, usesTexture, hash);
+        } else {
+          result->micromap = bakeMicromap(texelMargin, micromapLevel, draw, uv, *result, proof, usesTexture);
+          contents.insert_or_assign(
+              hash, ContentEntry{texture, texture != nullptr, key, result->key, result->micromap, true, nullptr, 0, {}});
+        }
+      }
     }
     if (cache.entries.size() >= 8) {
       if (profile)
         ++statistics.evictions;
       cache.entries.clear();
     }
-    cache.entries.insert_or_assign(key, Entry{texture, result, std::move(regions)});
+    cache.entries.insert_or_assign(key, Entry{texture, result, std::move(regions), bakeEpoch});
     return result;
   }
 
-  void OpacityCache::TextureEntries::buildAlpha(const Texture &texture) {
+  void OpacityCache::TextureEntries::buildAlpha(const Texture &texture) const {
+    std::call_once(alphaBuilt, [&] { buildAlphaOnce(texture); });
+  }
+
+  void OpacityCache::TextureEntries::buildAlphaOnce(const Texture &texture) const {
     const auto &p = texture.pixels;
-    if (!alpha.empty() || dynamic || p.compressed || p.mips.empty())
+    if (dynamic)
       return;
     uint32_t w = p.width, h = p.height;
-    std::vector<std::array<uint8_t, 2>> level(size_t(w) * h);
-    for (size_t i = 0; i < level.size(); ++i)
-      level[i] = {p.mips[0][4 * i + 3], p.mips[0][4 * i + 3]};
+    std::vector<std::array<uint8_t, 2>> level;
+    if (p.compressed) {
+      w = (w + 3) / 4;
+      h = (h + 3) / 4;
+      // Without block ranges (no non-opaque texel, or a copy that dropped
+      // them) only solid() proves anything.
+      if (p.compressed->alphaBlocks.size() != size_t(w) * h)
+        return;
+      level = p.compressed->alphaBlocks;
+      alphaShift = 2;
+    } else {
+      if (p.mips.empty())
+        return;
+      level.resize(size_t(w) * h);
+      for (size_t i = 0; i < level.size(); ++i)
+        level[i] = {p.mips[0][4 * i + 3], p.mips[0][4 * i + 3]};
+    }
     alpha.push_back(std::move(level));
     alphaWidths.push_back(w);
     while (w > 1 || h > 1) {
@@ -394,14 +446,17 @@ namespace remix::scene {
     if (solid(r))
       return {1, 1};
     if (alpha.empty())
-      return {0, 1}; // Compressed: only which texels are not opaque is known.
-    // The coarsest cells r spans at most two of per axis: a superset of r.
+      return {0, 1}; // No alpha ranges: only which texels are not opaque is known.
+    // The coarsest cells r spans at most two of per axis (at least the base
+    // level's): a superset of r.
     size_t k = 0;
-    while (k + 1 < alpha.size() && ((r[2] >> k) - (r[0] >> k) > 1 || (r[3] >> k) - (r[1] >> k) > 1))
+    auto shift = [&] { return uint32_t(alphaShift + k); };
+    while (k + 1 < alpha.size() &&
+           ((r[2] >> shift()) - (r[0] >> shift()) > 1 || (r[3] >> shift()) - (r[1] >> shift()) > 1))
       ++k;
     uint8_t low = 255, high = 0;
-    for (uint32_t y = r[1] >> k; y <= r[3] >> k; ++y)
-      for (uint32_t x = r[0] >> k; x <= r[2] >> k; ++x) {
+    for (uint32_t y = r[1] >> shift(); y <= r[3] >> shift(); ++y)
+      for (uint32_t x = r[0] >> shift(); x <= r[2] >> shift(); ++x) {
         const auto &cell = alpha[k][size_t(y) * alphaWidths[k] + x];
         low = std::min(low, cell[0]);
         high = std::max(high, cell[1]);
@@ -409,9 +464,10 @@ namespace remix::scene {
     return {low / 255.f, high / 255.f};
   }
 
-  std::shared_ptr<const OpacityMicromap> OpacityCache::bakeMicromap(const Draw &draw, const std::array<float, 4> &uv,
+  std::shared_ptr<const OpacityMicromap> OpacityCache::bakeMicromap(float texelMargin, uint32_t micromapLevel,
+                                                                    const Draw &draw, const std::array<float, 4> &uv,
                                                                     const OpacityPartition &partition,
-                                                                    TextureEntries *texture, bool usesTexture) {
+                                                                    const TextureEntries *texture, bool usesTexture) {
     using M = OpacityMicromap;
     const auto &m = *draw.material;
     const auto compare = draw.alphaOverride ? draw.compare : m.compare;
@@ -474,7 +530,7 @@ namespace remix::scene {
         if (texture) {
           std::array<Region, 4> regions;
           unsigned count = 0;
-          if (footprint(draw, uv, points, regions, count) == OpacityPartition::Solid) {
+          if (footprint(texelMargin, draw, uv, points, regions, count) == OpacityPartition::Solid) {
             sampled = {1, 0};
             for (unsigned i = 0; i < count; ++i) {
               const auto range = texture->alphaRange(regions[i]);
@@ -535,8 +591,205 @@ namespace remix::scene {
     return micromap;
   }
 
+  // Background micromap baking (setAsyncMicromaps). Jobs hold everything
+  // they read (the draw's snapshots, the partition, the texture's coverage),
+  // never the cache; finished bakes wait in `done` for collectMicromaps().
+  struct OpacityCache::Baker {
+    struct Job {
+      Draw draw;
+      std::array<float, 4> uv;
+      Key key;
+      std::shared_ptr<const OpacityPartition> partition;
+      std::shared_ptr<const TextureEntries> texture;
+      bool usesTexture;
+      float texelMargin;
+      uint32_t level;
+      uint64_t epoch;
+      uint64_t content;
+      [[maybe_unused]] unsigned csr; // the queuing thread's x86 MXCSR
+    };
+    struct Done {
+      Waiter waiter; // the bake's own partition
+      uint64_t content;
+      std::shared_ptr<const OpacityMicromap> micromap;
+    };
+    std::mutex mutex;
+    std::condition_variable wake;
+    std::deque<Job> jobs;
+    std::vector<Done> done;
+    // Bumped by setMicromapLevel: queued jobs of an older epoch are dropped.
+    std::atomic<uint64_t> epoch{0};
+    bool stop = false;
+    std::vector<std::thread> threads;
+
+    explicit Baker(unsigned count) {
+      for (unsigned i = 0; i < count; ++i)
+        threads.emplace_back([this] { work(); });
+    }
+    ~Baker() {
+      {
+        std::lock_guard lock(mutex);
+        stop = true;
+        jobs.clear();
+      }
+      wake.notify_all();
+      for (auto &thread : threads)
+        thread.join();
+    }
+    void work() {
+      for (;;) {
+        Job job;
+        {
+          std::unique_lock lock(mutex);
+          wake.wait(lock, [&] { return stop || !jobs.empty(); });
+          if (stop)
+            return;
+          job = std::move(jobs.front());
+          jobs.pop_front();
+        }
+        if (job.epoch != epoch.load(std::memory_order_relaxed))
+          continue;
+#if defined(REMIX_WORKERS_MXCSR)
+        // The same floating-point modes as a synchronous bake.
+        _mm_setcsr(job.csr);
+#endif
+        std::shared_ptr<const OpacityMicromap> micromap;
+        try {
+          micromap = bakeMicromap(job.texelMargin, job.level, job.draw, job.uv, *job.partition, job.texture.get(),
+                                  job.usesTexture);
+        } catch (...) {
+          // Out of memory: the partition keeps the shader's alpha test.
+        }
+        std::lock_guard lock(mutex);
+        done.push_back({{job.draw.surface, job.draw.surface.get(), job.key, std::move(job.partition)}, job.content,
+                        std::move(micromap)});
+      }
+    }
+  };
+
+  uint64_t OpacityCache::queueBake(const Draw &draw, const std::array<float, 4> &uv, const Key &key,
+                                   std::shared_ptr<const OpacityPartition> partition,
+                                   std::shared_ptr<const TextureEntries> texture, bool usesTexture,
+                                   uint64_t content) {
+    const uint64_t epoch = baker->epoch.load(std::memory_order_relaxed);
+    ++micromapBakes;
+    const auto &owner = draw.material->texture;
+    contents.insert_or_assign(
+        content, ContentEntry{owner, owner != nullptr, key, partition->key, nullptr, false, partition, epoch, {}});
+    Baker::Job job{draw, uv, key, std::move(partition), std::move(texture), usesTexture, texelMargin, micromapLevel,
+                   epoch, content, 0};
+#if defined(REMIX_WORKERS_MXCSR)
+    job.csr = _mm_getcsr();
+#endif
+    {
+      std::lock_guard lock(baker->mutex);
+      baker->jobs.push_back(std::move(job));
+    }
+    baker->wake.notify_one();
+    return epoch;
+  }
+
+  bool OpacityCache::abandoned(const Entry &entry) const {
+    return baker && entry.partition->micromapPending &&
+           entry.bakeEpoch != baker->epoch.load(std::memory_order_relaxed);
+  }
+
+  void OpacityCache::setMicromapLevel(uint32_t level) {
+    level = std::min(level, OpacityMicromap::maxLevel);
+    if (level == micromapLevel)
+      return;
+    micromapLevel = level;
+    if (baker)
+      baker->epoch.fetch_add(1, std::memory_order_relaxed);
+  }
+
+  void OpacityCache::setAsyncMicromaps(bool value) {
+    if (value == (baker != nullptr))
+      return;
+    // Two threads: a large set bakes in parallel with the frame's own
+    // workers without taking all of the CPU.
+    baker = value ? std::make_shared<Baker>(2u) : nullptr;
+  }
+
+  size_t OpacityCache::collectMicromaps() {
+    if (!baker)
+      return 0;
+    std::vector<Baker::Done> finished;
+    {
+      std::lock_guard lock(baker->mutex);
+      finished.swap(baker->done);
+    }
+    size_t installed = 0;
+    for (auto &item : finished) {
+      std::vector<Waiter> targets{std::move(item.waiter)};
+      // Copies of the same content that waited for this bake, and later
+      // copies, take its micromap too.
+      if (const auto found = contents.find(item.content);
+          found != contents.end() && found->second.baking == targets[0].partition) {
+        auto &shared = found->second;
+        shared.micromap = item.micromap;
+        shared.ready = true;
+        shared.baking = nullptr;
+        targets.insert(targets.end(), std::make_move_iterator(shared.waiters.begin()),
+                       std::make_move_iterator(shared.waiters.end()));
+        shared.waiters.clear();
+      }
+      for (const auto &target : targets)
+        installed += install(target, item.micromap);
+    }
+    micromapInstalls += installed;
+    return installed;
+  }
+
+  bool OpacityCache::install(const Waiter &waiter, const std::shared_ptr<const OpacityMicromap> &micromap) {
+    // Only into the entry still holding the partition proved for it: an
+    // evicted, re-proved or re-keyed entry drops it.
+    const auto cache = surfaces.find(waiter.surface);
+    if (cache == surfaces.end() || waiter.owner.owner_before(cache->second.owner) ||
+        cache->second.owner.owner_before(waiter.owner))
+      return false;
+    const auto found = cache->second.entries.find(waiter.key);
+    if (found == cache->second.entries.end() || found->second.partition != waiter.partition)
+      return false;
+    auto replacement = std::make_shared<OpacityPartition>(*waiter.partition);
+    replacement->micromap = micromap;
+    replacement->micromapPending = false;
+    found->second.partition = std::move(replacement);
+    return true;
+  }
+
+  uint64_t OpacityCache::contentHash(const Surface &surface) {
+    contentScratch.resize(surface.vertices.size() * 3);
+    for (size_t i = 0; i < surface.vertices.size(); ++i) {
+      const auto &vertex = surface.vertices[i];
+      contentScratch[3 * i] = vertex.uv[0];
+      contentScratch[3 * i + 1] = vertex.uv[1];
+      contentScratch[3 * i + 2] = vertex.color[3];
+    }
+    return fastHash(contentScratch.data(), contentScratch.size() * sizeof(float),
+                    fastHash(surface.indices.data(), surface.indices.size() * sizeof(uint32_t)));
+  }
+
+  OpacityCache::ContentEntry *OpacityCache::content(uint64_t hash, const std::shared_ptr<Texture> &texture,
+                                                    const Key &key, const OpacityPartition &partition) {
+    const auto found = contents.find(hash);
+    if (found == contents.end())
+      return nullptr;
+    auto &entry = found->second;
+    const bool sameTexture = entry.textured == (texture != nullptr) && (!texture || sameOwner(entry.texture, texture));
+    if (!sameTexture || entry.key != key || entry.partition != partition.key)
+      return nullptr;
+    if (!entry.ready && (!baker || entry.epoch != baker->epoch.load(std::memory_order_relaxed)))
+      return nullptr; // A bake a level change dropped.
+    return &entry;
+  }
+
   void OpacityCache::prune() {
     std::erase_if(surfaces, [](const auto &item) { return item.second.owner.expired(); });
-    std::erase_if(textures, [](const auto &item) { return item.second.owner.expired(); });
+    std::erase_if(textures, [](const auto &item) { return !item.second || item.second->owner.expired(); });
+    std::erase_if(contents, [](const auto &item) { return item.second.textured && item.second.texture.expired(); });
+    // Bounded: finished entries go first (a later copy bakes again).
+    if (contents.size() > 16384)
+      std::erase_if(contents, [](const auto &item) { return item.second.ready; });
   }
 } // namespace remix::scene

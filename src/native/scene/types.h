@@ -44,6 +44,9 @@ namespace remix {
         const size_t i = size_t(y) * width + x;
         return (transparent[i >> 6] >> (i & 63)) & 1;
       }
+      // Mip 0's decoded alpha (min, max) per 4x4 block (row-major, texels
+      // inside the image only), for micromap proofs. Empty with `transparent`.
+      std::vector<std::array<uint8_t, 2>> alphaBlocks;
       // Small decoded level (at most 64x64 texels) for CPU emission statistics:
       // RGBA8 like Pixels::mips, plus linear RGBA32F for BC6H.
       uint32_t previewWidth = 0, previewHeight = 0;

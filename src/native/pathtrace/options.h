@@ -370,9 +370,10 @@ namespace remix {
     // Alpha-tested geometry carries VK_EXT_opacity_micromap data, so
     // traversal settles proved micro-triangles without the shader's alpha
     // test (docs/features/gpu-optimizations.md). No effect without device
-    // support. opacityMicromapLevel: the deepest subdivision (1-8).
+    // support. opacityMicromapLevel: the deepest subdivision (1-8); micromaps
+    // bake in the background and attach a few frames after their surfaces.
     bool opacityMicromaps = false;
-    uint32_t opacityMicromapLevel = 4;
+    uint32_t opacityMicromapLevel = 8;
     // DLSS 5 Neural Uplift (DLSS-NR)
     bool neuralUplift = false;
     uint32_t neuralUpliftPasses = 1;

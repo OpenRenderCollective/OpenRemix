@@ -3,8 +3,10 @@
 #include "scene/opacity.h"
 #include <cmath>
 #include <cstdio>
+#include <chrono>
 #include <cstdlib>
 #include <set>
+#include <thread>
 #include <tuple>
 
 using namespace remix::scene;
@@ -284,6 +286,99 @@ int main() {
   const auto reproved = cache.partition(replaced, identity);
   require(reproved != baked && reproved->micromap && reproved->micromap->hash != baked->micromap->hash,
           "A replaced texture reused the previous micromap");
+
+  // Background baking: the partition comes back at once, pending; once
+  // collected, lookups return a replacement with the synchronous micromap.
+  {
+    // Collects until `count` bakes are installed (or a generous deadline).
+    auto collect = [](OpacityCache &cache, size_t count) {
+      size_t installed = 0;
+      const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+      while (installed < count && std::chrono::steady_clock::now() < deadline) {
+        installed += cache.collectMicromaps();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      }
+      return installed;
+    };
+    OpacityCache async;
+    async.setMicromapLevel(4);
+    async.setAsyncMicromaps(true);
+    const auto pending = async.partition(draw, identity);
+    require(pending->micromapPending && !pending->micromap, "Background bake returned a micromap at once");
+    require(pending->key == baked->key && pending->reasons == baked->reasons,
+            "Background bake changed the triangle partition");
+    require(async.find(draw, identity) == pending, "Pending partition was not cached");
+    require(collect(async, 1) == 1 && async.micromapInstallCount() == 1, "Background bake was not installed");
+    const auto ready = async.find(draw, identity);
+    require(ready && ready != pending && !ready->micromapPending && ready->micromap &&
+                ready->micromap->hash == baked->micromap->hash && ready->key == pending->key,
+            "Installed micromap differs from the synchronous bake");
+    require(async.partition(draw, identity) == ready, "partition() did not return the installed micromap");
+
+    // A copy of a surface with new positions only (a mesh uploaded again
+    // every frame) shares the micromap: at once when it is ready, otherwise
+    // from the one bake in flight.
+    auto moved = draw;
+    moved.surface = std::make_shared<Surface>(*draw.surface);
+    for (auto &vertex : moved.surface->vertices)
+      vertex.position[2] += 1;
+    const auto copied = async.partition(moved, identity);
+    require(copied->micromap == ready->micromap && !copied->micromapPending, "A moved copy baked its micromap again");
+    {
+      OpacityCache flight;
+      flight.setMicromapLevel(4);
+      flight.setAsyncMicromaps(true);
+      const auto a = flight.partition(draw, identity), b = flight.partition(moved, identity);
+      require(a->micromapPending && b->micromapPending && flight.micromapBakeCount() == 1,
+              "A moved copy queued a second bake");
+      require(collect(flight, 2) == 2, "A copy waiting for another's bake was not installed");
+      const auto aReady = flight.find(draw, identity), bReady = flight.find(moved, identity);
+      require(aReady && bReady && aReady->micromap && aReady->micromap == bReady->micromap &&
+                  aReady->micromap->hash == baked->micromap->hash,
+              "Copies did not share the background micromap");
+    }
+    {
+      OpacityCache sync;
+      sync.setMicromapLevel(4);
+      const auto a = sync.partition(draw, identity), b = sync.partition(moved, identity);
+      require(a->micromap && a->micromap == b->micromap, "A moved copy baked its micromap again (synchronous)");
+    }
+
+    // A level change drops queued bakes; the pending partitions they were for
+    // are queued again when looked up at that level, never left pending.
+    OpacityCache bounced;
+    bounced.setMicromapLevel(4);
+    bounced.setAsyncMicromaps(true);
+    const auto dropped = bounced.partition(draw, identity);
+    bounced.setMicromapLevel(5);
+    bounced.setMicromapLevel(4);
+    require(!bounced.find(draw, identity), "find() returned a partition whose bake was abandoned");
+    require(bounced.partition(draw, identity) == dropped, "An abandoned partition was proved again");
+    require(collect(bounced, 1) == 1, "An abandoned bake was not queued again");
+    const auto requeued = bounced.find(draw, identity);
+    require(requeued && requeued->micromap && requeued->micromap->hash == baked->micromap->hash,
+            "Queued-again micromap differs from the synchronous bake");
+
+    // A replaced texture never takes over a partition still being baked: it
+    // is proved again, and the superseded bake is dropped, not installed.
+    OpacityCache superseded;
+    superseded.setMicromapLevel(4);
+    superseded.setAsyncMicromaps(true);
+    const auto first = superseded.partition(draw, identity);
+    const auto second = superseded.partition(replaced, identity);
+    require(second != first && second->micromapPending, "A replaced texture reused a pending partition");
+    require(collect(superseded, 1) == 1, "Background bake of the replaced texture was not installed");
+    // Both bakes are tiny: give the superseded one time to finish, too.
+    for (int i = 0; i < 200; ++i) {
+      superseded.collectMicromaps();
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    require(superseded.micromapInstallCount() == 1, "A superseded bake was installed");
+    const auto replacedReady = superseded.find(replaced, identity);
+    require(replacedReady && replacedReady->micromap && replacedReady->micromap->hash == reproved->micromap->hash,
+            "Installed micromap of the replaced texture differs from the synchronous bake");
+    require(!superseded.find(draw, identity), "The superseded texture's partition survived");
+  }
   std::puts("PASS");
   return 0;
 }

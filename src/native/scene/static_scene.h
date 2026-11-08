@@ -52,6 +52,7 @@ namespace remix::scene {
   public:
     struct Statistics {
       uint64_t units = 0, surfaces = 0, rebuiltUnits = 0, removedUnits = 0, changes = 0, resyncs = 0;
+      uint64_t micromapUnits = 0; // rebuilt for a micromap baked in the background
       double milliseconds = 0; // sync()
     };
     // Brings the units up to date with resources' static set. False when this
@@ -137,6 +138,7 @@ namespace remix::scene {
     bool m_orderChanged = false, m_orderDirty = false, m_emittingDirty = false;
     std::vector<uint64_t> m_changes;
     std::vector<uint32_t> m_partitionPending;
+    uint64_t m_micromapInstalls = 0; // OpacityCache::micromapInstallCount() last seen
     Statistics m_statistics;
 
     using Timeline = std::vector<std::pair<uint64_t, std::shared_ptr<const StaticUnitState>>>;

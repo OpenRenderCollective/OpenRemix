@@ -558,6 +558,9 @@ namespace remix {
     vkGetPhysicalDeviceProperties(physical, &g.properties);
     g.opacityCache =
         scene::OpacityCache(g.properties.limits.subTexelPrecisionBits, std::getenv("REMIX_OPACITY_PROFILE") != nullptr);
+    // Micromaps bake off the frame path; REMIX_SYNC_MICROMAPS bakes them
+    // within the frame that proves their partitions (deterministic tests).
+    g.opacityCache.setAsyncMicromaps(std::getenv("REMIX_SYNC_MICROMAPS") == nullptr);
     VkPhysicalDeviceProperties2 properties = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
                                               .pNext = &g.asProperties};
     vkGetPhysicalDeviceProperties2(physical, &properties);

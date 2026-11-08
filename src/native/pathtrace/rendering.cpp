@@ -1746,6 +1746,9 @@ namespace remix {
       g.opacityCache.setMicromapLevel(micromapLevel);
       g.statics.invalidate();
     }
+    // Micromaps baked in the background since the last frame replace their
+    // pending partitions before this frame looks any up.
+    g.opacityCache.collectMicromaps();
     // View models move into the world camera's view (Draw::viewModel) before
     // the tracer and the raster overlays see the frame's draws.
     if (options.viewModel)
@@ -1768,9 +1771,17 @@ namespace remix {
     const auto pruned = Clock::now();
     if (std::getenv("REMIX_OPACITY_DIAGNOSTICS")) {
       uint64_t reasons[scene::OpacityPartition::Count] = {}, mixed = 0;
+      // Micromaps and their micro-triangles, per surface like the reasons.
+      uint64_t micromaps = 0, microOpaque = 0, microTransparent = 0, microUnknown = 0;
       auto count = [&](const scene::TraceFrame::Surface &surface) {
         const auto &partition = surface.opacity;
         mixed += partition->key[0] == 2;
+        if (const auto &micromap = partition->micromap) {
+          ++micromaps;
+          microOpaque += micromap->opaque;
+          microTransparent += micromap->transparent;
+          microUnknown += micromap->unknown;
+        }
         for (unsigned i = 0; i < scene::OpacityPartition::Count; ++i)
           reasons[i] += partition->reasons[i];
       };
@@ -1787,7 +1798,13 @@ namespace remix {
                              "invalid", "missing_texture", "texture_boundary", "texture_cutout", "scrolling"};
       for (unsigned i = 0; i < scene::OpacityPartition::Count; ++i)
         std::fprintf(stderr, " %s=%llu", names[i], static_cast<unsigned long long>(reasons[i]));
-      std::fprintf(stderr, "\n");
+      std::fprintf(stderr,
+                   " micromaps=%llu micro_opaque=%llu micro_transparent=%llu micro_unknown=%llu bakes_queued=%llu"
+                   " bakes_installed=%llu\n",
+                   static_cast<unsigned long long>(micromaps), static_cast<unsigned long long>(microOpaque),
+                   static_cast<unsigned long long>(microTransparent), static_cast<unsigned long long>(microUnknown),
+                   static_cast<unsigned long long>(g.opacityCache.micromapBakeCount()),
+                   static_cast<unsigned long long>(g.opacityCache.micromapInstallCount()));
     }
     const auto stageStart = Clock::now();
     auto &staged = frame.lighting;

@@ -76,9 +76,11 @@ int main(int argc, char **argv) {
 #if defined(_WIN32)
   _putenv_s("REMIX_RAY_PROFILE", profile.string().c_str());
   _putenv_s("REMIX_PROFILE_EVERY_FRAME", "1");
+  _putenv_s("REMIX_SYNC_MICROMAPS", "1"); // Micromaps in the frame that proves them.
 #else
   setenv("REMIX_RAY_PROFILE", profile.string().c_str(), 1);
   setenv("REMIX_PROFILE_EVERY_FRAME", "1", 1);
+  setenv("REMIX_SYNC_MICROMAPS", "1", 1);
 #endif
   remixapi_Interface api{};
   remixapi_InitializeLibraryInfo initialize{};

@@ -190,6 +190,38 @@ namespace remix::scene {
             surface.opacity = opacity.partition(surface.draw, surface.uv);
       m_partitionPending.clear();
     }
+    // Micromaps baked in the background since the last look
+    // (OpacityCache::setAsyncMicromaps): units holding a pending partition
+    // take its replacement and, when it brought a micromap, are built again so
+    // their BLAS carries it.
+    if (opacity.micromapInstallCount() != m_micromapInstalls) {
+      m_micromapInstalls = opacity.micromapInstallCount();
+      for (uint32_t slot = 0; slot < m_units.size(); ++slot) {
+        auto &unit = m_units[slot];
+        if (!unit.live)
+          continue;
+        bool rebuild = false;
+        for (auto &surface : unit.surfaces)
+          if (surface.opacity && surface.opacity->micromapPending) {
+            // An evicted or abandoned entry is proved (and queued) again.
+            auto current = opacity.find(surface.draw, surface.uv);
+            if (!current)
+              current = opacity.partition(surface.draw, surface.uv);
+            if (current != surface.opacity) {
+              rebuild |= current->micromap != nullptr;
+              surface.opacity = std::move(current);
+            }
+          }
+        if (!rebuild)
+          continue;
+        unit.generation = ++m_generation;
+        if (!unit.pending) {
+          unit.pending = true;
+          m_rebuilt.push_back(slot);
+        }
+        ++m_statistics.micromapUnits;
+      }
+    }
     if (m_orderDirty)
       sort();
     if (m_emittingDirty) {
@@ -257,6 +289,7 @@ namespace remix::scene {
     m_orderChanged = m_orderDirty = m_emittingDirty = false;
     m_emitting.clear();
     m_partitionPending.clear();
+    m_micromapInstalls = 0;
     m_timelines.clear();
     m_prunable.clear();
     m_absent.clear();
