@@ -1456,26 +1456,74 @@ namespace remix {
       const auto indirectLayout = selectedLayout;
       // The wavefront kernels (configureWavefront) run as a set or not at all:
       // each reads the records the one before wrote.
-      VkPipeline kernels[IndirectPass::wavefrontKernels] = {};
-      uint32_t kernelFeatures[IndirectPass::wavefrontKernels] = {};
-      VkPipelineLayout kernelLayouts[IndirectPass::wavefrontKernels] = {};
-      bool wavefront = indirectPass.wavefrontActive;
-      for (size_t i = 0; wavefront && i < std::size(kernels); ++i) {
+      constexpr size_t lit = 5; // start, trace, shade, finish, tail; then the arguments kernel
+      VkPipeline kernels[lit] = {};
+      uint32_t kernelFeatures[lit] = {};
+      VkPipelineLayout kernelLayouts[lit] = {};
+      const VkPipeline arguments = indirectPass.wavefront[lit];
+      bool wavefront = indirectPass.wavefrontActive && arguments && indirectPass.paths;
+      for (size_t i = 0; wavefront && i < lit; ++i) {
         kernels[i] = selectLightingPipeline(indirectPass.wavefront[i]);
         kernelFeatures[i] = selectedFeatures;
         kernelLayouts[i] = selectedLayout;
         wavefront = kernels[i] != VK_NULL_HANDLE;
       }
       if (wavefront) {
-        const char *names[] = {"Trace indirect (wavefront start)", "Trace indirect (wavefront trace)",
-                               "Trace indirect (wavefront shade)", "Trace indirect (wavefront rest)"};
-        for (size_t i = 0; i < std::size(kernels); ++i) {
-          if (i)
-            barrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
-                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
-          gpu::GpuScope scope(command, names[i], extent);
-          bindTrace(command, kernels[i], kernelLayouts[i], kernelFeatures[i]);
-          vkCmdDispatch(command, (extent.width + 7) / 8, (extent.height + 7) / 8, 1);
+        constexpr auto computeWrite = VK_ACCESS_SHADER_WRITE_BIT;
+        constexpr auto computeAccess = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+        constexpr auto compute = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+        constexpr auto indirect = VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT;
+        const VkDeviceSize pixels = VkDeviceSize(extent.width) * extent.height;
+        const VkDeviceSize header = pixels * IndirectPass::wavefrontPlanes * 16;
+        const VkBuffer paths = indirectPass.paths->handle;
+        const uint32_t screenX = (extent.width + 7) / 8, screenY = (extent.height + 7) / 8;
+        // The queue's counters start at zero (last frame's kernels done with them).
+        barrier(command, compute | indirect, computeAccess | VK_ACCESS_INDIRECT_COMMAND_READ_BIT,
+                VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT);
+        vkCmdFillBuffer(command, paths, header, IndirectPass::wavefrontQueueHeader, 0);
+        barrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, compute, computeAccess);
+        {
+          gpu::GpuScope scope(command, "Trace indirect (wavefront start)", extent);
+          bindTrace(command, kernels[0], kernelLayouts[0], kernelFeatures[0]);
+          vkCmdDispatch(command, screenX, screenY, 1);
+        }
+        // Each split bounce over the paths the one before left going: its
+        // arguments, its rays' receivers, its shading (a dispatch of no groups
+        // once every path has ended). Then the tail: the remaining bounces of
+        // the few paths left, in one kernel (each bounce's own kernels cost
+        // more in launches and barriers than its paths do).
+        const uint32_t bounces = std::min(options.bounces, IndirectPass::wavefrontMaxBounces);
+        const uint32_t split = std::clamp(options.wavefrontBounces, 1u, bounces);
+        for (uint32_t bounce = 0; bounce <= split && bounce < bounces; ++bounce) {
+          barrier(command, compute, computeWrite, compute, computeAccess);
+          bindTrace(command, arguments, temporalLayout, defaultFeatures);
+          vkCmdDispatch(command, 1, 1, 1);
+          barrier(command, compute, computeWrite, compute | indirect,
+                  computeAccess | VK_ACCESS_INDIRECT_COMMAND_READ_BIT);
+          const VkDeviceSize slot = header + (8 + 4 * bounce) * 4;
+          if (bounce == split) {
+            gpu::GpuScope scope(command, "Trace indirect (wavefront tail)", extent);
+            bindTrace(command, kernels[4], kernelLayouts[4], kernelFeatures[4]);
+            vkCmdDispatchIndirect(command, paths, slot);
+            break;
+          }
+          {
+            gpu::GpuScope scope(command, "Trace indirect (wavefront trace)", extent);
+            bindTrace(command, kernels[1], kernelLayouts[1], kernelFeatures[1]);
+            vkCmdDispatchIndirect(command, paths, slot);
+          }
+          barrier(command, compute, computeWrite, compute, computeAccess);
+          {
+            gpu::GpuScope scope(command, "Trace indirect (wavefront shade)", extent);
+            bindTrace(command, kernels[2], kernelLayouts[2], kernelFeatures[2]);
+            vkCmdDispatchIndirect(command, paths, slot);
+          }
+        }
+        barrier(command, compute, computeWrite, compute, computeAccess);
+        {
+          gpu::GpuScope scope(command, "Trace indirect (wavefront finish)", extent);
+          bindTrace(command, kernels[3], kernelLayouts[3], kernelFeatures[3]);
+          vkCmdDispatch(command, screenX, screenY, 1);
         }
       } else {
         gpu::GpuScope scope(command,

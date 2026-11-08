@@ -372,6 +372,9 @@ namespace remix {
     // records, each kernel compiled alone. Experimental: denoised lighting
     // with one sample a pixel; otherwise the single kernel runs.
     bool wavefrontIndirect = false;
+    // Its bounces traced and shaded in kernels of their own; the bounces
+    // after them run in one kernel over the paths still going.
+    uint32_t wavefrontBounces = 1;
     // Alpha-tested geometry carries VK_EXT_opacity_micromap data, so
     // traversal settles proved micro-triangles without the shader's alpha
     // test (docs/features/gpu-optimizations.md). No effect without device

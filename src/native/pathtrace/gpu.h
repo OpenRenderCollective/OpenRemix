@@ -389,13 +389,18 @@ namespace remix {
       }();
       const char *modeFile = std::getenv("REMIX_INDIRECT_MODE_FILE");
       uint64_t controlReset = UINT64_MAX;
-      // rtx.native.pathtrace.wavefrontIndirect: the pass as four kernels
-      // (pathtrace.comp WAVEFRONT_PASS: start, trace, shade, rest) over the
-      // path records in `paths` (wavefrontPlanes 16-byte planes a pixel).
-      // Dispatched only while all four exist (wavefrontActive), else the
+      // rtx.native.pathtrace.wavefrontIndirect: the pass as small kernels
+      // (pathtrace.comp WAVEFRONT_PASS: start; per bounce arguments, trace
+      // and shade over the bounce's live paths; finish) over the path records
+      // in `paths`: wavefrontPlanes 16-byte planes a pixel, then the queue
+      // header and two lists of 4 bytes a pixel (pathtrace.comp
+      // WavefrontQueue). Dispatched only while every kernel exists, else the
       // single kernel runs. Temporal (denoised) lighting, one sample a pixel.
-      static constexpr uint32_t wavefrontPlanes = 15;
-      static constexpr size_t wavefrontKernels = 4;
+      static constexpr uint32_t wavefrontPlanes = 15, wavefrontQueueHeader = 512, wavefrontMaxBounces = 16;
+      static constexpr size_t wavefrontKernels = 6; // start, trace, shade, finish, tail, arguments
+      static VkDeviceSize wavefrontBytes(VkDeviceSize pixels) {
+        return pixels * wavefrontPlanes * 16 + wavefrontQueueHeader + pixels * 2 * 4;
+      }
       VkPipeline wavefront[wavefrontKernels] = {};
       std::unique_ptr<Buffer> paths;
       bool wavefrontActive = false, wavefrontFailed = false;

@@ -29,6 +29,9 @@
 #ifndef WAVEFRONT_PASS
 #define WAVEFRONT_PASS 0
 #endif
+#ifdef WAVEFRONT_PASS
+#extension GL_KHR_shader_subgroup_ballot : require // wavefrontEnqueue
+#endif
 #ifdef SPARSE_COMPACT_PASS
 // One group per 16x16 pixel tile (see the pass in main).
 layout(local_size_x=16, local_size_y=16) in;
@@ -278,7 +281,7 @@ struct Intersection { float t; uint surface; uint primitive; vec2 bary; mat4x3 m
 // The wavefront shade kernel's bounce receiver, found by its trace kernel
 // (closest() takes it in place of its first query).
 #if WAVEFRONT_PASS==3
-Intersection wavefrontReceiver;
+Intersection wavefrontReceiver;bool wavefrontInjected=false;
 #endif
 void queryScene(accelerationStructureEXT scene, vec3 origin, vec3 direction, inout Intersection x,float minimum) {
   rayQueryEXT query;
@@ -485,7 +488,9 @@ Hit closest(vec3 origin,vec3 direction,float maximum,bool motion) {
     traceMask=step==0u?(paint?mask&~decalInstanceMask:mask):decalInstanceMask;
     if(step==0u) {
 #if WAVEFRONT_PASS==3
-      receiver=wavefrontReceiver; // the shade kernel's one closest(): its bounce ray's
+      // The shade kernel's first: its bounce ray's; then the layers it passes.
+      if(wavefrontInjected){receiver=wavefrontReceiver;wavefrontInjected=false;}
+      else receiver=nearest(origin,direction,maximum,0);
 #else
       receiver=nearest(origin,direction,maximum,0);
 #endif
@@ -1269,14 +1274,15 @@ PathState pathStart(Hit primary,inout int lobe,inout float probability,bool ligh
   s.going=true;
   return s;
 }
-// Up to `steps` of the path's steps: a bounce through up to 32 blended layers
-// takes a step per layer (and the primary's own vertex first). primary: the
-// path's first vertex (only its material factor once that is lit).
-void pathSteps(Hit primary,inout PathState s,uint maxBounces,uint steps,
+// The path's steps until its bounce reaches `untilBounce` (at most
+// maxBounces) or it ends: a bounce through up to 32 blended layers takes a
+// step per layer (and the primary's own vertex first). primary: the path's
+// first vertex (only its material factor once that is lit).
+void pathSteps(Hit primary,inout PathState s,uint maxBounces,uint untilBounce,
                inout vec3 primaryLight,inout vec3 primarySpecular,inout float primaryDistance) {
   const vec3 luma=vec3(.2126,.7152,.0722);
   // `going` is set again by every step that does not end the path.
-  for(uint step=0;step<steps&&(s.atPrimary||s.bounce<maxBounces);s.going=true,++step) {
+  for(uint step=0;step<561u&&(s.atPrimary||s.bounce<untilBounce);s.going=true,++step) {
     s.going=false;
     Hit hit=primary;
     if(!s.atPrimary) {
@@ -1422,7 +1428,7 @@ vec3 continuation(Hit primary,int lobe,float probability,out vec3 firstDirection
   const bool early=s.dead&&!lightPrimary;
   if(!early) {
     if(maxBounces==0)profilePath(8u);
-    pathSteps(primary,s,maxBounces,561u,primaryLight,primarySpecular,primaryDistance);
+    pathSteps(primary,s,maxBounces,maxBounces,primaryLight,primarySpecular,primaryDistance);
   }
   pathDistance=s.pathDistance;
   return pathFinish(primary,s,early,extraSky,extraSkySpecular,probability,specular);
@@ -1740,19 +1746,24 @@ IndirectResult traceIndirect(Hit primary,ivec2 pixel,vec3 diffuseFactor,vec3 spe
 }
 #if WAVEFRONT_PASS!=0
 // The wavefront indirect pass (rtx.native.pathtrace.wavefrontIndirect): the
-// separate indirect pass's one sample a pixel as kernels over the screen, so
-// the path's start, its first bounce's ray, that bounce's shading and the
-// rest of the path each compile alone: start (1, up to the first bounce ray),
-// trace (2, that ray's receiver query), shade (3, the bounce's step with that
-// receiver), rest (4, the path's further steps and the results traceIndirect
-// writes). Neither nearest() nor the candidate tests draw random numbers, so
-// resuming from the saved rng and roulette state continues the inline pass's
-// path; the records keep what the next ray depends on exactly (origin,
-// direction, throughput, radiance, random state) and the rest as halves.
+// separate indirect pass's one sample a pixel as small kernels, so the
+// path's start, each bounce's ray and each bounce's shading compile alone
+// and launch only for the paths still going. start (1, over the screen: up
+// to the first bounce ray; a pixel without a path gets its result), then per
+// bounce: arguments (5, the indirect dispatch over the bounce's list), trace
+// (2, the bounce ray's receiver query), shade (3, the bounce with that
+// receiver, appending the paths that go on to the next list); after
+// wavefrontBounces of those, the tail (6: the remaining bounces of the paths
+// left, after its arguments); finish (4, over the screen: the results
+// traceIndirect writes). Neither nearest() nor
+// the candidate tests draw random numbers, so resuming from the saved rng
+// and roulette state continues the inline pass's path; the records keep what
+// the next ray depends on exactly (origin, direction, throughput, radiance,
+// random state) and the rest as halves.
 // The records (frame.wavefrontPaths): planes of 16 bytes per pixel,
 // frame.wavefrontStride apart, so a group's accesses to a plane are
 // contiguous. 0-5 (96 bytes): the PathState and the globals its steps read
-// (written by the start and shade kernels); 6-9 (64 bytes): what the rest
+// (written by the start and shade kernels); 6-9 (64 bytes): what the finish
 // kernel needs of the start; 10-14: the receiver the trace kernel found.
 const uint wavefrontPathPlanes=0u,wavefrontFinishPlanes=6u,wavefrontReceiverPlanes=10u;
 layout(buffer_reference,std430,buffer_reference_align=16) buffer WavefrontPlanes { uvec4 v[]; };
@@ -1839,10 +1850,13 @@ IndirectPrimary loadFinish(uint index,out vec3 extraSky,out vec3 extraSkySpecula
   p.z=uintBitsToFloat(d.z);p.pbr=(d.w&1u)!=0u;p.sssMoved=(d.w&2u)!=0u;
   return p;
 }
-// The path start for the pixel; false without a path (its result written).
+// The path start for the pixel (a pixel without one gets its result here);
+// whether the path's first bounce follows.
 bool wavefrontStart(Hit primary,ivec2 pixel,uint index,vec3 diffuseFactor,vec3 specularFactor) {
   if(!(primary.t<1e30&&!primary.blended)) {
-    wavefrontStore(0u,index,uvec4(0));wavefrontStore(1u,index,uvec4(0,0,0,rng));
+    wavefrontStore(0u,index,uvec4(0));
+    IndirectResults(frame.indirectResults).pixels[index]=packIndirect(vec3(0),0,rng);
+    clearIndirect(pixel,0);
     return false;
   }
   Hit lit;IndirectPrimary p=indirectPrimary(primary,diffuseFactor,specularFactor,lit);
@@ -1855,8 +1869,52 @@ bool wavefrontStart(Hit primary,ivec2 pixel,uint index,vec3 diffuseFactor,vec3 s
   else if(frame.config.y==0)profilePath(8u);
   storePath(index,s);
   storeFinish(index,p,extraSky,extraSkySpecular,firstDir,probability,s.specularWeight/max(s.weight,vec3(1e-20)));
+  return wavefrontSteps(s);
+}
+// The live paths of each bounce (after the planes): a header, then two lists
+// of path indices, the current bounce's and the next's, frame.wavefrontStride
+// each. Header: the two lists' counts (appended by the start and shade
+// kernels), the current bounce's count and number, the next bounce's number,
+// its dispatch's group columns (x), then each bounce's indirect dispatch
+// arguments from word 8 (four words each). The host zeroes it every frame.
+const uint wavefrontPlaneCount=15u;
+layout(buffer_reference,std430,buffer_reference_align=4) buffer WavefrontQueue { uint header[128]; uint list[]; };
+WavefrontQueue wavefrontQueue() {
+  return WavefrontQueue(frame.wavefrontPaths+uint64_t(wavefrontPlaneCount)*frame.wavefrontStride*16u);
+}
+// Adds the path to the list if `add`: one atomic for the subgroup, so the
+// list keeps a subgroup's neighbouring pixels together.
+void wavefrontEnqueue(uint list,uint index,bool add) {
+  uvec4 ballot=subgroupBallot(add);
+  uint total=subgroupBallotBitCount(ballot);
+  if(total==0u)return;
+  WavefrontQueue q=wavefrontQueue();
+  uint base=0u;
+  if(subgroupElect())base=atomicAdd(q.header[list],total);
+  base=subgroupBroadcastFirst(base);
+  if(add)q.list[list*frame.wavefrontStride+base+subgroupBallotExclusiveBitCount(ballot)]=index;
+}
+// The arguments kernel (one invocation, before each bounce's kernels).
+void wavefrontArgs() {
+  WavefrontQueue q=wavefrontQueue();
+  uint bounce=q.header[4],list=bounce&1u,count=q.header[list];
+  // This list takes the bounce after next's paths.
+  q.header[list]=0u;q.header[2]=count;q.header[3]=bounce;q.header[4]=bounce+1u;
+  uint groups=(count+63u)/64u,columns=min(groups,32768u),slot=8u+4u*min(bounce,15u);
+  q.header[5]=max(columns,1u);
+  q.header[slot]=columns;q.header[slot+1u]=columns==0u?0u:(groups+columns-1u)/columns;q.header[slot+2u]=1u;
+}
+// This invocation's path of the bounce's list (shadingPixel set).
+bool wavefrontQueued(out uint index) {
+  WavefrontQueue q=wavefrontQueue();
+  uint id=(gl_WorkGroupID.y*q.header[5]+gl_WorkGroupID.x)*64u+gl_LocalInvocationIndex;
+  index=0u;
+  if(id>=q.header[2])return false;
+  index=q.list[(q.header[3]&1u)*frame.wavefrontStride+id];
+  shadingPixel=ivec2(index%frame.target.x,index/frame.target.x);
   return true;
 }
+uint wavefrontNextList() { return (wavefrontQueue().header[3]&1u)^1u; }
 // secondaryHit's first query: closest()'s receiver, which leaves out paint.
 void wavefrontTrace(uint index) {
   uvec4 a=wavefrontLoad(0u,index);
@@ -1874,10 +1932,24 @@ void wavefrontTrace(uint index) {
   wavefrontStore(r+2u,index,wavefrontPack(x.model[2],0u));
   wavefrontStore(r+3u,index,wavefrontPack(x.model[3],0u));
 }
-#if WAVEFRONT_PASS==3
-void wavefrontShade(uint index) {
+#if WAVEFRONT_PASS==6
+// The tail (rtx.native.pathtrace.wavefrontBounces): the path's remaining
+// bounces in one kernel, over the few paths left going.
+void wavefrontTail(uint index) {
   bool traced;PathState s=loadPath(index,traced);
   if(!traced||!wavefrontSteps(s))return;
+  Hit primary=wavefrontPrimary(s);
+  vec3 primaryLight,primarySpecular;float primaryDistance;
+  pathSteps(primary,s,frame.config.y,frame.config.y,primaryLight,primarySpecular,primaryDistance);
+  storePath(index,s);
+}
+#endif
+#if WAVEFRONT_PASS==3
+// The path's next bounce, from the receiver the trace kernel found (the
+// blended layers it passes on the way traced here); whether another follows.
+bool wavefrontShade(uint index) {
+  bool traced;PathState s=loadPath(index,traced);
+  if(!traced||!wavefrontSteps(s))return false;
   const uint r=wavefrontReceiverPlanes;
   uvec4 f=wavefrontLoad(r+4u,index);
   Intersection x;x.surface=f.x;x.primitive=f.y;x.bary=uintBitsToFloat(f.zw);
@@ -1887,31 +1959,31 @@ void wavefrontShade(uint index) {
     x.model=mat4x3(uintBitsToFloat(c0.xyz),uintBitsToFloat(c1.xyz),uintBitsToFloat(c2.xyz),uintBitsToFloat(c3.xyz));
     x.t=uintBitsToFloat(c0.w);x.wound=uintBitsToFloat(c1.w);
   }
-  wavefrontReceiver=x;
+  wavefrontReceiver=x;wavefrontInjected=true;
   Hit primary=wavefrontPrimary(s);
   vec3 primaryLight,primarySpecular;float primaryDistance;
-  pathSteps(primary,s,frame.config.y,1u,primaryLight,primarySpecular,primaryDistance);
+  pathSteps(primary,s,frame.config.y,s.bounce+1u,primaryLight,primarySpecular,primaryDistance);
   storePath(index,s);
+  return wavefrontSteps(s);
 }
 #endif
-IndirectResult wavefrontRest(ivec2 pixel,uint index,out bool traced) {
-  PathState s=loadPath(index,traced);
-  IndirectResult result=IndirectResult(vec3(0),rng,0);
-  if(traced) {
-    Hit primary=wavefrontPrimary(s);
-    vec3 primaryLight,primarySpecular;float primaryDistance;
-    if(s.going)pathSteps(primary,s,frame.config.y,561u,primaryLight,primarySpecular,primaryDistance);
-    vec3 extraSky,extraSkySpecular,firstDir,specularRatio;float probability;
-    IndirectPrimary p=loadFinish(index,extraSky,extraSkySpecular,firstDir,probability,specularRatio);
-    // The specular share as the ratio the start kept (pathFinish).
-    s.specularWeight=specularRatio;s.weight=vec3(1);
-    vec3 sampleSpecular;
-    vec3 sampleLight=pathFinish(primary,s,s.dead,extraSky,extraSkySpecular,probability,sampleSpecular);
-    indirectSample(pixel,0u,p,sampleLight,sampleSpecular,firstDir,s.pathDistance,result);
-    indirectEnd(pixel,p,result);
-  }
+// The pixel's result once its path is done; false without a path (the start
+// kernel wrote its result).
+bool wavefrontFinish(ivec2 pixel,uint index,out IndirectResult result) {
+  bool traced;PathState s=loadPath(index,traced);
+  result=IndirectResult(vec3(0),rng,0);
+  if(!traced)return false;
+  Hit primary=wavefrontPrimary(s);
+  vec3 extraSky,extraSkySpecular,firstDir,specularRatio;float probability;
+  IndirectPrimary p=loadFinish(index,extraSky,extraSkySpecular,firstDir,probability,specularRatio);
+  // The specular share as the ratio the start kept (pathFinish).
+  s.specularWeight=specularRatio;s.weight=vec3(1);
+  vec3 sampleSpecular;
+  vec3 sampleLight=pathFinish(primary,s,s.dead,extraSky,extraSkySpecular,probability,sampleSpecular);
+  indirectSample(pixel,0u,p,sampleLight,sampleSpecular,firstDir,s.pathDistance,result);
+  indirectEnd(pixel,p,result);
   result.state=rng;
-  return result;
+  return true;
 }
 #endif
 #ifdef TEMPORAL
@@ -2356,18 +2428,29 @@ void main() {
   SheetResults(frame.sheetResults).pixels[index]=packSheet(light,specular,distance);
   return;
 #elif defined(INDIRECT_PASS)
+#if WAVEFRONT_PASS==5
+  if(gl_GlobalInvocationID==uvec3(0))wavefrontArgs();
+  return;
+#elif WAVEFRONT_PASS==2 || WAVEFRONT_PASS==3 || WAVEFRONT_PASS==6
+  // Over the bounce's live paths (wavefrontArgs' indirect dispatch).
+  uint queued;
+  bool live=wavefrontQueued(queued);
+#if WAVEFRONT_PASS==2
+  if(live)wavefrontTrace(queued);
+#elif WAVEFRONT_PASS==6
+  if(live)wavefrontTail(queued);
+#else
+  bool next=live&&wavefrontShade(queued);
+  if(live)wavefrontEnqueue(wavefrontNextList(),queued,next);
+#endif
+  return;
+#endif
   if(any(greaterThanEqual(pixel,ivec2(frame.target.xy))))return;
   const uint index=uint(pixel.x)+uint(pixel.y)*frame.target.x;
-#if WAVEFRONT_PASS==2
-  wavefrontTrace(index);
-  return;
-#elif WAVEFRONT_PASS==3
-  wavefrontShade(index);
-  return;
-#elif WAVEFRONT_PASS==4
-  bool traced;IndirectResult rest=wavefrontRest(pixel,index,traced);
-  IndirectResults(frame.indirectResults).pixels[index]=packIndirect(rest.radiance,rest.distance,rest.state);
-  if(!traced)clearIndirect(pixel,0);
+#if WAVEFRONT_PASS==4
+  IndirectResult finished;
+  if(wavefrontFinish(pixel,index,finished))
+    IndirectResults(frame.indirectResults).pixels[index]=packIndirect(finished.radiance,finished.distance,finished.state);
   return;
 #endif
   rng=hash(uint(pixel.x)+uint(pixel.y)*frame.target.x+hash(frame.config.z));
@@ -2382,7 +2465,7 @@ void main() {
       hitF0(primary),primary.rm.x,diffuseFactor,specularFactor);
 #endif
 #if WAVEFRONT_PASS==1
-  wavefrontStart(primary,pixel,index,diffuseFactor,specularFactor);
+  wavefrontEnqueue(0u,index,wavefrontStart(primary,pixel,index,diffuseFactor,specularFactor));
   return;
 #endif
   IndirectResult result=traceIndirect(primary,pixel,diffuseFactor,specularFactor);

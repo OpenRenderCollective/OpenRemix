@@ -91,17 +91,19 @@ namespace remix {
   // Its kernels, selected like the pass (selectLightingPipeline).
   std::vector<PathTracer::Gpu::LightingRequest> PathTracer::Gpu::wavefrontRequests() {
     using trace::Stage;
-    const Stage stages[IndirectPass::wavefrontKernels] = {Stage::wavefrontStartTemporal, Stage::wavefrontTraceTemporal,
-                                                          Stage::wavefrontShadeTemporal, Stage::wavefrontRestTemporal};
+    const Stage stages[] = {Stage::wavefrontStartTemporal, Stage::wavefrontTraceTemporal, Stage::wavefrontShadeTemporal,
+                            Stage::wavefrontFinishTemporal, Stage::wavefrontTailTemporal};
     std::vector<LightingRequest> requests;
     for (size_t i = 0; i < std::size(stages); ++i)
       requests.push_back({lightingStage(stages[i]), temporalLayout, &indirectPass.wavefront[i], true});
+    // The bounces' dispatch arguments: one invocation, no lighting.
+    requests.push_back({Stage::wavefrontArgs, temporalLayout, &indirectPass.wavefront[5], false, false, false, false});
     return requests;
   }
 
   // The wavefront form of the separate pass (TraceOptions::wavefrontIndirect):
   // its kernels compile in the background on first use, and the single
-  // kernel runs until all four have.
+  // kernel runs until all have.
   void PathTracer::Gpu::configureWavefront(Frame &frame, const TraceOptions &options) {
     auto &pass = indirectPass;
     if (!options.wavefrontIndirect || !denoiser || options.samples != 1 || pass.wavefrontFailed) {
@@ -112,9 +114,12 @@ namespace remix {
     try {
       createLightingPipelines(wavefrontRequests());
       const VkDeviceSize pixels = VkDeviceSize(extent.width) * extent.height;
-      const VkDeviceSize bytes = pixels * pass.wavefrontPlanes * 16;
+      const VkDeviceSize bytes = pass.wavefrontBytes(pixels);
       if (!pass.paths || pass.paths->size < bytes) {
-        auto next = buffer(bytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, false);
+        auto next = buffer(bytes,
+                           VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
+                               VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                           false);
         if (pass.paths)
           retiredBuffers.push_back(std::move(pass.paths));
         pass.paths = std::move(next);

@@ -69,8 +69,10 @@ namespace remix {
       return Stage::sharcWavefrontTraceTemporal;
     case Stage::wavefrontShadeTemporal:
       return Stage::sharcWavefrontShadeTemporal;
-    case Stage::wavefrontRestTemporal:
-      return Stage::sharcWavefrontRestTemporal;
+    case Stage::wavefrontFinishTemporal:
+      return Stage::sharcWavefrontFinishTemporal;
+    case Stage::wavefrontTailTemporal:
+      return Stage::sharcWavefrontTailTemporal;
     case Stage::sheetLighting:
       return Stage::sharcSheetLighting;
     case Stage::sheetLightingTemporal:
