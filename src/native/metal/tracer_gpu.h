@@ -127,9 +127,9 @@ namespace remix::metal {
       shaders::Stage stage{};
       ArgumentSet set0, set1;
       bool supportsGuiding = false, supportsRoulette = true;
-      bool variants = true;             // selected by the scene's variant and features (else base, defaults)
+      bool variants = true;              // selected by the scene's variant and features (else base, defaults)
       bool baseSeparateIndirect = false; // the base consumes the separate indirect pass
-      uint32_t base = 0;                // the base pipeline's constants
+      uint32_t base = 0;                 // the base pipeline's constants
       explicit operator bool() const { return bool(set0); }
     };
     struct LightingFlags {
@@ -144,10 +144,10 @@ namespace remix::metal {
     Lighting sharcUpdate, sharcResolve, regirPresample, volumeUpdate, sparseCompact, sparseArgs;
     // ORCA (orca.glsl) is not on Metal: its cache sums radiance with 64-bit
     // atomic adds, which Metal (and SPIRV-Cross's MSL) does not have.
-    Lighting *lightingPasses[17] = {&opaque,        &indirect,     &transparency,   &singleTransparency,
-                                    &sheet,         &frontGuides,  &psr,            &confidence,
-                                    &sharcUpdate,   &sharcResolve, &regirPresample, &volumeUpdate,
-                                    &sparseCompact, &sparseArgs,   &splitDirect,  &restirInitial, &restirSpatial};
+    Lighting *lightingPasses[17] = {&opaque,         &indirect,     &transparency,  &singleTransparency, &sheet,
+                                    &frontGuides,    &psr,          &confidence,    &sharcUpdate,        &sharcResolve,
+                                    &regirPresample, &volumeUpdate, &sparseCompact, &sparseArgs,         &splitDirect,
+                                    &restirInitial,  &restirSpatial};
     // ReSTIR DI (pathtrace/restir.cpp): this frame's reservoirs and the kept history.
     struct Restir {
       std::shared_ptr<Buffer> current, history[2], remap;
@@ -304,10 +304,10 @@ namespace remix::metal {
     // partition or the camera's cluster changes.
     struct CameraCulling {
       std::shared_ptr<Buffer> nodes, leaves;
-      uint64_t nodesVersion = 0, leavesVersion = 0; // partition versions held (0: none)
-      int32_t leavesClusters[2] = {-1, -1};         // the clusters whose united set `leaves` holds
-      uint64_t lastVersion = 0;                     // previous traced frame: partition and
-      int32_t lastCluster = -1;                     // camera cluster
+      uint64_t nodesVersion = 0, leavesVersion = 0;    // partition versions held (0: none)
+      int32_t leavesClusters[2] = {-1, -1};            // the clusters whose united set `leaves` holds
+      uint64_t lastVersion = 0;                        // previous traced frame: partition and
+      int32_t lastCluster = -1;                        // camera cluster
       uint32_t visibleClusters = 0, visibleLeaves = 0; // of `leaves`
       remixapi_CameraCullingStatisticsEXT statistics{.structSize = sizeof(remixapi_CameraCullingStatisticsEXT)};
     } cameraCulling;
@@ -334,8 +334,8 @@ namespace remix::metal {
       bool active = false, valid = false;
       const char *diagnostics = std::getenv("REMIX_PBR_REUSE_DIAGNOSTICS");
     } pbrReuse;
-    void configurePbrReuse(id<MTLCommandBuffer> command, Frame &frame, const TraceOptions &options,
-                           uint64_t signature, bool stable);
+    void configurePbrReuse(id<MTLCommandBuffer> command, Frame &frame, const TraceOptions &options, uint64_t signature,
+                           bool stable);
     void finishPbrReuse(id<MTLCommandBuffer> command);
     void readPbrReuse();
     void finishPathInspector(id<MTLCommandBuffer> command);
@@ -422,8 +422,8 @@ namespace remix::metal {
     std::vector<InstanceView> instanceViews;
     std::vector<const scene::OpacityPartition *> partitionStorage;
     std::vector<size_t> partitionOffsets;
-    MeshView &meshView(const scene::Draw &draw, const scene::OpacityPartition *const *partitions,
-                       size_t partitionCount, MeshConversion &conversion, bool &convert);
+    MeshView &meshView(const scene::Draw &draw, const scene::OpacityPartition *const *partitions, size_t partitionCount,
+                       MeshConversion &conversion, bool &convert);
     MeshView *findView(const scene::Draw &draw, const scene::OpacityPartition *const *partitions,
                        size_t partitionCount);
     static void convertMesh(MeshConversion &conversion);
@@ -460,7 +460,7 @@ namespace remix::metal {
       id<MTLBuffer> instances = nil;
       std::vector<id<MTLAccelerationStructure>> blas;
       remix::trace::TlasPolicy policy;
-    } tlas[2]; // static, dynamic
+    } tlas[2];                                                 // static, dynamic
     std::unordered_map<uint64_t, std::weak_ptr<Accel>> accels; // address -> BLAS
     id<MTLBuffer> scratch = nil;
     id<MTLAccelerationStructure> emptyTlas = nil;
@@ -497,10 +497,10 @@ namespace remix::metal {
 
     struct FrameResources {
       std::shared_ptr<Buffer> table, uniform;
-      std::shared_ptr<Buffer> movedLights; // scene::MovedLight pairs read by this frame
-      std::shared_ptr<Buffer> lightCookies; // the cookie table (Frame::lightCookies)
+      std::shared_ptr<Buffer> movedLights;   // scene::MovedLight pairs read by this frame
+      std::shared_ptr<Buffer> lightCookies;  // the cookie table (Frame::lightCookies)
       std::shared_ptr<Buffer> woundVertices; // remixapi_InstanceInfoWoundCutEXT (Frame::woundVertices)
-      id<MTLBuffer> guideCounters = nil;   // light guiding's training counters, copied at the frame's end
+      id<MTLBuffer> guideCounters = nil;     // light guiding's training counters, copied at the frame's end
       bool guidePending = false;
       id<MTLBuffer> rayCounts = nil; // the ray profile's counters, copied at the frame's end
       bool rayPending = false;

@@ -48,8 +48,7 @@ namespace remix::metal {
       // were seen (the runtime's sticky local-source contract); perspective:
       // the world camera supports reconstruction. device: an id<MTLDevice>.
       static Configuration of(void *device, const TraceOptions &options, bool frameGeneration, bool local,
-                              bool perspective, uint32_t displayWidth, uint32_t displayHeight,
-                              uint32_t displayFormat);
+                              bool perspective, uint32_t displayWidth, uint32_t displayHeight, uint32_t displayFormat);
       bool temporal() const { return reblur || taa || sigma || reconstruction; }
     };
     PathTracer();
@@ -112,8 +111,7 @@ namespace remix::metal {
     // The NUMOS sky (pathtrace/renderer.h setSky): the profile's sky settings,
     // the game's control over them (remix_sky_ext.h), and why the device
     // cannot run it (empty when it can).
-    void setSky(const config::SkySettings &settings, const config::SkyControl &control,
-                const std::string &unavailable);
+    void setSky(const config::SkySettings &settings, const config::SkyControl &control, const std::string &unavailable);
     struct SkyStatus {
       bool supported = false, active = false;
       std::string reason; // why the sky is not active, or empty

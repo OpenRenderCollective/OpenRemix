@@ -20,9 +20,8 @@ namespace remix {
     Matrix view, projection;
     if (const auto *p = static_cast<const remixapi_CameraInfoParameterizedEXT *>(
             extension(info.pNext, REMIXAPI_STRUCT_TYPE_CAMERA_INFO_PARAMETERIZED_EXT))) {
-      const float vectors[] = {p->position.x, p->position.y, p->position.z, p->forward.x,
-                               p->forward.y,  p->forward.z,  p->up.x,       p->up.y,
-                               p->up.z,       p->right.x,    p->right.y,    p->right.z};
+      const float vectors[] = {p->position.x, p->position.y, p->position.z, p->forward.x, p->forward.y, p->forward.z,
+                               p->up.x,       p->up.y,       p->up.z,       p->right.x,   p->right.y,   p->right.z};
       finite(vectors, 12);
       if (!std::isfinite(p->aspect) || p->aspect <= 0 || !std::isfinite(p->nearPlane) || p->nearPlane <= 0 ||
           !std::isfinite(p->farPlane) || p->farPlane <= p->nearPlane || !std::isfinite(p->fovYInDegrees) ||
@@ -48,8 +47,7 @@ namespace remix {
         inverse[r][1] = a[2] * b[0] - a[0] * b[2];
         inverse[r][2] = a[0] * b[1] - a[1] * b[0];
       }
-      const float det =
-          basis[0][0] * inverse[0][0] + basis[0][1] * inverse[0][1] + basis[0][2] * inverse[0][2];
+      const float det = basis[0][0] * inverse[0][0] + basis[0][1] * inverse[0][1] + basis[0][2] * inverse[0][2];
       if (std::abs(det) < 1e-5f) {
         throw invalid;
       }
@@ -122,12 +120,11 @@ namespace remix {
         throw invalid;
       for (uint32_t i = 0; i < list->count; ++i) {
         const auto &c = list->cameras[i];
-        const float values[] = {c.position.x, c.position.y, c.position.z, c.forward.x, c.forward.y,
-                                c.forward.z,  c.up.x,       c.up.y,       c.up.z,      c.right.x,
+        const float values[] = {c.position.x, c.position.y, c.position.z,  c.forward.x, c.forward.y,
+                                c.forward.z,  c.up.x,       c.up.y,        c.up.z,      c.right.x,
                                 c.right.y,    c.right.z,    c.fovYDegrees, c.aspect};
         finite(values, std::size(values));
-        if (c.slot >= REMIXAPI_SCREEN_CAMERA_SLOTS_EXT || c.fovYDegrees <= 0 || c.fovYDegrees >= 180 ||
-            c.aspect <= 0)
+        if (c.slot >= REMIXAPI_SCREEN_CAMERA_SLOTS_EXT || c.fovYDegrees <= 0 || c.fovYDegrees >= 180 || c.aspect <= 0)
           throw invalid;
         auto unit = [](const remixapi_Float3D &v, float out[3]) {
           const float length = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
@@ -141,10 +138,8 @@ namespace remix {
         unit(c.right, right);
         const float tanY = std::tan(c.fovYDegrees * 3.14159265f / 360), tanX = tanY * c.aspect;
         auto &out = screens[c.slot];
-        out = {c.position.x, c.position.y, c.position.z, 1,
-               right[0] * tanX, right[1] * tanX, right[2] * tanX, 0,
-               up[0] * tanY, up[1] * tanY, up[2] * tanY, 0,
-               forward[0], forward[1], forward[2], 0};
+        out = {c.position.x, c.position.y, c.position.z, 1, right[0] * tanX, right[1] * tanX, right[2] * tanX, 0,
+               up[0] * tanY, up[1] * tanY, up[2] * tanY, 0, forward[0],      forward[1],      forward[2],      0};
       }
     }
     if (info.type == REMIXAPI_CAMERA_TYPE_WORLD) {
@@ -152,8 +147,7 @@ namespace remix {
       m_screenCameras = screens;
       const auto *metadata = static_cast<const remixapi_CameraTemporalEXT *>(
           extension(info.pNext, REMIXAPI_STRUCT_TYPE_CAMERA_TEMPORAL_EXT));
-      m_temporalEpoch =
-          metadata ? TemporalEpoch{metadata->worldEpoch, metadata->historyResetEpoch} : TemporalEpoch{};
+      m_temporalEpoch = metadata ? TemporalEpoch{metadata->worldEpoch, metadata->historyResetEpoch} : TemporalEpoch{};
       m_skyRadiance = sky;
     }
     m_authoredCameras[info.type] = camera;
@@ -256,8 +250,7 @@ namespace remix {
     }
   }
 
-  void NativeResources::drawInstance(const remixapi_InstanceInfo &info,
-                                     remixapi_MaterialHandle materialOverride) {
+  void NativeResources::drawInstance(const remixapi_InstanceInfo &info, remixapi_MaterialHandle materialOverride) {
     auto mesh = m_meshes.find(key(info.mesh));
     if (mesh == m_meshes.end()) {
       throw invalid;
@@ -270,16 +263,17 @@ namespace remix {
     if (description.traceIdentity && m_frameIds.count(description.instanceId))
       throw invalid;
     const uint32_t count = description.instanced ? description.instanceCount : 1;
-    if (uint64_t(count) * mesh->second->surfaces.size() + (description.halo || description.maskSource ? 0 : pendingDrawCount()) > 65536) {
+    if (uint64_t(count) * mesh->second->surfaces.size() +
+            (description.halo || description.maskSource ? 0 : pendingDrawCount()) >
+        65536) {
       throw invalid;
     }
     // A USD mod's material wins over remixapi_InstanceInfoMaterialEXT.
     const auto override = materialOverride ? m_materials.at(key(materialOverride)) : overrideMaterial(description);
     m_modelScratch.resize(count);
     for (uint32_t i = 0; i < count; ++i) {
-      m_modelScratch[i] = description.instanced
-                              ? multiply(description.model, transform(description.instanceValues[i]))
-                              : description.model;
+      m_modelScratch[i] = description.instanced ? multiply(description.model, transform(description.instanceValues[i]))
+                                                : description.model;
       finite(m_modelScratch[i].data(), 16);
     }
     std::vector<Draw> pending;
@@ -302,8 +296,7 @@ namespace remix {
     if (description.traceIdentity && !pending.empty())
       m_frameIds.insert(description.instanceId);
     noteCut(description, pending);
-    m_draws.insert(m_draws.end(), std::make_move_iterator(pending.begin()),
-                   std::make_move_iterator(pending.end()));
+    m_draws.insert(m_draws.end(), std::make_move_iterator(pending.begin()), std::make_move_iterator(pending.end()));
   }
 
   // remixapi_InstanceInfoMaterialEXT, shared by DrawInstance and scene
@@ -386,8 +379,7 @@ namespace remix {
     // or remixapi_MaterialInfoReplacementHashEXT) or by its albedo texture's
     // hash, in that order.
     auto modMaterial = [&](const std::shared_ptr<Material> &original, uint64_t ownKey) -> std::shared_ptr<Material> {
-      const uint64_t modKeys[3] = {ownKey, original->sourceHash,
-                                   original->texture ? original->texture->getHash() : 0};
+      const uint64_t modKeys[3] = {ownKey, original->sourceHash, original->texture ? original->texture->getHash() : 0};
       for (const uint64_t modKey : modKeys) {
         if (!modKey)
           continue;
@@ -536,8 +528,8 @@ namespace remix {
         std::copy_n(d.spriteSoft, 3, draw.spriteSoft);
         // Frames and sequences come from the mesh's sprite vertices.
         if (surface->sprite.empty())
-          draw.spriteFlags &= REMIXAPI_SPRITE_SOFT_DEPTH_EXT | REMIXAPI_SPRITE_MODULATE_EXT |
-                              REMIXAPI_SPRITE_MODULATE_FADE_EXT;
+          draw.spriteFlags &=
+              REMIXAPI_SPRITE_SOFT_DEPTH_EXT | REMIXAPI_SPRITE_MODULATE_EXT | REMIXAPI_SPRITE_MODULATE_FADE_EXT;
         draw.model = models[i];
         draw.bones = d.bones;
         if (d.hasRasterState) {
@@ -547,13 +539,13 @@ namespace remix {
           draw.depthCompare = d.depthCompare;
         }
         draw.wireframe = d.wireframe;
-        draw.depthBias = (d.categoryFlags & (REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_DYNAMIC |
-                                             REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_STATIC |
-                                             REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_SINGLE_OFFSET)) != 0;
-        draw.decal = (d.categoryFlags & (REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_STATIC |
-                                          REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_DYNAMIC |
-                                          REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_SINGLE_OFFSET |
-                                          REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_NO_OFFSET)) != 0;
+        draw.depthBias = (d.categoryFlags &
+                          (REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_DYNAMIC | REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_STATIC |
+                           REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_SINGLE_OFFSET)) != 0;
+        draw.decal = (d.categoryFlags &
+                      (REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_STATIC | REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_DYNAMIC |
+                       REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_SINGLE_OFFSET |
+                       REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_NO_OFFSET)) != 0;
         draw.material = m_default;
         if (surface->material) {
           auto it = m_materials.find(key(surface->material));
@@ -590,6 +582,10 @@ namespace remix {
         if (d.hasRasterState && d.disableColorWrites)
           draw.blend.mask = 0;
         draw.blend.enabled |= draw.material->translucent;
+        // A ray portal pairs by the frame's transforms (scene/portals.h): it
+        // is in every frame's draw list, never part of the static set.
+        if (draw.material->rayPortal && draw.classification == REMIXAPI_INSTANCE_STATIC_EXT)
+          draw.classification = REMIXAPI_INSTANCE_DYNAMIC_EXT;
         draw.doubleSided = d.doubleSided;
         draw.ignoreAlpha = (d.categoryFlags & REMIXAPI_INSTANCE_CATEGORY_BIT_IGNORE_ALPHA_CHANNEL) != 0;
         if (draw.ignoreAlpha) {
@@ -657,7 +653,7 @@ namespace remix::scene {
       std::copy_n(values, 4, d.texcoord.begin());
       std::copy_n(values + 4, 2, d.texcoordVelocity.begin());
     }
-    const auto *alpha =static_cast<const remixapi_InstanceInfoBlendEXT *>(
+    const auto *alpha = static_cast<const remixapi_InstanceInfoBlendEXT *>(
         extension(info.pNext, REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_BLEND_EXT));
     d.blend = blend(alpha);
     const auto *identity = static_cast<const remixapi_InstanceIdentityEXT *>(
@@ -671,13 +667,13 @@ namespace remix::scene {
       d.classification = identity->classification;
       d.rasterVisible = identity->rasterVisible != 0;
     }
-    d.traceIdentity = identity && identity->classification != REMIXAPI_INSTANCE_RASTER_ONLY_EXT &&
-                      !(info.categoryFlags & (REMIXAPI_INSTANCE_CATEGORY_BIT_SKY |
-                                              REMIXAPI_INSTANCE_CATEGORY_BIT_VIEW_MODEL));
+    d.traceIdentity =
+        identity && identity->classification != REMIXAPI_INSTANCE_RASTER_ONLY_EXT &&
+        !(info.categoryFlags & (REMIXAPI_INSTANCE_CATEGORY_BIT_SKY | REMIXAPI_INSTANCE_CATEGORY_BIT_VIEW_MODEL));
     const auto *rasterState = static_cast<const remixapi_InstanceRasterStateEXT *>(
         extension(info.pNext, REMIXAPI_STRUCT_TYPE_INSTANCE_RASTER_STATE_EXT));
-    if (rasterState && (rasterState->depthTest > 1 || rasterState->depthWrite > 1 ||
-                        rasterState->depthCompare > 7 || rasterState->disableColorWrites > 1)) {
+    if (rasterState && (rasterState->depthTest > 1 || rasterState->depthWrite > 1 || rasterState->depthCompare > 7 ||
+                        rasterState->disableColorWrites > 1)) {
       throw invalid;
     }
     if (rasterState) {
@@ -767,8 +763,8 @@ namespace remix::scene {
       // A scene instance like any other; sources and masked overlays are not
       // in the scene, and a one-sided instance has no back faces left to hide.
       if (!d.halo && !d.maskSource && !d.maskGroup)
-        d.cameraCull = uint8_t(culling->flags &
-                               (d.doubleSided ? known : uint32_t(REMIXAPI_INSTANCE_CAMERA_CULL_VISIBILITY_EXT)));
+        d.cameraCull =
+            uint8_t(culling->flags & (d.doubleSided ? known : uint32_t(REMIXAPI_INSTANCE_CAMERA_CULL_VISIBILITY_EXT)));
     }
     if (const auto *order = static_cast<const remixapi_InstanceInfoRasterOrderEXT *>(
             extension(info.pNext, REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_RASTER_ORDER_EXT))) {

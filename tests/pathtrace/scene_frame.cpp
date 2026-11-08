@@ -532,15 +532,13 @@ int main() {
     for (uint32_t a = 0; a < actors.size(); ++a) {
       const auto &actor = actors[a];
       const float walk = std::sin(float(frame) * .01f + float(a)) * 2;
-      skinned(bodies[actor.body].mesh, 0x10000000ull + a, a,
-              translation(actor.x + walk, actor.y, 0, actor.yaw), 0);
+      skinned(bodies[actor.body].mesh, 0x10000000ull + a, a, translation(actor.x + walk, actor.y, 0, actor.yaw), 0);
     }
     for (uint32_t i = 0; i < firstPerson.size(); ++i)
       skinned(firstPerson[i].mesh, 0x20000000ull + i, 100 + i, translation(.2f, .5f, -.3f),
               REMIXAPI_INSTANCE_CATEGORY_BIT_VIEW_MODEL);
     if (overlay)
-      ok(api.DrawScreenOverlay(hud.data(), width, height, REMIXAPI_FORMAT_R8G8B8A8_UNORM, 1),
-         "DrawScreenOverlay");
+      ok(api.DrawScreenOverlay(hud.data(), width, height, REMIXAPI_FORMAT_R8G8B8A8_UNORM, 1), "DrawScreenOverlay");
     submitMilliseconds += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - begin).count();
     ok(api.Present(nullptr), "Present");
   };
@@ -549,8 +547,10 @@ int main() {
               "vertices), %u lights, %u emissive fixtures, overlay %s, stable ids %s, %ux%u\n",
               staticCount, meshCount, (unsigned long long)staticVertices, materialCount, actorCount,
               (unsigned long long)actorVertices, lightCount, emissiveCount,
-              overlayMode == 2 ? "changing" : overlay ? "static" : "off", stableIds ? "on" : "off",
-              width, height);
+              overlayMode == 2 ? "changing"
+              : overlay        ? "static"
+                               : "off",
+              stableIds ? "on" : "off", width, height);
   std::fflush(stdout);
   // Pipeline preparation repeats frame 0; afterwards the scene animates by
   // frame index, so digests of equal frame numbers are comparable.
@@ -564,8 +564,8 @@ int main() {
   Stats present, scene, record, fence, acquire, submitTime, queuePresent, geometry, alloc, upload, accel, calls;
   constexpr size_t phaseCount = 23;
   Stats phases[phaseCount];
-  uint64_t conversions = 0, uploadBytes = 0, surfaceCount = 0, primaryCount = 0, rasterCount = 0,
-           textureCount = 0, skinnedCount = 0, rasterBytes = 0, measured = 0;
+  uint64_t conversions = 0, uploadBytes = 0, surfaceCount = 0, primaryCount = 0, rasterCount = 0, textureCount = 0,
+           skinnedCount = 0, rasterBytes = 0, measured = 0;
   const auto wall = std::chrono::steady_clock::now();
   for (uint32_t i = 0; i < frames; ++i) {
     submitMilliseconds = 0;
@@ -594,15 +594,29 @@ int main() {
     upload.add(p.uploadMilliseconds);
     accel.add(p.accelerationMilliseconds);
     calls.add(submitMilliseconds);
-    const double values[phaseCount] = {
-        b.rasterPrepareMilliseconds, b.rasterSkinningMilliseconds, b.traceBeginMilliseconds,
-        b.traceSetupMilliseconds,    b.traceSurfacesMilliseconds,  b.materialMilliseconds,
-        b.temporalMilliseconds,      b.retireMilliseconds,         b.traceAccelerationMilliseconds,
-        b.tableMilliseconds,         b.lightingMilliseconds,       b.sharcMilliseconds,
-        b.signatureMilliseconds,     b.descriptorMilliseconds,     b.primaryMilliseconds,
-        b.passesMilliseconds,        b.postMilliseconds,           b.compositeMilliseconds,
-        b.uiMilliseconds,            b.snapshotMilliseconds,       b.otherMilliseconds,
-        b.presentSetupMilliseconds,  b.presentReleaseMilliseconds};
+    const double values[phaseCount] = {b.rasterPrepareMilliseconds,
+                                       b.rasterSkinningMilliseconds,
+                                       b.traceBeginMilliseconds,
+                                       b.traceSetupMilliseconds,
+                                       b.traceSurfacesMilliseconds,
+                                       b.materialMilliseconds,
+                                       b.temporalMilliseconds,
+                                       b.retireMilliseconds,
+                                       b.traceAccelerationMilliseconds,
+                                       b.tableMilliseconds,
+                                       b.lightingMilliseconds,
+                                       b.sharcMilliseconds,
+                                       b.signatureMilliseconds,
+                                       b.descriptorMilliseconds,
+                                       b.primaryMilliseconds,
+                                       b.passesMilliseconds,
+                                       b.postMilliseconds,
+                                       b.compositeMilliseconds,
+                                       b.uiMilliseconds,
+                                       b.snapshotMilliseconds,
+                                       b.otherMilliseconds,
+                                       b.presentSetupMilliseconds,
+                                       b.presentReleaseMilliseconds};
     for (size_t k = 0; k < phaseCount; ++k)
       phases[k].add(values[k]);
     conversions += p.geometryConversions;
@@ -636,11 +650,12 @@ int main() {
   line("queue present", queuePresent);
   line("API calls before Present", calls);
   std::puts("FrameBreakdownEXT (within record, then the rest of present):");
-  const char *names[phaseCount] = {"raster prepare", "  raster skinning", "tracer begin", "tracer setup",
-                                   "trace surfaces", "  materials", "  temporal", "retire", "acceleration",
-                                   "surface table", "lighting", "sharc", "scene signature", "descriptors",
-                                   "primary g-buffer", "passes", "post-processing", "composite", "developer ui",
-                                   "snapshot", "other", "(present) setup", "(present) release"};
+  const char *names[phaseCount] = {"raster prepare",  "  raster skinning", "tracer begin",     "tracer setup",
+                                   "trace surfaces",  "  materials",       "  temporal",       "retire",
+                                   "acceleration",    "surface table",     "lighting",         "sharc",
+                                   "scene signature", "descriptors",       "primary g-buffer", "passes",
+                                   "post-processing", "composite",         "developer ui",     "snapshot",
+                                   "other",           "(present) setup",   "(present) release"};
   for (size_t k = 0; k < phaseCount; ++k)
     line(names[k], phases[k]);
   const double n = double(std::max<uint64_t>(measured, 1));

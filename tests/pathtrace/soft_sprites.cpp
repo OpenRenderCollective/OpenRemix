@@ -176,7 +176,8 @@ int main(int argc, char **argv) {
       sprite.softDistance = entry.softDistance;
       remixapi_InstanceInfo instance{};
       instance.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO;
-      instance.pNext = entry.softDistance > 0 && softSprites ? static_cast<void *>(&sprite) : static_cast<void *>(&identity);
+      instance.pNext =
+          entry.softDistance > 0 && softSprites ? static_cast<void *>(&sprite) : static_cast<void *>(&identity);
       instance.mesh = entry.mesh;
       instance.doubleSided = 1;
       for (int i = 0; i < 3; ++i)

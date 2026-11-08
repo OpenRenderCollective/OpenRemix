@@ -3,19 +3,6 @@
 #include <cstring>
 
 namespace remix::scene::detail {
-  void finite(const float *values, size_t count) {
-    for (size_t i = 0; i < count; ++i) {
-      if (!std::isfinite(values[i])) {
-        throw invalid;
-      }
-    }
-  }
-  void rgba(uint32_t color, float *out, bool ui) {
-    out[0] = float((color >> (ui ? 0 : 16)) & 255) / 255;
-    out[1] = float((color >> 8) & 255) / 255;
-    out[2] = float((color >> (ui ? 16 : 0)) & 255) / 255;
-    out[3] = float(color >> 24) / 255;
-  }
   scene::Blend blend(const remixapi_InstanceInfoBlendEXT *info) {
     scene::Blend out;
     if (!info) {

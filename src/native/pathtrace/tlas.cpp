@@ -87,9 +87,8 @@ namespace remix {
       }
       geometry[i] = {.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR,
                      .geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR};
-      geometry[i].geometry.instances = {
-          .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR,
-          .data = {.deviceAddress = top.instances->address}};
+      geometry[i].geometry.instances = {.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR,
+                                        .data = {.deviceAddress = top.instances->address}};
       bool update = i == 1 && !reasons[i];
       builds[i] = {.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR,
                    .type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR,
@@ -104,8 +103,7 @@ namespace remix {
       if (!top.accel || top.accel->size < sizes[i].accelerationStructureSize) {
         if (top.accel)
           retired.push_back(std::move(top.accel));
-        top.accel =
-            acceleration(sizes[i].accelerationStructureSize, VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR);
+        top.accel = acceleration(sizes[i].accelerationStructureSize, VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR);
       }
       builds[i].srcAccelerationStructure = update ? top.accel->handle : VK_NULL_HANDLE;
       builds[i].dstAccelerationStructure = top.accel->handle;
@@ -114,12 +112,10 @@ namespace remix {
     }
     if (!changed[0] && !changed[1])
       return;
-    if (!topScratch ||
-        topScratch->size < scratchBytes + asProperties.minAccelerationStructureScratchOffsetAlignment)
+    if (!topScratch || topScratch->size < scratchBytes + asProperties.minAccelerationStructureScratchOffsetAlignment)
       topScratch = buffer(scratchBytes + asProperties.minAccelerationStructureScratchOffsetAlignment,
                           VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-    VkDeviceAddress address =
-        align(topScratch->address, asProperties.minAccelerationStructureScratchOffsetAlignment);
+    VkDeviceAddress address = align(topScratch->address, asProperties.minAccelerationStructureScratchOffsetAlignment);
     for (unsigned i = 0; i < 2; ++i) {
       if (!changed[i])
         continue;
@@ -134,8 +130,7 @@ namespace remix {
       if (!i) {
         tlasStaticGeneration = staticGeneration;
         ++stats.staticTlasBuilds;
-      }
-      else if (update)
+      } else if (update)
         ++stats.dynamicTlasRefits;
       else
         ++stats.dynamicTlasBuilds;
@@ -148,8 +143,7 @@ namespace remix {
   // refit it (trace::CombinedTlasPolicy). The static instance records are kept
   // while the static inputs are unchanged, and each frame slot's instance
   // buffer keeps the static part it already holds.
-  void PathTracer::Gpu::buildCombinedTop(VkCommandBuffer command,
-                                         const std::vector<trace::InstanceInput> &staticInputs,
+  void PathTracer::Gpu::buildCombinedTop(VkCommandBuffer command, const std::vector<trace::InstanceInput> &staticInputs,
                                          const std::vector<trace::InstanceInput> &dynamicInputs, bool force,
                                          uint64_t staticGeneration) {
     using Policy = trace::CombinedTlasPolicy;
@@ -200,8 +194,7 @@ namespace remix {
       kept = false;
     }
     lap(costs.storageInstances);
-    write(*top.instances,
-          {{combinedStatic.data(), staticBytes}, {combinedDynamic.data(), bytes - staticBytes}},
+    write(*top.instances, {{combinedStatic.data(), staticBytes}, {combinedDynamic.data(), bytes - staticBytes}},
           kept ? staticBytes : 0);
     costs.written += kept ? bytes - staticBytes : bytes;
     costs.keptPrefix = kept;
@@ -217,10 +210,12 @@ namespace remix {
         .type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR,
         .flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR |
                  VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR,
-        .mode = update ? VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR : VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR,
+        .mode =
+            update ? VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR : VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR,
         .geometryCount = 1,
         .pGeometries = &geometry};
-    VkAccelerationStructureBuildSizesInfoKHR sizes = {.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR};
+    VkAccelerationStructureBuildSizesInfoKHR sizes = {
+        .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR};
     buildSizes(device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &build, &count, &sizes);
     lap(costs.sizes);
     if (!top.accel || top.accel->size < sizes.accelerationStructureSize) {

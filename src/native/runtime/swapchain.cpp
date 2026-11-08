@@ -42,22 +42,19 @@ namespace remix {
     }
 
     uint32_t formatCount = 0;
-    if (vkGetPhysicalDeviceSurfaceFormatsKHR(m_physicalDevice, m_surface, &formatCount, nullptr) !=
-            VK_SUCCESS ||
+    if (vkGetPhysicalDeviceSurfaceFormatsKHR(m_physicalDevice, m_surface, &formatCount, nullptr) != VK_SUCCESS ||
         formatCount == 0) {
       return REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
     }
     std::vector<VkSurfaceFormatKHR> formats(formatCount);
-    if (vkGetPhysicalDeviceSurfaceFormatsKHR(m_physicalDevice, m_surface, &formatCount, formats.data()) !=
-            VK_SUCCESS ||
+    if (vkGetPhysicalDeviceSurfaceFormatsKHR(m_physicalDevice, m_surface, &formatCount, formats.data()) != VK_SUCCESS ||
         !formatCount) {
       return REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
     }
     formats.resize(formatCount);
 
     uint32_t modeCount = 0;
-    if (vkGetPhysicalDeviceSurfacePresentModesKHR(m_physicalDevice, m_surface, &modeCount, nullptr) !=
-            VK_SUCCESS ||
+    if (vkGetPhysicalDeviceSurfacePresentModesKHR(m_physicalDevice, m_surface, &modeCount, nullptr) != VK_SUCCESS ||
         !modeCount) {
       return REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
     }
@@ -78,8 +75,8 @@ namespace remix {
 
     VkExtent2D extent = capabilities.currentExtent;
     if (extent.width == std::numeric_limits<uint32_t>::max()) {
-      extent.width = std::clamp(windowState.drawableWidth, capabilities.minImageExtent.width,
-                                capabilities.maxImageExtent.width);
+      extent.width =
+          std::clamp(windowState.drawableWidth, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
       extent.height = std::clamp(windowState.drawableHeight, capabilities.minImageExtent.height,
                                  capabilities.maxImageExtent.height);
     }
@@ -110,14 +107,11 @@ namespace remix {
         (format.format == VK_FORMAT_B8G8R8A8_SRGB || format.format == VK_FORMAT_B8G8R8A8_UNORM ||
          format.format == VK_FORMAT_R8G8B8A8_SRGB || format.format == VK_FORMAT_R8G8B8A8_UNORM || hdr10);
     VkFormatProperties formatProperties{};
-    vkGetPhysicalDeviceFormatProperties(m_physicalDevice, format.format,
-                                        &formatProperties);
-    const auto blit =
-        VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT;
-    m_snapshotSupported =
-        m_screenshotSupported &&
-        (capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT) &&
-        (formatProperties.optimalTilingFeatures & blit) == blit;
+    vkGetPhysicalDeviceFormatProperties(m_physicalDevice, format.format, &formatProperties);
+    const auto blit = VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT;
+    m_snapshotSupported = m_screenshotSupported &&
+                          (capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT) &&
+                          (formatProperties.optimalTilingFeatures & blit) == blit;
     VkCompositeAlphaFlagBitsKHR compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     if ((capabilities.supportedCompositeAlpha & compositeAlpha) == 0) {
       constexpr std::array<VkCompositeAlphaFlagBitsKHR, 3> kFallbackAlphaModes = {
@@ -146,10 +140,9 @@ namespace remix {
         .imageColorSpace = format.colorSpace,
         .imageExtent = extent,
         .imageArrayLayers = 1,
-        .imageUsage =
-            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-            (m_screenshotSupported ? VK_IMAGE_USAGE_TRANSFER_SRC_BIT : 0u) |
-            (m_snapshotSupported ? VK_IMAGE_USAGE_TRANSFER_DST_BIT : 0u),
+        .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                      (m_screenshotSupported ? VK_IMAGE_USAGE_TRANSFER_SRC_BIT : 0u) |
+                      (m_snapshotSupported ? VK_IMAGE_USAGE_TRANSFER_DST_BIT : 0u),
         .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
         .preTransform = capabilities.currentTransform,
         .compositeAlpha = compositeAlpha,
@@ -180,8 +173,7 @@ namespace remix {
     m_swapchainFormat = format.format;
     m_swapchainExtent = extent;
     m_swapchainHdr10 = hdr10;
-    if (vkGetSwapchainImagesKHR(m_device, m_swapchain, &imageCount, nullptr) != VK_SUCCESS ||
-        imageCount < 2) {
+    if (vkGetSwapchainImagesKHR(m_device, m_swapchain, &imageCount, nullptr) != VK_SUCCESS || imageCount < 2) {
       return REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
     }
     m_swapchainImages.resize(imageCount);
@@ -243,10 +235,8 @@ namespace remix {
             .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
             .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
             .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-            .initialLayout = backBuffer ? VK_IMAGE_LAYOUT_GENERAL
-                                        : VK_IMAGE_LAYOUT_UNDEFINED,
-            .finalLayout = backBuffer ? VK_IMAGE_LAYOUT_GENERAL
-                                      : VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+            .initialLayout = backBuffer ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_UNDEFINED,
+            .finalLayout = backBuffer ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
         },
         {
             .format = renderer().depthFormat(),
@@ -271,21 +261,14 @@ namespace remix {
     const VkSubpassDependency dependency = {
         .srcSubpass = VK_SUBPASS_EXTERNAL,
         .dstSubpass = 0,
-        .srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
-                        VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
-                        VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT |
-                        VK_PIPELINE_STAGE_TRANSFER_BIT,
-        .dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
-                        VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
+        .srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
+                        VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
+        .dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
                         VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
-        .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
-                         VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT |
-                         VK_ACCESS_TRANSFER_READ_BIT |
-                         VK_ACCESS_TRANSFER_WRITE_BIT,
-        .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
-                         VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
-                         VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
-                         VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+        .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT |
+                         VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+                         VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
     };
     const VkRenderPassCreateInfo pass = {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
@@ -296,16 +279,14 @@ namespace remix {
         .dependencyCount = 1,
         .pDependencies = &dependency,
     };
-    if (pipeline::createRenderPass(m_device, &pass, nullptr, &m_renderPass) !=
-        VK_SUCCESS) {
+    if (pipeline::createRenderPass(m_device, &pass, nullptr, &m_renderPass) != VK_SUCCESS) {
       return fail();
     }
     // Compatible with the scene pass: preserve its color while drawing fresh
     // controls after capture, or over the retained image during preparation.
     attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
     attachments[0].initialLayout = attachments[0].finalLayout;
-    if (pipeline::createRenderPass(m_device, &pass, nullptr, &m_overlayPass) !=
-        VK_SUCCESS)
+    if (pipeline::createRenderPass(m_device, &pass, nullptr, &m_overlayPass) != VK_SUCCESS)
       return fail();
     // Re-entered within a frame, right after the scene pass (halo outlines):
     // preserves the scene's depth as well.
@@ -463,10 +444,10 @@ namespace remix {
           }
       m_hdrStatus = "the display offers no 10-bit ST.2084 (HDR10) swapchain format";
     } else {
-      m_hdrStatus = m_headless                       ? "headless presentation"
-                    : !m_swapchainColorSpace          ? "VK_EXT_swapchain_colorspace is unavailable"
-                    : !m_profiles.current().hdr       ? "turned off"
-                                                      : "Windows HDR is off for this display";
+      m_hdrStatus = m_headless                  ? "headless presentation"
+                    : !m_swapchainColorSpace    ? "VK_EXT_swapchain_colorspace is unavailable"
+                    : !m_profiles.current().hdr ? "turned off"
+                                                : "Windows HDR is off for this display";
     }
     // UNORM only: every output shader encodes gamma 2.2 itself, so an sRGB
     // format's hardware encode would apply a second curve.

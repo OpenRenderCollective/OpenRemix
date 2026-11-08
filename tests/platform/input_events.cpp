@@ -5,9 +5,12 @@
 
 namespace {
   void require(bool value, const char *message) {
-    if (!value) { std::fprintf(stderr, "%s\n", message); std::exit(1); }
+    if (!value) {
+      std::fprintf(stderr, "%s\n", message);
+      std::exit(1);
+    }
   }
-}
+} // namespace
 
 int main() {
   remix::RemixSdlWindow window;
@@ -41,8 +44,9 @@ int main() {
   require(window.pumpEvents() == REMIXAPI_ERROR_CODE_SUCCESS, "Captured events");
   window.pollInputEvents(input.data(), input.size(), count);
   require(count == 3 && input[0].type == REMIXAPI_INPUT_KEY && input[0].code == REMIXAPI_KEY_F12 &&
-          input[1].type == REMIXAPI_INPUT_MOUSE_WHEEL && input[1].y == 1 &&
-          input[2].type == REMIXAPI_INPUT_TEXT && input[2].code == 'x', "Raw captured input lost");
+              input[1].type == REMIXAPI_INPUT_MOUSE_WHEEL && input[1].y == 1 && input[2].type == REMIXAPI_INPUT_TEXT &&
+              input[2].code == 'x',
+          "Raw captured input lost");
   remixapi_WindowState state = {};
   window.getWindowState(state);
   require(state.guiWantsKeyboard && state.guiWantsMouse, "Capture flags lost");

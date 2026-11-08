@@ -123,7 +123,7 @@ namespace remix::scene {
       bool enabled = true, internal = false;
       bool pendingReset = true; // new, cleared or resized
       uint32_t burst = 0;
-      double carry = 0;          // fractional spawns
+      double carry = 0; // fractional spawns
       uint32_t offset = 0, capacity = 0;
       uint32_t slot = 0;
     };

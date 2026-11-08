@@ -20,6 +20,8 @@ namespace remix::ui {
     char name[256]{};
     bool nameDialog = false, duplicate = false, focusName = false;
     bool restoreTab = true;
+    // The panel's property search (empty: the tabs show).
+    char search[128]{};
     // The panel's shortcut (ui/menu_shortcut.cpp): its name, whether the next key
     // pressed becomes it, and the header button's request for that.
 #if defined(__APPLE__)
@@ -43,8 +45,25 @@ namespace remix::ui {
   void drawProfileFooter(config::Profiles &profiles, ProfileUi &ui);
   void drawMods(ProfileUi &ui, config::Settings &settings);
   void drawProfileDialogs(config::Profiles &profiles, ProfileUi &ui);
+  // The panel's tabs, in order (config::PanelState::tab). drawPanel draws Profiles and Plugin
+  // itself and the others through DrawSettingsTab; the tabs up to Capture edit the profile's settings.
+  enum class Tab {
+    Display,
+    Lighting,
+    Materials,
+    Sky,
+    PostProcess,
+    Performance,
+    Diagnostics,
+    Textures,
+    Capture,
+    Profiles,
+    Plugin
+  };
   using DrawSettingsTab = void (*)(void *, int, config::Settings &);
   bool drawPanel(config::Profiles &profiles, ProfileUi &ui, void *user, DrawSettingsTab drawTab);
   void toolkitStyle();
   void toolkitColors();
+  // Adds Inter, the panel's font (ui/font.cpp), to a new context's atlas.
+  void toolkitFont();
 } // namespace remix::ui

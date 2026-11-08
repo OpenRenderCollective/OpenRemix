@@ -71,8 +71,7 @@ namespace {
     const auto lights = api.sphereLights();
     require(lights.size() == 1, "Fixture light");
     api.publishFrame(frame);
-    require(api.draws().empty() && api.pendingDrawCount() == 0 && !api.hasSphereLights() &&
-                api.sphereLights().empty(),
+    require(api.draws().empty() && api.pendingDrawCount() == 0 && !api.hasSphereLights() && api.sphereLights().empty(),
             "The API frame was not finished");
     require(frame.draws().size() == 2 && frame.pendingDrawCount() == 2, "Published draw count");
     for (size_t i = 0; i < draws.size(); ++i)
@@ -166,8 +165,8 @@ namespace {
       emissive(api, 5, .5f); // Same emission, another albedo: a replacement.
       api.drawInstance(instance(mesh));
       const bool carried = !api.draws()[0].material->emissionCache.empty();
-      require(carried == !concurrent, concurrent ? "A cache a render thread may write was read"
-                                                 : "The emission cache was not carried over");
+      require(carried == !concurrent,
+              concurrent ? "A cache a render thread may write was read" : "The emission cache was not carried over");
       require(scene::triangleEmission(api.draws()[0], 0, transform) == radiance, "Recomputed emission differs");
     }
   }
@@ -271,7 +270,8 @@ namespace {
       // Render thread idle: the replica holds exactly the table's members.
       std::map<uint64_t, double> members, replica;
       api.forEachStatic([&](const scene::RetainedInstance &entry) { members[entry.handle] = checksum(entry.records); });
-      frame.forEachStatic([&](const scene::RetainedInstance &entry) { replica[entry.handle] = checksum(entry.records); });
+      frame.forEachStatic(
+          [&](const scene::RetainedInstance &entry) { replica[entry.handle] = checksum(entry.records); });
       require(members == replica, "The static set replica differs from the table's members");
       render.submit([&, expected, expectedDraws] {
         // The tracer's view of the static set: its epoch, changes and members.

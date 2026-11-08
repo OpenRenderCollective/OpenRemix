@@ -36,7 +36,8 @@ namespace remix::scene {
     }
     Pixels decodeFloat(uint32_t width, uint32_t height, uint32_t mips, unsigned channels, bool half,
                        const uint8_t *data, size_t size) {
-      if (!width || !height || width > maxTextureDimension || height > maxTextureDimension || !data || channels < 1 || channels > 4)
+      if (!width || !height || width > maxTextureDimension || height > maxTextureDimension || !data || channels < 1 ||
+          channels > 4)
         throw invalid;
       unsigned levels = 0;
       for (auto n = std::max(width, height); n; n >>= 1)
@@ -97,9 +98,9 @@ namespace remix::scene {
       out.twoChannel = block == 5;
       size_t offset = 0, total = 0;
       for (uint32_t mip = 0; mip < mips; ++mip) {
-        const size_t bytes =
-            block ? size_t((width + 3) / 4) * ((height + 3) / 4) * ((block == 1 || block == 4) ? 8 : 16)
-                  : size_t(width) * height * 4;
+        const size_t bytes = block
+                                 ? size_t((width + 3) / 4) * ((height + 3) / 4) * ((block == 1 || block == 4) ? 8 : 16)
+                                 : size_t(width) * height * 4;
         const size_t decodedSize = size_t(width) * height * 4;
         total += decodedSize * ((block == 6 || block == 16) ? 5 : 1);
         if (offset > size || bytes > size - offset || total > 512u * 1024 * 1024) {
@@ -321,8 +322,7 @@ namespace remix::scene {
       uint64_t low, high;
       std::memcpy(&low, data, 8);
       std::memcpy(&high, data + 8, 8);
-      const uint64_t value =
-          start >= 64 ? high >> (start - 64) : (low >> start) | (start ? high << (64 - start) : 0);
+      const uint64_t value = start >= 64 ? high >> (start - 64) : (low >> start) | (start ? high << (64 - start) : 0);
       return uint32_t(value & ((1ull << count) - 1));
     }
     // 16-bit mask of the block's texels whose decoded alpha is not 255, without
@@ -333,8 +333,8 @@ namespace remix::scene {
         // Only the three-color mode (color0 <= color1) has a transparent index.
         if (!bc1Alpha || (data[0] | data[1] << 8) > (data[2] | data[3] << 8))
           return 0;
-        const uint32_t indices = uint32_t(data[4]) | uint32_t(data[5]) << 8 | uint32_t(data[6]) << 16 |
-                                 uint32_t(data[7]) << 24;
+        const uint32_t indices =
+            uint32_t(data[4]) | uint32_t(data[5]) << 8 | uint32_t(data[6]) << 16 | uint32_t(data[7]) << 24;
         for (unsigned i = 0; i < 16; ++i)
           if (((indices >> (2 * i)) & 3) == 3)
             mask |= 1u << i;
@@ -378,8 +378,8 @@ namespace remix::scene {
     // Word-at-a-time content hash. Byte-wise FNV over a multi-megabyte chain
     // would dominate the cost of a compressed CreateTexture.
     uint64_t hashBlocks(const uint8_t *data, size_t size, uint64_t seed) {
-      uint64_t lanes[4] = {seed ^ 0x9e3779b97f4a7c15ull, seed ^ 0xc2b2ae3d27d4eb4full,
-                           seed ^ 0x165667b19e3779f9ull, seed ^ 0x27d4eb2f165667c5ull};
+      uint64_t lanes[4] = {seed ^ 0x9e3779b97f4a7c15ull, seed ^ 0xc2b2ae3d27d4eb4full, seed ^ 0x165667b19e3779f9ull,
+                           seed ^ 0x27d4eb2f165667c5ull};
       size_t i = 0;
       for (; i + 32 <= size; i += 32)
         for (unsigned k = 0; k < 4; ++k) {
@@ -576,8 +576,7 @@ namespace remix::scene {
 
   static Pixels decodeTextureFile(const std::vector<uint8_t> &data) {
     if (data.size() >= 128 && word(data, 0) == 0x20534444) {
-      if (word(data, 4) != 124 || word(data, 76) != 32 || word(data, 24) > 1 ||
-          (word(data, 112) & 0x20fe00)) {
+      if (word(data, 4) != 124 || word(data, 76) != 32 || word(data, 24) > 1 || (word(data, 112) & 0x20fe00)) {
         throw invalid;
       } // No volumes or cube faces.
       uint32_t width = word(data, 16), height = word(data, 12), block = 0;
@@ -736,8 +735,7 @@ namespace remix::scene {
         }
         return compressTexture(info);
       }
-      auto out = decode(width, height, word(data, 28), srgb, block, bgra, data.data() + offset,
-                        data.size() - offset);
+      auto out = decode(width, height, word(data, 28), srgb, block, bgra, data.data() + offset, data.size() - offset);
       if (forceAlpha) {
         for (auto &mip : out.mips) {
           for (size_t i = 3; i < mip.size(); i += 4) {
@@ -754,12 +752,10 @@ namespace remix::scene {
     }
     if (stbi_is_hdr_from_memory(data.data(), int(data.size()))) {
       std::unique_ptr<float, decltype(&stbi_image_free)> hdr(
-          stbi_loadf_from_memory(data.data(), int(data.size()), &width, &height, &channels, 4),
-          stbi_image_free);
+          stbi_loadf_from_memory(data.data(), int(data.size()), &width, &height, &channels, 4), stbi_image_free);
       if (!hdr || uint64_t(width) * height * 20 > 512u * 1024 * 1024)
         throw invalid;
-      Pixels out{
-          uint32_t(width), uint32_t(height), false, {std::vector<uint8_t>(size_t(width) * height * 4)}};
+      Pixels out{uint32_t(width), uint32_t(height), false, {std::vector<uint8_t>(size_t(width) * height * 4)}};
       out.hdrMips.emplace_back(hdr.get(), hdr.get() + size_t(width) * height * 4);
       for (size_t i = 0; i < out.mips[0].size(); ++i)
         out.mips[0][i] = uint8_t(std::clamp(hdr.get()[i], 0.f, 1.f) * 255);
@@ -770,8 +766,7 @@ namespace remix::scene {
     if (!pixels) {
       throw invalid;
     }
-    return decode(uint32_t(width), uint32_t(height), 1, true, 0, false, pixels.get(),
-                  size_t(width) * height * 4);
+    return decode(uint32_t(width), uint32_t(height), 1, true, 0, false, pixels.get(), size_t(width) * height * 4);
   }
 
   Pixels loadTexture(const std::filesystem::path &path) {
@@ -878,8 +873,7 @@ namespace remix::scene {
     while (first + 1 < whole.mips.size() && std::max(whole.width >> first, whole.height >> first) > maxEdge)
       ++first;
     Pixels preview{std::max(1u, whole.width >> first), std::max(1u, whole.height >> first), whole.srgb};
-    preview.mips.assign(std::make_move_iterator(whole.mips.begin() + first),
-                        std::make_move_iterator(whole.mips.end()));
+    preview.mips.assign(std::make_move_iterator(whole.mips.begin() + first), std::make_move_iterator(whole.mips.end()));
     preview.twoChannel = whole.twoChannel;
     return preview;
   }
@@ -907,8 +901,8 @@ namespace remix::scene {
 
     // Texel (x, y) of the level below a width x height one: a 2x2 box (a
     // 1-texel edge stays as is); odd sizes drop their last row/column.
-    void filterTexel(const Pixels &pixels, size_t sourceLevel, uint32_t width, uint32_t height, uint32_t x,
-                     uint32_t y, uint8_t *out, float *hdrOut) {
+    void filterTexel(const Pixels &pixels, size_t sourceLevel, uint32_t width, uint32_t height, uint32_t x, uint32_t y,
+                     uint8_t *out, float *hdrOut) {
       const auto &source = pixels.mips[sourceLevel];
       const float *hdrSource = hdrOut ? pixels.hdrMips[sourceLevel].data() : nullptr;
       const auto &toLinear = linearTable();
@@ -978,14 +972,29 @@ namespace remix::scene {
     uint32_t width = pixels.width, height = pixels.height;
     if (const auto &c = pixels.compressed; c && !c->upload.empty()) {
       switch (c->block) {
-      case 1: dxgi = pixels.srgb ? 72 : 71; break;
-      case 3: dxgi = pixels.srgb ? 78 : 77; break;
-      case 4: dxgi = 80; break;
-      case 5: dxgi = 83; break;
-      case 6: dxgi = 95; break;
-      case 16: dxgi = 96; break;
-      case 7: dxgi = pixels.srgb ? 99 : 98; break;
-      default: return {};
+      case 1:
+        dxgi = pixels.srgb ? 72 : 71;
+        break;
+      case 3:
+        dxgi = pixels.srgb ? 78 : 77;
+        break;
+      case 4:
+        dxgi = 80;
+        break;
+      case 5:
+        dxgi = 83;
+        break;
+      case 6:
+        dxgi = 95;
+        break;
+      case 16:
+        dxgi = 96;
+        break;
+      case 7:
+        dxgi = pixels.srgb ? 99 : 98;
+        break;
+      default:
+        return {};
       }
       levels = c->levels;
       bytes.push_back(&c->upload);

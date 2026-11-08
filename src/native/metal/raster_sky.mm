@@ -27,18 +27,17 @@ namespace remix {
       s.renderer->setSettings(settings.sky, frameSkyControl());
       const auto &view = renderer().view(), &projection = renderer().projection();
       s.upAxis.observe(scene::inverse(view));
-      const sky::FrameDescription description{
-          .view = view,
-          .projection = projection,
-          .previousView = s.ready ? s.view : view,
-          .previousProjection = s.ready ? s.projection : projection,
-          .renderWidth = m_gpu->width,
-          .renderHeight = m_gpu->height,
-          .outputWidth = m_gpu->width,
-          .outputHeight = m_gpu->height,
-          .metersPerUnit = settings.trace.sceneScale,
-          .upAxis = s.upAxis.resolve(settings.trace.volumetricUpAxis),
-          .cameraCut = !s.ready};
+      const sky::FrameDescription description{.view = view,
+                                              .projection = projection,
+                                              .previousView = s.ready ? s.view : view,
+                                              .previousProjection = s.ready ? s.projection : projection,
+                                              .renderWidth = m_gpu->width,
+                                              .renderHeight = m_gpu->height,
+                                              .outputWidth = m_gpu->width,
+                                              .outputHeight = m_gpu->height,
+                                              .metersPerUnit = settings.trace.sceneScale,
+                                              .upAxis = s.upAxis.resolve(settings.trace.volumetricUpAxis),
+                                              .cameraCut = !s.ready};
       s.active = s.renderer->record(command, description);
       s.ready |= s.active;
       s.view = view;

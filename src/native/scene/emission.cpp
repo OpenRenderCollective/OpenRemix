@@ -53,8 +53,8 @@ namespace remix::scene {
     // caller holds the locks of the material's dynamic textures.
     std::array<float, 3> emission(const Draw &draw, uint32_t triangle, const float *transform, bool cached = true);
   } // namespace
-  std::shared_ptr<const SurfaceEmissionCache::Reduction>
-  SurfaceEmissionCache::reduce(const Draw &draw, const std::array<float, 4> &uv) {
+  std::shared_ptr<const SurfaceEmissionCache::Reduction> SurfaceEmissionCache::reduce(const Draw &draw,
+                                                                                      const std::array<float, 4> &uv) {
     const auto &m = *draw.material;
     // Self-illumination also reads the albedo: its texture and tint are part
     // of the entry (the scale is positive, so zero means "off").
@@ -284,105 +284,206 @@ namespace remix::scene {
     return emission(draw, triangle, transform, !dynamic.any);
   }
   namespace {
-  std::array<float, 3> emission(const Draw &draw, uint32_t triangle, const float *transform, bool cached) {
-    const auto &m = *draw.material;
-    if (m.emission[0] == 0 && m.emission[1] == 0 && m.emission[2] == 0)
-      return {};
-    std::array<float, 3> result{};
-    if (!m.emissionTexture && !m.selfIllumination) {
-      std::copy_n(m.emission, 3, result.begin());
-      return result;
-    }
-    const auto &s = *draw.surface;
-    float uv[3][2];
-    for (unsigned i = 0; i < 3; ++i)
-      for (unsigned c = 0; c < 2; ++c)
-        uv[i][c] = s.vertices[s.indices[triangle * 3 + i]].uv[c] * transform[c] + transform[c + 2];
-    const auto key = cached ? hashBytes(uv, sizeof(uv)) : 0;
-    if (cached)
-      if (auto it = m.emissionCache.find(key); it != m.emissionCache.end())
-        return it->second;
-    // Compressed textures keep no decoded mip 0; their <=64x64 preview level is
-    // an area-filtered stand-in for these stratified triangle averages.
-    struct Map {
-      uint32_t width = 0, height = 0;
-      const uint8_t *texels = nullptr;
-      const float *hdrTexels = nullptr;
-      const std::array<float, 256> *channels = nullptr;
-      explicit operator bool() const { return width && height && (texels || hdrTexels); }
-      // Linear RGB and stored alpha.
-      std::array<float, 4> at(size_t index) const {
-        if (hdrTexels)
-          return {hdrTexels[index], hdrTexels[index + 1], hdrTexels[index + 2], hdrTexels[index + 3]};
-        return {(*channels)[texels[index]], (*channels)[texels[index + 1]], (*channels)[texels[index + 2]],
-                texels[index + 3] / 255.f};
+    std::array<float, 3> emission(const Draw &draw, uint32_t triangle, const float *transform, bool cached) {
+      const auto &m = *draw.material;
+      if (m.emission[0] == 0 && m.emission[1] == 0 && m.emission[2] == 0)
+        return {};
+      std::array<float, 3> result{};
+      // A portal rim's estimate depends on its vertex colours (the opening and
+      // the static), which no material cache entry keys; a SolidEnergy one is
+      // the material's (below).
+      if (m.portalRim || m.solidEnergy)
+        cached = false;
+      if (!m.emissionTexture && !m.selfIllumination && !m.portalRim && !m.solidEnergy) {
+        std::copy_n(m.emission, 3, result.begin());
+        return result;
       }
-    };
-    auto open = [](const Texture *texture) {
-      Map map;
-      if (!texture)
-        return map;
-      const auto &p = texture->pixels;
-      const auto *compressed = p.compressed.get();
-      map.width = compressed ? compressed->previewWidth : p.width;
-      map.height = compressed ? compressed->previewHeight : p.height;
-      map.texels = compressed ? (compressed->preview.empty() ? nullptr : compressed->preview.data())
-                              : p.mips.empty() ? nullptr : p.mips[0].data();
-      map.hdrTexels = compressed ? (compressed->hdrPreview.empty() ? nullptr : compressed->hdrPreview.data())
-                                 : (p.hdrMips.empty() ? nullptr : p.hdrMips[0].data());
-      map.channels = &linearChannels[p.srgb];
-      return map;
-    };
-    const Map emissive = open(m.emissionTexture.get());
-    // remixapi_MaterialInfoSelfIlluminationEXT: the albedo colour (texture and
-    // constant; no vertex colours or texture stages here) and the mask.
-    const Map albedo = m.selfIllumination ? open(m.texture.get()) : Map{};
-    auto coord = [](float value, uint32_t size, uint8_t wrap) {
-      if (wrap == 1)
-        value -= std::floor(value);
-      else if (wrap == 2) {
-        value = std::fmod(std::abs(value), 2.f);
-        if (value > 1)
-          value = 2 - value;
-      }
-      return std::min(size - 1, uint32_t(std::clamp(value, 0.f, 1.f) * size));
-    };
-    // 16x16 stratified area samples, only on cache misses. Black texels count in
-    // the average so small masks keep their coverage and do not gain energy.
-    for (const auto &w : emissionSamples) {
-      float u = 0, v = 0;
-      for (unsigned i = 0; i < 3; ++i) {
-        u += uv[i][0] * w[i];
-        v += uv[i][1] * w[i];
-      }
-      if ((m.wrapU == 3 && (u < 0 || u > 1)) || (m.wrapV == 3 && (v < 0 || v > 1)))
-        continue;
-      auto texel = [&](const Map &map) {
-        return map.at(4 * (size_t(coord(v, map.height, m.wrapV)) * map.width + coord(u, map.width, m.wrapU)));
+      const auto &s = *draw.surface;
+      float uv[3][2];
+      for (unsigned i = 0; i < 3; ++i)
+        for (unsigned c = 0; c < 2; ++c)
+          uv[i][c] = s.vertices[s.indices[triangle * 3 + i]].uv[c] * transform[c] + transform[c + 2];
+      const auto key = cached ? hashBytes(uv, sizeof(uv)) : 0;
+      if (cached)
+        if (auto it = m.emissionCache.find(key); it != m.emissionCache.end())
+          return it->second;
+      // Compressed textures keep no decoded mip 0; their <=64x64 preview level is
+      // an area-filtered stand-in for these stratified triangle averages.
+      struct Map {
+        uint32_t width = 0, height = 0;
+        const uint8_t *texels = nullptr;
+        const float *hdrTexels = nullptr;
+        const std::array<float, 256> *channels = nullptr;
+        explicit operator bool() const { return width && height && (texels || hdrTexels); }
+        // Linear RGB and stored alpha.
+        std::array<float, 4> at(size_t index) const {
+          if (hdrTexels)
+            return {hdrTexels[index], hdrTexels[index + 1], hdrTexels[index + 2], hdrTexels[index + 3]};
+          return {(*channels)[texels[index]], (*channels)[texels[index + 1]], (*channels)[texels[index + 2]],
+                  texels[index + 3] / 255.f};
+        }
       };
-      std::array<float, 4> value{1, 1, 1, 1};
-      if (emissive)
-        value = texel(emissive);
-      if (m.selfIllumination) {
-        std::array<float, 4> color{1, 1, 1, 1};
-        if (albedo)
-          color = texel(albedo);
-        const float mask = m.selfIllumination == 2 ? color[3] : 1;
+      auto open = [](const Texture *texture) {
+        Map map;
+        if (!texture)
+          return map;
+        const auto &p = texture->pixels;
+        const auto *compressed = p.compressed.get();
+        map.width = compressed ? compressed->previewWidth : p.width;
+        map.height = compressed ? compressed->previewHeight : p.height;
+        map.texels = compressed       ? (compressed->preview.empty() ? nullptr : compressed->preview.data())
+                     : p.mips.empty() ? nullptr
+                                      : p.mips[0].data();
+        map.hdrTexels = compressed ? (compressed->hdrPreview.empty() ? nullptr : compressed->hdrPreview.data())
+                                   : (p.hdrMips.empty() ? nullptr : p.hdrMips[0].data());
+        map.channels = &linearChannels[p.srgb];
+        return map;
+      };
+      // remixapi_MaterialSolidEnergyEXT (a light bridge): what the sheet adds
+      // where seen, G = (2 B D1 + D2 D1) (1 + B.a) x its intensity, averaged
+      // once per material over its textures (their scrolls part them, so the
+      // time average is the product of the averages) and the same on every
+      // triangle: a constant light, which neither the animation nor a rebuilt
+      // mesh makes the light tree estimate again. Times the material's emission
+      // (the host's light scale; the sheet's look does not use it).
+      if (m.solidEnergy) {
+        const auto &e = *m.solidEnergy;
+        std::call_once(e.meanOnce, [&] {
+          auto average = [&](const Texture *texture) {
+            std::array<float, 4> sum{};
+            const Map map = open(texture);
+            if (!map)
+              return std::array<float, 4>{1, 1, 1, 1};
+            const size_t texels = size_t(map.width) * map.height;
+            for (size_t i = 0; i < texels; ++i) {
+              const auto v = map.at(i * 4);
+              for (unsigned c = 0; c < 4; ++c)
+                sum[c] += v[c];
+            }
+            for (auto &v : sum)
+              v /= float(texels);
+            return sum;
+          };
+          // B (1 + B.a) and (1 + B.a) need the base's texels together.
+          std::array<float, 3> b{};
+          float lift = 0;
+          if (const Map base = open(m.texture.get())) {
+            const size_t texels = size_t(base.width) * base.height;
+            for (size_t i = 0; i < texels; ++i) {
+              const auto v = base.at(i * 4);
+              for (unsigned c = 0; c < 3; ++c)
+                b[c] += v[c] * (1 + v[3]);
+              lift += 1 + v[3];
+            }
+            for (auto &v : b)
+              v /= float(texels);
+            lift /= float(texels);
+          }
+          const auto d1 = average(e.detail1.get()), d2 = average(e.detail2.get());
+          for (unsigned c = 0; c < 3; ++c)
+            e.mean[c] = (2 * b[c] * d1[c] + d2[c] * d1[c] * lift) * e.intensity;
+        });
         for (unsigned c = 0; c < 3; ++c)
-          value[c] = (m.selfIllumination == 3 ? value[3] : value[c]) * mask * m.selfIlluminationScale *
-                     std::clamp(color[c] * m.tint[c], 0.f, 1.f);
+          result[c] = e.mean[c] * m.emission[c];
+        return result;
       }
-      for (unsigned c = 0; c < 3; ++c)
-        result[c] += value[c] * m.emission[c] / 256;
-    }
-    if (!cached)
+      // remixapi_MaterialPortalRimEXT: coverage times colour (a x C, as traced
+      // rays meet it), at mesh UVs and vertex colours, the noise term h taken
+      // at three values around the mean of Portal 2's noise (0.53). At a 4 x 4
+      // subset of the samples: a rim's triangles are thin slices of its rings,
+      // and a new rim mesh (each step of a portal's opening) is estimated whole
+      // on the render thread (all 256: ~40 ms a step for a pair's rims).
+      if (m.portalRim) {
+        const Map ramp = open(m.portalRim->ramp.get());
+        float colour[3][4];
+        for (unsigned i = 0; i < 3; ++i) {
+          const auto &vertex = s.vertices[s.indices[triangle * 3 + i]];
+          std::copy_n(vertex.color, 4, colour[i]);
+          std::copy_n(vertex.uv, 2, uv[i]);
+        }
+        auto smooth = [](float x) { return x * x * (3 - 2 * x); };
+        auto saturate = [](float x) { return std::clamp(x, 0.f, 1.f); };
+        for (unsigned sample = 0; sample < 16; ++sample) {
+          const auto &w = emissionSamples[(sample / 4 * 4 + 2) * 16 + sample % 4 * 4 + 2];
+          float u = 0, v = 0, opening = 0, stat = 0;
+          for (unsigned i = 0; i < 3; ++i) {
+            u += uv[i][0] * w[i];
+            v += uv[i][1] * w[i];
+            opening += colour[i][0] * w[i];
+            stat += colour[i][1] * w[i];
+          }
+          opening = saturate(opening);
+          stat = saturate(stat);
+          const float cx = u * 1.075f - .0375f, cy = v * 1.075f - .0375f;
+          const float d = std::hypot(2 * cx - 1, 2 * cy - 1), k = smooth(opening), r = k * k;
+          const bool inside = d <= r;
+          const float e = inside ? saturate((d - r + .3f) / .3f) : 1 - saturate((d - r) * 13.3333f);
+          const float edge = e * std::max(saturate(2.5f * k), stat);
+          for (const float h : {.42f, .53f, .64f}) {
+            const float p = 1 - smooth(saturate((h - edge + .875f) / 1.75f));
+            const float q = 1 - smooth(saturate((1 - stat) / h));
+            const float level = saturate(edge * p + (inside ? q : 0.f));
+            const float x = 1.5f * level * std::sqrt(p) * (.8f * std::pow(std::abs(cy), 1.5f) + .2f);
+            const float a = saturate(1.5f * level);
+            std::array<float, 4> value{1, 1, 1, 1};
+            if (ramp)
+              value = ramp.at(4 * std::min(size_t(ramp.width) - 1, size_t(saturate(x) * ramp.width)));
+            for (unsigned c = 0; c < 3; ++c)
+              result[c] += a * value[c] * m.portalRim->colorScale * m.emission[c] / (16 * 3);
+          }
+        }
+        return result;
+      }
+      const Map emissive = open(m.emissionTexture.get());
+      // remixapi_MaterialInfoSelfIlluminationEXT: the albedo colour (texture and
+      // constant; no vertex colours or texture stages here) and the mask.
+      const Map albedo = m.selfIllumination ? open(m.texture.get()) : Map{};
+      auto coord = [](float value, uint32_t size, uint8_t wrap) {
+        if (wrap == 1)
+          value -= std::floor(value);
+        else if (wrap == 2) {
+          value = std::fmod(std::abs(value), 2.f);
+          if (value > 1)
+            value = 2 - value;
+        }
+        return std::min(size - 1, uint32_t(std::clamp(value, 0.f, 1.f) * size));
+      };
+      // 16x16 stratified area samples, only on cache misses. Black texels count in
+      // the average so small masks keep their coverage and do not gain energy.
+      for (const auto &w : emissionSamples) {
+        float u = 0, v = 0;
+        for (unsigned i = 0; i < 3; ++i) {
+          u += uv[i][0] * w[i];
+          v += uv[i][1] * w[i];
+        }
+        if ((m.wrapU == 3 && (u < 0 || u > 1)) || (m.wrapV == 3 && (v < 0 || v > 1)))
+          continue;
+        auto texel = [&](const Map &map) {
+          return map.at(4 * (size_t(coord(v, map.height, m.wrapV)) * map.width + coord(u, map.width, m.wrapU)));
+        };
+        std::array<float, 4> value{1, 1, 1, 1};
+        if (emissive)
+          value = texel(emissive);
+        if (m.selfIllumination) {
+          std::array<float, 4> color{1, 1, 1, 1};
+          if (albedo)
+            color = texel(albedo);
+          const float mask = m.selfIllumination == 2 ? color[3] : 1;
+          for (unsigned c = 0; c < 3; ++c)
+            value[c] = (m.selfIllumination == 3 ? value[3] : value[c]) * mask * m.selfIlluminationScale *
+                       std::clamp(color[c] * m.tint[c], 0.f, 1.f);
+        }
+        for (unsigned c = 0; c < 3; ++c)
+          result[c] += value[c] * m.emission[c] / 256;
+      }
+      if (!cached)
+        return result;
+      // Bound caches for arbitrary animated UVs; eviction affects only CPU work.
+      if (m.emissionCache.size() >= 65536)
+        m.emissionCache.clear();
+      m.emissionCache.emplace(key, result);
       return result;
-    // Bound caches for arbitrary animated UVs; eviction affects only CPU work.
-    if (m.emissionCache.size() >= 65536)
-      m.emissionCache.clear();
-    m.emissionCache.emplace(key, result);
-    return result;
-  }
+    }
   } // namespace
 
   SphereLight triangleEmitter(const Draw &draw, uint32_t triangle, const std::array<float, 3> &radiance) {
@@ -405,15 +506,14 @@ namespace remix::scene {
           auto weight = index * s.bonesPerVertex + b;
           const auto &m = (*draw.bones)[s.bones[weight]];
           for (unsigned c = 0; c < 3; ++c)
-            vertex.position[c] +=
-                s.weights[weight] * (m[c] * original.position[0] + m[4 + c] * original.position[1] +
-                                     m[8 + c] * original.position[2] + m[12 + c]);
+            vertex.position[c] += s.weights[weight] * (m[c] * original.position[0] + m[4 + c] * original.position[1] +
+                                                       m[8 + c] * original.position[2] + m[12 + c]);
         }
       }
       for (unsigned c = 0; c < 3; ++c) {
         const auto &m = draw.model;
-        light.corners[i][c] = m[c] * vertex.position[0] + m[4 + c] * vertex.position[1] +
-                              m[8 + c] * vertex.position[2] + m[12 + c];
+        light.corners[i][c] =
+            m[c] * vertex.position[0] + m[4 + c] * vertex.position[1] + m[8 + c] * vertex.position[2] + m[12 + c];
         light.position[c] += light.corners[i][c] / 3;
       }
     }

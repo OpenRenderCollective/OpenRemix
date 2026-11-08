@@ -17,4 +17,13 @@ namespace remix::trace {
     const char *reason = "";
   };
   inline SparseState g_sparseState;
+  // Ray portals (remixapi_MaterialInfoPortalEXT) in the last traced frame
+  // (diagnostics): portal draws, pairs with both portals drawn, draws of an
+  // index already taken, teleports per camera ray, and whether the pass that
+  // traces them ran (raster primary with a denoiser).
+  struct RayPortalState {
+    uint32_t surfaces = 0, pairs = 0, duplicates = 0, teleports = 0;
+    bool traced = false;
+  };
+  inline RayPortalState g_rayPortalState;
 } // namespace remix::trace

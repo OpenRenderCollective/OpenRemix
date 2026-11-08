@@ -35,6 +35,9 @@ test('Instance material and dynamic textures', materials_ext_test)
 opacity_test = executable('remix-opacity-test', 'opacity.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Opaque traversal atlas coverage and snapshot ownership', opacity_test)
+micromap_test = executable('remix-micromap-test', 'micromap.cpp',
+  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
+test('Opacity micromap order, nesting and soundness', micromap_test)
 compressed_test = executable('remix-compressed-texture-test', 'compressed.cpp',
   include_directories : test_includes, link_with : scene_library)
 test('Compressed BC textures, coverage and aliasing', compressed_test)

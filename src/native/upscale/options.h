@@ -7,4 +7,4 @@ namespace remix::upscale {
   // "rtx.native.frameGenerationBackend". Auto: DLSS Frame Generation where
   // NGX reports it available, FSR 3.1 otherwise.
   enum class FrameGenerationMode : uint32_t { Auto, Dlss, Fsr31 };
-}
+} // namespace remix::upscale

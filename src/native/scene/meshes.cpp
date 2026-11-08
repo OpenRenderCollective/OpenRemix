@@ -17,6 +17,14 @@ namespace remix {
   // byte budget below bounds memory, and BLAS builds check the device's
   // maxGeometryCount (2^24 on current drivers).
   constexpr uint32_t maxMeshSurfaces = 65536;
+  // A normal's length: sqrt where the squares cannot overflow or underflow
+  // (std::hypot is far slower and only needed outside that range).
+  namespace {
+    float normalLength(const float *n) {
+      const float squares = n[0] * n[0] + n[1] * n[1] + n[2] * n[2];
+      return squares > 1e-30f && squares < 1e30f ? std::sqrt(squares) : std::hypot(n[0], n[1], n[2]);
+    }
+  } // namespace
 
   std::shared_ptr<Surface> NativeResources::prepareSurface(const remixapi_MeshInfoSurfaceTriangles &source,
                                                            bool spriteVertices, uint64_t &bytes) {
@@ -57,9 +65,10 @@ namespace remix {
         finite(sprite.frame, 3);
         finite(values, 5);
       } else if (std::isfinite(src.normal[0]) && std::isfinite(src.normal[1]) && std::isfinite(src.normal[2])) {
-        const float length = std::hypot(src.normal[0], src.normal[1], src.normal[2]);
+        const float length = normalLength(src.normal);
         if (length > 1e-12f)
-          for (int c = 0; c < 3; ++c) dst.normal[c] = src.normal[c] / length;
+          for (int c = 0; c < 3; ++c)
+            dst.normal[c] = src.normal[c] / length;
       }
       rgba(src.color, dst.color);
       for (int c = 0; c < 3; ++c) {
@@ -122,15 +131,18 @@ namespace remix {
     if (!info.hash || !info.surfaces_count || info.surfaces_count > maxMeshSurfaces || !info.surfaces_values) {
       throw invalid;
     }
-    const auto *update = static_cast<const remixapi_MeshInfoUpdateEXT *>(
-        extension(info.pNext, REMIXAPI_STRUCT_TYPE_MESH_UPDATE_EXT));
-    if (update && update->enabled > 1) throw invalid;
-    const auto *motion = static_cast<const remixapi_MeshInfoMotionEXT *>(
-        extension(info.pNext, REMIXAPI_STRUCT_TYPE_MESH_MOTION_EXT));
-    if (motion && (motion->enabled > 1 || (motion->enabled && (!update || !update->enabled)))) throw invalid;
+    const auto *update =
+        static_cast<const remixapi_MeshInfoUpdateEXT *>(extension(info.pNext, REMIXAPI_STRUCT_TYPE_MESH_UPDATE_EXT));
+    if (update && update->enabled > 1)
+      throw invalid;
+    const auto *motion =
+        static_cast<const remixapi_MeshInfoMotionEXT *>(extension(info.pNext, REMIXAPI_STRUCT_TYPE_MESH_MOTION_EXT));
+    if (motion && (motion->enabled > 1 || (motion->enabled && (!update || !update->enabled))))
+      throw invalid;
     const auto *sprites = static_cast<const remixapi_MeshInfoSpriteVerticesEXT *>(
         extension(info.pNext, REMIXAPI_STRUCT_TYPE_MESH_SPRITE_VERTICES_EXT));
-    if (sprites && sprites->enabled > 1) throw invalid;
+    if (sprites && sprites->enabled > 1)
+      throw invalid;
     const bool spriteVertices = sprites && sprites->enabled;
     auto mesh = std::make_shared<Mesh>();
     mesh->motionCorrespondence = motion && motion->enabled;
@@ -143,15 +155,20 @@ namespace remix {
       mesh->surfaces.push_back(prepareSurface(source, spriteVertices, bytes));
     }
     auto previous = m_meshes.find(info.hash);
-    if (update && update->enabled && std::none_of(mesh->surfaces.begin(), mesh->surfaces.end(),
-                                                 [](const auto &s) { return s->bonesPerVertex != 0; })) {
+    if (update && update->enabled && std::none_of(mesh->surfaces.begin(), mesh->surfaces.end(), [](const auto &s) {
+          return s->bonesPerVertex != 0;
+        })) {
       bool compatible = previous != m_meshes.end() && previous->second->updateStream &&
                         previous->second->motionCorrespondence == mesh->motionCorrespondence &&
                         previous->second->surfaces.size() == mesh->surfaces.size();
-      if (compatible) for (size_t i = 0; i < mesh->surfaces.size(); ++i) {
-        const auto &old = *previous->second->surfaces[i], &next = *mesh->surfaces[i];
-        if (old.vertices.size() != next.vertices.size() || old.indices != next.indices) { compatible = false; break; }
-      }
+      if (compatible)
+        for (size_t i = 0; i < mesh->surfaces.size(); ++i) {
+          const auto &old = *previous->second->surfaces[i], &next = *mesh->surfaces[i];
+          if (old.vertices.size() != next.vertices.size() || old.indices != next.indices) {
+            compatible = false;
+            break;
+          }
+        }
       mesh->updateStream = compatible ? previous->second->updateStream : std::make_shared<MeshUpdateStream>();
     }
     // remixapi_MeshInfoDeformEXT (behind "Refresh mesh geometry in place"):
@@ -174,14 +191,15 @@ namespace remix {
       bool compatible = bool(old.updateStream);
       for (size_t i = 0; compatible && i < mesh->surfaces.size(); ++i) {
         const auto &a = *old.surfaces[i], &b = *mesh->surfaces[i];
-        compatible = a.vertices.size() == b.vertices.size() && a.indices == b.indices &&
-                     a.bonesPerVertex == b.bonesPerVertex;
+        compatible =
+            a.vertices.size() == b.vertices.size() && a.indices == b.indices && a.bonesPerVertex == b.bonesPerVertex;
       }
       mesh->updateStream = compatible ? old.updateStream : std::make_shared<MeshUpdateStream>();
       mesh->motionCorrespondence = true;
     }
     auto equal = [&](const Mesh &a, const Mesh &b) {
-      if (a.updateStream != b.updateStream || a.motionCorrespondence != b.motionCorrespondence) return false;
+      if (a.updateStream != b.updateStream || a.motionCorrespondence != b.motionCorrespondence)
+        return false;
       if (a.surfaces.size() != b.surfaces.size())
         return false;
       for (size_t i = 0; i < a.surfaces.size(); ++i) {
@@ -204,6 +222,74 @@ namespace remix {
       ++m_resourceGeneration;
     }
     handle = reinterpret_cast<remixapi_MeshHandle>(uintptr_t(info.hash));
+  }
+
+  void NativeResources::updateMeshVertices(remixapi_MeshHandle handle, uint32_t count,
+                                           const remixapi_MeshVerticesEXT *updates) {
+    const auto previous = m_meshes.find(key(handle));
+    if (previous == m_meshes.end() || !count || !updates)
+      throw invalid;
+    const auto &old = *previous->second;
+    if (count > old.surfaces.size())
+      throw invalid;
+    // Every check first: an invalid call changes nothing.
+    std::vector<bool> seen(old.surfaces.size());
+    for (uint32_t i = 0; i < count; ++i) {
+      const auto &u = updates[i];
+      if (u.surface >= old.surfaces.size() || seen[u.surface] || !u.positions ||
+          u.vertexCount != old.surfaces[u.surface]->vertices.size())
+        throw invalid;
+      seen[u.surface] = true;
+      finite(u.positions, size_t(u.vertexCount) * 3);
+      if (u.texcoords)
+        finite(u.texcoords, size_t(u.vertexCount) * 2);
+    }
+    auto mesh = std::make_shared<Mesh>();
+    mesh->surfaces = old.surfaces; // Unchanged surfaces are shared: they are immutable.
+    // Same topology by construction: the lineage continues, as MeshInfoDeformEXT's would.
+    if (m_refreshGeometry) {
+      mesh->updateStream = old.updateStream ? old.updateStream : std::make_shared<MeshUpdateStream>();
+      mesh->motionCorrespondence = true;
+    }
+    bool changed = false;
+    for (uint32_t i = 0; i < count; ++i) {
+      const auto &u = updates[i];
+      auto surface = std::make_shared<Surface>(*old.surfaces[u.surface]);
+      std::array<float, 3> low{INFINITY, INFINITY, INFINITY}, high{-INFINITY, -INFINITY, -INFINITY};
+      for (size_t v = 0; v < surface->vertices.size(); ++v) {
+        auto &dst = surface->vertices[v];
+        const float *position = u.positions + v * 3;
+        std::copy_n(position, 3, dst.position);
+        for (int c = 0; c < 3; ++c) {
+          low[c] = std::min(low[c], position[c]);
+          high[c] = std::max(high[c], position[c]);
+        }
+        if (u.texcoords)
+          std::copy_n(u.texcoords + v * 2, 2, dst.uv);
+        if (u.normals) {
+          const float *n = u.normals + v * 3;
+          std::fill_n(dst.normal, 3, 0.f);
+          if (std::isfinite(n[0]) && std::isfinite(n[1]) && std::isfinite(n[2])) {
+            const float length = normalLength(n);
+            if (length > 1e-12f)
+              for (int c = 0; c < 3; ++c)
+                dst.normal[c] = n[c] / length;
+          }
+        }
+      }
+      for (int c = 0; c < 3; ++c)
+        surface->center[c] = low[c] * .5f + high[c] * .5f;
+      const auto &before = old.surfaces[u.surface]->vertices;
+      changed |= std::memcmp(before.data(), surface->vertices.data(), before.size() * sizeof(Vertex)) != 0;
+      mesh->surfaces[u.surface] = std::move(surface);
+    }
+    // The same vertices again: nothing changes (as for CreateMesh).
+    if (!changed)
+      return;
+    previous->second->retired = true;
+    ++m_retireGeneration;
+    previous->second = std::move(mesh);
+    ++m_resourceGeneration;
   }
 
   void NativeResources::destroyMesh(remixapi_MeshHandle handle) {

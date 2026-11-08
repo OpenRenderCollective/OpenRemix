@@ -72,8 +72,7 @@ int main(int argc, char **argv) {
   if (benchmark) {
     remixapi_WindowMetrics metrics{};
     ok(remixapi_GetWindowMetrics(&metrics));
-    require(metrics.drawableWidth == 1920 && metrics.drawableHeight == 1080,
-            "Benchmark requires native 1920x1080");
+    require(metrics.drawableWidth == 1920 && metrics.drawableHeight == 1080, "Benchmark requires native 1920x1080");
   }
   remixapi_BackendCapabilitiesEXT caps{};
   caps.structSize = sizeof(caps);
@@ -127,8 +126,7 @@ int main(int argc, char **argv) {
   ok(api.SetConfigVariable("rtx.native.vsync", "0"));
   uint64_t next = 1;
   // Linear data maps exercise the same texture path as game PBR assets.
-  const std::array<uint8_t, 16> pixels = {186, 128, 240, 255, 70,  155, 240, 255,
-                                          70,  155, 240, 255, 186, 128, 240, 255};
+  const std::array<uint8_t, 16> pixels = {186, 128, 240, 255, 70, 155, 240, 255, 70, 155, 240, 255, 186, 128, 240, 255};
   remixapi_TextureInfo texture{};
   texture.sType = REMIXAPI_STRUCT_TYPE_TEXTURE_INFO;
   texture.hash = 0xff00;
@@ -142,8 +140,8 @@ int main(int argc, char **argv) {
   const auto normalName = std::filesystem::path("0xff00");
   const bool maps = std::string(option("REMIX_TEST_FIREFLY_MAPS", "1")) == "1";
   const bool pbrEnabled = std::string(option("REMIX_TEST_FIREFLY_PBR", "1")) == "1";
-  auto material = [&](remixapi_Float3D color, float roughness, float metal, float emission = 0.f,
-                      float alpha = 1.f, bool enablePbr = true) {
+  auto material = [&](remixapi_Float3D color, float roughness, float metal, float emission = 0.f, float alpha = 1.f,
+                      bool enablePbr = true) {
     remixapi_MaterialInfoPbrEXT pbr{};
     pbr.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_PBR_EXT;
     pbr.enabled = enablePbr && pbrEnabled;
@@ -169,8 +167,7 @@ int main(int argc, char **argv) {
   };
   auto white = material({.65f, .65f, .65f}, .7f, 0);
   auto emission = material({.25f, .5f, 1}, 1, 0, 80);
-  auto quad = [&](int axis, float plane, float a0, float a1, float b0, float b1,
-                  remixapi_MaterialHandle mat) {
+  auto quad = [&](int axis, float plane, float a0, float a1, float b0, float b1, remixapi_MaterialHandle mat) {
     remixapi_HardcodedVertex vertices[4]{};
     uint32_t indices[] = {0, 1, 2, 0, 2, 3};
     for (int i = 0; i < 4; ++i) {
@@ -198,15 +195,13 @@ int main(int argc, char **argv) {
   };
   std::vector<remixapi_MeshHandle> meshes;
   const float roughness[] = {.03f, .08f, .2f, .5f, .85f};
-  const remixapi_Float3D colors[] = {
-      {.65f, .65f, .65f}, {.008f, .012f, .006f}, {.9f, .005f, .02f}, {.8f, .3f, .05f}};
+  const remixapi_Float3D colors[] = {{.65f, .65f, .65f}, {.008f, .012f, .006f}, {.9f, .005f, .02f}, {.8f, .3f, .05f}};
   for (int y = 0; y < 4; ++y)
     for (int x = 0; x < 5; ++x)
       meshes.push_back(quad(2, 4, -2 + x * .8f, -1.2f + x * .8f, -2 + y, -1 + y,
                             material(colors[y], roughness[x], y == 3 ? 1.f : 0.f)));
-  for (auto mesh :
-       {quad(1, -2, 0, 4, -2, 2, white), quad(1, 2, 0, 4, -2, 2, white), quad(0, -2, -2, 2, 0, 4, white),
-        quad(0, 2, -2, 2, 0, 4, white), quad(2, 0, -2, 2, -2, 2, white)})
+  for (auto mesh : {quad(1, -2, 0, 4, -2, 2, white), quad(1, 2, 0, 4, -2, 2, white), quad(0, -2, -2, 2, 0, 4, white),
+                    quad(0, 2, -2, 2, 0, 4, white), quad(2, 0, -2, 2, -2, 2, white)})
     meshes.push_back(mesh);
   const size_t emitterBegin = meshes.size();
   for (int i = 0; i < std::stoi(option("REMIX_TEST_FIREFLY_EMITTER_COUNT", "8")); ++i)
@@ -288,8 +283,8 @@ int main(int argc, char **argv) {
       for (auto handle : lights)
         ok(api.DrawLightInstance(handle));
     for (size_t i = 0; i < meshes.size(); ++i) {
-      if (i == 24 && (std::string(option("REMIX_TEST_FIREFLY_SKY", "0")) == "1" ||
-                      std::getenv("REMIX_TEST_FIREFLY_SUN")))
+      if (i == 24 &&
+          (std::string(option("REMIX_TEST_FIREFLY_SKY", "0")) == "1" || std::getenv("REMIX_TEST_FIREFLY_SUN")))
         continue;
       if (i >= emitterBegin && i < emitterEnd && (family == "torch" || removeLights))
         continue;
@@ -328,24 +323,24 @@ int main(int argc, char **argv) {
     frame();
     return load(path);
   };
-  for (const auto &[key, env, fallback] : std::initializer_list<std::array<const char *, 3>>{
-           {"emissiveCandidates", "REMIX_TEST_FIREFLY_CANDIDATES", "8"},
-           {"samples", "REMIX_TEST_FIREFLY_SAMPLES", "1"},
-           {"localSamples", "REMIX_TEST_FIREFLY_LOCAL_SAMPLES", "1"},
-           {"bounces", "REMIX_TEST_FIREFLY_BOUNCES", "2"},
-           {"primaryVisibility", "REMIX_TEST_FIREFLY_PRIMARY", "raster"},
-           {"denoiser", "REMIX_TEST_FIREFLY_DENOISER", "off"},
-           {"taa", "REMIX_TEST_FIREFLY_TAA", "0"},
-           {"sharc", "REMIX_TEST_FIREFLY_SHARC", "0"},
-           {"separateLocalLighting", "REMIX_TEST_FIREFLY_SPLIT", "0"},
-           {"localLights", "REMIX_TEST_FIREFLY_LOCAL", "1"},
-           {"localDenoiser", "REMIX_TEST_FIREFLY_LOCAL_DENOISER", "1"},
-           {"sky", "REMIX_TEST_FIREFLY_SKY", "0"},
-           {"accumulate", "REMIX_TEST_FIREFLY_ACCUMULATE", "0"},
-           {"upscaler", "REMIX_TEST_FIREFLY_UPSCALER", "off"},
-           {"dlssRayReconstruction", "REMIX_TEST_FIREFLY_RR", "0"},
-           {"pbrLocalReuse", "REMIX_TEST_FIREFLY_REUSE", "0"},
-           {"waterIndirectReuse", "REMIX_TEST_FIREFLY_WATER", "1"}})
+  for (const auto &[key, env, fallback] :
+       std::initializer_list<std::array<const char *, 3>>{{"emissiveCandidates", "REMIX_TEST_FIREFLY_CANDIDATES", "8"},
+                                                          {"samples", "REMIX_TEST_FIREFLY_SAMPLES", "1"},
+                                                          {"localSamples", "REMIX_TEST_FIREFLY_LOCAL_SAMPLES", "1"},
+                                                          {"bounces", "REMIX_TEST_FIREFLY_BOUNCES", "2"},
+                                                          {"primaryVisibility", "REMIX_TEST_FIREFLY_PRIMARY", "raster"},
+                                                          {"denoiser", "REMIX_TEST_FIREFLY_DENOISER", "off"},
+                                                          {"taa", "REMIX_TEST_FIREFLY_TAA", "0"},
+                                                          {"sharc", "REMIX_TEST_FIREFLY_SHARC", "0"},
+                                                          {"separateLocalLighting", "REMIX_TEST_FIREFLY_SPLIT", "0"},
+                                                          {"localLights", "REMIX_TEST_FIREFLY_LOCAL", "1"},
+                                                          {"localDenoiser", "REMIX_TEST_FIREFLY_LOCAL_DENOISER", "1"},
+                                                          {"sky", "REMIX_TEST_FIREFLY_SKY", "0"},
+                                                          {"accumulate", "REMIX_TEST_FIREFLY_ACCUMULATE", "0"},
+                                                          {"upscaler", "REMIX_TEST_FIREFLY_UPSCALER", "off"},
+                                                          {"dlssRayReconstruction", "REMIX_TEST_FIREFLY_RR", "0"},
+                                                          {"pbrLocalReuse", "REMIX_TEST_FIREFLY_REUSE", "0"},
+                                                          {"waterIndirectReuse", "REMIX_TEST_FIREFLY_WATER", "1"}})
     config(key, option(env, fallback));
   config("dlssQuality", "native-aa");
   if (!baseline) {
@@ -377,8 +372,8 @@ int main(int argc, char **argv) {
       ok(remixapi_GetTracingStatisticsEXT(&t));
       ok(remixapi_GetDenoisingStatisticsEXT(&d));
       require(t.gpuTimingsAvailable, "GPU timing unavailable");
-      csv << t.gpuTraceMilliseconds << ',' << d.gpuDenoiseMilliseconds << ',' << d.gpuConfidenceMilliseconds
-          << ',' << d.gpuTaaMilliseconds << '\n';
+      csv << t.gpuTraceMilliseconds << ',' << d.gpuDenoiseMilliseconds << ',' << d.gpuConfidenceMilliseconds << ','
+          << d.gpuTaaMilliseconds << '\n';
     }
   } else {
     const unsigned warmup = std::stoul(option("REMIX_TEST_FIREFLY_WARMUP", "16"));
@@ -447,10 +442,9 @@ int main(int argc, char **argv) {
              << " reblur=" << d.activeDenoiser << " taa=" << d.activeTaa << " sharc=" << sharc.active
              << " sharc_entries=" << sharc.occupiedEntries << " sharc_updates=" << sharc.updatePaths
              << " sharc_queries=" << sharc.queryAttempts << " sharc_hits=" << sharc.queryHits
-             << " sharc_memory=" << sharc.memoryBytes
-             << " reconstruction=" << r.activeBackend << " reconstruction_capabilities=" << r.capabilities
-             << " reconstruction_frames=" << r.evaluatedFrames << " reconstruction_failures=" << r.failures
-             << '\n';
+             << " sharc_memory=" << sharc.memoryBytes << " reconstruction=" << r.activeBackend
+             << " reconstruction_capabilities=" << r.capabilities << " reconstruction_frames=" << r.evaluatedFrames
+             << " reconstruction_failures=" << r.failures << '\n';
     metadata << "reconstruction_reason=" << r.fallbackReason << '\n';
     if (std::getenv("REMIX_TEST_ROULETTE_RESETS") && !baseline) {
       config("bounces", "4");
@@ -460,10 +454,14 @@ int main(int argc, char **argv) {
         config("accumulate", accumulate);
         config("denoiser", *accumulate == '1' ? "off" : "reblur-sh");
         config("taa", *accumulate == '1' ? "0" : "1");
-        for (const auto &[key, value] : std::initializer_list<std::pair<const char *, const char *>>{
-                 {"russianRoulette", "1"}, {"rouletteMinBounces", "2"},
-                 {"rouletteMinBounces", "4"}, {"russianRoulette", "0"}, {"rouletteMinBounces", "1"}}) {
-          for (unsigned i = 0; i < 8; ++i) frame();
+        for (const auto &[key, value] :
+             std::initializer_list<std::pair<const char *, const char *>>{{"russianRoulette", "1"},
+                                                                          {"rouletteMinBounces", "2"},
+                                                                          {"rouletteMinBounces", "4"},
+                                                                          {"russianRoulette", "0"},
+                                                                          {"rouletteMinBounces", "1"}}) {
+          for (unsigned i = 0; i < 8; ++i)
+            frame();
           ok(remixapi_GetDenoisingStatisticsEXT(&d));
           const auto resets = d.historyResets;
           config(key, value);
@@ -474,7 +472,8 @@ int main(int argc, char **argv) {
           if (*accumulate == '1')
             require(t.accumulationCount <= 2, "Adaptive control did not reset accumulation");
           else {
-            for (unsigned i = 0; i < 4; ++i) frame();
+            for (unsigned i = 0; i < 4; ++i)
+              frame();
             ok(remixapi_GetDenoisingStatisticsEXT(&d));
             require(d.historyResets > resets, "Adaptive control did not reset temporal history");
           }

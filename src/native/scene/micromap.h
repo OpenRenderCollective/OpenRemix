@@ -23,8 +23,8 @@ namespace remix::scene {
     // One entry per surface triangle: a Triangle index or a special index. Only
     // triangles the partition leaves non-opaque are traversed with it.
     std::vector<int32_t> indices;
-    std::array<uint32_t, maxLevel + 1> levels{}; // Stored triangles per subdivision level.
-    uint64_t hash = 0;                           // Content identity of triangles, data and indices.
+    std::array<uint32_t, maxLevel + 1> levels{};       // Stored triangles per subdivision level.
+    uint64_t hash = 0;                                 // Content identity of triangles, data and indices.
     uint64_t opaque = 0, transparent = 0, unknown = 0; // Micro-triangles, for statistics.
   };
 

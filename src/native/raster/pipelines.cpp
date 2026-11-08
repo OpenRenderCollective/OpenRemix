@@ -10,8 +10,7 @@ namespace remix {
       return uint64_t(b.src) | uint64_t(b.dst) << 4 | uint64_t(b.op) << 8 | uint64_t(b.srcAlpha) << 11 |
              uint64_t(b.dstAlpha) << 15 | uint64_t(b.alphaOp) << 19 | uint64_t(b.mask) << 22 |
              uint64_t(b.enabled) << 26 | uint64_t(draw.doubleSided) << 27 | uint64_t(draw.depth) << 28 |
-             uint64_t(draw.depth && (draw.depthWriteOverride ? draw.depthWrite : (!b.enabled || draw.ui)))
-                 << 29 |
+             uint64_t(draw.depth && (draw.depthWriteOverride ? draw.depthWrite : (!b.enabled || draw.ui))) << 29 |
              uint64_t(draw.depthCompare) << 30 | uint64_t(draw.depthBias) << 33 | uint64_t(draw.wireframe) << 34;
     }
   } // namespace
@@ -63,11 +62,12 @@ namespace remix {
     // compile, about 100 ms, and the first shot of a session needs several.
     // prepare() leaves such a draw out until its pipeline is ready. The raster
     // backend draws the scene itself and waits, as before.
-    // Gradient-mapped materials and wound cuts (raster/infected.cpp) take
-    // their own stages, waited for like any draw's; plain if they cannot be made.
+    // Gradient-mapped materials, portal rims and wound cuts (raster/infected.cpp)
+    // take their own stages, waited for like any draw's; plain if they cannot be made.
     int infected = -1;
     const auto infectedStages = [&](const scene::Draw &draw) {
-      if ((!draw.wound && !(draw.material && draw.material->gradient)) || draw.ui || (draw.spriteFlags && draw.blend.enabled))
+      if ((!draw.wound && !(draw.material && (draw.material->gradient || draw.material->portalRim))) || draw.ui ||
+          (draw.spriteFlags && draw.blend.enabled))
         return false;
       if (infected < 0) {
         try {
@@ -165,18 +165,19 @@ namespace remix {
       ~Timed() { total += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - begin).count(); }
     } timed{createPipelineMs};
     ++pipelinesCreated;
-    const VkPipelineShaderStageCreateInfo stages[] = {
-        {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-         .stage = VK_SHADER_STAGE_VERTEX_BIT,
-         .module = infectedStages ? infected.vertex : spriteStages ? sprite.vertex : vertex,
-         .pName = "main"},
-        {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-         .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-         .module = masked           ? mask.overlayFragment
-                   : spriteStages   ? sprite.fragment
-                   : infectedStages ? infected.fragment
-                                    : fragment,
-         .pName = "main"}};
+    const VkPipelineShaderStageCreateInfo stages[] = {{.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                                                       .stage = VK_SHADER_STAGE_VERTEX_BIT,
+                                                       .module = infectedStages ? infected.vertex
+                                                                 : spriteStages ? sprite.vertex
+                                                                                : vertex,
+                                                       .pName = "main"},
+                                                      {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                                                       .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+                                                       .module = masked           ? mask.overlayFragment
+                                                                 : spriteStages   ? sprite.fragment
+                                                                 : infectedStages ? infected.fragment
+                                                                                  : fragment,
+                                                       .pName = "main"}};
     // Sprite overlays: the mesh's sprite vertices as a second binding.
     const VkVertexInputBindingDescription bindings[] = {{0, sizeof(Vertex), VK_VERTEX_INPUT_RATE_VERTEX},
                                                         {1, sizeof(SpriteVertex), VK_VERTEX_INPUT_RATE_VERTEX}};
@@ -196,15 +197,15 @@ namespace remix {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
         .vertexBindingDescriptionCount = spriteStages || infectedStages ? 2u : 1u,
         .pVertexBindingDescriptions = infectedStages ? infectedBindings : bindings,
-        .vertexAttributeDescriptionCount = spriteStages ? 6u : infectedStages ? 4u : 3u,
+        .vertexAttributeDescriptionCount = spriteStages     ? 6u
+                                           : infectedStages ? 4u
+                                                            : 3u,
         .pVertexAttributeDescriptions = infectedStages ? infectedAttributes : attributes};
     const VkPipelineInputAssemblyStateCreateInfo assembly = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
         .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST};
     const VkPipelineViewportStateCreateInfo viewport = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
-        .viewportCount = 1,
-        .scissorCount = 1};
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO, .viewportCount = 1, .scissorCount = 1};
     const VkPipelineRasterizationStateCreateInfo raster = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
         .polygonMode = draw.wireframe && fillModeNonSolid ? VK_POLYGON_MODE_LINE : VK_POLYGON_MODE_FILL,
@@ -214,9 +215,9 @@ namespace remix {
         .depthBiasConstantFactor = -1.f,
         .depthBiasSlopeFactor = -1.f,
         .lineWidth = 1};
-    const VkPipelineMultisampleStateCreateInfo samples = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-        .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT};
+    const VkPipelineMultisampleStateCreateInfo samples = {.sType =
+                                                              VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+                                                          .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT};
     // SKY instances skip the depth test in the shared main pass (their camera
     // is not the world's). The path tracer's sky pass has its own depth
     // buffer, so there the 3D skybox's geometry occludes itself.
@@ -224,8 +225,7 @@ namespace remix {
     const VkPipelineDepthStencilStateCreateInfo depthState = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
         .depthTestEnable = depth,
-        .depthWriteEnable =
-            depth && (draw.depthWriteOverride ? draw.depthWrite : (!draw.blend.enabled || draw.ui)),
+        .depthWriteEnable = depth && (draw.depthWriteOverride ? draw.depthWrite : (!draw.blend.enabled || draw.ui)),
         .depthCompareOp = VkCompareOp(draw.depthCompare)};
     const auto &b = draw.blend;
     const VkPipelineColorBlendAttachmentState blend = {.blendEnable = b.enabled,
@@ -236,16 +236,15 @@ namespace remix {
                                                        .dstAlphaBlendFactor = VkBlendFactor(b.dstAlpha),
                                                        .alphaBlendOp = VkBlendOp(b.alphaOp),
                                                        .colorWriteMask = b.mask};
-    const VkPipelineColorBlendStateCreateInfo blending = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-        .attachmentCount = 1,
-        .pAttachments = &blend};
+    const VkPipelineColorBlendStateCreateInfo blending = {.sType =
+                                                              VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+                                                          .attachmentCount = 1,
+                                                          .pAttachments = &blend};
     const VkDynamicState dynamicStates[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR,
                                             VK_DYNAMIC_STATE_BLEND_CONSTANTS};
-    const VkPipelineDynamicStateCreateInfo dynamic = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
-        .dynamicStateCount = 3,
-        .pDynamicStates = dynamicStates};
+    const VkPipelineDynamicStateCreateInfo dynamic = {.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+                                                      .dynamicStateCount = 3,
+                                                      .pDynamicStates = dynamicStates};
     const VkGraphicsPipelineCreateInfo info = {.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
                                                .stageCount = 2,
                                                .pStages = stages,
@@ -263,8 +262,7 @@ namespace remix {
                                                                           : layout,
                                                .renderPass = sky ? skyPass : pass};
     VkPipeline result = VK_NULL_HANDLE;
-    const auto status = pipeline::createGraphicsPipelines(
-        device, VK_NULL_HANDLE, 1, &info, nullptr, &result);
+    const auto status = pipeline::createGraphicsPipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &result);
     if (status != VK_SUCCESS) {
       if (result) {
         pipeline::destroyPipeline(device, result, nullptr);

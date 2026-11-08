@@ -122,6 +122,6 @@ namespace remix::config {
   bool validate(const Settings &settings, std::string &error);
   std::string serialize(const Settings &settings, const UnknownSettings &unknown = {});
   // Transactional: all output arguments stay untouched on failure.
-  bool parse(std::string_view text, Settings &settings, UnknownSettings &unknown,
-             std::vector<std::string> &warnings, std::string &error);
+  bool parse(std::string_view text, Settings &settings, UnknownSettings &unknown, std::vector<std::string> &warnings,
+             std::string &error);
 } // namespace remix::config

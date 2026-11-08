@@ -238,7 +238,7 @@ namespace remix {
     };
     struct TextureGpu {
       std::weak_ptr<scene::Texture> owner;
-      std::unique_ptr<Image> data; // Null for a linear alias of another entry's image.
+      std::unique_ptr<Image> data;       // Null for a linear alias of another entry's image.
       VkImageView view = VK_NULL_HANDLE; // Sampled view: data->view or the alias.
       bool srgb = false;                 // Encoded sRGB texels (UNORM): the shaders decode them, pow 2.2.
       uint64_t revision = 0;             // scene::TextureUpdates::revision uploaded
@@ -364,9 +364,9 @@ namespace remix {
       VkSampler sampler = VK_NULL_HANDLE;
       // mask: [depth tested]; composite: [additive].
       VkPipeline mask[2] = {}, blur = VK_NULL_HANDLE, composite[2] = {};
-      bool ready = false;  // every pipeline is compiled
+      bool ready = false;         // every pipeline is compiled
       bool coverageReady = false; // the silhouette passes and mask pipelines (prepareCoverage)
-      bool failed = false; // creation failed: no halos until the target changes
+      bool failed = false;        // creation failed: no halos until the target changes
       struct Group {
         scene::Halo halo;
         uint32_t first = 0, count = 0; // in commands
@@ -393,8 +393,7 @@ namespace remix {
     // A silhouette pipeline for halo.maskPass: the raster vertex stage, the
     // given fragment stage and layout, both faces, optionally depth-tested
     // (biased) against the frame's depth. False while it compiles.
-    bool coveragePipeline(VkPipeline &out, VkShaderModule fragmentModule, VkPipelineLayout pipelineLayout,
-                          bool tested);
+    bool coveragePipeline(VkPipeline &out, VkShaderModule fragmentModule, VkPipelineLayout pipelineLayout, bool tested);
     // An R8 target at target resolution with its framebuffer (tested: with the
     // frame's depth attachment, for halo.maskPass/loadPass) and sampling set.
     void createCoverageTarget(Halo::Target &target, bool tested);
@@ -435,7 +434,7 @@ namespace remix {
       // test (there is no depth yet). The tracer samples the targets; the
       // coverage passes then draw every run again for the masked overlays.
       struct Cut {
-        uint32_t count = 0;                             // groups that cut this frame
+        uint32_t count = 0;                               // groups that cut this frame
         uint32_t targets[scene::Mask::maxCutGroups] = {}; // their targets, in slot order
         // Four bits per group (1..32): its slot + 1, or 0 when it does not cut.
         uint32_t slots[4] = {};
@@ -450,16 +449,17 @@ namespace remix {
       VkSampler sampler = VK_NULL_HANDLE;
       VkDescriptorSet set = VK_NULL_HANDLE;
       bool failed = false;
-      uint32_t soft = 0;     // this frame's commands with SOFT_DEPTH
+      uint32_t soft = 0;      // this frame's commands with SOFT_DEPTH
       bool requested = false; // particles sample the copy this frame
-      bool captured = false; // this frame's depth is in the copy
+      bool captured = false;  // this frame's depth is in the copy
     } sprite;
     // The layout and shader modules; false when they cannot be created.
     bool prepareSprite();
     void destroySprite();
-    // remixapi_MaterialGradientMapEXT and remixapi_InstanceInfoWoundCutEXT
-    // (raster/infected.cpp): the raster stages with INFECTED, whose set 1
-    // holds the gradient, detail, cut and burn textures and the draw's parameters.
+    // remixapi_MaterialGradientMapEXT, remixapi_MaterialPortalRimEXT and
+    // remixapi_InstanceInfoWoundCutEXT (raster/infected.cpp): the raster
+    // stages with INFECTED, whose set 1 holds the gradient (or the rim's
+    // ramp), detail, cut and burn textures and the draw's parameters.
     struct Infected {
       VkDescriptorSetLayout setLayout = VK_NULL_HANDLE;
       VkPipelineLayout layout = VK_NULL_HANDLE; // the raster layout and, set 1, the above
@@ -476,8 +476,9 @@ namespace remix {
     bool prepareInfected();
     void destroyInfected();
     // A command's parameter block (Command::infected) for a draw with a
-    // gradient-mapped material or a wound cut.
-    void infectedParameters(const scene::Draw &draw, Command &out, VkCommandBuffer command);
+    // gradient-mapped material, a portal rim or a wound cut; seconds: the
+    // frame's clock (a portal rim's scroll).
+    void infectedParameters(const scene::Draw &draw, Command &out, VkCommandBuffer command, double seconds);
     // After the frame's commands: their parameters' buffer and sets.
     void finishInfected();
     // The NUMOS sky over the target (raster/sky.cpp): fullscreen draws that
@@ -502,21 +503,18 @@ namespace remix {
     ~Gpu();
     void destroyTarget();
     uint32_t memoryType(uint32_t bits, VkMemoryPropertyFlags flags);
-    std::unique_ptr<Buffer> allocateBuffer(size_t size, VkBufferUsageFlags usage,
-                                           VkMemoryPropertyFlags flags);
+    std::unique_ptr<Buffer> allocateBuffer(size_t size, VkBufferUsageFlags usage, VkMemoryPropertyFlags flags);
     std::unique_ptr<Buffer> buffer(const void *data, size_t size, VkBufferUsageFlags usage);
     // Host-visible buffer whose contents write(mapped) fills directly.
-    std::unique_ptr<Buffer> buffer(size_t size, VkBufferUsageFlags usage,
-                                   const std::function<void(uint8_t *)> &write);
+    std::unique_ptr<Buffer> buffer(size_t size, VkBufferUsageFlags usage, const std::function<void(uint8_t *)> &write);
     // Large sampled images whose last use has completed, reused by image() for
     // an identical description (a per-frame screen overlay of the same size).
     std::vector<std::unique_ptr<Image>> reusableImages;
     void recycle(std::unique_ptr<Image> image);
     std::unique_ptr<Buffer> geometryBuffer(const void *data, size_t size, VkBufferUsageFlags usage,
                                            VkCommandBuffer command);
-    std::unique_ptr<Image> image(uint32_t width, uint32_t height, uint32_t levels, VkFormat format,
-                                 bool isDepth, VkImageCreateFlags flags = 0,
-                                 VkComponentMapping components = {});
+    std::unique_ptr<Image> image(uint32_t width, uint32_t height, uint32_t levels, VkFormat format, bool isDepth,
+                                 VkImageCreateFlags flags = 0, VkComponentMapping components = {});
     MeshGpu &mesh(const std::shared_ptr<scene::Surface> &source, VkCommandBuffer command);
     TextureGpu &texture(const std::shared_ptr<scene::Texture> &source, VkCommandBuffer command);
     TextureGpu &createTexture(const std::shared_ptr<scene::Texture> &source, VkCommandBuffer command);

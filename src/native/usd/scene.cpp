@@ -97,12 +97,11 @@ namespace remix::usd {
           const auto key = it.key();
           const double maximum = key == "tFactor"                   ? double(UINT32_MAX)
                                  : key == "alphaTestReferenceValue" ? 255
-                                 : key == "alphaTestCompareOp" || key.find("Operation") != std::string::npos
-                                     ? 7
-                                 : key.find("Source") != std::string::npos  ? 3
-                                 : key.find("BlendOp") != std::string::npos ? 4
-                                 : key == "writeMask"                       ? 15
-                                                                            : 18;
+                                 : key == "alphaTestCompareOp" || key.find("Operation") != std::string::npos ? 7
+                                 : key.find("Source") != std::string::npos                                   ? 3
+                                 : key.find("BlendOp") != std::string::npos                                  ? 4
+                                 : key == "writeMask"                                                        ? 15
+                                                                                                             : 18;
           it.value() = uint32_t(number_attribute(prim, name.c_str(), it.value().get<double>(), maximum));
         }
       }
@@ -171,41 +170,41 @@ namespace remix::usd {
       auto transmission = attribute(shader, "inputs:transmittance_color", GfVec3f(1.0f));
       auto source = attribute(shader, "info:mdl:sourceAsset", SdfAssetPath()).GetAssetPath();
       const bool translucent = source.find("Translucent") != std::string::npos;
-      Json result = {{"id", prim.GetPath().GetString()},
-              {"kind", translucent ? "translucent" : "opaque"},
-              {"albedo", {color[0], color[1], color[2]}},
-              {"roughness", attribute(shader, "inputs:reflection_roughness_constant", 0.5f)},
-              {"metallic", attribute(shader, "inputs:metallic_constant", 0.0f)},
-              {"opacity", attribute(shader, "inputs:opacity_constant", 1.0f)},
-              {"use_legacy_alpha", attribute(shader, "inputs:use_legacy_alpha_state", true)},
-              {"blend_enabled", attribute(shader, "inputs:blend_enabled", false)},
-              {"blend_type", int(number_attribute(shader, "inputs:blend_type", 0, 10))},
-              {"inverted_blend", attribute(shader, "inputs:inverted_blend", false)},
-              {"alpha_test", int(number_attribute(shader, "inputs:alpha_test_type", 7, 7))},
-              {"alpha_reference", int(number_attribute(shader, "inputs:alpha_test_reference_value", 0, 255))},
-              {"emissive", {emission[0], emission[1], emission[2]}},
-              {"emissive_intensity", attribute(shader, "inputs:enable_emission", false)
-                                         ? attribute(shader, "inputs:emissive_intensity", 40.0f)
-                                         : 0.0f},
-              {"ior", attribute(shader, "inputs:ior_constant", 1.3f)},
-              {"transmittance", {transmission[0], transmission[1], transmission[2]}},
-              // AperturePBR_Translucent's body: a thin wall, or the distance over
-              // which the transmittance colour is reached (Beer-Lambert).
-              {"transmittance_distance", attribute(shader, "inputs:transmittance_measurement_distance", 1.0f)},
-              {"thin_walled", attribute(shader, "inputs:thin_walled", false)},
-              {"thin_wall_thickness", attribute(shader, "inputs:thin_wall_thickness", 1.0f)},
-              {"use_diffuse_layer", attribute(shader, "inputs:use_diffuse_layer", false)},
-              {"filter_mode", sampler_mode(shader, "inputs:filter_mode", 1)},
-              {"wrap_mode_u", sampler_mode(shader, "inputs:wrap_mode_u", 3)},
-              {"wrap_mode_v", sampler_mode(shader, "inputs:wrap_mode_v", 3)},
-              {"albedo_texture",
-               texture(shader, translucent ? "inputs:transmittance_texture" : "inputs:diffuse_texture",
-                       warnings)},
-              {"normal_texture", texture(shader, "inputs:normalmap_texture", warnings)},
-              {"normal_encoding", attribute(shader, "inputs:encoding", 0)},
-              {"roughness_texture", texture(shader, "inputs:reflectionroughness_texture", warnings)},
-              {"metallic_texture", texture(shader, "inputs:metallic_texture", warnings)},
-              {"emissive_texture", texture(shader, "inputs:emissive_mask_texture", warnings)}};
+      Json result = {
+          {"id", prim.GetPath().GetString()},
+          {"kind", translucent ? "translucent" : "opaque"},
+          {"albedo", {color[0], color[1], color[2]}},
+          {"roughness", attribute(shader, "inputs:reflection_roughness_constant", 0.5f)},
+          {"metallic", attribute(shader, "inputs:metallic_constant", 0.0f)},
+          {"opacity", attribute(shader, "inputs:opacity_constant", 1.0f)},
+          {"use_legacy_alpha", attribute(shader, "inputs:use_legacy_alpha_state", true)},
+          {"blend_enabled", attribute(shader, "inputs:blend_enabled", false)},
+          {"blend_type", int(number_attribute(shader, "inputs:blend_type", 0, 10))},
+          {"inverted_blend", attribute(shader, "inputs:inverted_blend", false)},
+          {"alpha_test", int(number_attribute(shader, "inputs:alpha_test_type", 7, 7))},
+          {"alpha_reference", int(number_attribute(shader, "inputs:alpha_test_reference_value", 0, 255))},
+          {"emissive", {emission[0], emission[1], emission[2]}},
+          {"emissive_intensity", attribute(shader, "inputs:enable_emission", false)
+                                     ? attribute(shader, "inputs:emissive_intensity", 40.0f)
+                                     : 0.0f},
+          {"ior", attribute(shader, "inputs:ior_constant", 1.3f)},
+          {"transmittance", {transmission[0], transmission[1], transmission[2]}},
+          // AperturePBR_Translucent's body: a thin wall, or the distance over
+          // which the transmittance colour is reached (Beer-Lambert).
+          {"transmittance_distance", attribute(shader, "inputs:transmittance_measurement_distance", 1.0f)},
+          {"thin_walled", attribute(shader, "inputs:thin_walled", false)},
+          {"thin_wall_thickness", attribute(shader, "inputs:thin_wall_thickness", 1.0f)},
+          {"use_diffuse_layer", attribute(shader, "inputs:use_diffuse_layer", false)},
+          {"filter_mode", sampler_mode(shader, "inputs:filter_mode", 1)},
+          {"wrap_mode_u", sampler_mode(shader, "inputs:wrap_mode_u", 3)},
+          {"wrap_mode_v", sampler_mode(shader, "inputs:wrap_mode_v", 3)},
+          {"albedo_texture",
+           texture(shader, translucent ? "inputs:transmittance_texture" : "inputs:diffuse_texture", warnings)},
+          {"normal_texture", texture(shader, "inputs:normalmap_texture", warnings)},
+          {"normal_encoding", attribute(shader, "inputs:encoding", 0)},
+          {"roughness_texture", texture(shader, "inputs:reflectionroughness_texture", warnings)},
+          {"metallic_texture", texture(shader, "inputs:metallic_texture", warnings)},
+          {"emissive_texture", texture(shader, "inputs:emissive_mask_texture", warnings)}};
       // AperturePBR's thin film, with OpenRemix's iridescence attributes
       // (openremix:iridescence:*, outside the MDL inputs). OpenRemix also
       // reads the film on AperturePBR_Translucent, which has none of its own.
@@ -240,7 +239,8 @@ namespace remix::usd {
             {"anisotropy", attribute(shader, "inputs:subsurface_volumetric_anisotropy", 0.0f)},
             {"transmittance", vector(attribute(shader, "inputs:subsurface_transmittance_color", GfVec3f(neutral)))},
             {"measurement_distance", measurement},
-            {"single_scattering_albedo", vector(attribute(shader, "inputs:subsurface_single_scattering_albedo", GfVec3f(.5f)))},
+            {"single_scattering_albedo",
+             vector(attribute(shader, "inputs:subsurface_single_scattering_albedo", GfVec3f(.5f)))},
             {"transmittance_texture", texture(shader, "inputs:subsurface_transmittance_texture", warnings)},
             {"thickness_texture", texture(shader, "inputs:subsurface_thickness_texture", warnings)},
             {"single_scattering_texture", texture(shader, "inputs:subsurface_single_scattering_texture", warnings)},
@@ -258,8 +258,8 @@ namespace remix::usd {
       return vertex;
     }
     // Project onto the dominant plane so concave polygon faces can be ear-clipped.
-    std::vector<std::array<int, 3>> triangulate(const VtVec3fArray &points, const VtIntArray &indices,
-                                                int start, int count) {
+    std::vector<std::array<int, 3>> triangulate(const VtVec3fArray &points, const VtIntArray &indices, int start,
+                                                int count) {
       std::vector<std::array<int, 3>> triangles;
       if (count < 3)
         return triangles;
@@ -382,8 +382,7 @@ namespace remix::usd {
       if (!UsdLuxLightAPI(prim) || prim.IsA<UsdGeomMesh>() ||
           UsdGeomImageable(prim).ComputeVisibility() == UsdGeomTokens->invisible)
         continue;
-      result["lights"].push_back(
-          light_json(prim, transforms.GetLocalToWorldTransform(prim), result["warnings"]));
+      result["lights"].push_back(light_json(prim, transforms.GetLocalToWorldTransform(prim), result["warnings"]));
     }
     return result;
   }
@@ -498,10 +497,8 @@ namespace remix::usd {
         auto st = UsdGeomPrimvarsAPI(mesh).GetPrimvar(TfToken("st"));
         if (st)
           st.ComputeFlattened(&uv, time);
-        const auto color_primvar =
-            UsdGeomPrimvarsAPI(mesh).FindPrimvarWithInheritance(TfToken("displayColor"));
-        const auto opacity_primvar =
-            UsdGeomPrimvarsAPI(mesh).FindPrimvarWithInheritance(TfToken("displayOpacity"));
+        const auto color_primvar = UsdGeomPrimvarsAPI(mesh).FindPrimvarWithInheritance(TfToken("displayColor"));
+        const auto opacity_primvar = UsdGeomPrimvarsAPI(mesh).FindPrimvarWithInheritance(TfToken("displayOpacity"));
         VtVec3fArray colors;
         VtFloatArray opacities;
         if (color_primvar)
@@ -510,8 +507,7 @@ namespace remix::usd {
           opacity_primvar.ComputeFlattened(&opacities);
         auto binding = UsdShadeMaterialBindingAPI(prim).ComputeBoundMaterial();
         std::map<int, UsdShadeMaterial> face_materials;
-        for (auto subset :
-             UsdGeomSubset::GetGeomSubsets(mesh, UsdGeomTokens->face, TfToken("materialBind"))) {
+        for (auto subset : UsdGeomSubset::GetGeomSubsets(mesh, UsdGeomTokens->face, TfToken("materialBind"))) {
           VtIntArray faces;
           subset.GetIndicesAttr().Get(&faces, time);
           auto bound = UsdShadeMaterialBindingAPI(subset.GetPrim()).ComputeBoundMaterial();
@@ -532,8 +528,7 @@ namespace remix::usd {
           added.categoryFlags = categories.flags(prim, material);
           return added;
         };
-        const bool leftHanded =
-            attribute(prim, "orientation", UsdGeomTokens->rightHanded) == UsdGeomTokens->leftHanded;
+        const bool leftHanded = attribute(prim, "orientation", UsdGeomTokens->rightHanded) == UsdGeomTokens->leftHanded;
         // Read once: this runs per corner of millions, where asking USD for an
         // interpolation, or a non-const VtArray for an element, is what costs.
         const auto uv_interpolation = st ? st.GetInterpolation() : TfToken();
@@ -647,11 +642,10 @@ namespace remix::usd {
       } else if (auto light = UsdLuxLightAPI(prim)) {
         result["lights"].push_back(light_json(prim, world, result["warnings"]));
       } else if (auto camera = UsdGeomCamera(prim)) {
-        result["cameras"].push_back(
-            {{"id", path},
-             {"transform", matrix_json(world)},
-             {"focal_length", attribute(prim, "focalLength", 50.f)},
-             {"horizontal_aperture", attribute(prim, "horizontalAperture", 20.955f)}});
+        result["cameras"].push_back({{"id", path},
+                                     {"transform", matrix_json(world)},
+                                     {"focal_length", attribute(prim, "focalLength", 50.f)},
+                                     {"horizontal_aperture", attribute(prim, "horizontalAperture", 20.955f)}});
       }
     }
     if (!deferred.empty()) {

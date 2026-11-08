@@ -48,8 +48,7 @@ int main(int argc, char **argv) {
   try {
     require(argc == 2, "fixture path");
     auto fixture = std::filesystem::absolute(argv[1]);
-    auto dir =
-        std::filesystem::temp_directory_path() / ("openremix-replacements-" + std::to_string(getpid()));
+    auto dir = std::filesystem::temp_directory_path() / ("openremix-replacements-" + std::to_string(getpid()));
     std::filesystem::create_directories(dir / "a/maps");
     std::filesystem::create_directories(dir / "b");
     std::filesystem::create_directories(dir / "layers");
@@ -107,8 +106,7 @@ custom int preserveOriginalDrawCall = 0
     {
       NativeResources isolated;
       usd::Submission ready(isolated, prepared, 77, false);
-      isolated.drawInstance(ready.instances().front(),
-                            ready.materialHandle("/RootNode/Looks/mat_0123456789ABCDEF"));
+      isolated.drawInstance(ready.instances().front(), ready.materialHandle("/RootNode/Looks/mat_0123456789ABCDEF"));
       require(isolated.draws().back().material->texture->pixels.mips[0][0] == 200,
               "publication uses prepared textures without reading files");
     }
@@ -164,8 +162,7 @@ custom int preserveOriginalDrawCall = 0
     parent.pNext = &batch;
     batched.pNext = &parent;
     usd::modInstance(resources, batched, 0x0123456789ABCDEFull);
-    require(resources.draws().size() == 2 &&
-                resources.draws()[0].instanceId != resources.draws()[1].instanceId,
+    require(resources.draws().size() == 2 && resources.draws()[0].instanceId != resources.draws()[1].instanceId,
             "GPU-instanced parents receive distinct attachment identities");
     require(resources.draws()[1].model[12] - resources.draws()[0].model[12] == 4,
             "GPU-instanced parent transforms propagate to attachments");
@@ -204,8 +201,7 @@ custom int preserveOriginalDrawCall = 0
     texture(dir / "a/maps/color.dds", 50);
     load();
     scene.draw(false, 1);
-    require(resources.draws().back().material->texture->pixels.mips[0][0] == 50,
-            "changed texture contents reload");
+    require(resources.draws().back().material->texture->pixels.mips[0][0] == 50, "changed texture contents reload");
     resources.finishFrame();
     write(dir / "a/maps/color.dds", "malformed texture");
     load();
@@ -239,8 +235,7 @@ custom int preserveOriginalDrawCall = 0
     load();
     scene.draw(false, 1);
     require(resources.draws().size() == 2, "removing mods restores original meshes");
-    require(resources.draws()[0].material->texture->pixels.mips[0][0] == 255,
-            "original material retained separately");
+    require(resources.draws()[0].material->texture->pixels.mips[0][0] == 255, "original material retained separately");
     resources.finishFrame();
     resources.drawLight(original);
     require(resources.sphereLights()[0].radiance[0] == 1, "original light retained separately");

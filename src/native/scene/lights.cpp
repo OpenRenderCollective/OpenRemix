@@ -44,8 +44,8 @@ namespace remix {
   } // namespace
 
   remixapi_LightHandle NativeResources::overrideLight(remixapi_LightHandle original, uint64_t hash,
-                                                      const remixapi_LightInfoUSDEXT &o,
-                                                      bool replaceTransform, remixapi_Path texture) {
+                                                      const remixapi_LightInfoUSDEXT &o, bool replaceTransform,
+                                                      remixapi_Path texture) {
     auto found = m_lights.find(uint64_t(reinterpret_cast<uintptr_t>(original)));
     if (found == m_lights.end())
       throw invalid;
@@ -179,16 +179,16 @@ namespace remix {
                  value(usd->pFocus, 0)};
       shaped = shaping.coneAngleDegrees < 180 || shaping.focusExponent > 0;
       volumetric = value(usd->pVolumetricRadianceScale, 1);
-    } else if (auto *v = static_cast<const remixapi_LightInfoSphereEXT *>(
-                   ext(REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT))) {
+    } else if (auto *v =
+                   static_cast<const remixapi_LightInfoSphereEXT *>(ext(REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT))) {
       type = v->sType;
       position = vec(v->position);
       radius = v->radius;
       shaped = v->shaping_hasvalue;
       shaping = v->shaping_value;
       volumetric = v->volumetricRadianceScale;
-    } else if (auto *v = static_cast<const remixapi_LightInfoRectEXT *>(
-                   ext(REMIXAPI_STRUCT_TYPE_LIGHT_INFO_RECT_EXT))) {
+    } else if (auto *v =
+                   static_cast<const remixapi_LightInfoRectEXT *>(ext(REMIXAPI_STRUCT_TYPE_LIGHT_INFO_RECT_EXT))) {
       type = v->sType;
       position = vec(v->position);
       x = vec(v->xAxis);
@@ -199,8 +199,8 @@ namespace remix {
       shaped = v->shaping_hasvalue;
       shaping = v->shaping_value;
       volumetric = v->volumetricRadianceScale;
-    } else if (auto *v = static_cast<const remixapi_LightInfoDiskEXT *>(
-                   ext(REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DISK_EXT))) {
+    } else if (auto *v =
+                   static_cast<const remixapi_LightInfoDiskEXT *>(ext(REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DISK_EXT))) {
       type = v->sType;
       position = vec(v->position);
       x = scale(vec(v->xAxis), v->xRadius);
@@ -271,8 +271,7 @@ namespace remix {
       source.softness = shaping.coneSoftness;
       source.focus = shaping.focusExponent;
     }
-    if (auto *dome =
-            static_cast<const remixapi_LightInfoDomeEXT *>(ext(REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DOME_EXT))) {
+    if (auto *dome = static_cast<const remixapi_LightInfoDomeEXT *>(ext(REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DOME_EXT))) {
       source.transform = dome->transform;
       if (dome->colorTexture)
         source.texture = dome->colorTexture;
@@ -282,10 +281,9 @@ namespace remix {
     std::copy(position.begin(), position.end(), prototype.position);
     std::copy(radiance.begin(), radiance.end(), prototype.radiance);
     if (shaped) {
-      if (!std::isfinite(shaping.coneAngleDegrees) || shaping.coneAngleDegrees < 0 ||
-          shaping.coneAngleDegrees > 180 || !std::isfinite(shaping.coneSoftness) ||
-          shaping.coneSoftness < 0 || shaping.coneSoftness > 1 || !std::isfinite(shaping.focusExponent) ||
-          shaping.focusExponent < 0)
+      if (!std::isfinite(shaping.coneAngleDegrees) || shaping.coneAngleDegrees < 0 || shaping.coneAngleDegrees > 180 ||
+          !std::isfinite(shaping.coneSoftness) || shaping.coneSoftness < 0 || shaping.coneSoftness > 1 ||
+          !std::isfinite(shaping.focusExponent) || shaping.focusExponent < 0)
         throw invalid;
       auto d = unit(vec(shaping.direction));
       std::copy(d.begin(), d.end(), prototype.direction);
@@ -306,8 +304,8 @@ namespace remix {
         std::copy(d.begin(), d.end(), prototype.direction);
       }
     }
-    if (auto *cookie = static_cast<const remixapi_LightInfoCookieEXT *>(
-            ext(REMIXAPI_STRUCT_TYPE_LIGHT_INFO_COOKIE_EXT))) {
+    if (auto *cookie =
+            static_cast<const remixapi_LightInfoCookieEXT *>(ext(REMIXAPI_STRUCT_TYPE_LIGHT_INFO_COOKIE_EXT))) {
       if (type != REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT || !std::isfinite(cookie->fovDegrees) ||
           cookie->fovDegrees <= 0 || cookie->fovDegrees >= 180)
         throw invalid;
@@ -345,8 +343,8 @@ namespace remix {
       light.id = hashBytes(identity, sizeof(identity));
       auto center = scale(add(add(a, b), c), 1.f / 3);
       std::copy(center.begin(), center.end(), light.position);
-      light.radius = std::max({length(add(a, scale(center, -1))), length(add(b, scale(center, -1))),
-                               length(add(c, scale(center, -1)))});
+      light.radius = std::max(
+          {length(add(a, scale(center, -1))), length(add(b, scale(center, -1))), length(add(c, scale(center, -1)))});
       std::copy(a.begin(), a.end(), light.corners[0]);
       std::copy(b.begin(), b.end(), light.corners[1]);
       std::copy(c.begin(), c.end(), light.corners[2]);
@@ -367,8 +365,8 @@ namespace remix {
       if (prototype.radius > 0)
         definition.emitters.push_back(prototype);
     } else if (type == REMIXAPI_STRUCT_TYPE_LIGHT_INFO_RECT_EXT) {
-      auto a = point(-width / 2, -height / 2), b = point(width / 2, -height / 2),
-           c = point(width / 2, height / 2), d = point(-width / 2, height / 2);
+      auto a = point(-width / 2, -height / 2), b = point(width / 2, -height / 2), c = point(width / 2, height / 2),
+           d = point(-width / 2, height / 2);
       triangle(a, b, c, z);
       triangle(a, c, d, z);
     } else if (type == REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DISK_EXT) {
@@ -383,18 +381,15 @@ namespace remix {
         float a = 2 * pi * i / 64, b = 2 * pi * (i + 1) / 64;
         auto ra = add(scale(y, radius * std::cos(a)), scale(z, radius * std::sin(a))),
              rb = add(scale(y, radius * std::cos(b)), scale(z, radius * std::sin(b)));
-        auto aa = add(position, add(ra, scale(x, -span / 2))),
-             ab = add(position, add(ra, scale(x, span / 2))),
-             ba = add(position, add(rb, scale(x, -span / 2))),
-             bb = add(position, add(rb, scale(x, span / 2)));
+        auto aa = add(position, add(ra, scale(x, -span / 2))), ab = add(position, add(ra, scale(x, span / 2))),
+             ba = add(position, add(rb, scale(x, -span / 2))), bb = add(position, add(rb, scale(x, span / 2)));
         triangle(aa, ab, bb, ra);
         triangle(aa, bb, ba, rb);
       }
     } else if (type == REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DOME_EXT) {
       definition.dome.enabled = true;
       definition.dome.radiance = radiance;
-      if (auto *dome =
-              static_cast<const remixapi_LightInfoDomeEXT *>(ext(REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DOME_EXT))) {
+      if (auto *dome = static_cast<const remixapi_LightInfoDomeEXT *>(ext(REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DOME_EXT))) {
         definition.dome.worldToLocal = inverse(transform(dome->transform));
         if (dome->colorTexture && *dome->colorTexture)
           definition.dome.texture = texturePath(dome->colorTexture);

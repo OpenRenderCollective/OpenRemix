@@ -21,8 +21,8 @@ int main() {
     usd.transform.matrix[0][3] = 3;
     usd.transform.matrix[1][3] = 4;
     remixapi_Float3D color{1, .25f, 0};
-    float intensity = 4, exposure = 2, radius = 2, width = 6, height = 4, length = 8, cone = .5f,
-          softness = .3f, focus = 2;
+    float intensity = 4, exposure = 2, radius = 2, width = 6, height = 4, length = 8, cone = .5f, softness = .3f,
+          focus = 2;
     usd.pColor = &color;
     usd.pIntensity = &intensity;
     usd.pExposure = &exposure;
@@ -35,9 +35,8 @@ int main() {
     info.hash = 11;
     info.pNext = &usd;
     remixapi_LightHandle handle{};
-    for (auto type :
-         {REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT, REMIXAPI_STRUCT_TYPE_LIGHT_INFO_RECT_EXT,
-          REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DISK_EXT, REMIXAPI_STRUCT_TYPE_LIGHT_INFO_CYLINDER_EXT}) {
+    for (auto type : {REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT, REMIXAPI_STRUCT_TYPE_LIGHT_INFO_RECT_EXT,
+                      REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DISK_EXT, REMIXAPI_STRUCT_TYPE_LIGHT_INFO_CYLINDER_EXT}) {
       usd.lightType = type;
       resources.createLight(info, handle);
       resources.drawLight(handle);
@@ -64,8 +63,7 @@ int main() {
     usd.lightType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DISTANT_EXT;
     resources.createLight(info, handle);
     resources.drawLight(handle);
-    require(resources.light().isDistant && resources.light().direction[2] == -1 &&
-                resources.light().radiance[0] == 16,
+    require(resources.light().isDistant && resources.light().direction[2] == -1 && resources.light().radiance[0] == 16,
             "USD distant conversion");
     resources.finishFrame();
     remixapi_LightInfoDomeEXT dome{};
@@ -92,8 +90,7 @@ int main() {
     texture.dataSize = 8;
     texture.format = REMIXAPI_FORMAT_BC4_UNORM_EXT;
     auto scalar = remix::scene::decodeTexture(texture);
-    require(scalar.mips[0][0] == 255 && scalar.mips[0][1] == 255 && scalar.mips[0][3] == 255,
-            "BC4 scalar channels");
+    require(scalar.mips[0][0] == 255 && scalar.mips[0][1] == 255 && scalar.mips[0][3] == 255, "BC4 scalar channels");
     texture.dataSize = 16;
     texture.format = REMIXAPI_FORMAT_BC6H_UFLOAT_EXT;
     uint32_t rng = 123;

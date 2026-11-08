@@ -31,6 +31,17 @@ namespace remix {
     uint64_t chainFingerprint(uint64_t contentHash, uint64_t seed = 1469598103934665603ull) {
       return scene::hashBytes(&contentHash, sizeof(contentHash), seed);
     }
+    // A view's opacity: its partitions' keys, each followed by its micromap's
+    // hash (or zero), so views and BLAS inputs never share a stale micromap.
+    std::string opacityIdentity(const OpacityPartition *const *partitions, size_t count) {
+      std::string identity;
+      for (size_t i = 0; i < count; ++i) {
+        identity.append(partitions[i]->key);
+        const uint64_t hash = partitions[i]->micromap ? partitions[i]->micromap->hash : 0;
+        identity.append(reinterpret_cast<const char *>(&hash), sizeof(hash));
+      }
+      return identity;
+    }
   } // namespace
 
   VkBuildAccelerationStructureFlagsKHR PathTracer::Gpu::flags(bool deform) const {
@@ -40,7 +51,7 @@ namespace remix {
   }
 
   PathTracer::Gpu::MeshView &PathTracer::Gpu::mesh(VkCommandBuffer command, const Draw &draw,
-      const std::vector<const scene::OpacityPartition *> &partitions) {
+                                                   const std::vector<const scene::OpacityPartition *> &partitions) {
     MeshConversion conversion;
     bool convert = false;
     auto &view = meshView(draw, partitions.data(), partitions.size(), conversion, convert);
@@ -55,14 +66,14 @@ namespace remix {
   }
 
   PathTracer::Gpu::MeshView &PathTracer::Gpu::meshView(const Draw &draw,
-      const scene::OpacityPartition *const *partitions, size_t partitionCount, MeshConversion &conversion,
-      bool &convert) {
+                                                       const scene::OpacityPartition *const *partitions,
+                                                       size_t partitionCount, MeshConversion &conversion,
+                                                       bool &convert) {
     ScopedTicks time{geometryTicks};
     convert = false;
-    std::string opaque;
-    for (size_t i = 0; i < partitionCount; ++i) opaque.append(partitions[i]->key);
+    std::string opaque = opacityIdentity(partitions, partitionCount);
     const bool skinned = draw.bones && std::any_of(draw.mesh->surfaces.begin(), draw.mesh->surfaces.end(),
-                                                  [](const auto &s) { return s->bonesPerVertex != 0; });
+                                                   [](const auto &s) { return s->bonesPerVertex != 0; });
     const bool streaming = bool(draw.mesh->updateStream);
     const bool deform = skinned || streaming;
     // Each independently animated skin owns its BLAS. Opt-in CPU replacements
@@ -81,9 +92,13 @@ namespace remix {
         auto old = meshes.find(found->second);
         if (old != meshes.end() && old->second.updateStream == draw.mesh->updateStream &&
             old->second.lastUse != sequence) {
-          if (view.geometry) retiredGeometry.push_back(std::move(view.geometry));
-          for (auto &vertices : view.vertices) retiredBuffers.push_back(std::move(vertices));
-          view = std::move(old->second); deformViews.erase(&old->first); meshes.erase(old);
+          if (view.geometry)
+            retiredGeometry.push_back(std::move(view.geometry));
+          for (auto &vertices : view.vertices)
+            retiredBuffers.push_back(std::move(vertices));
+          view = std::move(old->second);
+          deformViews.erase(&old->first);
+          meshes.erase(old);
         }
       }
       updateViews[lineage] = key;
@@ -120,14 +135,13 @@ namespace remix {
     return view;
   }
 
-  PathTracer::Gpu::MeshView *PathTracer::Gpu::findView(const Draw &draw,
-      const scene::OpacityPartition *const *partitions, size_t partitionCount) {
+  PathTracer::Gpu::MeshView *
+  PathTracer::Gpu::findView(const Draw &draw, const scene::OpacityPartition *const *partitions, size_t partitionCount) {
     if (draw.mesh->updateStream)
       return nullptr;
-    std::string opaque;
-    for (size_t i = 0; i < partitionCount; ++i) opaque.append(partitions[i]->key);
+    std::string opaque = opacityIdentity(partitions, partitionCount);
     const bool skinned = draw.bones && std::any_of(draw.mesh->surfaces.begin(), draw.mesh->surfaces.end(),
-                                                  [](const auto &s) { return s->bonesPerVertex != 0; });
+                                                   [](const auto &s) { return s->bonesPerVertex != 0; });
     const MeshViewKey key{draw.mesh.get(), skinned ? draw.instanceId : 0, skinned ? draw.instanceIndex : 0,
                           std::move(opaque)};
     const auto found = meshes.find(key);
@@ -160,20 +174,30 @@ namespace remix {
     auto &vertexOffsets = data.vertexOffsets, &indexOffsets = data.indexOffsets;
     auto &counts = data.counts, &vertexCounts = data.vertexCounts;
     auto &groups = data.groups;
-    vertexOffsets.clear(); indexOffsets.clear(); counts.clear(); vertexCounts.clear(); groups.clear();
+    vertexOffsets.clear();
+    indexOffsets.clear();
+    counts.clear();
+    vertexCounts.clear();
+    groups.clear();
+    data.micromapData.clear();
+    data.micromapTriangles.clear();
     const auto surfaceCount = draw.mesh->surfaces.size();
     const auto surfaceHeader = uint32_t(surfaceCount);
     append(&surfaceHeader, sizeof(surfaceHeader));
     shading.resize(surfaceCount);
     size_t surfaceIndex = 0;
-    vertexOffsets.reserve(surfaceCount); indexOffsets.reserve(surfaceCount);
-    counts.reserve(surfaceCount); vertexCounts.reserve(surfaceCount);
+    vertexOffsets.reserve(surfaceCount);
+    indexOffsets.reserve(surfaceCount);
+    counts.reserve(surfaceCount);
+    vertexCounts.reserve(surfaceCount);
     float low[3] = {INFINITY, INFINITY, INFINITY}, high[3] = {-INFINITY, -INFINITY, -INFINITY};
     // Every byte is hashed once: per-surface positions, attributes (texture
     // coordinates and colors) and normals here, and the remaining content
     // (counts, indices, partitions, opacity) as the topology below. The
     // content and shading hashes combine those parts.
-    data.positionHashes.clear(); data.attributeHashes.clear(); data.normalHashes.clear();
+    data.positionHashes.clear();
+    data.attributeHashes.clear();
+    data.normalHashes.clear();
     auto &attributes = data.attributeScratch, &normals = data.normalScratch;
     for (const auto &surface : draw.mesh->surfaces) {
       uint32_t count[3] = {uint32_t(surface->vertices.size()), uint32_t(surface->indices.size()),
@@ -198,19 +222,20 @@ namespace remix {
             size_t index = i * surface->bonesPerVertex + b;
             const auto &matrix = (*draw.bones)[surface->bones[index]];
             for (int r = 0; r < 3; ++r)
-              vertex.position[r] += surface->weights[index] *
-                                    (matrix[r] * original.position[0] + matrix[4 + r] * original.position[1] +
-                                     matrix[8 + r] * original.position[2] + matrix[12 + r]);
+              vertex.position[r] +=
+                  surface->weights[index] * (matrix[r] * original.position[0] + matrix[4 + r] * original.position[1] +
+                                             matrix[8 + r] * original.position[2] + matrix[12 + r]);
             for (int r = 0; r < 3; ++r)
-              vertex.normal[r] += surface->weights[index] *
-                  (matrix[r] * original.normal[0] + matrix[4 + r] * original.normal[1] +
-                   matrix[8 + r] * original.normal[2]);
+              vertex.normal[r] +=
+                  surface->weights[index] * (matrix[r] * original.normal[0] + matrix[4 + r] * original.normal[1] +
+                                             matrix[8 + r] * original.normal[2]);
           }
           // Unit-scale normals: no overflow guard needed (std::hypot is far slower).
           const float length = std::sqrt(vertex.normal[0] * vertex.normal[0] + vertex.normal[1] * vertex.normal[1] +
                                          vertex.normal[2] * vertex.normal[2]);
           if (std::isfinite(length) && length > 1e-12f)
-            for (float &component : vertex.normal) component /= length;
+            for (float &component : vertex.normal)
+              component /= length;
           else
             std::fill_n(vertex.normal, 3, 0.f);
         }
@@ -226,7 +251,8 @@ namespace remix {
         // Reuse the existing shading-vertex padding, preserving its 48-byte
         // stride and the position-only BLAS input size.
         out.position[3] = vertex.normal[0];
-        out.uv[2] = vertex.normal[1]; out.uv[3] = vertex.normal[2];
+        out.uv[2] = vertex.normal[1];
+        out.uv[3] = vertex.normal[2];
         std::copy_n(vertex.uv, 2, attributes.data() + i * 6);
         std::copy_n(vertex.color, 4, attributes.data() + i * 6 + 2);
         std::copy_n(vertex.normal, 3, normals.data() + i * 3);
@@ -237,8 +263,36 @@ namespace remix {
       indexOffsets.push_back(content.size());
       append(surface->indices.data(), surface->indices.size() * 4);
       const auto &partition = *partitions[surfaceIndex];
+      // The surface's micromap joins the BLAS's (one per BLAS): its triangles
+      // and data follow the earlier surfaces', and each non-opaque group gets
+      // its triangles' micromap indices, in the group's order.
+      const auto *micromap = partition.micromap.get();
+      const int32_t micromapBase = int32_t(data.micromapTriangles.size());
+      if (micromap) {
+        for (auto triangle : micromap->triangles) {
+          triangle.dataOffset += uint32_t(data.micromapData.size());
+          data.micromapTriangles.push_back(triangle);
+        }
+        data.micromapData.insert(data.micromapData.end(), micromap->data.begin(), micromap->data.end());
+      }
+      auto appendMicromap = [&](GeometryGroup &group) {
+        if (!micromap || group.opaque)
+          return;
+        group.micromapIndices = content.size();
+        for (uint32_t triangle = 0; triangle < partition.triangles; ++triangle) {
+          if (partition.opaque(triangle))
+            continue;
+          int32_t index = micromap->indices[triangle];
+          if (index >= 0) {
+            ++group.micromapUsage[micromap->triangles[size_t(index)].subdivisionLevel];
+            index += micromapBase;
+          }
+          append(&index, sizeof(index));
+        }
+      };
       if (partition.key[0] != 2) {
         groups.push_back({uint32_t(surfaceIndex), count[1] / 3, indexOffsets.back(), 0, partition.key[0] == 1});
+        appendMicromap(groups.back());
         counts.push_back(count[1] / 3);
       } else {
         // AS/shading indices share the partition order. Raster indices, vertex
@@ -247,17 +301,26 @@ namespace remix {
           GeometryGroup group{uint32_t(surfaceIndex), 0, content.size(), 0, solid};
           for (uint32_t triangle = 0; triangle < partition.triangles; ++triangle)
             if (partition.opaque(triangle) == solid) {
-              append(surface->indices.data() + triangle * 3, 12); ++group.count;
+              append(surface->indices.data() + triangle * 3, 12);
+              ++group.count;
             }
           group.triangleMap = content.size();
           for (uint32_t triangle = 0; triangle < partition.triangles; ++triangle)
-            if (partition.opaque(triangle) == solid) append(&triangle, sizeof(triangle));
-          counts.push_back(group.count); groups.push_back(group);
+            if (partition.opaque(triangle) == solid)
+              append(&triangle, sizeof(triangle));
+          appendMicromap(group);
+          counts.push_back(group.count);
+          groups.push_back(group);
         }
       }
       vertexCounts.push_back(count[0]);
       ++surfaceIndex;
     }
+    data.micromapHash = data.micromapTriangles.empty()
+                            ? 0
+                            : scene::fastHash(data.micromapTriangles.data(),
+                                              data.micromapTriangles.size() * sizeof(scene::OpacityMicromap::Triangle),
+                                              scene::fastHash(data.micromapData.data(), data.micromapData.size()));
     // Opacity is part of BLAS identity, including independently skinned and
     // streamed variants. Append after geometry data to preserve input alignment.
     content.append(opaque);
@@ -278,8 +341,8 @@ namespace remix {
     for (size_t i = 0; i < shading.size(); ++i) {
       data.contentHash = chainFingerprint(data.positionHashes[i], data.contentHash);
       // TraceVertex holds exactly position, normal, texture coordinates and color.
-      data.shadingHashes.push_back(chainFingerprint(
-          data.normalHashes[i], chainFingerprint(data.attributeHashes[i], data.positionHashes[i])));
+      data.shadingHashes.push_back(
+          chainFingerprint(data.normalHashes[i], chainFingerprint(data.attributeHashes[i], data.positionHashes[i])));
     }
   }
 
@@ -302,11 +365,12 @@ namespace remix {
       assembleFailed = true;
       return;
     }
-    const VkComputePipelineCreateInfo info = {
-        .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
-        .stage = {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                  .stage = VK_SHADER_STAGE_COMPUTE_BIT, .module = module, .pName = "main"},
-        .layout = assembleLayout};
+    const VkComputePipelineCreateInfo info = {.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+                                              .stage = {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                                                        .stage = VK_SHADER_STAGE_COMPUTE_BIT,
+                                                        .module = module,
+                                                        .pName = "main"},
+                                              .layout = assembleLayout};
     const auto result = pipeline::createComputePipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &assemble);
     pipeline::destroyShaderModule(device, module, nullptr);
     // Off the compiler worker a new pipeline is not ready yet: full uploads until it is.
@@ -320,8 +384,8 @@ namespace remix {
     if (assembleJobs.empty() && skinJobs.empty())
       return;
     // Positions (and the inputs skinning writes over) were copied this frame.
-    barrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
-            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+    barrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
     if (!assembleJobs.empty()) {
       vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, assemble);
       for (const auto &job : assembleJobs) {
@@ -359,11 +423,12 @@ namespace remix {
       skinFailed = true;
       return;
     }
-    const VkComputePipelineCreateInfo info = {
-        .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
-        .stage = {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                  .stage = VK_SHADER_STAGE_COMPUTE_BIT, .module = module, .pName = "main"},
-        .layout = skinLayout};
+    const VkComputePipelineCreateInfo info = {.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+                                              .stage = {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                                                        .stage = VK_SHADER_STAGE_COMPUTE_BIT,
+                                                        .module = module,
+                                                        .pName = "main"},
+                                              .layout = skinLayout};
     const auto result = pipeline::createComputePipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &skin);
     pipeline::destroyShaderModule(device, module, nullptr);
     // Off the compiler worker a new pipeline is not ready yet: CPU skinning until it is.
@@ -392,11 +457,12 @@ namespace remix {
       woundFailed = true;
       return;
     }
-    const VkComputePipelineCreateInfo info = {
-        .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
-        .stage = {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                  .stage = VK_SHADER_STAGE_COMPUTE_BIT, .module = module, .pName = "main"},
-        .layout = woundLayout};
+    const VkComputePipelineCreateInfo info = {.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+                                              .stage = {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                                                        .stage = VK_SHADER_STAGE_COMPUTE_BIT,
+                                                        .module = module,
+                                                        .pName = "main"},
+                                              .layout = woundLayout};
     const auto result = pipeline::createComputePipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &wound);
     pipeline::destroyShaderModule(device, module, nullptr);
     // Off the compiler worker a new pipeline is not ready yet: uncut until it is.
@@ -415,8 +481,8 @@ namespace remix {
     if (!woundVertices || woundVertices->size < bytes) {
       if (woundVertices)
         retiredBuffers.push_back(std::move(woundVertices));
-      woundVertices = buffer(bytes + bytes / 2, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                             false, true);
+      woundVertices =
+          buffer(bytes + bytes / 2, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, false, true);
     }
     if (!wound && !woundFailed)
       createWoundPipeline();
@@ -520,6 +586,10 @@ namespace remix {
       triangles.vertexData.deviceAddress = g.input->address + view.skinOffsets[g.groups[j].surface];
       triangles.indexData.deviceAddress = g.input->address + g.groups[j].indices;
     }
+    // The micromap indices moved with the rest of the input (same micromap).
+    for (size_t j = 0, k = 0; j < g.groups.size() && k < g.micromapGeometries.size(); ++j)
+      if (g.groups[j].micromapIndices)
+        g.micromapGeometries[k++].indexBuffer.deviceAddress = g.input->address + g.groups[j].micromapIndices;
     // Skins keep refitting (their bones move the whole bound), as on the CPU path.
     g.update = true;
     ++g.refits;
@@ -547,6 +617,56 @@ namespace remix {
       view.fingerprint = chainFingerprint(chainFingerprint(bonesHash, i), view.fingerprint);
       view.vertices.push_back(std::move(target));
     }
+  }
+
+  std::shared_ptr<PathTracer::Gpu::Micromap> PathTracer::Gpu::micromap(VkCommandBuffer command,
+                                                                       const GeometryScratch &data) {
+    using M = scene::OpacityMicromap;
+    auto result = std::make_shared<Micromap>();
+    result->device = device;
+    result->destroy = destroyMicromap;
+    // Only special indices: one unreferenced triangle (a micromap has one).
+    static const M::Triangle unused{0, 1, M::Format4State};
+    static const uint8_t unknown = 0xff;
+    const bool empty = data.micromapTriangles.empty();
+    const M::Triangle *triangles = empty ? &unused : data.micromapTriangles.data();
+    const size_t triangleCount = empty ? 1 : data.micromapTriangles.size();
+    const uint8_t *bytes = empty ? &unknown : data.micromapData.data();
+    const size_t byteCount = empty ? 1 : data.micromapData.size();
+    std::array<uint32_t, M::maxLevel + 1> levels{};
+    for (size_t i = 0; i < triangleCount; ++i)
+      ++levels[triangles[i].subdivisionLevel];
+    for (uint32_t level = 0; level < levels.size(); ++level)
+      if (levels[level])
+        result->usage.push_back(
+            {.count = levels[level], .subdivisionLevel = level, .format = VK_OPACITY_MICROMAP_FORMAT_4_STATE_EXT});
+    // Data and triangle array at 256-byte aligned addresses.
+    const VkDeviceSize trianglesOffset = align(byteCount, 256);
+    const VkDeviceSize triangleBytes = triangleCount * sizeof(M::Triangle);
+    result->input = buffer(trianglesOffset + triangleBytes + 256,
+                           VK_BUFFER_USAGE_MICROMAP_BUILD_INPUT_READ_ONLY_BIT_EXT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+    const VkDeviceSize base = align(result->input->address, 256) - result->input->address;
+    const VkBufferCopy copies[] = {{.srcOffset = stage(bytes, byteCount), .dstOffset = base, .size = byteCount},
+                                   {.srcOffset = stage(triangles, size_t(triangleBytes)),
+                                    .dstOffset = base + trianglesOffset,
+                                    .size = triangleBytes}};
+    vkCmdCopyBuffer(command, staging.buffer->handle, result->input->handle, 2, copies);
+    result->data = result->input->address + base;
+    result->triangles = result->data + trianglesOffset;
+    const VkMicromapBuildInfoEXT build = {.sType = VK_STRUCTURE_TYPE_MICROMAP_BUILD_INFO_EXT,
+                                          .type = VK_MICROMAP_TYPE_OPACITY_MICROMAP_EXT,
+                                          .flags = VK_BUILD_MICROMAP_PREFER_FAST_TRACE_BIT_EXT,
+                                          .mode = VK_BUILD_MICROMAP_MODE_BUILD_EXT,
+                                          .usageCountsCount = uint32_t(result->usage.size()),
+                                          .pUsageCounts = result->usage.data()};
+    micromapBuildSizes(device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &build, &result->sizes);
+    result->storage = buffer(result->sizes.micromapSize, VK_BUFFER_USAGE_MICROMAP_STORAGE_BIT_EXT);
+    const VkMicromapCreateInfoEXT info = {.sType = VK_STRUCTURE_TYPE_MICROMAP_CREATE_INFO_EXT,
+                                          .buffer = result->storage->handle,
+                                          .size = result->sizes.micromapSize,
+                                          .type = VK_MICROMAP_TYPE_OPACITY_MICROMAP_EXT};
+    check(createMicromap(device, &info, nullptr, &result->handle));
+    return result;
   }
 
   void PathTracer::Gpu::commitMesh(VkCommandBuffer command, MeshConversion &conversion) {
@@ -577,7 +697,8 @@ namespace remix {
       auto found = geometryCache.find(content);
       if (found != geometryCache.end())
         view.geometry = found->second.lock();
-      if (view.geometry) ++performance.geometryCacheHits;
+      if (view.geometry)
+        ++performance.geometryCacheHits;
     }
     if (!view.geometry || deform) {
       bool update = view.geometry != nullptr;
@@ -590,15 +711,31 @@ namespace remix {
       // refitting as without a lineage: their bones move the whole bound.
       if (update && streaming && !skinned) {
         const float limit = std::max(g.diagonal * .25f, .001f);
-        if (g.refits >= 60) update = false;
+        if (g.refits >= 60)
+          update = false;
         for (unsigned c = 0; c < 3; ++c)
-          if (std::abs(low[c] - g.buildLow[c]) > limit || std::abs(high[c] - g.buildHigh[c]) > limit) update = false;
+          if (std::abs(low[c] - g.buildLow[c]) > limit || std::abs(high[c] - g.buildHigh[c]) > limit)
+            update = false;
+      }
+      // A refit keeps the micromap its BLAS was built with; another one (or
+      // none) builds the BLAS again, with sizes for it.
+      const bool micromapped = std::any_of(data.groups.begin(), data.groups.end(),
+                                           [](const GeometryGroup &group) { return group.micromapIndices != 0; });
+      const bool newMicromap = micromapped && (!g.micromap || g.micromapHash != data.micromapHash);
+      if (newMicromap || (!micromapped && g.micromap)) {
+        update = false;
+        if (g.accel)
+          retired.push_back(std::move(g.accel));
+        g.micromap.reset();
+        g.micromapHash = 0;
       }
       g.update = update;
-      if (update) ++g.refits;
+      if (update)
+        ++g.refits;
       else {
         g.refits = 0;
-        std::copy_n(low, 3, g.buildLow.begin()); std::copy_n(high, 3, g.buildHigh.begin());
+        std::copy_n(low, 3, g.buildLow.begin());
+        std::copy_n(high, 3, g.buildHigh.begin());
       }
       g.pending = true;
       g.counts = data.counts;
@@ -641,23 +778,49 @@ namespace remix {
       if (previousInput)
         retiredBuffers.push_back(std::move(previousInput));
       g.topologyHash = data.topologyHash;
+      if (newMicromap) {
+        g.micromap = micromap(command, data);
+        g.micromapHash = data.micromapHash;
+      }
       g.geometries.clear();
       g.ranges.clear();
-      if (data.groups.size() > asProperties.maxGeometryCount) throw VK_ERROR_TOO_MANY_OBJECTS;
+      if (data.groups.size() > asProperties.maxGeometryCount)
+        throw VK_ERROR_TOO_MANY_OBJECTS;
+      // Stable addresses: the geometries' pNext chains point into these.
+      g.micromapGeometries.clear();
+      g.micromapUsage.clear();
+      g.micromapGeometries.reserve(data.groups.size());
+      g.micromapUsage.reserve(data.groups.size());
       for (const auto &group : data.groups) {
         const auto i = group.surface;
-        VkAccelerationStructureGeometryKHR geometry = {
-            .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR,
-            .geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR,
-            .flags = group.opaque ? VK_GEOMETRY_OPAQUE_BIT_KHR : VkGeometryFlagsKHR(0)};
-        geometry.geometry.triangles = {
-            .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR,
-            .vertexFormat = VK_FORMAT_R32G32B32_SFLOAT,
-            .vertexData = {.deviceAddress = g.input->address + data.vertexOffsets[i]},
-            .vertexStride = 12,
-            .maxVertex = data.vertexCounts[i] - 1,
-            .indexType = VK_INDEX_TYPE_UINT32,
-            .indexData = {.deviceAddress = g.input->address + group.indices}};
+        VkAccelerationStructureGeometryKHR geometry = {.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR,
+                                                       .geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR,
+                                                       .flags = group.opaque ? VK_GEOMETRY_OPAQUE_BIT_KHR
+                                                                             : VkGeometryFlagsKHR(0)};
+        geometry.geometry.triangles = {.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR,
+                                       .vertexFormat = VK_FORMAT_R32G32B32_SFLOAT,
+                                       .vertexData = {.deviceAddress = g.input->address + data.vertexOffsets[i]},
+                                       .vertexStride = 12,
+                                       .maxVertex = data.vertexCounts[i] - 1,
+                                       .indexType = VK_INDEX_TYPE_UINT32,
+                                       .indexData = {.deviceAddress = g.input->address + group.indices}};
+        if (g.micromap && group.micromapIndices) {
+          auto &usage = g.micromapUsage.emplace_back();
+          for (uint32_t level = 0; level < group.micromapUsage.size(); ++level)
+            if (group.micromapUsage[level])
+              usage.push_back({.count = group.micromapUsage[level],
+                               .subdivisionLevel = level,
+                               .format = VK_OPACITY_MICROMAP_FORMAT_4_STATE_EXT});
+          g.micromapGeometries.push_back(
+              {.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_TRIANGLES_OPACITY_MICROMAP_EXT,
+               .indexType = VK_INDEX_TYPE_UINT32,
+               .indexBuffer = {.deviceAddress = g.input->address + group.micromapIndices},
+               .indexStride = sizeof(int32_t),
+               .usageCountsCount = uint32_t(usage.size()),
+               .pUsageCounts = usage.data(),
+               .micromap = g.micromap->handle});
+          geometry.geometry.triangles.pNext = &g.micromapGeometries.back();
+        }
         g.geometries.push_back(geometry);
         g.ranges.push_back({.primitiveCount = group.count});
       }
@@ -667,10 +830,12 @@ namespace remix {
           .flags = flags(deform),
           .geometryCount = uint32_t(g.geometries.size()),
           .pGeometries = g.geometries.data()};
-      if (!g.accel) buildSizes(device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &build, data.counts.data(), &g.sizes);
       if (!g.accel)
-        g.accel =
-            acceleration(g.sizes.accelerationStructureSize, VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR);
+        buildSizes(device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &build, data.counts.data(), &g.sizes);
+      if (!g.accel) {
+        g.accel = acceleration(g.sizes.accelerationStructureSize, VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR);
+        g.accel->micromap = g.micromap;
+      }
       if (!deform)
         geometryCache[content] = view.geometry;
     }

@@ -307,11 +307,11 @@ namespace remix {
     m_vsync = settings.vsync;
   }
 
-
   bool RemixNativeRuntime::preparationPending() const { return bool(m_preparation); }
   double RemixNativeRuntime::preparationSeconds() const {
-    return m_preparation ? std::chrono::duration<double>(std::chrono::steady_clock::now() - m_preparation->started).count()
-                         : 0;
+    return m_preparation
+               ? std::chrono::duration<double>(std::chrono::steady_clock::now() - m_preparation->started).count()
+               : 0;
   }
 
   // runtime/configuration.cpp prepareSettings: a configuration change prepares
@@ -321,12 +321,11 @@ namespace remix {
     auto &g = *m_gpu;
     // The sticky local-light contract: temporary culling must not rebuild
     // denoisers or discard their histories.
-    const bool detectedLocal =
-        m_raster.hasSphereLights() || m_raster.staticEmissiveCount() ||
-        std::any_of(m_raster.draws().begin(), m_raster.draws().end(), [](const auto &draw) {
-          const auto &e = draw.material->emission;
-          return draw.traced() && (e[0] > 0 || e[1] > 0 || e[2] > 0);
-        });
+    const bool detectedLocal = m_raster.hasSphereLights() || m_raster.staticEmissiveCount() ||
+                               std::any_of(m_raster.draws().begin(), m_raster.draws().end(), [](const auto &draw) {
+                                 const auto &e = draw.material->emission;
+                                 return draw.traced() && (e[0] > 0 || e[1] > 0 || e[2] > 0);
+                               });
     m_localSourcesSeen = settings.backend && (m_localSourcesSeen || detectedLocal);
     const bool local = m_localSourcesSeen || (settings.trace.sigma && settings.trace.localLights);
     std::erase_if(m_obsoletePreparations, [](const auto &preparation) { return preparation->done.load(); });
@@ -345,9 +344,9 @@ namespace remix {
       m_failedConfiguration.reset();
     } else {
       const bool perspective = m_raster.cameraValid() && metal::reconstruction::supportsCamera(m_raster.projection());
-      const auto desired = metal::PathTracer::Configuration::of(
-          (__bridge void *)g.device, settings.trace, settings.frameGeneration, local, perspective, width, height,
-          uint32_t(g.format));
+      const auto desired =
+          metal::PathTracer::Configuration::of((__bridge void *)g.device, settings.trace, settings.frameGeneration,
+                                               local, perspective, width, height, uint32_t(g.format));
       if (m_pathTracer && m_pathTracer->configuration() == desired)
         retire();
       else {
@@ -391,11 +390,11 @@ namespace remix {
             m_pathTracer = std::move(prepared->tracer);
             m_traceUnavailable.clear();
             const auto &c = m_pathTracer->configuration();
-            SDL_Log("OpenRemix Metal path tracer ready in %.1f ms (%ux%u, REBLUR %d, TAA %d, SIGMA %d, local %d, "
-                    "SHARC %d)",
-                    std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - prepared->started)
-                        .count(),
-                    c.width, c.height, c.reblur, c.taa, c.sigma, c.localDenoise, c.sharc);
+            SDL_Log(
+                "OpenRemix Metal path tracer ready in %.1f ms (%ux%u, REBLUR %d, TAA %d, SIGMA %d, local %d, "
+                "SHARC %d)",
+                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - prepared->started).count(),
+                c.width, c.height, c.reblur, c.taa, c.sigma, c.localDenoise, c.sharc);
           }
         }
       }
@@ -468,10 +467,10 @@ namespace remix {
     auto result = m_pathTracer ? m_pathTracer->statistics()
                                : remixapi_TracingStatisticsEXT{.structSize = sizeof(remixapi_TracingStatisticsEXT)};
     const bool denoiserWarming = m_pathTracer && m_pathTracer->denoisingStatistics().redrawRequested;
-    result.redrawRequested = preparationPending() ||
-                             (m_backend && (result.redrawRequested || denoiserWarming ||
-                                            m_profiles.current().trace.accumulate)) ||
-                             m_profiles.current() != m_appliedSettings;
+    result.redrawRequested =
+        preparationPending() ||
+        (m_backend && (result.redrawRequested || denoiserWarming || m_profiles.current().trace.accumulate)) ||
+        m_profiles.current() != m_appliedSettings;
     return result;
   }
 
@@ -482,7 +481,8 @@ namespace remix {
                                : remixapi_SharcStatisticsEXT{.structSize = sizeof(remixapi_SharcStatisticsEXT)};
     result.requested = m_profiles.current().trace.sharc;
     if (!m_pathTracer)
-      std::strncpy(result.unavailableReason, REMIX_HAS_SHARC ? "Path tracing is inactive" : "SHARC was disabled at build time",
+      std::strncpy(result.unavailableReason,
+                   REMIX_HAS_SHARC ? "Path tracing is inactive" : "SHARC was disabled at build time",
                    sizeof(result.unavailableReason) - 1);
     return result;
   }
@@ -491,8 +491,9 @@ namespace remix {
     if (const auto *busy = busyState())
       return busy->guiding;
     remixapi_LocalLightGuidingStatisticsEXT result =
-        m_pathTracer && m_backend ? m_pathTracer->localLightGuidingStatistics()
-                                  : remixapi_LocalLightGuidingStatisticsEXT{.structSize = sizeof(remixapi_LocalLightGuidingStatisticsEXT)};
+        m_pathTracer && m_backend
+            ? m_pathTracer->localLightGuidingStatistics()
+            : remixapi_LocalLightGuidingStatisticsEXT{.structSize = sizeof(remixapi_LocalLightGuidingStatisticsEXT)};
     result.requested = m_profiles.current().trace.localGuiding;
     result.influenceRange = m_profiles.current().trace.localRange;
     return result;
@@ -501,8 +502,9 @@ namespace remix {
   remixapi_LocalLightStatisticsEXT RemixNativeRuntime::localLightStatistics() const {
     if (const auto *busy = busyState())
       return busy->localLight;
-    auto result = m_pathTracer ? m_pathTracer->localLightStatistics()
-                               : remixapi_LocalLightStatisticsEXT{.structSize = sizeof(remixapi_LocalLightStatisticsEXT)};
+    auto result = m_pathTracer
+                      ? m_pathTracer->localLightStatistics()
+                      : remixapi_LocalLightStatisticsEXT{.structSize = sizeof(remixapi_LocalLightStatisticsEXT)};
     result.enabled = m_profiles.current().trace.localLights;
     result.samples = m_profiles.current().trace.localSamples;
     return result;
@@ -543,8 +545,8 @@ namespace remix {
     stats.usedBufferBytes = raster.geometryBytes;
     if (m_pathTracer)
       stats.usedAccelerationStructureBytes = m_pathTracer->statistics().accelerationBytes;
-    stats.totalUsedBytes = stats.usedMaterialTextureBytes + stats.usedBufferBytes +
-                           stats.usedAccelerationStructureBytes;
+    stats.totalUsedBytes =
+        stats.usedMaterialTextureBytes + stats.usedBufferBytes + stats.usedAccelerationStructureBytes;
     stats.totalAllocatedBytes = stats.totalUsedBytes;
     @autoreleasepool {
       // Unified memory: the process's GPU allocations and the working set the

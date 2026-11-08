@@ -211,7 +211,8 @@ namespace remix::scene {
       // Runs of a surface in nearly equal parts of at most m_clusterSize.
       const uint32_t run = j - i, parts = (run + m_clusterSize - 1) / m_clusterSize;
       for (uint32_t p = 0; p < parts; ++p) {
-        const uint32_t from = i + uint32_t(uint64_t(run) * p / parts), to = i + uint32_t(uint64_t(run) * (p + 1) / parts);
+        const uint32_t from = i + uint32_t(uint64_t(run) * p / parts),
+                       to = i + uint32_t(uint64_t(run) * (p + 1) / parts);
         std::array<float, 3> center{};
         for (uint32_t e = from; e < to; ++e)
           for (unsigned c = 0; c < 3; ++c)
@@ -229,8 +230,7 @@ namespace remix::scene {
     const auto start = std::chrono::steady_clock::now();
     const uint64_t buildsBefore = builds;
     const auto finish = [&] {
-      updateMilliseconds =
-          std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+      updateMilliseconds = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
       if (builds != buildsBefore)
         buildTotalMilliseconds += buildMilliseconds = updateMilliseconds;
     };
@@ -562,8 +562,8 @@ namespace remix::scene {
           stamps[part].push_back(placed.stamp);
           seen[part].push_back(placed.seen);
         }
-      build(std::move(parts[0]), std::move(stamps[0]), std::move(seen[0]), std::move(parts[1]),
-            std::move(stamps[1]), std::move(seen[1]), reason);
+      build(std::move(parts[0]), std::move(stamps[0]), std::move(seen[0]), std::move(parts[1]), std::move(stamps[1]),
+            std::move(seen[1]), reason);
       geometryChanged = true;
       retired = stale = 0;
       nextStale = ~0ull;
@@ -635,8 +635,9 @@ namespace remix::scene {
           difference += std::abs(double(now.radiance[c]) - then.radiance[c]);
         const bool moved = (oldEnergy == 0) != (newEnergy == 0) || !sameGeometry(now, then);
         changed += moved ? std::max(oldEnergy, newEnergy)
-                         : newEnergy > 0 ? difference * newEnergy / (double(now.radiance[0]) + now.radiance[1] + now.radiance[2])
-                                         : 0;
+                   : newEnergy > 0
+                       ? difference * newEnergy / (double(now.radiance[0]) + now.radiance[1] + now.radiance[2])
+                       : 0;
         totalOld += oldEnergy;
         totalNew += newEnergy;
       } else if (a < sorted.size() && (b == before.size() || keyOf(sorted[a]) < keyOf(before[b]))) {
@@ -668,9 +669,7 @@ namespace remix::scene {
                        std::vector<uint64_t> staticSeen, std::vector<SphereLight> dynamics,
                        std::vector<uint64_t> dynamicStamps, std::vector<uint64_t> dynamicSeen, Reason reason) {
     // A light's identity across builds (leafRemap).
-    const auto lightKey = [](const SphereLight &light) {
-      return light.id * 4 + light.triangle;
-    };
+    const auto lightKey = [](const SphereLight &light) { return light.id * 4 + light.triangle; };
     std::vector<uint64_t> oldLeaves(m_nodes.size(), 0);
     for (size_t i = 0; i < m_nodes.size(); ++i)
       if (m_nodes[i].links[3] == 1 && m_nodes[i].links[2] < m_lights.size())
@@ -789,8 +788,7 @@ namespace remix::scene {
     m_dirty[0] = 1;
   }
 
-  void LightBvh::buildInto(uint32_t index, std::vector<uint32_t> &order, uint32_t begin, uint32_t end,
-                           uint32_t level) {
+  void LightBvh::buildInto(uint32_t index, std::vector<uint32_t> &order, uint32_t begin, uint32_t end, uint32_t level) {
     depth = std::max(depth, level);
     m_nodes[index].links[3] = end - begin;
     // Subtrees are not contiguous in node order (siblings are adjacent), so
@@ -853,9 +851,8 @@ namespace remix::scene {
         std::vector<uint32_t> sorted(order.begin() + begin, order.begin() + end), local(end - begin);
         for (unsigned a = 0; a < 3; ++a) {
           std::iota(local.begin(), local.end(), 0u);
-          std::sort(local.begin(), local.end(), [&](uint32_t x, uint32_t y) {
-            return byAxis(a)(sorted[x], sorted[y]);
-          });
+          std::sort(local.begin(), local.end(),
+                    [&](uint32_t x, uint32_t y) { return byAxis(a)(sorted[x], sorted[y]); });
           suffix[end - begin] = {};
           for (uint32_t i = end - begin; i-- > 0;) {
             suffix[i] = suffix[i + 1];
@@ -989,14 +986,14 @@ namespace remix::scene {
     if (!out)
       return false;
     const uint32_t counts[2] = {uint32_t(m_nodes.size()), uint32_t(m_emitters.size())};
-    const bool written = std::fwrite(counts, sizeof(counts), 1, out) == 1 &&
-                         std::fwrite(m_nodes.data(), sizeof(LightNode), m_nodes.size(), out) == m_nodes.size() &&
-                         std::fwrite(m_emitters.data(), sizeof(LightEmitter), m_emitters.size(), out) == m_emitters.size();
+    const bool written =
+        std::fwrite(counts, sizeof(counts), 1, out) == 1 &&
+        std::fwrite(m_nodes.data(), sizeof(LightNode), m_nodes.size(), out) == m_nodes.size() &&
+        std::fwrite(m_emitters.data(), sizeof(LightEmitter), m_emitters.size(), out) == m_emitters.size();
     return std::fclose(out) == 0 && written;
   }
 
-  double LightBvh::weight(const LightNode &node, const float position[3], const float normal[3],
-                          double range) {
+  double LightBvh::weight(const LightNode &node, const float position[3], const float normal[3], double range) {
     double distance2 = 0, radius2 = 0, toward = 0, reach = 0, nearest2 = 0;
     for (unsigned c = 0; c < 3; ++c) {
       const double half = .5 * (node.maximum[c] - node.minimumPower[c]);

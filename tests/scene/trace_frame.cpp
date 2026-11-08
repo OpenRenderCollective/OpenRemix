@@ -14,8 +14,7 @@ int main() {
   draw.mesh = std::make_shared<Mesh>();
   draw.material = std::make_shared<Material>();
   draw.surface = std::make_shared<Surface>();
-  draw.surface->vertices = {
-      {{0, 0, 0}, {.1f, .1f}, {}}, {{1, 0, 0}, {.9f, .1f}, {}}, {{0, 1, 0}, {.1f, .9f}, {}}};
+  draw.surface->vertices = {{{0, 0, 0}, {.1f, .1f}, {}}, {{1, 0, 0}, {.9f, .1f}, {}}, {{0, 1, 0}, {.1f, .9f}, {}}};
   draw.surface->indices = {0, 1, 2};
   std::fill_n(draw.material->emission, 3, 1.f);
   draw.material->columns = 2;
@@ -72,7 +71,8 @@ int main() {
               ordered.instances[1][0].draw.instanceId == UINT64_MAX - 1 &&
               !ordered.persistentIds.count(UINT64_MAX - 1) && ordered.persistentIds.count(UINT64_MAX),
           "Grouping, ordering or legacy identities changed");
-  require(ordered.flatEmitters()[0].light.id != ordered.flatEmitters()[1].light.id && !ordered.flatEmitters()[0].animated,
+  require(ordered.flatEmitters()[0].light.id != ordered.flatEmitters()[1].light.id &&
+              !ordered.flatEmitters()[0].animated,
           "Surfaces share emitter identity or disabled filtering is staged");
   rejected([&] { prepareTraceFrame({draw, draw}, 0, false, emissionCache); });
   rejected([&] { prepareTraceFrame({nextSurface}, 0, false, emissionCache); });
@@ -96,8 +96,8 @@ int main() {
   draw.material->emissionCache.clear();
   const auto replaced = prepareTraceFrame({draw}, .1, true, emissionCache);
   require(replaced.flatEmitters().size() == 1 && replaced.flatEmitters()[0].light.radiance[2] == 1 &&
-              replaced.flatEmitters()[0].light.radiance[0] == 0 &&
-              first.instances[0][0].draw.material == owner && first.flatEmitters()[0].light.radiance[0] == 1,
+              replaced.flatEmitters()[0].light.radiance[0] == 0 && first.instances[0][0].draw.material == owner &&
+              first.flatEmitters()[0].light.radiance[0] == 1,
           "Texture replacement reused stale reduction or lost snapshot ownership");
 
   draw.surface = std::make_shared<Surface>(*draw.surface);
@@ -132,7 +132,8 @@ int main() {
     SurfaceEmissionCache fresh;
     const auto expected = prepareTraceFrame({draw}, seconds, true, fresh);
     const auto actual = prepareTraceFrame({draw}, seconds, true, emissionCache);
-    require(actual.flatEmitters().size() == expected.flatEmitters().size(), "Cached emitter count differs from fresh reduction");
+    require(actual.flatEmitters().size() == expected.flatEmitters().size(),
+            "Cached emitter count differs from fresh reduction");
     for (size_t i = 0; i < actual.flatEmitters().size(); ++i)
       require(actual.flatEmitters()[i].light == expected.flatEmitters()[i].light &&
                   actual.flatEmitters()[i].layout == expected.flatEmitters()[i].layout,
@@ -143,7 +144,7 @@ int main() {
   require(compareFresh(.6).flatEmitters().empty(), "Black sprite entered light hierarchy");
   draw.material = std::make_shared<Material>(*draw.material);
   draw.material->emissionTexture = std::make_shared<Texture>();
-  draw.material->emissionTexture->pixels = {2, 1, true, {{0,0,0,255,255,255,255,255}}};
+  draw.material->emissionTexture->pixels = {2, 1, true, {{0, 0, 0, 255, 255, 255, 255, 255}}};
   draw.material->emissionCache.clear();
   require(compareFresh(.6).flatEmitters().size() == 1 && reduction->front().radiance[2] == 1,
           "Emission replacement reused black cache or mutated pending reduction");
@@ -180,8 +181,7 @@ int main() {
   scrolled.material->columns = 2;
   scrolled.material->fps = 2;
   scrolled.surface = std::make_shared<Surface>();
-  scrolled.surface->vertices = {
-      {{0, 0, 0}, {.1f, .1f}, {}}, {{1, 0, 0}, {.9f, .1f}, {}}, {{0, 1, 0}, {.1f, .9f}, {}}};
+  scrolled.surface->vertices = {{{0, 0, 0}, {.1f, .1f}, {}}, {{1, 0, 0}, {.9f, .1f}, {}}, {{0, 1, 0}, {.1f, .9f}, {}}};
   scrolled.surface->indices = {0, 1, 2};
   scrolled.texcoord = described.texcoord;
   scrolled.texcoordVelocity = described.texcoordVelocity;

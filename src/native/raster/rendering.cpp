@@ -28,7 +28,9 @@ namespace remix {
       }
     } finish{m_profile, g.uploadBytes, m_completedProfile, m_worstProfile};
     using Clock = std::chrono::steady_clock;
-    const auto since = [](Clock::time_point t) { return std::chrono::duration<double, std::milli>(Clock::now() - t).count(); };
+    const auto since = [](Clock::time_point t) {
+      return std::chrono::duration<double, std::milli>(Clock::now() - t).count();
+    };
     auto phase = Clock::now();
     g.stagingAllocateMs = g.stagingWriteMs = 0;
     g.createPipelineMs = g.createMeshMs = g.createTextureMs = g.createMaterialMs = 0;
@@ -94,10 +96,7 @@ namespace remix {
     m_profile.retireMilliseconds = since(phase) - m_profile.refreshMilliseconds;
     phase = Clock::now();
     auto layer = [](const Draw &d) {
-      return d.ui                                          ? 3
-             : d.camera == REMIXAPI_CAMERA_TYPE_SKY        ? 0
-             : d.camera == REMIXAPI_CAMERA_TYPE_VIEW_MODEL ? 2
-                                                           : 1;
+      return d.ui ? 3 : d.camera == REMIXAPI_CAMERA_TYPE_SKY ? 0 : d.camera == REMIXAPI_CAMERA_TYPE_VIEW_MODEL ? 2 : 1;
     };
     auto distance = [&](const Draw &d) {
       const auto mvp = multiply(m_cameras[d.camera], d.model);
@@ -241,8 +240,8 @@ namespace remix {
         if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(w))
           return false;
         const float edge = w + .01f * std::abs(w);
-        outside &= uint32_t(x < -edge) | uint32_t(x > edge) << 1 | uint32_t(y < -edge) << 2 |
-                   uint32_t(y > edge) << 3 | uint32_t(w <= 0) << 4;
+        outside &= uint32_t(x < -edge) | uint32_t(x > edge) << 1 | uint32_t(y < -edge) << 2 | uint32_t(y > edge) << 3 |
+                   uint32_t(w <= 0) << 4;
       }
       return outside != 0;
     };
@@ -278,10 +277,11 @@ namespace remix {
       // A sprite overlay (raster/sprite.cpp): a blended draw that is not masked.
       const bool sprite = !silhouette && draw.spriteFlags && draw.blend.enabled && !draw.maskGroup && !draw.cutGroup &&
                           !draw.ui && g.sprite.layout && g.sprite.vertex && g.sprite.fragment && !g.sprite.failed;
-      // A gradient-mapped material or a wound cut (raster/infected.cpp); a
-      // masked or sprite draw is drawn plainly.
-      const bool infected = !silhouette && slot < 0 && !sprite && (draw.wound || mat.gradient) && !draw.ui &&
-                            g.infected.layout && g.infected.vertex && g.infected.fragment && !g.infected.failed;
+      // A gradient-mapped material, a portal rim or a wound cut
+      // (raster/infected.cpp); a masked or sprite draw is drawn plainly.
+      const bool infected = !silhouette && slot < 0 && !sprite && (draw.wound || mat.gradient || mat.portalRim) &&
+                            !draw.ui && g.infected.layout && g.infected.vertex && g.infected.fragment &&
+                            !g.infected.failed;
       try {
         out.pipeline = silhouette ? silhouette->pipelines[tested] : g.pipeline(draw, slot >= 0, sprite, infected);
       } catch (VkResult result) {
@@ -310,7 +310,7 @@ namespace remix {
         out.area = outside ? whole : masks.area[slot];
       }
       if (infected) {
-        g.infectedParameters(draw, out, command);
+        g.infectedParameters(draw, out, command, seconds);
         out.bindBuffer = mesh.data->buffer;
         out.bindOffset = mesh.data->offset;
       }
@@ -328,14 +328,15 @@ namespace remix {
         out.spriteParameters[1] = draw.spriteSoft[1];
         out.spriteParameters[2] = draw.spriteSoft[2];
         // MODULATE's k: dst x src + src x dst, or dst x src alone.
-        out.spriteParameters[3] = blend.src == VK_BLEND_FACTOR_DST_COLOR && blend.dst == VK_BLEND_FACTOR_SRC_COLOR ? 2.f : 1.f;
+        out.spriteParameters[3] =
+            blend.src == VK_BLEND_FACTOR_DST_COLOR && blend.dst == VK_BLEND_FACTOR_SRC_COLOR ? 2.f : 1.f;
       }
       // The captured depth is the world camera's.
-      const uint32_t spriteFlags =
-          !sprite ? 0u
-                  : draw.spriteFlags & (draw.camera == REMIXAPI_CAMERA_TYPE_WORLD
-                                            ? 0x1ffu
-                                            : 0x1ffu & ~uint32_t(REMIXAPI_SPRITE_SOFT_DEPTH_EXT));
+      const uint32_t spriteFlags = !sprite
+                                       ? 0u
+                                       : draw.spriteFlags & (draw.camera == REMIXAPI_CAMERA_TYPE_WORLD
+                                                                 ? 0x1ffu
+                                                                 : 0x1ffu & ~uint32_t(REMIXAPI_SPRITE_SOFT_DEPTH_EXT));
       g.sprite.soft += (spriteFlags & REMIXAPI_SPRITE_SOFT_DEPTH_EXT) != 0;
       out.firstIndex = draw.firstIndex;
       out.count = draw.indexCount ? draw.indexCount : uint32_t(draw.surface->indices.size());
@@ -357,9 +358,9 @@ namespace remix {
             const size_t index = v * draw.surface->bonesPerVertex + b;
             const auto &m = (*draw.bones)[draw.surface->bones[index]];
             for (int r = 0; r < 3; ++r) {
-              vertex.position[r] += draw.surface->weights[index] *
-                                    (m[r] * original.position[0] + m[4 + r] * original.position[1] +
-                                     m[8 + r] * original.position[2] + m[12 + r]);
+              vertex.position[r] +=
+                  draw.surface->weights[index] * (m[r] * original.position[0] + m[4 + r] * original.position[1] +
+                                                  m[8 + r] * original.position[2] + m[12 + r]);
             }
           }
           skinned.push_back(vertex);
@@ -376,17 +377,15 @@ namespace remix {
       const auto texcoord = scene::surfaceTexcoord(draw, seconds, frame);
       std::copy_n(texcoord.data(), 4, out.push.uv);
       const auto &b = draw.blend;
-      out.push.state[0] = (b.colorOp & 3u) | (b.colorOp & 4u) << 10 | (b.alphaOpTexture & 4u) << 11 |
-                          b.color1 << 2 | b.color2 << 4 | (b.alphaOpTexture & 3u) << 6 | b.alpha1 << 8 |
-                          b.alpha2 << 10;
+      out.push.state[0] = (b.colorOp & 3u) | (b.colorOp & 4u) << 10 | (b.alphaOpTexture & 4u) << 11 | b.color1 << 2 |
+                          b.color2 << 4 | (b.alphaOpTexture & 3u) << 6 | b.alpha1 << 8 | b.alpha2 << 10;
       out.push.state[1] = draw.ignoreAlpha ? 7 : draw.alphaOverride ? draw.compare : mat.compare;
       const float reference = draw.alphaOverride ? draw.reference : mat.reference;
       std::memcpy(&out.push.state[2], &reference, sizeof(reference));
-      out.push.state[3] =
-          uint32_t(draw.ignoreAlpha) |
-          (g.encodeOutput && !(g.skyPass && draw.camera == REMIXAPI_CAMERA_TYPE_SKY) ? 2u : 0u) |
-          (g.textures.at(draw.material->texture.get()).srgb ? 4u : 0u) | (slot >= 0 && outside ? 16u : 0u) |
-          spriteFlags << 5;
+      out.push.state[3] = uint32_t(draw.ignoreAlpha) |
+                          (g.encodeOutput && !(g.skyPass && draw.camera == REMIXAPI_CAMERA_TYPE_SKY) ? 2u : 0u) |
+                          (g.textures.at(draw.material->texture.get()).srgb ? 4u : 0u) |
+                          (slot >= 0 && outside ? 16u : 0u) | spriteFlags << 5;
       out.push.factor[0] = linear(float((b.factor >> 16) & 255) / 255);
       out.push.factor[1] = linear(float((b.factor >> 8) & 255) / 255);
       out.push.factor[2] = linear(float(b.factor & 255) / 255);
@@ -515,9 +514,8 @@ namespace remix {
           const auto &limit = masks.area[plan.pass.within];
           const int32_t x0 = std::max(area.offset.x, limit.offset.x), y0 = std::max(area.offset.y, limit.offset.y);
           const int32_t x1 = std::min(right(area), right(limit)), y1 = std::min(bottom(area), bottom(limit));
-          area = x1 > x0 && y1 > y0 && limit.extent.width
-                     ? VkRect2D{{x0, y0}, {uint32_t(x1 - x0), uint32_t(y1 - y0)}}
-                     : VkRect2D{};
+          area = x1 > x0 && y1 > y0 && limit.extent.width ? VkRect2D{{x0, y0}, {uint32_t(x1 - x0), uint32_t(y1 - y0)}}
+                                                          : VkRect2D{};
         }
         auto &total = masks.area[plan.pass.target];
         if (plan.pass.clear || !total.extent.width)
@@ -633,9 +631,8 @@ namespace remix {
       uint64_t digest = hashBytes(skinned.data(), skinned.size() * sizeof(Vertex));
       for (const auto *list : {&g.commands, &g.halo.commands, &masks.commands})
         for (const auto &command : *list) {
-          const uint64_t values[] = {command.vertices ? 0u : command.vertexOffset, command.firstIndex,
-                                     command.count, uint64_t(int64_t(command.baseVertex)),
-                                     uint64_t(command.layer)};
+          const uint64_t values[] = {command.vertices ? 0u : command.vertexOffset, command.firstIndex, command.count,
+                                     uint64_t(int64_t(command.baseVertex)), uint64_t(command.layer)};
           digest = hashBytes(values, sizeof(values), digest);
           digest = hashBytes(&command.push, sizeof(command.push), digest);
         }
@@ -643,8 +640,8 @@ namespace remix {
     }
     if (!skinned.empty()) {
       const auto skinBegin = Clock::now();
-      g.skin = g.geometryBuffer(skinned.data(), skinned.size() * sizeof(Vertex),
-                                VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, command);
+      g.skin =
+          g.geometryBuffer(skinned.data(), skinned.size() * sizeof(Vertex), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, command);
       m_profile.skinUploadMilliseconds = since(skinBegin);
       for (auto *list : {&g.commands, &g.halo.commands, &masks.commands})
         for (auto &draw : *list) {
@@ -779,8 +776,8 @@ namespace remix {
           push.mvp[column * 4 + 1] -= 2 * skyJitter[1] / extent.height * push.mvp[column * 4 + 3];
         }
       }
-      vkCmdPushConstants(command, layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-                         sizeof(Push), &push);
+      vkCmdPushConstants(command, layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(Push),
+                         &push);
       vkCmdDrawIndexed(command, draw.count, 1, draw.firstIndex, draw.baseVertex, 0);
     }
   }

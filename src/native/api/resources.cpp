@@ -92,9 +92,8 @@ namespace remix::api {
       // CUT instance is a scene instance, replaced like any other.
       const auto *mask = static_cast<const remixapi_InstanceInfoMaskEXT *>(
           remix::scene::extension(info->pNext, REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_MASK_EXT));
-      const bool halo =
-          remix::scene::extension(info->pNext, REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_HALO_EXT) != nullptr ||
-          (mask && mask->role != REMIXAPI_INSTANCE_MASK_CUT_EXT);
+      const bool halo = remix::scene::extension(info->pNext, REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_HALO_EXT) != nullptr ||
+                        (mask && mask->role != REMIXAPI_INSTANCE_MASK_CUT_EXT);
       if (!halo && remix::usd::modInstance(raster, *info, replacement ? replacement->meshHash : 0))
         return;
 #endif
@@ -102,8 +101,7 @@ namespace remix::api {
     });
   }
 
-  remixapi_ErrorCode REMIXAPI_CALL createLight(const remixapi_LightInfo *info,
-                                               remixapi_LightHandle *outHandle) {
+  remixapi_ErrorCode REMIXAPI_CALL createLight(const remixapi_LightInfo *info, remixapi_LightHandle *outHandle) {
     if (outHandle) {
       *outHandle = nullptr;
     }
@@ -132,8 +130,7 @@ namespace remix::api {
     });
   }
 
-  remixapi_ErrorCode REMIXAPI_CALL createTexture(const remixapi_TextureInfo *info,
-                                                 remixapi_TextureHandle *outHandle) {
+  remixapi_ErrorCode REMIXAPI_CALL createTexture(const remixapi_TextureInfo *info, remixapi_TextureHandle *outHandle) {
     if (outHandle) {
       *outHandle = nullptr;
     }
@@ -196,6 +193,14 @@ REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_UpdateLightDefinition(remixap
   return resourceCall([&](auto &resources) { resources.updateLight(handle, *info); });
 }
 
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_UpdateMeshVerticesEXT(remixapi_MeshHandle mesh,
+                                                                         uint32_t surfaceCount,
+                                                                         const remixapi_MeshVerticesEXT *surfaces) {
+  if (!mesh || !surfaceCount || !surfaces)
+    return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
+  return resourceCall([&](auto &resources) { resources.updateMeshVertices(mesh, surfaceCount, surfaces); });
+}
+
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_UpdateTextureEXT(remixapi_TextureHandle handle, uint32_t x,
                                                                     uint32_t y, uint32_t width, uint32_t height,
                                                                     remixapi_Format format, const void *pixels,
@@ -230,8 +235,8 @@ remixapi_SetVisibilityPartitionEXT(const remixapi_VisibilityPartitionEXT *info) 
     partition->closed = true;
     for (const auto &node : partition->nodes)
       for (int32_t child : node.children)
-        partition->closed &= child >= 0 ? uint32_t(child) < info->nodeCount
-                                        : uint64_t(-1 - int64_t(child)) < info->leafCount;
+        partition->closed &=
+            child >= 0 ? uint32_t(child) < info->nodeCount : uint64_t(-1 - int64_t(child)) < info->leafCount;
     partition->version = ++version;
   } else if (info && info->structSize != sizeof(*info)) {
     return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;

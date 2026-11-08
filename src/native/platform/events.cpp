@@ -57,8 +57,8 @@ namespace remix {
         m_appInBackground = false;
       }
 #endif
-      if (event.type == SDL_EVENT_QUIT || (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED &&
-                                           event.window.windowID == SDL_GetWindowID(m_window))) {
+      if (event.type == SDL_EVENT_QUIT ||
+          (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED && event.window.windowID == SDL_GetWindowID(m_window))) {
         m_closeRequested = true;
       } else if (event.type == SDL_EVENT_MOUSE_MOTION && event.motion.windowID == SDL_GetWindowID(m_window)) {
         m_relativeX += event.motion.xrel;
@@ -127,7 +127,8 @@ namespace remix {
   namespace {
     uint32_t menuModifiers(SDL_Keymod mod) {
       return (mod & SDL_KMOD_ALT ? RemixSdlWindow::MenuAlt : 0) | (mod & SDL_KMOD_CTRL ? RemixSdlWindow::MenuCtrl : 0) |
-             (mod & SDL_KMOD_SHIFT ? RemixSdlWindow::MenuShift : 0) | (mod & SDL_KMOD_GUI ? RemixSdlWindow::MenuGui : 0);
+             (mod & SDL_KMOD_SHIFT ? RemixSdlWindow::MenuShift : 0) |
+             (mod & SDL_KMOD_GUI ? RemixSdlWindow::MenuGui : 0);
     }
   } // namespace
 
@@ -328,8 +329,7 @@ namespace remix {
     queueInput(input);
   }
 
-  remixapi_ErrorCode RemixSdlWindow::pollInputEvents(remixapi_InputEvent *events, uint32_t capacity,
-                                                     uint32_t &count) {
+  remixapi_ErrorCode RemixSdlWindow::pollInputEvents(remixapi_InputEvent *events, uint32_t capacity, uint32_t &count) {
     count = 0;
     const auto status = checkThread();
     if (status != REMIXAPI_ERROR_CODE_SUCCESS)

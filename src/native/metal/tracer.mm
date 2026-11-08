@@ -20,9 +20,8 @@ namespace remix::metal {
     // gbuffer.cpp formats: position, normal, albedo, previous, stable depth,
     // emission, PBR. Pass 0 writes all but the stable depth (output size).
     constexpr MTLPixelFormat primaryFormats[7] = {
-        MTLPixelFormatRGBA32Float, MTLPixelFormatRGBA16Float, MTLPixelFormatRGBA8Unorm,
-        MTLPixelFormatRGBA32Float, MTLPixelFormatR32Float,    MTLPixelFormatRGBA16Float,
-        MTLPixelFormatRGBA16Float};
+        MTLPixelFormatRGBA32Float, MTLPixelFormatRGBA16Float, MTLPixelFormatRGBA8Unorm, MTLPixelFormatRGBA32Float,
+        MTLPixelFormatR32Float,    MTLPixelFormatRGBA16Float, MTLPixelFormatRGBA16Float};
     constexpr unsigned primaryAttachments[6] = {0, 1, 2, 3, 5, 6};
     constexpr MTLTextureUsage storage = MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite;
     // Tracing set bindings (pathtrace/renderer.cpp initialize): 0/1 TLASes,
@@ -39,9 +38,9 @@ namespace remix::metal {
     constexpr uint32_t constantGuidingCapable = 1u << 1, constantSplit = 1u << 4, constantProfile = 1u << 7,
                        constantSeparateIndirect = 1u << 9, constantEarlyOut = 1u << 12, constantSparseShift = 16;
     // pathtrace/gpu.h Feature.
-    constexpr uint32_t featureDecals = 1, featureRoulette = 2, featurePbrReuse = 4, featureAngularEmitters = 8, featureFirstOpaqueHit = 16,
-                       featureMultiSheetFallback = 32, featureLocalLights = 64, featureLocalGuiding = 128,
-                       featureSmallSet = 256, featureResampling = 512,
+    constexpr uint32_t featureDecals = 1, featureRoulette = 2, featurePbrReuse = 4, featureAngularEmitters = 8,
+                       featureFirstOpaqueHit = 16, featureMultiSheetFallback = 32, featureLocalLights = 64,
+                       featureLocalGuiding = 128, featureSmallSet = 256, featureResampling = 512,
                        defaultFeatures = featureDecals | featureLocalLights | featureLocalGuiding;
     // The push constant block holding `features` (offset 28).
     struct FeaturesPush {
@@ -54,9 +53,9 @@ namespace remix::metal {
   PathTracer::~PathTracer() = default;
 
   PathTracer::Configuration PathTracer::Configuration::of(void *devicePointer, const TraceOptions &options,
-                                                         bool frameGeneration, bool local, bool perspective,
-                                                         uint32_t displayWidth, uint32_t displayHeight,
-                                                         uint32_t displayFormat) {
+                                                          bool frameGeneration, bool local, bool perspective,
+                                                          uint32_t displayWidth, uint32_t displayHeight,
+                                                          uint32_t displayFormat) {
     // pathtrace/temporal.cpp beginFrame and configureFrame, and
     // pathtrace/sharc.cpp beginSharc.
     id<MTLDevice> device = (__bridge id<MTLDevice>)devicePointer;
@@ -151,23 +150,40 @@ namespace remix::metal {
   Stage PathTracer::Gpu::lightingStage(Stage uncached) {
 #if REMIX_HAS_SHARC
     switch (uncached) {
-    case Stage::trace: return Stage::sharcQuery;
-    case Stage::temporal: return Stage::sharcTemporal;
-    case Stage::transparency: return Stage::sharcTransparency;
-    case Stage::temporalTransparency: return Stage::sharcTemporalTransparency;
-    case Stage::singleTransparency: return Stage::sharcSingleTransparency;
-    case Stage::singleTemporalTransparency: return Stage::sharcSingleTemporalTransparency;
-    case Stage::confidence: return Stage::sharcConfidence;
-    case Stage::sigmaTemporal: return Stage::sharcSigmaTemporal;
-    case Stage::localTemporal: return Stage::sharcLocalTemporal;
-    case Stage::localSigmaTemporal: return Stage::sharcLocalSigmaTemporal;
-    case Stage::splitLocalTemporal: return Stage::sharcSplitLocalTemporal;
-    case Stage::splitLocalSigmaTemporal: return Stage::sharcSplitLocalSigmaTemporal;
-    case Stage::indirectTemporal: return Stage::sharcIndirectTemporal;
-    case Stage::indirect: return Stage::sharcIndirect;
-    case Stage::sheetLighting: return Stage::sharcSheetLighting;
-    case Stage::sheetLightingTemporal: return Stage::sharcSheetLightingTemporal;
-    default: return uncached;
+    case Stage::trace:
+      return Stage::sharcQuery;
+    case Stage::temporal:
+      return Stage::sharcTemporal;
+    case Stage::transparency:
+      return Stage::sharcTransparency;
+    case Stage::temporalTransparency:
+      return Stage::sharcTemporalTransparency;
+    case Stage::singleTransparency:
+      return Stage::sharcSingleTransparency;
+    case Stage::singleTemporalTransparency:
+      return Stage::sharcSingleTemporalTransparency;
+    case Stage::confidence:
+      return Stage::sharcConfidence;
+    case Stage::sigmaTemporal:
+      return Stage::sharcSigmaTemporal;
+    case Stage::localTemporal:
+      return Stage::sharcLocalTemporal;
+    case Stage::localSigmaTemporal:
+      return Stage::sharcLocalSigmaTemporal;
+    case Stage::splitLocalTemporal:
+      return Stage::sharcSplitLocalTemporal;
+    case Stage::splitLocalSigmaTemporal:
+      return Stage::sharcSplitLocalSigmaTemporal;
+    case Stage::indirectTemporal:
+      return Stage::sharcIndirectTemporal;
+    case Stage::indirect:
+      return Stage::sharcIndirect;
+    case Stage::sheetLighting:
+      return Stage::sharcSheetLighting;
+    case Stage::sheetLightingTemporal:
+      return Stage::sharcSheetLightingTemporal;
+    default:
+      return uncached;
     }
 #else
     return uncached;
@@ -192,12 +208,13 @@ namespace remix::metal {
       requests.push_back({&pass, stage, flags});
     };
     if (temporal) {
-      add(opaque, lightingStage(c.split && c.sigma ? Stage::splitLocalSigmaTemporal
-                                : c.split          ? Stage::splitLocalTemporal
-                                : c.local && c.sigma ? Stage::localSigmaTemporal
-                                : c.local          ? Stage::localTemporal
-                                : c.sigma          ? Stage::sigmaTemporal
-                                                   : Stage::temporal),
+      add(opaque,
+          lightingStage(c.split && c.sigma   ? Stage::splitLocalSigmaTemporal
+                        : c.split            ? Stage::splitLocalTemporal
+                        : c.local && c.sigma ? Stage::localSigmaTemporal
+                        : c.local            ? Stage::localTemporal
+                        : c.sigma            ? Stage::sigmaTemporal
+                                             : Stage::temporal),
           {true, true, true, c.separateIndirect});
       if (c.split)
         add(splitDirect, Stage::splitLocalDirect, {true, true, true, false});
@@ -313,7 +330,7 @@ namespace remix::metal {
   }
 
   PathTracer::Gpu::Selected PathTracer::Gpu::select(const Lighting &pass, bool separateIndirect, uint32_t sparse,
-                                                     bool combinedDirect) {
+                                                    bool combinedDirect) {
     const auto base = [&] { return computePipelineAsync(device, pass.stage, pass.base); };
     if (!pass.variants)
       return {base(), defaultFeatures};
@@ -331,8 +348,7 @@ namespace remix::metal {
     // Split lighting's opaque passes (combined mode's direct pass runs unsplit).
     const bool split = s.split && guiding && !combinedDirect;
     const uint32_t constants = (guiding ? constantGuidingCapable : 0u) | (split ? constantSplit : 0u) |
-                               (s.profile ? constantProfile : 0u) |
-                               (separateIndirect ? constantSeparateIndirect : 0u) |
+                               (s.profile ? constantProfile : 0u) | (separateIndirect ? constantSeparateIndirect : 0u) |
                                (s.earlyOut ? constantEarlyOut : 0u) | sparse << constantSparseShift;
     if (constants == pass.base) {
       out.pipeline = base();
@@ -414,7 +430,7 @@ namespace remix::metal {
     const auto &g = *m_gpu;
     status.supported = g.skyUnavailable.empty();
     status.active = g.skyApplied;
-    status.reason = !status.supported      ? "The device lacks " + g.skyUnavailable + "."
+    status.reason = !status.supported       ? "The device lacks " + g.skyUnavailable + "."
                     : !g.skyFailure.empty() ? "Stopped: " + g.skyFailure
                                             : g.skyReason;
 #else
@@ -501,7 +517,8 @@ namespace remix::metal {
     return frame;
   }
 
-  void PathTracer::Gpu::buildTop(id<MTLCommandBuffer> command, const std::vector<remix::trace::InstanceInput> &staticInputs,
+  void PathTracer::Gpu::buildTop(id<MTLCommandBuffer> command,
+                                 const std::vector<remix::trace::InstanceInput> &staticInputs,
                                  const std::vector<remix::trace::InstanceInput> &dynamicInputs, bool force,
                                  bool faceCulling) {
     const std::vector<remix::trace::InstanceInput> *inputs[2] = {&staticInputs, &dynamicInputs};
@@ -542,7 +559,8 @@ namespace remix::metal {
           // fronts. pathtrace/shaders/gbuffer.frag's facing test, which matches
           // the Vulkan ray facing, agrees with these options. A wound cut's
           // FORCE_NO_OPAQUE is Metal's non-opaque option.
-          static_assert(remix::trace::instanceFacingCullDisable == MTLAccelerationStructureInstanceOptionDisableTriangleCulling &&
+          static_assert(remix::trace::instanceFacingCullDisable ==
+                            MTLAccelerationStructureInstanceOptionDisableTriangleCulling &&
                         remix::trace::instanceFrontCounterClockwise ==
                             MTLAccelerationStructureInstanceOptionTriangleFrontFacingWindingCounterClockwise &&
                         remix::trace::instanceForceNoOpaque == MTLAccelerationStructureInstanceOptionNonOpaque);
@@ -593,8 +611,8 @@ namespace remix::metal {
     // Reconstruction's place) replaces NRD, SIGMA, TAA and their inputs.
     auto options = requestedOptions;
     options.volumetricUpAxis = upAxis.resolve(options.volumetricUpAxis);
-    const bool denoised = reconstruction::Backend(configuration.reconstruction) ==
-                          reconstruction::Backend::MetalFXDenoising;
+    const bool denoised =
+        reconstruction::Backend(configuration.reconstruction) == reconstruction::Backend::MetalFXDenoising;
     if (denoised) {
       options.denoiser = options.localDenoiser = options.sigma = options.taa = false;
       options.blueNoiseShadows = options.blueNoiseLocalLights = false;
@@ -635,12 +653,11 @@ namespace remix::metal {
     rendered = false;
     const auto &c = configuration;
     const bool rouletteActive = options.russianRoulette && options.rouletteMinBounces < options.bounces;
-    const uint64_t integrator =
-        options.samples | uint64_t(options.bounces) << 8 | uint64_t(options.accumulate) << 16 |
-        uint64_t(bool(denoiser) && c.reblur) << 17 | uint64_t(bool(denoiser) && c.taa) << 18 |
-        uint64_t(options.rasterPrimary) << 19 | uint64_t(bool(sharc.stats.active)) << 20 |
-        uint64_t(options.sharcDebug) << 21 | uint64_t(options.russianRoulette) << 23 |
-        uint64_t(options.rouletteMinBounces) << 24;
+    const uint64_t integrator = options.samples | uint64_t(options.bounces) << 8 | uint64_t(options.accumulate) << 16 |
+                                uint64_t(bool(denoiser) && c.reblur) << 17 | uint64_t(bool(denoiser) && c.taa) << 18 |
+                                uint64_t(options.rasterPrimary) << 19 | uint64_t(bool(sharc.stats.active)) << 20 |
+                                uint64_t(options.sharcDebug) << 21 | uint64_t(options.russianRoulette) << 23 |
+                                uint64_t(options.rouletteMinBounces) << 24;
     pendingTime = std::chrono::steady_clock::now();
     history.begin(resources.temporalEpoch(), integrator, width, height);
     pendingVertices.clear();
@@ -671,18 +688,9 @@ namespace remix::metal {
       workers = std::make_unique<WorkerPool>();
     history.setFallback(&statics);
     TableViews views{this};
-    const remix::trace::FrameTables<TableViews>::Inputs tableInputs{prepared,
-                                                                    &statics,
-                                                                    history,
-                                                                    previousVertices,
-                                                                    pendingVertices,
-                                                                    *workers,
-                                                                    ++prepareSerial,
-                                                                    false,
-                                                                    false,
-                                                                    PathTracer::textureLimit,
-                                                                    &materialTicks,
-                                                                    &temporalTicks};
+    const remix::trace::FrameTables<TableViews>::Inputs tableInputs{
+        prepared,        &statics, history, previousVertices,         pendingVertices, *workers,
+        ++prepareSerial, false,    false,   PathTracer::textureLimit, &materialTicks,  &temporalTicks};
     tables.build(views, tableInputs);
     const auto flags = tables.flags();
     // Texture descriptors in first-use order (the static prefix's, then the rest).
@@ -721,9 +729,8 @@ namespace remix::metal {
     if (releases != meshReleasesSeen) {
       meshReleasesSeen = releases;
       for (auto it = meshes.begin(); it != meshes.end();)
-        it = it->second.owner.expired() || (std::get<1>(it->first) && it->second.lastUse != sequence)
-                 ? retireView(it)
-                 : std::next(it);
+        it = it->second.owner.expired() || (std::get<1>(it->first) && it->second.lastUse != sequence) ? retireView(it)
+                                                                                                      : std::next(it);
     } else if (!deformViews.empty()) {
       std::vector<const MeshViewKey *> unused;
       for (const auto *key : deformViews) {
@@ -737,7 +744,7 @@ namespace remix::metal {
     for (auto it = updateViews.begin(); it != updateViews.end();) {
       auto view = meshes.find(it->second);
       it = view == meshes.end() || view->second.updateStream.get() != std::get<0>(it->first) ? updateViews.erase(it)
-                                                                                            : std::next(it);
+                                                                                             : std::next(it);
     }
     std::erase_if(accels, [](const auto &entry) { return entry.second.expired(); });
     buildBottom(buildCommand);
@@ -837,9 +844,9 @@ namespace remix::metal {
     }
     frame.localConfig[1] = options.localSamples;
     frame.localConfig[2] = uint32_t(lightBvh.lightingGeneration);
-    frame.localConfig[3] =
-        uint32_t(lightBvh.lightingGeneration >> 32) | (options.adaptiveLocalSampling ? 0x80000000u : 0u) |
-        (lighting.hasEmissive ? 0u : 0x40000000u); // sphere-only set: guide sphere lights too
+    frame.localConfig[3] = uint32_t(lightBvh.lightingGeneration >> 32) |
+                           (options.adaptiveLocalSampling ? 0x80000000u : 0u) |
+                           (lighting.hasEmissive ? 0u : 0x40000000u); // sphere-only set: guide sphere lights too
     frame.localScale[0] = options.localIntensity;
     frame.localScale[1] = options.localRange;
     // rtx.native.pathtrace.emissiveCandidateBudget spreads a per-pixel
@@ -850,8 +857,8 @@ namespace remix::metal {
                          options.emissiveCandidates)
             : options.emissiveCandidates;
     frame.localScale[2] = lightBvh.emitters().size() <= 4 ? 1.f
-                          : lighting.hasEmissive        ? float(emissiveCandidates)
-                                                        : float(options.sphereCandidates);
+                          : lighting.hasEmissive          ? float(emissiveCandidates)
+                                                          : float(options.sphereCandidates);
     frame.localScale[3] = options.localRange > 0 ? 1.f / (options.localRange * options.localRange) : 0;
     frame.camera = resources.camera();
     primaryReverseDepth = resources.reverseDepth();
@@ -907,16 +914,14 @@ namespace remix::metal {
     }
 #endif
     if (options.overrideLight) {
-      const float norm =
-          std::hypot(options.lightDirection[0], options.lightDirection[1], options.lightDirection[2]);
+      const float norm = std::hypot(options.lightDirection[0], options.lightDirection[1], options.lightDirection[2]);
       if (norm > 1e-6f)
         for (int i = 0; i < 3; ++i)
           light.direction[i] = options.lightDirection[i] / norm;
       for (int i = 0; i < 3; ++i)
         light.radiance[i] = options.lightColor[i] * options.lightIntensity;
     }
-    const float diameter =
-        options.sunAngularDiameter >= 0 ? options.sunAngularDiameter : light.angularDiameterDegrees;
+    const float diameter = options.sunAngularDiameter >= 0 ? options.sunAngularDiameter : light.angularDiameterDegrees;
     frame.sun[0] = std::tan(diameter * (3.14159265359f / 360.f));
     frame.sun[1] = denoiser && c.sigma;
     // pathtrace/blue_noise.cpp configureBlueNoise.
@@ -1013,9 +1018,9 @@ namespace remix::metal {
     };
     image(frame.skyRadiance[3] > 0 ? uint32_t(frame.skyRadiance[3]) : 0, overlayImages.environment,
           overlayImages.environmentSampler);
-    overlay.environmentSrgb = frame.skyRadiance[3] > 0 &&
-                              std::find(srgbSlots.begin(), srgbSlots.end(), uint32_t(frame.skyRadiance[3]) - 1) !=
-                                  srgbSlots.end();
+    overlay.environmentSrgb =
+        frame.skyRadiance[3] > 0 &&
+        std::find(srgbSlots.begin(), srgbSlots.end(), uint32_t(frame.skyRadiance[3]) - 1) != srgbSlots.end();
     for (unsigned row = 0; row < 3; ++row)
       for (unsigned col = 0; col < 3; ++col)
         overlay.domeTransform[row][col] = frame.domeTransform[row][col];
@@ -1069,9 +1074,9 @@ namespace remix::metal {
     // (view models never; blended layers unless skipBlendedSecondaryRays is
     // off). Bit 8: a traced view model is in the frame (camera rays look for
     // it first).
-    frame.pathConfig[3] = (options.skipBlendedSecondaryRays ? 0xffu & ~uint32_t(remix::trace::blendedInstanceMask) : 0xffu) &
-                          ~uint32_t(remix::trace::viewModelInstanceMask) &
-                          ~uint32_t(remix::trace::reflectionOnlyInstanceMask);
+    frame.pathConfig[3] =
+        (options.skipBlendedSecondaryRays ? 0xffu & ~uint32_t(remix::trace::blendedInstanceMask) : 0xffu) &
+        ~uint32_t(remix::trace::viewModelInstanceMask) & ~uint32_t(remix::trace::reflectionOnlyInstanceMask);
     if (prepared.viewModel)
       frame.pathConfig[3] |= 0x100u;
     if (!options.iridescence)
@@ -1116,7 +1121,8 @@ namespace remix::metal {
     frame.visibilityProbe[0] = .02f / options.sceneScale;
     frame.visibilityProbe[1] = .05f / options.sceneScale;
     frame.visibilityProbe[3] = options.rayOffset;
-    frame.visibilityProbe[2] = c.displayHeight && height < c.displayHeight ? float(height) / float(c.displayHeight) : 1.f;
+    frame.visibilityProbe[2] =
+        c.displayHeight && height < c.displayHeight ? float(height) / float(c.displayHeight) : 1.f;
     static_assert(PathTracer::textureLimit <= 32 * 128);
     for (const uint32_t slot : srgbSlots)
       frame.srgbTextures[slot >> 7][(slot >> 5) & 3] |= 1u << (slot & 31);
@@ -1173,14 +1179,12 @@ namespace remix::metal {
     previousLocalAdaptive = frame.localConfig[3] & 0x80000000u;
     temporalFrame = {};
     const bool staticUnits = prepared.staticUnits;
-    temporalFrame.shadow[2] =
-        (staticUnits && statics.livePbrSurfaces()) ||
-        std::any_of(resources.draws().begin(), resources.draws().end(),
-                    [](const auto &draw) { return draw.traced() && draw.material->pbr; });
-    temporalFrame.shadow[3] =
-        (staticUnits && statics.liveSurfaces() > statics.livePbrSurfaces()) ||
-        std::any_of(resources.draws().begin(), resources.draws().end(),
-                    [](const auto &draw) { return draw.traced() && !draw.material->pbr; });
+    temporalFrame.shadow[2] = (staticUnits && statics.livePbrSurfaces()) ||
+                              std::any_of(resources.draws().begin(), resources.draws().end(),
+                                          [](const auto &draw) { return draw.traced() && draw.material->pbr; });
+    temporalFrame.shadow[3] = (staticUnits && statics.liveSurfaces() > statics.livePbrSurfaces()) ||
+                              std::any_of(resources.draws().begin(), resources.draws().end(),
+                                          [](const auto &draw) { return draw.traced() && !draw.material->pbr; });
     temporalFrame.translucency[0] = denoiser && (c.reblur || denoised) && options.translucencyDenoiser && flags.blended;
     temporalFrame.translucency[1] = denoiser && c.reblur && options.translucencyReuse && options.bounces > 0 &&
                                     options.indirectClamp == 0 && !debugView && flags.blended;
@@ -1388,20 +1392,20 @@ namespace remix::metal {
         numosSky->setSettings(skySettings, skyControl);
         // The static TLAS: the world (Metal has no combined TLAS).
         skyScene = {.tlas = tlas[0].handle, .referenced = resident};
-        const sky::FrameDescription description{
-            .view = resources.view(),
-            .projection = resources.projection(),
-            .previousView = temporalFrame.previousView,
-            .previousProjection = history.reset() ? resources.projection() : previousProjection,
-            .jitter = {temporalFrame.jitter[0], temporalFrame.jitter[1]},
-            .renderWidth = width,
-            .renderHeight = height,
-            .outputWidth = configuration.displayWidth,
-            .outputHeight = configuration.displayHeight,
-            .metersPerUnit = options.sceneScale,
-            .upAxis = options.volumetricUpAxis,
-            .cameraCut = history.reset() || !skyReady,
-            .scene = skyScene.tlas ? &skyScene : nullptr};
+        const sky::FrameDescription description{.view = resources.view(),
+                                                .projection = resources.projection(),
+                                                .previousView = temporalFrame.previousView,
+                                                .previousProjection =
+                                                    history.reset() ? resources.projection() : previousProjection,
+                                                .jitter = {temporalFrame.jitter[0], temporalFrame.jitter[1]},
+                                                .renderWidth = width,
+                                                .renderHeight = height,
+                                                .outputWidth = configuration.displayWidth,
+                                                .outputHeight = configuration.displayHeight,
+                                                .metersPerUnit = options.sceneScale,
+                                                .upAxis = options.volumetricUpAxis,
+                                                .cameraCut = history.reset() || !skyReady,
+                                                .scene = skyScene.tlas ? &skyScene : nullptr};
         skyActive = numosSky->record(command, description);
         skyReady |= skyActive;
         skyReason = numosSky->status();
@@ -1608,8 +1612,8 @@ namespace remix::metal {
     // reconstructed output, or the traced image; debug views bypass them.
     {
       const bool reconstructed = reconstruction && configuration.reconstruction && !debugView;
-      post->record(command, reconstructed ? reconstruction->output() : world, options, resources.temporalEpoch(),
-                   true, options.debugView || options.shadowDebug || options.sharcDebug || options.validation,
+      post->record(command, reconstructed ? reconstruction->output() : world, options, resources.temporalEpoch(), true,
+                   options.debugView || options.shadowDebug || options.sharcDebug || options.validation,
                    stats.sceneGeneration);
     }
     compositeSet.begin(frameIndex);
@@ -1634,8 +1638,8 @@ namespace remix::metal {
     bool viewModels = false;
     for (size_t i = 0; i < tables.primaryCount() && !viewModels; ++i)
       viewModels = tables.primary(i).viewModel;
-    id<MTLTexture> depth = texture2d(device, Raster::Gpu::depthFormat, w, h, MTLTextureUsageRenderTarget, 1,
-                                     MTLStorageModeMemoryless);
+    id<MTLTexture> depth =
+        texture2d(device, Raster::Gpu::depthFormat, w, h, MTLTextureUsageRenderTarget, 1, MTLStorageModeMemoryless);
     for (int part = 0; part < (viewModels ? 2 : 1); ++part) {
       auto *pass = [MTLRenderPassDescriptor renderPassDescriptor];
       if (stable) {
@@ -1655,11 +1659,11 @@ namespace remix::metal {
       pass.depthAttachment.loadAction = MTLLoadActionClear;
       pass.depthAttachment.storeAction = MTLStoreActionDontCare;
       pass.depthAttachment.clearDepth = 0;
-      id<MTLRenderCommandEncoder> encoder = renderEncoder(
-          command, pass,
-          stable ? (part ? @"Stable depth (view models)" : @"Stable depth (raster, output res)")
-                 : (part ? @"Primary G-buffer (view models)" : @"Primary G-buffer (raster)"),
-          w, h);
+      id<MTLRenderCommandEncoder> encoder =
+          renderEncoder(command, pass,
+                        stable ? (part ? @"Stable depth (view models)" : @"Stable depth (raster, output res)")
+                               : (part ? @"Primary G-buffer (view models)" : @"Primary G-buffer (raster)"),
+                        w, h);
       [encoder setViewport:{0, 0, double(w), double(h), 0, 1}];
       [encoder setRenderPipelineState:stable ? stableDepthPipeline : primaryPipeline];
       [encoder setDepthStencilState:primaryDepth];
@@ -1880,8 +1884,8 @@ namespace remix::metal {
       newEnergy += light[i];
       difference += std::abs(light[i] - sharc.light[i]);
     }
-    sharc.clear |= difference > .25f * std::max(oldEnergy, newEnergy) ||
-                   (std::max(oldEnergy, newEnergy) > 0 && angle < .999f);
+    sharc.clear |=
+        difference > .25f * std::max(oldEnergy, newEnergy) || (std::max(oldEnergy, newEnergy) > 0 && angle < .999f);
     const bool localChanged =
         !std::equal(std::begin(frame.localConfig), std::end(frame.localConfig), sharc.localConfig) ||
         frame.localScale[0] != sharc.localIntensity || frame.localScale[1] != sharc.localRange;
@@ -1925,8 +1929,7 @@ namespace remix::metal {
                                          options.sharcMaxUpdatePaths)
         ++sharc.downscale;
     frame.sharcConfig[0] = uint32_t(hasReceivers) | uint32_t(options.sharcDynamicSurfaces) << 1 |
-                           uint32_t(options.sharcGlossySurfaces) << 2 |
-                           uint32_t(!options.sharcFootprintTest) << 3;
+                           uint32_t(options.sharcGlossySurfaces) << 2 | uint32_t(!options.sharcFootprintTest) << 3;
     frame.sharcConfig[1] = sharc.stats.capacity;
     frame.sharcConfig[2] = sharc.downscale;
     frame.sharcConfig[3] = options.sharcDebug;
@@ -1934,10 +1937,10 @@ namespace remix::metal {
     // While the lighting changes a cell's mean says nothing of what it should
     // hold next: the limit would only hold new light back.
     frame.sharcGrid[1] = sharc.responsiveFrames ? 0 : options.sharcFireflyClamp;
-    frame.sharcGrid[2] = float(sharc.responsiveFrames ? std::min(options.sharcAccumulationFrames, 4u)
-                               : sharc.motionFrames
-                                   ? std::min(options.sharcAccumulationFrames, options.sharcMotionFrames)
-                                   : options.sharcAccumulationFrames);
+    frame.sharcGrid[2] =
+        float(sharc.responsiveFrames ? std::min(options.sharcAccumulationFrames, 4u)
+              : sharc.motionFrames   ? std::min(options.sharcAccumulationFrames, options.sharcMotionFrames)
+                                     : options.sharcAccumulationFrames);
     frame.sharcGrid[3] = float(options.sharcStaleFrames);
     std::copy_n(sharc.clear ? frame.eye : sharc.previousEye, 3, frame.sharcPreviousCamera);
     std::copy_n(frame.eye, 3, sharc.previousEye);
@@ -1967,8 +1970,11 @@ namespace remix::metal {
     if (!sharc.stats.active || !sharc.hasReceivers)
       return;
     id<MTLBlitCommandEncoder> blit = [command blitCommandEncoder];
-    [blit copyFromBuffer:sharc.counters->handle sourceOffset:0 toBuffer:sharc.readback[frameIndex]
-       destinationOffset:0 size:16];
+    [blit copyFromBuffer:sharc.counters->handle
+             sourceOffset:0
+                 toBuffer:sharc.readback[frameIndex]
+        destinationOffset:0
+                     size:16];
     [blit endEncoding];
     sharc.pending[frameIndex] = true;
   }
@@ -1980,8 +1986,8 @@ namespace remix::metal {
     // upscale/renderer.cpp composite: the reconstructed output at display size.
     const auto backend = reconstruction::Backend(g.configuration.reconstruction);
     if (g.reconstruction && backend != reconstruction::Backend::Native && !g.debugView) {
-      g.reconstruction->composite(encoder, g.primary[4], g.post->exposure(), g.post->bloom(), metal::sampler(g.device, 1, 3, 3), g.post->settings(),
-                                  g.frameIndex, g.display);
+      g.reconstruction->composite(encoder, g.primary[4], g.post->exposure(), g.post->bloom(),
+                                  metal::sampler(g.device, 1, 3, 3), g.post->settings(), g.frameIndex, g.display);
       return;
     }
     const auto &composite = library(Stage::compositeFrag);
@@ -2061,17 +2067,16 @@ namespace remix::metal {
     const bool ready = sparseCompact && sparseArgs &&
                        computePipelineAsync(device, sparseCompact.stage, sparseCompact.base) &&
                        computePipelineAsync(device, sparseArgs.stage, sparseArgs.base);
-    s.inactiveReason =
-        !options.sparseRendering ? "not requested"
-        : configuration.reconstruction != uint32_t(reconstruction::Backend::MetalFXDenoising)
-            ? "needs the MetalFX denoiser (Ray Reconstruction)"
-        : indirectPass.active ? "separate indirect pass is active"
-        : options.accumulate  ? "accumulation is on"
-        : constants.splitLocal[3] || constants.sun[3] != 0 || options.sharcDebug || options.debugView
-            ? "a debug view is on"
-        : rate > options.sparseMaxRate ? "the rate at this render resolution exceeds sparseMaxRate"
-        : !ready                       ? "its passes are compiling"
-                                       : nullptr;
+    s.inactiveReason = !options.sparseRendering ? "not requested"
+                       : configuration.reconstruction != uint32_t(reconstruction::Backend::MetalFXDenoising)
+                           ? "needs the MetalFX denoiser (Ray Reconstruction)"
+                       : indirectPass.active ? "separate indirect pass is active"
+                       : options.accumulate  ? "accumulation is on"
+                       : constants.splitLocal[3] || constants.sun[3] != 0 || options.sharcDebug || options.debugView
+                           ? "a debug view is on"
+                       : rate > options.sparseMaxRate ? "the rate at this render resolution exceeds sparseMaxRate"
+                       : !ready                       ? "its passes are compiling"
+                                                      : nullptr;
     if (s.inactiveReason)
       return;
     const size_t bytes = size_t(width) * height * 4;
@@ -2124,16 +2129,15 @@ namespace remix::metal {
     const uint32_t cells = remix::trace::volumeCells(options), levels = remix::trace::volumeLevels(options);
     const float cellMeters = std::clamp(options.volumetricCellSize, .02f, 16.f);
     const float reachMeters = std::max(options.volumetricMaxDistance, cellMeters);
-    remix::trace::g_volumeState = {options.volumetrics,
-                                   false,
-                                   v.inactiveReason ? v.inactiveReason : "",
-                                   medium.source,
-                                   cells,
-                                   levels,
-                                   medium.active ? -std::log(remix::trace::volumeVisibility) / medium.extinction *
-                                                       options.sceneScale
-                                                 : 0,
-                                   reachMeters};
+    remix::trace::g_volumeState = {
+        options.volumetrics,
+        false,
+        v.inactiveReason ? v.inactiveReason : "",
+        medium.source,
+        cells,
+        levels,
+        medium.active ? -std::log(remix::trace::volumeVisibility) / medium.extinction * options.sceneScale : 0,
+        reachMeters};
     if (v.inactiveReason)
       return;
     const float cellUnits = cellMeters / options.sceneScale;
@@ -2309,8 +2313,8 @@ namespace remix::metal {
     g.active = false;
     frame.skyGuideRead = frame.skyGuideWrite = 0;
     std::fill_n(frame.skyGuideConfig, 4, 0u);
-    if (!options.skyGuiding || options.skySamples < 2 || frame.skyRadiance[3] == 0 || !options.sky ||
-        !denoiser || options.accumulate)
+    if (!options.skyGuiding || options.skySamples < 2 || frame.skyRadiance[3] == 0 || !options.sky || !denoiser ||
+        options.accumulate)
       return;
     if (!g.history[0]) {
       const size_t bytes = size_t(SkyGuiding::capacity) * SkyGuiding::stride * 4;
@@ -2390,8 +2394,8 @@ namespace remix::metal {
     frame.restirHistoryWrite = r.history[r.writeIndex]->address;
     frame.restirHistoryRead = r.historyValid ? r.history[r.writeIndex ^ 1]->address : 0;
     frame.restirConfig[0] = options.restirCandidates;
-    frame.restirConfig[1] =
-        std::min(options.restirSpatialSamples, 8u) | std::min(options.restirDisocclusionSamples, 8u) << 8;
+    frame.restirConfig[1] = std::min(options.restirSpatialSamples, 8u) | std::min(options.restirDisocclusionSamples, 8u)
+                                                                             << 8;
     frame.restirConfig[2] = options.restirTemporalHistory;
     // Bit 2: re-test history samples for occluders that moved.
     frame.restirConfig[3] = (options.restirInitialVisibility ? 1u : 0u) | (options.restirPermutation ? 2u : 0u) |
@@ -2413,7 +2417,8 @@ namespace remix::metal {
     // Not probe settings; free slots.
     frame.localProbeParams[1] = options.shadowTerminatorSoften ? 1.f : 0.f;
     // The terminator lift's limits in world units (0 length: off).
-    const float scale = std::max(options.sceneScale, 1e-6f), maxArea = options.shadowTerminatorMaxArea / (scale * scale);
+    const float scale = std::max(options.sceneScale, 1e-6f),
+                maxArea = options.shadowTerminatorMaxArea / (scale * scale);
     frame.localProbeParams[3] = options.shadowTerminatorLift ? options.shadowTerminatorMaxLength / scale : 0.f;
     std::memcpy(&frame.visibilityConfig[3], &maxArea, 4);
     frame.restirParams[3] = options.contactGap / scale; // secondary rays' least distance, world units
@@ -2464,10 +2469,10 @@ namespace remix::metal {
       f.guideCounters = metal::buffer(device, nullptr, 16);
     id<MTLBlitCommandEncoder> blit = blitEncoder(command, @"Light guiding counters");
     [blit copyFromBuffer:lightGuiding.history[lightGuiding.writeIndex]->handle
-            sourceOffset:size_t(LightGuiding::capacity) * 16
-                toBuffer:f.guideCounters
-       destinationOffset:0
-                    size:16];
+             sourceOffset:size_t(LightGuiding::capacity) * 16
+                 toBuffer:f.guideCounters
+        destinationOffset:0
+                     size:16];
     [blit endEncoding];
     f.guidePending = true;
   }
@@ -2654,8 +2659,11 @@ namespace remix::metal {
     if (!f.reuseCounts)
       f.reuseCounts = metal::buffer(device, nullptr, 16);
     id<MTLBlitCommandEncoder> blit = blitEncoder(command, @"PBR reuse diagnostics");
-    [blit copyFromBuffer:pbrReuse.history[pbrReuse.writeIndex]->handle sourceOffset:0 toBuffer:f.reuseCounts
-       destinationOffset:0 size:16];
+    [blit copyFromBuffer:pbrReuse.history[pbrReuse.writeIndex]->handle
+             sourceOffset:0
+                 toBuffer:f.reuseCounts
+        destinationOffset:0
+                     size:16];
     [blit endEncoding];
     f.reusePending = true;
   }
@@ -2764,8 +2772,11 @@ namespace remix::metal {
     if (!f.pathRecords)
       f.pathRecords = metal::buffer(device, nullptr, p.records->handle.length);
     id<MTLBlitCommandEncoder> blit = blitEncoder(command, @"Path inspector records");
-    [blit copyFromBuffer:p.records->handle sourceOffset:0 toBuffer:f.pathRecords destinationOffset:0
-                    size:f.pathRecords.length];
+    [blit copyFromBuffer:p.records->handle
+             sourceOffset:0
+                 toBuffer:f.pathRecords
+        destinationOffset:0
+                     size:f.pathRecords.length];
     [blit endEncoding];
     f.pathPending = true;
   }
@@ -2818,8 +2829,8 @@ namespace remix::metal {
       std::fprintf(file, "time_ms");
       for (const char *pass : {"opaque", "direct", "transparency"})
         for (const char *ray : {"scene", "sun", "local"})
-          for (const char *event :
-               {"queries", "candidates", "alpha", "alpha_reject", "back_reject", "committed", "alpha_texture", "reserved"})
+          for (const char *event : {"queries", "candidates", "alpha", "alpha_reject", "back_reject", "committed",
+                                    "alpha_texture", "reserved"})
             std::fprintf(file, ",%s_%s_%s", pass, ray, event);
       for (const char *pass : {"opaque", "direct", "transparency"})
         for (const char *event : {"starts", "depth1", "depth2", "depth3", "depth4", "miss", "zero", "cache", "limit",
@@ -2828,7 +2839,8 @@ namespace remix::metal {
       std::fprintf(file, "\n");
     }
     const auto time =
-        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+            .count();
     std::fprintf(file, "%lld", static_cast<long long>(time));
     for (unsigned pass = 0; pass < 3; ++pass)
       for (unsigned i = 0; i < 24; ++i)
@@ -2867,9 +2879,7 @@ namespace remix::metal {
     return m_gpu->lightGuiding.stats;
   }
 
-  bool PathTracer::translucencyDenoiserActive() const {
-    return m_gpu->denoiser && m_gpu->denoiser->foregroundActive();
-  }
+  bool PathTracer::translucencyDenoiserActive() const { return m_gpu->denoiser && m_gpu->denoiser->foregroundActive(); }
   ReconstructionStatistics PathTracer::upscalingStatistics() const {
     const auto &g = *m_gpu;
     const auto &c = g.configuration;
@@ -2922,7 +2932,5 @@ namespace remix::metal {
     result.generation = g.lightBvh.generation;
     return result;
   }
-  void PathTracer::resetPerformance() {
-    m_gpu->performance = {.structSize = sizeof(remixapi_FramePerformanceEXT)};
-  }
+  void PathTracer::resetPerformance() { m_gpu->performance = {.structSize = sizeof(remixapi_FramePerformanceEXT)}; }
 } // namespace remix::metal

@@ -58,12 +58,10 @@ int main(int argc, char **argv) {
   require(caps.activeBackend == 0 && caps.requestedBackend == 0, "Raster must be default");
   require(api.SetConfigVariable("rtx.native.backend", "invalid") == REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS,
           "Invalid backend accepted");
-  require(api.SetConfigVariable("rtx.native.pathtrace.samples", "17") ==
-              REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS,
+  require(api.SetConfigVariable("rtx.native.pathtrace.samples", "17") == REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS,
           "Invalid samples accepted");
   if (!(caps.supportedBackends & 2)) {
-    require(api.SetConfigVariable("rtx.native.backend", "pathtrace") ==
-                REMIXAPI_ERROR_CODE_FEATURE_UNAVAILABLE,
+    require(api.SetConfigVariable("rtx.native.backend", "pathtrace") == REMIXAPI_ERROR_CODE_FEATURE_UNAVAILABLE,
             "Unsupported pathtrace selected");
     ok(remixapi_GetBackendCapabilitiesEXT(&caps));
     require(!caps.activeBackend && !caps.requestedBackend && caps.unavailableReason[0],
@@ -86,8 +84,7 @@ int main(int argc, char **argv) {
       ok(api.Present(nullptr));
       if (!remix::api::g_runtime.preparationStatus().pending)
         break;
-      require(std::chrono::steady_clock::now() < deadline,
-              "Injected tracing failure did not finish preparing");
+      require(std::chrono::steady_clock::now() < deadline, "Injected tracing failure did not finish preparing");
       SDL_Delay(1);
     } while (true);
     ok(remixapi_GetBackendCapabilitiesEXT(&caps));
@@ -186,8 +183,10 @@ int main(int argc, char **argv) {
     ok(api.CreateMaterial(&material, &mat));
     remixapi_InstanceInfoBlendEXT alpha{};
     alpha.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_BLEND_EXT;
-    alpha.alphaTestEnabled = 1; alpha.alphaTestCompareOp = 7;
-    alpha.alphaTestReferenceValue = 255; alpha.pNext = &identity;
+    alpha.alphaTestEnabled = 1;
+    alpha.alphaTestCompareOp = 7;
+    alpha.alphaTestReferenceValue = 255;
+    alpha.pNext = &identity;
     instance.pNext = &alpha;
     instance.transform.matrix[0][0] = instance.transform.matrix[1][1] = .2f;
     instance.transform.matrix[0][3] = -.5f;
@@ -195,9 +194,12 @@ int main(int argc, char **argv) {
     extra = [&] {
       auto second = instance;
       auto secondAlpha = alpha;
-      auto secondIdentity = identity; secondIdentity.instanceId = 21;
-      secondAlpha.alphaTestCompareOp = rightCompare; secondAlpha.pNext = &secondIdentity;
-      second.pNext = &secondAlpha; second.transform.matrix[0][3] = .5f;
+      auto secondIdentity = identity;
+      secondIdentity.instanceId = 21;
+      secondAlpha.alphaTestCompareOp = rightCompare;
+      secondAlpha.pNext = &secondIdentity;
+      second.pNext = &secondAlpha;
+      second.transform.matrix[0][3] = .5f;
       ok(api.DrawInstance(&second));
     };
     auto pixels = [&](const char *name) {
@@ -210,35 +212,42 @@ int main(int argc, char **argv) {
       int w, h, n;
       auto bytes = stbi_load(file.c_str(), &w, &h, &n, 4);
       require(bytes != nullptr, "Missing opacity variant screenshot");
-      std::vector<uint8_t> image(bytes, bytes + w*h*4); stbi_image_free(bytes);
+      std::vector<uint8_t> image(bytes, bytes + w * h * 4);
+      stbi_image_free(bytes);
       return image;
     };
     const auto mixed = pixels("mixed.png");
     rightCompare = 7;
     require(pixels("opaque.png") == mixed, "Shared-mesh opaque and alpha-tested visibility differ");
-    alpha.alphaTestCompareOp = 2; rightCompare = 2;
+    alpha.alphaTestCompareOp = 2;
+    rightCompare = 2;
     require(pixels("candidates.png") == mixed, "Candidate-only reference differs from hardware opacity");
-    alpha.alphaTestCompareOp = 7; rightCompare = 0;
+    alpha.alphaTestCompareOp = 7;
+    rightCompare = 0;
     const auto rejected = pixels("rejected.png");
     require(rejected != mixed, "Per-instance alpha rejection reused another instance's opaque BLAS");
     // Replacing the material keeps the geometry identity while changing coverage.
-    opaque.useDrawCallAlphaState = 0; opaque.alphaTestType = 0;
+    opaque.useDrawCallAlphaState = 0;
+    opaque.alphaTestType = 0;
     ok(api.CreateMaterial(&material, &mat));
     const auto replaced = pixels("replacement.png");
     require(replaced != rejected, "Material replacement retained stale opaque coverage");
-    opaque.alphaTestType = 7; ok(api.CreateMaterial(&material, &mat));
+    opaque.alphaTestType = 7;
+    ok(api.CreateMaterial(&material, &mat));
     require(pixels("restored.png") == mixed, "Restoring opacity did not reuse the correct geometry variant");
-    extra = [] {}; instance.transform.matrix[0][3] = 0;
+    extra = [] {};
+    instance.transform.matrix[0][3] = 0;
     for (const char *primary : {"ray", "raster"}) {
-    ok(api.SetConfigVariable("rtx.native.pathtrace.primaryVisibility", primary));
-    instance.doubleSided = 1; instance.transform.matrix[0][0] = .2f;
-    const auto twoSided = pixels("two-sided.png");
-    instance.doubleSided = 0;
-    require(pixels("front.png") == twoSided, "Single-sided front changed opaque traversal coverage");
-    instance.transform.matrix[0][0] *= -1;
-    require(pixels("back.png") != twoSided, "Mirrored single-sided back bypassed candidate rejection");
-    instance.doubleSided = 1;
-    require(pixels("mirrored.png") == twoSided, "Mirrored double-sided opaque geometry lost coverage");
+      ok(api.SetConfigVariable("rtx.native.pathtrace.primaryVisibility", primary));
+      instance.doubleSided = 1;
+      instance.transform.matrix[0][0] = .2f;
+      const auto twoSided = pixels("two-sided.png");
+      instance.doubleSided = 0;
+      require(pixels("front.png") == twoSided, "Single-sided front changed opaque traversal coverage");
+      instance.transform.matrix[0][0] *= -1;
+      require(pixels("back.png") != twoSided, "Mirrored single-sided back bypassed candidate rejection");
+      instance.doubleSided = 1;
+      require(pixels("mirrored.png") == twoSided, "Mirrored double-sided opaque geometry lost coverage");
     }
     // A single surface contains solid and rejected triangles. Start with the
     // cutout so hardware geometry partitioning must remap primitive identities.
@@ -250,26 +259,34 @@ int main(int argc, char **argv) {
       atlasVertices[i].color = i < 4 ? 0xffffffff : 0x00ffffff;
     }
     uint32_t atlasIndices[] = {4, 5, 6, 4, 6, 7, 0, 1, 2, 0, 2, 3};
-    surface.vertices_values = atlasVertices; surface.vertices_count = 8;
-    surface.indices_values = atlasIndices; surface.indices_count = 12;
-    ok(api.CreateMesh(&mesh, &geometry)); instance.mesh = geometry;
+    surface.vertices_values = atlasVertices;
+    surface.vertices_count = 8;
+    surface.indices_values = atlasIndices;
+    surface.indices_count = 12;
+    ok(api.CreateMesh(&mesh, &geometry));
+    instance.mesh = geometry;
     instance.transform.matrix[0][0] = instance.transform.matrix[1][1] = 1;
-    opaque.useDrawCallAlphaState = 1; ok(api.CreateMaterial(&material, &mat));
-    alpha.textureAlphaOperation = 1; alpha.textureAlphaArg1Source = 2;
+    opaque.useDrawCallAlphaState = 1;
+    ok(api.CreateMaterial(&material, &mat));
+    alpha.textureAlphaOperation = 1;
+    alpha.textureAlphaArg1Source = 2;
     for (const char *primary : {"ray", "raster"}) {
       ok(api.SetConfigVariable("rtx.native.pathtrace.primaryVisibility", primary));
       for (const char *debug : {"0", "3"}) {
         ok(api.SetConfigVariable("rtx.native.pathtrace.debugView", debug));
-        alpha.alphaTestCompareOp = 4; alpha.alphaTestReferenceValue = 128;
+        alpha.alphaTestCompareOp = 4;
+        alpha.alphaTestReferenceValue = 128;
         const auto partitioned = pixels("partitioned.png");
-        alpha.alphaTestCompareOp = 5; alpha.alphaTestReferenceValue = 0;
+        alpha.alphaTestCompareOp = 5;
+        alpha.alphaTestReferenceValue = 0;
         require(pixels("partition-reference.png") == partitioned,
                 "Mixed opacity partition changed shading or original triangle identity");
         alpha.alphaTestCompareOp = 7;
         require(pixels("partition-all.png") != partitioned, "Changing mixed coverage retained stale BLAS flags");
       }
     }
-    ok(api.Shutdown()); return 0;
+    ok(api.Shutdown());
+    return 0;
   }
   if (argc > 2 && std::string(argv[2]) == "geometry-history") {
     ok(api.SetConfigVariable("rtx.native.pathtrace.accumulate", "1"));
@@ -301,19 +318,33 @@ int main(int argc, char **argv) {
   }
   if (argc > 2 && std::string(argv[2]) == "mesh-update") {
     remixapi_MeshInfoUpdateEXT update{};
-    update.sType = REMIXAPI_STRUCT_TYPE_MESH_UPDATE_EXT; update.enabled = 1; mesh.pNext = &update;
+    update.sType = REMIXAPI_STRUCT_TYPE_MESH_UPDATE_EXT;
+    update.enabled = 1;
+    mesh.pNext = &update;
     instance.pNext = nullptr; // The hint supplies storage reuse, not actor identity.
-    for (auto &v : vertices) { v.position[0] *= .3f; v.position[1] *= .3f; }
+    for (auto &v : vertices) {
+      v.position[0] *= .3f;
+      v.position[1] *= .3f;
+    }
     ok(api.SetConfigVariable("rtx.native.pathtrace.accumulate", "1"));
-    ok(api.CreateMesh(&mesh,&geometry)); frame(); frame();
+    ok(api.CreateMesh(&mesh, &geometry));
+    frame();
+    frame();
     auto before = statistics();
-    auto edit = [&] { ok(api.CreateMesh(&mesh,&geometry)); frame(); };
-    for (unsigned i = 0; i < 60; ++i) { vertices[0].position[0] -= .001f; edit(); }
+    auto edit = [&] {
+      ok(api.CreateMesh(&mesh, &geometry));
+      frame();
+    };
+    for (unsigned i = 0; i < 60; ++i) {
+      vertices[0].position[0] -= .001f;
+      edit();
+    }
     auto refitted = statistics();
     require(refitted.blasBuilds == before.blasBuilds && refitted.blasRefits == before.blasRefits + 60,
             "Compatible finite vertices did not refit");
     require(refitted.accumulationCount == 1, "Refitted mesh retained stale history");
-    frame(); require(statistics().accumulationCount == 2, "Held update mesh did not accumulate");
+    frame();
+    require(statistics().accumulationCount == 2, "Held update mesh did not accumulate");
     require(statistics().blasRefits == refitted.blasRefits, "Held mesh refit again");
     ok(api.SetConfigVariable("rtx.native.pathtrace.accumulate", "0"));
     ok(api.SetConfigVariable("rtx.native.pathtrace.taa", "0"));
@@ -322,43 +353,61 @@ int main(int argc, char **argv) {
     const auto directory = std::filesystem::absolute(std::filesystem::path(argv[1]));
     std::filesystem::create_directories(directory);
     auto pixels = [&](const char *name) {
-      const auto file = (directory/name).string();
+      const auto file = (directory / name).string();
       ok(remix::test::requestScreenshot(api, file.c_str(), frame));
       frame();
       frame();
-      int w, h, n; auto *data = stbi_load(file.c_str(), &w, &h, &n, 4);
+      int w, h, n;
+      auto *data = stbi_load(file.c_str(), &w, &h, &n, 4);
       require(data, "Mesh-update screenshot unavailable");
-      std::vector<unsigned char> result(data, data+w*h*4); stbi_image_free(data);
-      require(std::any_of(result.begin(),result.end(),[](auto c) { return c > 0 && c < 255; }),
+      std::vector<unsigned char> result(data, data + w * h * 4);
+      stbi_image_free(data);
+      require(std::any_of(result.begin(), result.end(), [](auto c) { return c > 0 && c < 255; }),
               "Mesh-update image has no shaded geometry");
       return result;
     };
     // These settings prepare a replacement tracer with its own geometry: its
     // first frame builds the mesh, then refit that up to the limit again.
     frame();
-    for (unsigned i = 0; i < 60; ++i) { vertices[0].position[0] -= .001f; edit(); }
+    for (unsigned i = 0; i < 60; ++i) {
+      vertices[0].position[0] -= .001f;
+      edit();
+    }
     refitted = statistics();
     const auto refitImage = pixels("refitted.png");
     // UV-only replacement preserves this white-texture image while the refit
     // limit forces a fresh build from precisely the same positions and indices.
-    vertices[0].texcoord[0] += .1f; edit();
+    vertices[0].texcoord[0] += .1f;
+    edit();
     require(statistics().blasBuilds == refitted.blasBuilds + 1, "Refit limit did not rebuild");
     require(pixels("rebuilt.png") == refitImage, "Refitted and rebuilt geometry images disagree");
-    before = statistics(); vertices[0].position[0] -= 10; edit();
+    before = statistics();
+    vertices[0].position[0] -= 10;
+    edit();
     require(statistics().blasBuilds == before.blasBuilds + 1, "Large displacement did not rebuild");
-    before = statistics(); std::swap(indices[1],indices[2]); edit();
+    before = statistics();
+    std::swap(indices[1], indices[2]);
+    edit();
     require(statistics().blasBuilds == before.blasBuilds + 1 && statistics().blasRefits == before.blasRefits,
             "Index edit used an incompatible refit");
-    before = statistics(); surface.indices_count = 3; edit();
+    before = statistics();
+    surface.indices_count = 3;
+    edit();
     require(statistics().blasBuilds == before.blasBuilds + 1, "Primitive count edit did not rebuild");
-    before = statistics(); ok(api.DestroyMesh(geometry)); edit();
+    before = statistics();
+    ok(api.DestroyMesh(geometry));
+    edit();
     require(statistics().blasBuilds == before.blasBuilds + 1, "Destroy/recreate reused stale update storage");
     // Two immutable replacements can be queued in the same frame. The second
     // must get its own BLAS while the first is referenced by this command.
-    before = statistics(); ok(api.DrawInstance(&instance)); vertices[0].position[0] += .001f; edit();
+    before = statistics();
+    ok(api.DrawInstance(&instance));
+    vertices[0].position[0] += .001f;
+    edit();
     require(statistics().blasBuilds == before.blasBuilds + 1, "Queued mesh versions aliased one mutable BLAS");
     ok(api.Shutdown());
-    std::puts("Mesh updates: refits, exact reuse, history, periodic/displacement rebuilds, topology and lifetime isolation passed");
+    std::puts("Mesh updates: refits, exact reuse, history, periodic/displacement rebuilds, topology and lifetime "
+              "isolation passed");
     return 0;
   }
   if (argc > 2 && std::string(argv[2]) == "mesh-refresh") {
@@ -371,23 +420,35 @@ int main(int argc, char **argv) {
     identity.classification = REMIXAPI_INSTANCE_DYNAMIC_EXT;
     remixapi_MeshInfoDeformEXT refresh{};
     refresh.sType = REMIXAPI_STRUCT_TYPE_MESH_DEFORM_EXT;
-    for (auto &v : vertices) { v.position[0] *= .3f; v.position[1] *= .3f; }
+    for (auto &v : vertices) {
+      v.position[0] *= .3f;
+      v.position[1] *= .3f;
+    }
     auto measure = [&](const char *what, remixapi_MeshHandle &handle) {
       mesh.pNext = nullptr;
       ok(api.CreateMesh(&mesh, &handle));
-      for (int i = 0; i < 8; ++i) frame(); // Settle builds and compaction.
+      for (int i = 0; i < 8; ++i)
+        frame(); // Settle builds and compaction.
       mesh.pNext = &refresh;
-      auto edit = [&] { ok(api.CreateMesh(&mesh, &handle)); frame(); };
+      auto edit = [&] {
+        ok(api.CreateMesh(&mesh, &handle));
+        frame();
+      };
       const auto before = statistics();
-      vertices[0].position[0] -= .001f; edit();
+      vertices[0].position[0] -= .001f;
+      edit();
       const auto started = statistics();
       require(started.blasBuilds == before.blasBuilds + 1, "First refresh did not start one lineage build");
-      for (unsigned i = 0; i < 30; ++i) { vertices[0].position[0] -= .001f; edit(); }
-      for (int i = 0; i < 4; ++i) frame();
+      for (unsigned i = 0; i < 30; ++i) {
+        vertices[0].position[0] -= .001f;
+        edit();
+      }
+      for (int i = 0; i < 4; ++i)
+        frame();
       const auto refreshed = statistics();
       std::printf("%s: 30 refreshes -> BLAS builds +%llu, refits +%llu, compactions +%llu, dynamic TLAS builds +%llu, "
-                  "refits +%llu\n", what,
-                  (unsigned long long)(refreshed.blasBuilds - started.blasBuilds),
+                  "refits +%llu\n",
+                  what, (unsigned long long)(refreshed.blasBuilds - started.blasBuilds),
                   (unsigned long long)(refreshed.blasRefits - started.blasRefits),
                   (unsigned long long)(refreshed.blasCompactions - started.blasCompactions),
                   (unsigned long long)(refreshed.dynamicTlasBuilds - started.dynamicTlasBuilds),
@@ -404,7 +465,8 @@ int main(int argc, char **argv) {
       mesh.surfaces_count = 2;
       remixapi_MeshInfoSurfaceTriangles pair[2] = {surface, surface};
       mesh.surfaces_values = pair;
-      vertices[0].position[0] -= .001f; edit();
+      vertices[0].position[0] -= .001f;
+      edit();
       require(statistics().blasBuilds == refreshed.blasBuilds && statistics().blasRefits == refreshed.blasRefits,
               "Surface-count change was not ignored");
       mesh.surfaces_count = 1;
@@ -455,8 +517,7 @@ int main(int argc, char **argv) {
       require(std::chrono::steady_clock::now() < deadline, "Temporal failure did not finish preparing");
     } while (remix::api::g_runtime.preparationStatus().pending);
     const auto failed = denoiseStats();
-    require(!remix::api::g_runtime.preparationStatus().failure.empty() &&
-                !failed.activeDenoiser && !failed.activeTaa,
+    require(!remix::api::g_runtime.preparationStatus().failure.empty() && !failed.activeDenoiser && !failed.activeTaa,
             "Temporal allocation failure did not retain the active raw renderer");
     submit();
     submit();
@@ -477,8 +538,7 @@ int main(int argc, char **argv) {
     auto converged = denoiseStats();
     frame();
     frame();
-    require(denoiseStats().renderedFrames == converged.renderedFrames,
-            "UI-only redraw retraced converged world");
+    require(denoiseStats().renderedFrames == converged.renderedFrames, "UI-only redraw retraced converged world");
     camera.view[3][0] = .01f;
     frame();
     require(denoiseStats().renderedFrames == converged.renderedFrames + 1 && denoiseStats().redrawRequested,
@@ -618,7 +678,8 @@ int main(int argc, char **argv) {
         // Change scene metadata to prevent frame caching without moving the edge.
         distant.direction.x = (tick % 2) ? .0001f : 0.f;
         ok(api.UpdateLightDefinition(sun, &light));
-      } else camera.view[3][2] = (tick % 2) ? .0001f : 0.f;
+      } else
+        camera.view[3][2] = (tick % 2) ? .0001f : 0.f;
       ok(api.SetupCamera(&camera));
       if (animatedAtlas) {
         // Only the unseen atlas tile changes. Every subsequent draw resolves
@@ -633,7 +694,8 @@ int main(int argc, char **argv) {
       ok(api.SetConfigVariable("rtx.native.pathtrace.primaryVisibility", primary));
       for (unsigned mode = 0; mode < 4; ++mode) {
         const bool taa = (mode & 1) != 0, reblur = (mode & 2) != 0;
-        if (fsr && !taa) continue;
+        if (fsr && !taa)
+          continue;
         if (reblur && !denoiseCaps.reblurShSupported)
           continue;
         ok(api.SetConfigVariable("rtx.native.pathtrace.taa", taa ? "1" : "0"));
@@ -647,8 +709,8 @@ int main(int argc, char **argv) {
           // sixteen jitter phases, rather than repeating just the even phases.
           if (sample == 8)
             frame();
-          const auto name = std::string("taa-edge-") + primary + "-" + std::to_string(mode) + "-" +
-                            std::to_string(sample) + ".png";
+          const auto name =
+              std::string("taa-edge-") + primary + "-" + std::to_string(mode) + "-" + std::to_string(sample) + ".png";
           capture(name.c_str());
           int w, h, n;
           auto bytes = stbi_load((path / name).string().c_str(), &w, &h, &n, 4);
@@ -678,8 +740,8 @@ int main(int argc, char **argv) {
         const auto denoising = denoiseStats();
         require(denoising.activeTaa == (taa && !fsr) && denoising.activeDenoiser == reblur,
                 "Stationary edge did not exercise requested temporal modes");
-        std::printf("Stationary %s edge, TAA %u NRD %u: %.4f px travel, %u coverage pixels\n",
-                    primary, taa, reblur, hi - lo, coveragePixels);
+        std::printf("Stationary %s edge, TAA %u NRD %u: %.4f px travel, %u coverage pixels\n", primary, taa, reblur,
+                    hi - lo, coveragePixels);
         passed &= hi - lo < (taa ? .08 : .001);
         if (taa)
           passed &= coveragePixels > 16 * 24;
@@ -821,8 +883,7 @@ int main(int argc, char **argv) {
   camera.view[3][0] = -1024;
   instance.transform.matrix[0][3] = 1024;
   auto large = capture("floating-origin.png");
-  require(large[0] > 240 && statistics().blasBuilds == builds,
-          "Floating-origin geometry rebuilt or incorrect");
+  require(large[0] > 240 && statistics().blasBuilds == builds, "Floating-origin geometry rebuilt or incorrect");
   camera.view[3][0] = 0;
   instance.transform.matrix[0][3] = 0;
   ok(api.SetConfigVariable("rtx.native.pathtrace.accumulate", "1"));
@@ -900,8 +961,7 @@ int main(int argc, char **argv) {
       for (size_t i = 0; i < sum.size(); ++i)
         results[mode].variance += squares[i] / 16 - std::pow(sum[i] / 16, 2);
       results[mode].variance /= sum.size();
-      std::printf("Quality mode %u: MSE %.9f variance %.9f\n", mode, results[mode].error,
-                  results[mode].variance);
+      std::printf("Quality mode %u: MSE %.9f variance %.9f\n", mode, results[mode].error, results[mode].variance);
     }
     require(results[2].error < results[0].error && results[2].variance < results[0].variance,
             "REBLUR SH did not improve diffuse lighting error and temporal variance");
@@ -955,8 +1015,7 @@ int main(int argc, char **argv) {
   bone.matrix[0][3] = .2f;
   frame();
   auto afterSkin = statistics();
-  require(afterSkin.blasBuilds == beforeSkin.blasBuilds &&
-              afterSkin.blasRefits == beforeSkin.blasRefits + 1 &&
+  require(afterSkin.blasBuilds == beforeSkin.blasBuilds && afterSkin.blasRefits == beforeSkin.blasRefits + 1 &&
               afterSkin.dynamicTlasRefits == beforeSkin.dynamicTlasRefits + 1,
           "Deformation BLAS/TLAS refit");
   frame();
@@ -1003,8 +1062,7 @@ int main(int argc, char **argv) {
   light.radiance = {0, 0, 0};
   ok(api.UpdateLightDefinition(sun, &light));
   auto black = capture("zero-light.png");
-  require(black[0] < 5 && black[1] < 5 && black[2] < 5,
-          "Black distant light did not replace previous selection");
+  require(black[0] < 5 && black[1] < 5 && black[2] < 5, "Black distant light did not replace previous selection");
   light.radiance = {3.14159265f, 3.14159265f, 3.14159265f};
   ok(api.UpdateLightDefinition(sun, &light));
   std::puts("Diffuse color transfer and deformation BLAS/TLAS updates passed");
@@ -1020,8 +1078,7 @@ int main(int argc, char **argv) {
     auto beforeReset = denoiseStats();
     ++temporal.historyResetEpoch;
     frame();
-    require(denoiseStats().historyResets == beforeReset.historyResets + 1,
-            "Camera cut/rebase epoch did not reset");
+    require(denoiseStats().historyResets == beforeReset.historyResets + 1, "Camera cut/rebase epoch did not reset");
     auto beforeWorld = denoiseStats();
     ++temporal.worldEpoch;
     frame();
@@ -1052,8 +1109,7 @@ int main(int argc, char **argv) {
   frame();
   frame();
   ok(api.DestroyLight(sun));
-  require(api.DrawLightInstance(sun) == REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS,
-          "Destroyed distant light accepted");
+  require(api.DrawLightInstance(sun) == REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS, "Destroyed distant light accepted");
   ok(api.Shutdown());
   std::puts("Hardware tracing, caching, accumulation, switching and resize passed");
 }

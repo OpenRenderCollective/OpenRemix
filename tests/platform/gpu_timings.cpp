@@ -47,8 +47,7 @@ int main() {
     self += pass.selfMilliseconds;
   require(near(self + t.untimedMilliseconds, t.frameMilliseconds), "Own times and untimed add up to the frame");
   const auto order = byCost(t);
-  require(order.size() == 4 && order[0] == 1 && order[1] == 0 && order[2] == 2 && order[3] == 3,
-          "Order by own time");
+  require(order.size() == 4 && order[0] == 1 && order[1] == 0 && order[2] == 2 && order[3] == 3, "Order by own time");
   require(std::strcmp(t.passes[1].name, "Trace") == 0 && t.passes[1].width == 1920, "Name and size kept");
 
   // A 32-bit timestamp counter wrapping inside the frame.

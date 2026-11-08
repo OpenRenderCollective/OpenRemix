@@ -62,8 +62,7 @@ namespace remix::metal {
       return vertex;
     }
 
-    id<MTLRenderPipelineState> create(id<MTLDevice> device, MTLRenderPipelineDescriptor *descriptor,
-                                      const char *what) {
+    id<MTLRenderPipelineState> create(id<MTLDevice> device, MTLRenderPipelineDescriptor *descriptor, const char *what) {
       NSError *error = nil;
       id<MTLRenderPipelineState> state = [device newRenderPipelineStateWithDescriptor:descriptor error:&error];
       check(state, what, error);
@@ -121,8 +120,7 @@ namespace remix::metal {
     auto *descriptor = [MTLRenderPipelineDescriptor new];
     descriptor.label = within ? @"Mask source (within)" : @"Silhouette";
     descriptor.vertexFunction = function(device, shaders::Stage::rasterVert);
-    descriptor.fragmentFunction =
-        function(device, within ? shaders::Stage::maskWithin : shaders::Stage::haloMask);
+    descriptor.fragmentFunction = function(device, within ? shaders::Stage::maskWithin : shaders::Stage::haloMask);
     descriptor.vertexDescriptor = rasterVertices(vertexBufferIndex);
     descriptor.colorAttachments[0].pixelFormat = coverageFormat;
     descriptor.colorAttachments[0].writeMask = MTLColorWriteMaskRed;
@@ -153,8 +151,7 @@ namespace remix::metal {
       auto *descriptor = [MTLRenderPipelineDescriptor new];
       descriptor.label = blur ? @"Halo blur" : @"Halo composite";
       descriptor.vertexFunction = function(device, shaders::Stage::haloVert);
-      descriptor.fragmentFunction =
-          function(device, blur ? shaders::Stage::haloBlur : shaders::Stage::haloComposite);
+      descriptor.fragmentFunction = function(device, blur ? shaders::Stage::haloBlur : shaders::Stage::haloComposite);
       auto *color = descriptor.colorAttachments[0];
       if (blur) {
         color.pixelFormat = coverageFormat;

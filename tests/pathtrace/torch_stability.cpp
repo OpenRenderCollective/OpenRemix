@@ -16,16 +16,14 @@
 #include <image/stb_image.h>
 
 namespace {
-void require(bool value, const char *message) {
-  if (!value) {
-    std::fprintf(stderr, "%s\n", message);
-    std::exit(1);
+  void require(bool value, const char *message) {
+    if (!value) {
+      std::fprintf(stderr, "%s\n", message);
+      std::exit(1);
+    }
   }
-}
-void ok(remixapi_ErrorCode code) {
-  require(code == REMIXAPI_ERROR_CODE_SUCCESS, "Torch stability API failure");
-}
-using Image = std::vector<std::array<float, 3>>;
+  void ok(remixapi_ErrorCode code) { require(code == REMIXAPI_ERROR_CODE_SUCCESS, "Torch stability API failure"); }
+  using Image = std::vector<std::array<float, 3>>;
 } // namespace
 int main(int argc, char **argv) {
   require(argc == 2, "Supply capture directory");
@@ -63,8 +61,7 @@ int main(int argc, char **argv) {
   ok(api.SetConfigVariable("rtx.native.backend", "pathtrace"));
   ok(api.SetConfigVariable("rtx.native.vsync", "0"));
   auto config = [&](const char *key, const char *value) {
-    ok(api.SetConfigVariable(
-        (std::string("rtx.native.pathtrace.") + key).c_str(), value));
+    ok(api.SetConfigVariable((std::string("rtx.native.pathtrace.") + key).c_str(), value));
   };
   config("sharc", std::getenv("REMIX_TEST_SHARC") ? "1" : "0");
   config("sky", "0");
@@ -85,12 +82,13 @@ int main(int argc, char **argv) {
   config("adaptiveLocalSampling", adaptive ? adaptive : "0");
   if (const char *split = std::getenv("REMIX_TEST_SPLIT_LOCAL"))
     config("separateLocalLighting", split);
-  const bool familySplit = std::getenv("REMIX_TEST_SPLIT_LOCAL") &&
-                           std::string(std::getenv("REMIX_TEST_SPLIT_LOCAL")) != "3";
+  const bool familySplit =
+      std::getenv("REMIX_TEST_SPLIT_LOCAL") && std::string(std::getenv("REMIX_TEST_SPLIT_LOCAL")) != "3";
   const bool reuseTest = std::getenv("REMIX_TEST_PBR_REUSE");
   if (reuseTest && std::getenv("REMIX_PBR_REUSE_DIAGNOSTICS"))
     std::filesystem::remove(std::getenv("REMIX_PBR_REUSE_DIAGNOSTICS"));
-  if (reuseTest) config("pbrLocalReuse", "1");
+  if (reuseTest)
+    config("pbrLocalReuse", "1");
   const bool mixed = std::getenv("REMIX_TEST_MIXED_LIGHTS");
   const bool softTorch = std::getenv("REMIX_TEST_SOFT_TORCH");
   if (mixed || softTorch) {
@@ -118,8 +116,7 @@ int main(int argc, char **argv) {
   };
   auto white = material({.8f, .8f, .8f}, 1), black = material({0, 0, 0}, 1);
   auto blue = material({.3f, .65f, .9f}, .6f);
-  auto quad = [&](int axis, float plane, float a0, float a1, float b0, float b1,
-                  remixapi_MaterialHandle material) {
+  auto quad = [&](int axis, float plane, float a0, float a1, float b0, float b1, remixapi_MaterialHandle material) {
     remixapi_HardcodedVertex v[4]{};
     uint32_t indices[] = {0, 1, 2, 0, 2, 3};
     for (int i = 0; i < 4; ++i) {
@@ -143,13 +140,11 @@ int main(int argc, char **argv) {
     ok(api.CreateMesh(&mesh, &result));
     return result;
   };
-  auto receiver = quad(2, .8f, -2, 2, -2, 2, white),
-       background = quad(2, .8f, -2, 2, -2, 2, black);
+  auto receiver = quad(2, .8f, -2, 2, -2, 2, white), background = quad(2, .8f, -2, 2, -2, 2, black);
   auto water = quad(2, .3f, -2, 2, -2, 2, blue);
   auto partition = quad(0, .25f, -.35f, .35f, -2, .7f, black);
   auto shadowBlocker = softTorch ? quad(2, .45f, .25f, .35f, -2, 2, black) : nullptr;
-  auto sideA = quad(1, 1, -1, .8f, -1, 1, white),
-       sideB = quad(1, -1, -1, .8f, -1, 1, white);
+  auto sideA = quad(1, 1, -1, .8f, -1, 1, white), sideB = quad(1, -1, -1, .8f, -1, 1, white);
   auto sideC = quad(0, -1, -1, 1, -1, .8f, white);
   std::vector<remixapi_MeshHandle> emitters;
   if (mixed) {
@@ -163,8 +158,7 @@ int main(int argc, char **argv) {
     for (int i = 0; i < (std::getenv("REMIX_TEST_NEAR_EMITTERS") ? 0 : many ? 512 : 4); ++i) {
       float x = -.8f + (many ? (i % 32) * .05f : i * .4f);
       float y = many ? -.4f + (i / 32) * .05f : -.3f;
-      emitters.push_back(quad(2, -.25f, x, x + (many ? .04f : .2f),
-                              y, y + (many ? .04f : .6f), glowing));
+      emitters.push_back(quad(2, -.25f, x, x + (many ? .04f : .2f), y, y + (many ? .04f : .6f), glowing));
     }
   }
   auto reuseBackground = reuseTest ? quad(2, .9f, -2, 2, -2, 2, white) : background;
@@ -232,7 +226,8 @@ int main(int argc, char **argv) {
   });
   auto capture = [&](const std::string &name) {
     // Three fresh frames per capture visit all phases of the 32-frame sequence.
-    if (continuous) frame();
+    if (continuous)
+      frame();
     auto file = (directory / (name + ".png")).string();
     ok(remix::test::requestScreenshot(api, file.c_str(), frame));
     frame();
@@ -263,9 +258,7 @@ int main(int argc, char **argv) {
     double mse = 0, mean = 0, truth = 0;
     std::vector<double> excess;
     for (size_t i = 0; i < image.size(); ++i) {
-      auto luminance = [](const auto &rgb) {
-        return .2126 * rgb[0] + .7152 * rgb[1] + .0722 * rgb[2];
-      };
+      auto luminance = [](const auto &rgb) { return .2126 * rgb[0] + .7152 * rgb[1] + .0722 * rgb[2]; };
       double a = luminance(image[i]), b = luminance(reference[i]);
       mse += (a - b) * (a - b);
       mean += a;
@@ -273,36 +266,35 @@ int main(int argc, char **argv) {
       excess.push_back(std::max(0., a - b));
     }
     std::sort(excess.begin(), excess.end());
-    return std::array<double, 4>{std::sqrt(mse / image.size()),
-                                 mean / image.size(), truth / image.size(),
+    return std::array<double, 4>{std::sqrt(mse / image.size()), mean / image.size(), truth / image.size(),
                                  excess[size_t(.999 * (excess.size() - 1))]};
   };
   auto csv = std::fopen((directory / "metrics.csv").c_str(), "w");
   require(csv, "Cannot open metrics");
-  std::fputs(
-      "primary,signal,mode,pose,rmse,mean,reference,p999_excess,gpu_trace_ms,blue_noise,sequence\n",
-      csv);
+  std::fputs("primary,signal,mode,pose,rmse,mean,reference,p999_excess,gpu_trace_ms,blue_noise,sequence\n", csv);
   const char *onlyPrimary = std::getenv("REMIX_TEST_PRIMARY");
   for (const char *primary : {"raster", "ray"}) {
     if (onlyPrimary && std::string(primary) != onlyPrimary)
       continue;
     config("primaryVisibility", primary);
     for (int signal = 0; signal < 3; ++signal) {
-      if (reuseTest && signal != 1) continue;
+      if (reuseTest && signal != 1)
+        continue;
       if (const auto *only = std::getenv("REMIX_TEST_SIGNAL"))
-        if (signal != std::atoi(only)) continue;
+        if (signal != std::atoi(only))
+          continue;
       config("torchLights", "1");
       meshes = signal == 2 ? std::vector<remixapi_MeshHandle>{background, water}
                            : std::vector<remixapi_MeshHandle>{receiver};
       if (signal == 1)
         meshes.insert(meshes.end(), {partition, sideA, sideB, sideC});
-      if (softTorch) meshes.push_back(shadowBlocker);
-      if (reuseTest) meshes = {receiver, reuseBackground};
+      if (softTorch)
+        meshes.push_back(shadowBlocker);
+      if (reuseTest)
+        meshes = {receiver, reuseBackground};
       meshes.insert(meshes.end(), emitters.begin(), emitters.end());
       for (unsigned i = 0; i < lights.size(); ++i) {
-        sphere.position = {.5f + float(i & 1) * .15f,
-                           (float(i >> 1) - .5f) * .25f,
-                           signal == 2 ? -.4f : .1f};
+        sphere.position = {.5f + float(i & 1) * .15f, (float(i >> 1) - .5f) * .25f, signal == 2 ? -.4f : .1f};
         light.radiance = i == 0   ? remixapi_Float3D{20, 10, 4}
                          : i == 3 ? remixapi_Float3D{6, .6f, .2f}
                                   : remixapi_Float3D{4, 2, .8f};
@@ -313,9 +305,10 @@ int main(int argc, char **argv) {
         }
         ok(api.UpdateLightDefinition(lights[i], &light));
       }
-      const std::string prefix =
-          std::string(primary) + "-" + std::to_string(signal);
-      config("bounces", std::getenv("REMIX_TEST_BOUNCES") ? std::getenv("REMIX_TEST_BOUNCES") : signal == 1 ? "1" : "0");
+      const std::string prefix = std::string(primary) + "-" + std::to_string(signal);
+      config("bounces", std::getenv("REMIX_TEST_BOUNCES") ? std::getenv("REMIX_TEST_BOUNCES")
+                        : signal == 1                     ? "1"
+                                                          : "0");
       config("localGuiding", mixed ? "0" : "1");
       config("emissiveCandidates", "1");
       if (mixed) {
@@ -353,13 +346,13 @@ int main(int argc, char **argv) {
           for (int f = 0; f < 64; ++f) {
             camera.view[3][0] = float(f % 16) * .006f;
             frame();
-            if (f < 32) continue;
+            if (f < 32)
+              continue;
             remixapi_TracingStatisticsEXT tracing{};
             tracing.structSize = sizeof(tracing);
             ok(remixapi_GetTracingStatisticsEXT(&tracing));
-            std::printf("PERF %s signal=%d emitters=%zu candidates=%s frame=%d trace_ms=%.6f\n",
-                        primary, signal, 4 + 2 * emitters.size(), candidates, f,
-                        tracing.gpuTraceMilliseconds);
+            std::printf("PERF %s signal=%d emitters=%zu candidates=%s frame=%d trace_ms=%.6f\n", primary, signal,
+                        4 + 2 * emitters.size(), candidates, f, tracing.gpuTraceMilliseconds);
           }
         }
         continue;
@@ -381,19 +374,18 @@ int main(int argc, char **argv) {
         ++epoch.historyResetEpoch;
         for (int f = 0; f < 24; ++f)
           frame();
-        reference.push_back(
-            capture(prefix + "-reference-" + std::to_string(pose)));
+        reference.push_back(capture(prefix + "-reference-" + std::to_string(pose)));
         remixapi_TracingStatisticsEXT tracing{};
         tracing.structSize = sizeof(tracing);
         ok(remixapi_GetTracingStatisticsEXT(&tracing));
-        require(tracing.accumulationCount >= 24,
-                "Torch reference failed to accumulate");
+        require(tracing.accumulationCount >= 24, "Torch reference failed to accumulate");
       }
       config("localSamples", "1");
       config("samples", std::getenv("REMIX_TEST_SAMPLES") ? std::getenv("REMIX_TEST_SAMPLES") : "1");
       if (const char *split = std::getenv("REMIX_TEST_SPLIT_LOCAL"))
         config("separateLocalLighting", split);
-      config("emissiveSolidAngleSampling", std::getenv("REMIX_TEST_SOLID_ANGLE") ? std::getenv("REMIX_TEST_SOLID_ANGLE") : "0");
+      config("emissiveSolidAngleSampling",
+             std::getenv("REMIX_TEST_SOLID_ANGLE") ? std::getenv("REMIX_TEST_SOLID_ANGLE") : "0");
       double baselineError = 0;
       continuous = noiseComparison;
       const int captureCount = noiseComparison ? 32 : 16;
@@ -414,8 +406,7 @@ int main(int argc, char **argv) {
         for (int sample = 0; sample < captureCount; ++sample) {
           int pose = mode == 2 ? sample % 16 : 0;
           camera.view[3][0] = float(pose) * .006f + (sample & 1) * .000001f;
-          auto image = capture(prefix + "-" + std::to_string(run) + "-" +
-                               std::to_string(sample));
+          auto image = capture(prefix + "-" + std::to_string(run) + "-" + std::to_string(sample));
           auto e = error(image, reference[pose]);
           normalizedError += e[0] / std::max(e[2], .000001);
           observed += e[1];
@@ -426,18 +417,15 @@ int main(int argc, char **argv) {
           require(!continuous || !previousSequence || tracing.sampleSequence == previousSequence + 3,
                   "Local sampler comparison reused a converged frame");
           previousSequence = tracing.sampleSequence;
-          std::fprintf(csv, "%s,%d,%d,%d,%.9f,%.9f,%.9f,%.9f,%.6f,%s,%llu\n", primary,
-                       signal, run, pose, e[0], e[1], e[2], e[3],
-                       tracing.gpuTraceMilliseconds, localNoise ? localNoise : "1",
+          std::fprintf(csv, "%s,%d,%d,%d,%.9f,%.9f,%.9f,%.9f,%.6f,%s,%llu\n", primary, signal, run, pose, e[0], e[1],
+                       e[2], e[3], tracing.gpuTraceMilliseconds, localNoise ? localNoise : "1",
                        static_cast<unsigned long long>(tracing.sampleSequence));
-          require(e[1] < std::max(.01, e[2] * 2.5),
-                  "Torch estimator produced excessive mean energy");
+          require(e[1] < std::max(.01, e[2] * 2.5), "Torch estimator produced excessive mean energy");
         }
         // At the visible opaque receiver the four-light candidate estimator
         // must converge within one ray/pixel, before any denoising can hide it.
         if (mode == 0 && signal == 0 && !mixed && !softTorch && !std::getenv("REMIX_TEST_BASELINE"))
-          require(normalizedError / captureCount < .04,
-                  "Four-light selection produced excessive one-sample error");
+          require(normalizedError / captureCount < .04, "Four-light selection produced excessive one-sample error");
         // With a shared family budget, category selection introduces variance
         // independent of the candidate count. Compare quality in the saved
         // scene; the split regressions enforce the combined reference energy.
@@ -445,11 +433,10 @@ int main(int argc, char **argv) {
           if (run == 0)
             baselineError = normalizedError;
           else
-            require(normalizedError < baselineError * .85,
-                    "Mixed-light RIS did not reduce raw one-ray error");
+            require(normalizedError < baselineError * .85, "Mixed-light RIS did not reduce raw one-ray error");
         }
-        std::printf("Torch energy primary=%s signal=%d mode=%d observed=%.9f reference=%.9f\n",
-                    primary, signal, run, observed / captureCount, expected / captureCount);
+        std::printf("Torch energy primary=%s signal=%d mode=%d observed=%.9f reference=%.9f\n", primary, signal, run,
+                    observed / captureCount, expected / captureCount);
         std::fflush(stdout);
         require(std::abs(observed - expected) < std::max(.004, expected * .12),
                 "Torch filtering changed average scene energy");
@@ -460,12 +447,12 @@ int main(int argc, char **argv) {
           require(guidance.active && guidance.sampledGuided > 0,
                   "Area-light cluster PDF test did not exercise guided proposals");
         }
-        require(mode == 0 ||
-                    (stats().activeTaa && stats().historyResets == resets),
+        require(mode == 0 || (stats().activeTaa && stats().historyResets == resets),
                 "Camera motion reset torch temporal history");
         if (noiseComparison && mode == 1) {
           config("blueNoiseLocalLights", std::string(localNoise) == "1" ? "0" : "1");
-          frame(); frame();
+          frame();
+          frame();
           require(stats().activeDenoiser && stats().activeTaa && stats().historyResets == resets,
                   "Local blue-noise toggle reset unrelated temporal history");
           config("blueNoiseLocalLights", localNoise);
@@ -479,15 +466,21 @@ int main(int argc, char **argv) {
   if (reuseTest) {
     const char *counters = std::getenv("REMIX_PBR_REUSE_DIAGNOSTICS");
     require(counters, "Reuse regression needs acceptance counters");
-    std::ifstream input(counters); std::string row; uint64_t attempts = 0, hits = 0;
+    std::ifstream input(counters);
+    std::string row;
+    uint64_t attempts = 0, hits = 0;
     std::getline(input, row);
     while (std::getline(input, row)) {
       std::replace(row.begin(), row.end(), ',', ' ');
-      uint64_t tried, reused; std::istringstream values(row);
-      if (values >> tried >> reused) { attempts += tried; hits += reused; }
+      uint64_t tried, reused;
+      std::istringstream values(row);
+      if (values >> tried >> reused) {
+        attempts += tried;
+        hits += reused;
+      }
     }
-    std::printf("PBR reuse: %llu accepted / %llu eligible secondary hits\n",
-                static_cast<unsigned long long>(hits), static_cast<unsigned long long>(attempts));
+    std::printf("PBR reuse: %llu accepted / %llu eligible secondary hits\n", static_cast<unsigned long long>(hits),
+                static_cast<unsigned long long>(attempts));
     require(attempts > 0 && hits > 0, "Reuse regression never exercised accepted reprojection");
   }
   std::puts(mixed ? "Mixed torch/emissive sampling checks passed"

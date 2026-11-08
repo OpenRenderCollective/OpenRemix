@@ -14,16 +14,14 @@
 #include <image/stb_image.h>
 
 namespace {
-void require(bool value, const char *message) {
-  if (!value) {
-    std::fprintf(stderr, "%s\n", message);
-    std::exit(1);
+  void require(bool value, const char *message) {
+    if (!value) {
+      std::fprintf(stderr, "%s\n", message);
+      std::exit(1);
+    }
   }
-}
-void ok(remixapi_ErrorCode code) {
-  require(code == REMIXAPI_ERROR_CODE_SUCCESS, "Guide boundary API failure");
-}
-using Image = std::vector<std::array<float, 3>>;
+  void ok(remixapi_ErrorCode code) { require(code == REMIXAPI_ERROR_CODE_SUCCESS, "Guide boundary API failure"); }
+  using Image = std::vector<std::array<float, 3>>;
 } // namespace
 int main(int argc, char **argv) {
   require(argc == 2, "Supply capture directory");
@@ -55,8 +53,7 @@ int main(int argc, char **argv) {
   ok(api.SetConfigVariable("rtx.native.backend", "pathtrace"));
   ok(api.SetConfigVariable("rtx.native.vsync", "0"));
   auto config = [&](const char *key, const char *value) {
-    ok(api.SetConfigVariable(
-        (std::string("rtx.native.pathtrace.") + key).c_str(), value));
+    ok(api.SetConfigVariable((std::string("rtx.native.pathtrace.") + key).c_str(), value));
   };
   config("sharc", "0");
   config("sky", "0");
@@ -79,8 +76,7 @@ int main(int argc, char **argv) {
     return result;
   };
   auto white = material({.8f, .8f, .8f}, 1), black = material({0, 0, 0}, 1);
-  auto quad = [&](int axis, float plane, float a0, float a1, float b0, float b1,
-                  remixapi_MaterialHandle material) {
+  auto quad = [&](int axis, float plane, float a0, float a1, float b0, float b1, remixapi_MaterialHandle material) {
     remixapi_HardcodedVertex v[4]{};
     uint32_t indices[] = {0, 1, 2, 0, 2, 3};
     for (int i = 0; i < 4; ++i) {
@@ -179,9 +175,7 @@ int main(int argc, char **argv) {
     require(data, "Torch capture unavailable");
     Image result;
     float depth = 192.f + camera.view[3][2];
-    int px = int(
-        (1 + (192.5f + camera.view[3][0]) * camera.projection[0][0] / depth) *
-        .5f * w);
+    int px = int((1 + (192.5f + camera.view[3][0]) * camera.projection[0][0] / depth) * .5f * w);
     for (int y = h / 2 - radius; y < h / 2 + radius; ++y)
       for (int x = px - radius; x < px + radius; ++x) {
         std::array<float, 3> pixel{};
@@ -209,8 +203,7 @@ int main(int argc, char **argv) {
   camera.view[3][0] = -193.f;
   camera.view[3][1] = -65.f;
   for (unsigned i = 0; i < lights.size(); ++i) {
-    sphere.position = i == 0 ? remixapi_Float3D{192.4f, 65.f, 190.8f}
-                             : remixapi_Float3D{193.6f, 65.f, 190.8f};
+    sphere.position = i == 0 ? remixapi_Float3D{192.4f, 65.f, 190.8f} : remixapi_Float3D{193.6f, 65.f, 190.8f};
     sphere.radius = .08f;
     light.radiance = {20, 10, 4};
     ok(api.UpdateLightDefinition(lights[i], &light));
@@ -238,15 +231,13 @@ int main(int argc, char **argv) {
     // Track a fixed world patch; changes in projected texture/footprint cannot
     // account for broad brightness pulses on this uniform Lambertian plane.
     for (int f = 0; f < 64; ++f) {
-      camera.view[3][2] =
-          -188.f - .125f * (1 - std::cos(float(f) * 3.14159265f / 16));
+      camera.view[3][2] = -188.f - .125f * (1 - std::cos(float(f) * 3.14159265f / 16));
       auto img = capture(std::string(primary) + "-" + std::to_string(f));
       double mean = 0;
       for (auto p : img)
         mean += .2126 * p[0] + .7152 * p[1] + .0722 * p[2];
       mean /= img.size();
-      std::fprintf(csv, "%s,%d,%.8f,%.9f\n", primary, f, camera.view[3][2],
-                   mean);
+      std::fprintf(csv, "%s,%d,%.8f,%.9f\n", primary, f, camera.view[3][2], mean);
       std::fflush(csv);
       means.push_back(mean);
     }
@@ -256,8 +247,7 @@ int main(int argc, char **argv) {
     remixapi_LocalLightGuidingStatisticsEXT guide{};
     guide.structSize = sizeof(guide);
     ok(remixapi_GetLocalLightGuidingStatisticsEXT(&guide));
-    require(after.activeTaa && !after.activeDenoiser &&
-                after.historyResets == before.historyResets && guide.active &&
+    require(after.activeTaa && !after.activeDenoiser && after.historyResets == before.historyResets && guide.active &&
                 guide.sampledGuided > 0,
             "Translation did not retain TAA and world-cell guidance");
     double average = 0;
@@ -265,12 +255,9 @@ int main(int argc, char **argv) {
       average += mean / means.size();
     const auto extrema = std::minmax_element(means.begin(), means.end());
     const double span = *extrema.second - *extrema.first;
-    std::printf("%s: mean %.6f, brightness span %.2f%%\n", primary, average,
-                100 * span / average);
-    require(average > .025 && average < .07,
-            "Guide boundary receiver lost illumination");
-    require(span < .15 * average,
-            "Camera translation caused broad torch brightness pulses");
+    std::printf("%s: mean %.6f, brightness span %.2f%%\n", primary, average, 100 * span / average);
+    require(average > .025 && average < .07, "Guide boundary receiver lost illumination");
+    require(span < .15 * average, "Camera translation caused broad torch brightness pulses");
 
     // A distant receiver supplies only a handful of base training samples per
     // world cell. A one-frame guide alternately enables itself and then loses
@@ -284,35 +271,28 @@ int main(int argc, char **argv) {
     const auto guideFrames = guide.renderedFrames;
     means.clear();
     for (int f = 0; f < 160; ++f) {
-      auto img =
-          capture(std::string(primary) + "-stationary-" + std::to_string(f), 4);
+      auto img = capture(std::string(primary) + "-stationary-" + std::to_string(f), 4);
       double mean = 0;
       for (auto p : img)
         mean += .2126 * p[0] + .7152 * p[1] + .0722 * p[2];
       mean /= img.size();
       means.push_back(mean);
-      std::fprintf(csv, "%s-stationary,%d,%.8f,%.9f\n", primary, f,
-                   camera.view[3][2], mean);
+      std::fprintf(csv, "%s-stationary,%d,%.8f,%.9f\n", primary, f, camera.view[3][2], mean);
     }
     ok(remixapi_GetDenoisingStatisticsEXT(&after));
     ok(remixapi_GetLocalLightGuidingStatisticsEXT(&guide));
-    require(after.historyResets == before.historyResets &&
-                guide.renderedFrames >= guideFrames + 320,
+    require(after.historyResets == before.historyResets && guide.renderedFrames >= guideFrames + 320,
             "Stationary guide test reset history or reused a cached frame");
     double stationaryMean = 0;
     for (auto mean : means)
       stationaryMean += mean / means.size();
-    const auto stationaryExtrema =
-        std::minmax_element(means.begin(), means.end());
-    const double stationarySpan =
-        *stationaryExtrema.second - *stationaryExtrema.first;
-    std::printf("%s stationary: mean %.6f, brightness span %.2f%%\n", primary,
-                stationaryMean, 100 * stationarySpan / stationaryMean);
-    require(stationaryMean > .025 && stationaryMean < .07,
-            "Sparse guide feedback lost receiver illumination");
-    require(
-        stationarySpan < .35 * stationaryMean,
-        "Sparse guide feedback caused stationary lighting patches to switch");
+    const auto stationaryExtrema = std::minmax_element(means.begin(), means.end());
+    const double stationarySpan = *stationaryExtrema.second - *stationaryExtrema.first;
+    std::printf("%s stationary: mean %.6f, brightness span %.2f%%\n", primary, stationaryMean,
+                100 * stationarySpan / stationaryMean);
+    require(stationaryMean > .025 && stationaryMean < .07, "Sparse guide feedback lost receiver illumination");
+    require(stationarySpan < .35 * stationaryMean,
+            "Sparse guide feedback caused stationary lighting patches to switch");
   }
   std::fclose(csv);
   ok(api.Shutdown());

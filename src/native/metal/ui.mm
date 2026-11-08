@@ -4,6 +4,7 @@
 #include "api/imgui_compat.h"
 #include "metal/runtime_gpu.h"
 #include "ui/context.h"
+#include "ui/theme.h"
 #include "ui/widgets.h"
 #include <SDL3/SDL.h>
 #include <imgui.h>
@@ -70,7 +71,8 @@ fragment half4 uiFragment(VertexOut in [[stage_in]], texture2d<half, access::sam
         id<MTLTexture> target = ui.textures.at(uint64_t(texture->GetTexID()));
         const bool whole = texture->Status == ImTextureStatus_WantCreate;
         const int x = whole ? 0 : texture->UpdateRect.x, y = whole ? 0 : texture->UpdateRect.y;
-        const int w = whole ? texture->Width : texture->UpdateRect.w, h = whole ? texture->Height : texture->UpdateRect.h;
+        const int w = whole ? texture->Width : texture->UpdateRect.w,
+                  h = whole ? texture->Height : texture->UpdateRect.h;
         [target replaceRegion:MTLRegionMake2D(x, y, w, h)
                   mipmapLevel:0
                     withBytes:texture->GetPixelsAt(x, y)
@@ -95,6 +97,7 @@ fragment half4 uiFragment(VertexOut in [[stage_in]], texture2d<half, access::sam
     s_uiGpu = m_gpu.get();
     io.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset | ImGuiBackendFlags_RendererHasTextures;
     ui::toolkitStyle();
+    ui::toolkitFont();
     ui::toolkitColors();
     if (!ImGui_ImplSDL3_InitForMetal(m_window.handle()))
       return false;
@@ -184,6 +187,7 @@ fragment half4 uiFragment(VertexOut in [[stage_in]], texture2d<half, access::sam
     if (!m_gui)
       return;
     ui::UiScope scope(m_gui);
+    ui::theme::setColors(m_profiles.panel().background, m_profiles.panel().accent);
     ImGui_ImplSDL3_NewFrame();
     ImGui::GetIO().MouseDrawCursor = m_window.embedded() && m_uiState != REMIXAPI_UI_STATE_NONE;
     ImGui::NewFrame();
@@ -213,27 +217,7 @@ fragment half4 uiFragment(VertexOut in [[stage_in]], texture2d<half, access::sam
     if (m_uiState != REMIXAPI_UI_STATE_NONE) {
       const bool open =
           ui::drawPanel(m_profiles, m_profileUi, this, [](void *user, int tab, config::Settings &settings) {
-            auto &runtime = *static_cast<RemixNativeRuntime *>(user);
-            switch (tab) {
-            case 0:
-              runtime.drawRenderingTab(settings);
-              break;
-            case 1:
-              runtime.drawLightingTab(settings);
-              break;
-            case 2:
-              runtime.drawSkyTab(settings);
-              break;
-            case 3:
-              runtime.drawPostProcessingTab(settings);
-              break;
-            case 4:
-              runtime.drawDiagnosticsTab(settings);
-              break;
-            case 5:
-              runtime.drawTexturesTab(settings);
-              break;
-            }
+            static_cast<RemixNativeRuntime *>(user)->drawSettingsTab(tab, settings);
           });
       if (!open)
         setUiState(REMIXAPI_UI_STATE_NONE);
@@ -281,8 +265,8 @@ fragment half4 uiFragment(VertexOut in [[stage_in]], texture2d<half, access::sam
     }
     const float l = data->DisplayPos.x, r = data->DisplayPos.x + data->DisplaySize.x;
     const float t = data->DisplayPos.y, b = data->DisplayPos.y + data->DisplaySize.y;
-    const float projection[16] = {2 / (r - l), 0, 0, 0, 0, 2 / (t - b), 0, 0, 0, 0, 1, 0,
-                                  (r + l) / (l - r), (t + b) / (b - t), 0, 1};
+    const float projection[16] = {2 / (r - l),       0, 0, 0, 0, 2 / (t - b), 0, 0, 0, 0, 1, 0, (r + l) / (l - r),
+                                  (t + b) / (b - t), 0, 1};
     [encoder setViewport:{0, 0, double(width), double(height), 0, 1}];
     [encoder setRenderPipelineState:g.format == MTLPixelFormatRGBA16Float ? ui.hdrPipeline : ui.pipeline];
     [encoder setDepthStencilState:ui.depth];
@@ -309,9 +293,7 @@ fragment half4 uiFragment(VertexOut in [[stage_in]], texture2d<half, access::sam
         if (texture == ui.textures.end())
           continue;
         [encoder setFragmentTexture:texture->second atIndex:0];
-        [encoder setVertexBuffer:vertices
-                          offset:(vertexOffset + command.VtxOffset) * sizeof(ImDrawVert)
-                         atIndex:0];
+        [encoder setVertexBuffer:vertices offset:(vertexOffset + command.VtxOffset) * sizeof(ImDrawVert) atIndex:0];
         [encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle
                             indexCount:command.ElemCount
                              indexType:sizeof(ImDrawIdx) == 2 ? MTLIndexTypeUInt16 : MTLIndexTypeUInt32
@@ -325,8 +307,8 @@ fragment half4 uiFragment(VertexOut in [[stage_in]], texture2d<half, access::sam
   }
 
   // The developer UI's view of the Metal runtime (ui/status.h); the
-  // tabs themselves are ui/rendering.cpp, lighting.cpp, post_processing.cpp
-  // and diagnostics.cpp, as in Vulkan builds.
+  // tabs themselves are ui/settings.cpp and the tool tabs' ui/ sources, as
+  // in Vulkan builds.
   ui::DeviceStatus RemixNativeRuntime::uiDevice() const {
     if (!m_gpu || !m_gpu->device)
       return {"", "Metal"};
@@ -452,7 +434,6 @@ fragment half4 uiFragment(VertexOut in [[stage_in]], texture2d<half, access::sam
   config::SkyState RemixNativeRuntime::skyState() const {
     return m_pathTracer && m_backend ? m_pathTracer->skyState() : config::SkyState{};
   }
-
 
   ui::HdrStatus RemixNativeRuntime::uiHdr() const {
     ui::HdrStatus result;

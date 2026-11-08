@@ -25,9 +25,7 @@ namespace remix {
     // The swapchain formats taken for HDR10, in order of preference.
     static constexpr VkFormat swapchainFormats[] = {VK_FORMAT_A2B10G10R10_UNORM_PACK32,
                                                     VK_FORMAT_A2R10G10B10_UNORM_PACK32};
-    static bool hdr10Format(VkFormat format) {
-      return format == swapchainFormats[0] || format == swapchainFormats[1];
-    }
+    static bool hdr10Format(VkFormat format) { return format == swapchainFormats[0] || format == swapchainFormats[1]; }
 
     HdrOutput() = default;
     ~HdrOutput() { destroy(); }

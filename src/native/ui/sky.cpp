@@ -32,21 +32,21 @@ namespace remix::ui {
 
     // Groups, in display order: a setting goes to the first group whose key
     // prefixes match.
-    const char *const groups[] = {"World and units",   "Sun and time",       "Atmosphere",     "Clouds",
-                                  "Cloud layer 2",     "Cloud shadows",      "Cloud quality",  "Lightning",
-                                  "Aerial perspective", "Night sky and moon", "Moons",          "Caching and debug"};
+    const char *const groups[] = {"World and units",    "Sun and time",       "Atmosphere",    "Clouds",
+                                  "Cloud layer 2",      "Cloud shadows",      "Cloud quality", "Lightning",
+                                  "Aerial perspective", "Night sky and moon", "Moons",         "Caching and debug"};
     int groupOf(std::string_view key) {
       const auto any = [&](std::initializer_list<std::string_view> prefixes) {
         return std::any_of(prefixes.begin(), prefixes.end(), [&](auto p) { return key.starts_with(p); });
       };
       if (key.starts_with("moon") && key.size() > 5 && key[5] == '.')
         return 10;
-      if (any({"unitsPerMeter", "worldScale", "hazeWorldScale", "groundLevel", "groundSmoothing",
-               "cloudVerticalOffset", "useCameraWorldOverride", "cameraWorldOverride", "cloudAnchorCut", "seaLevel",
-               "altitudeScale", "viewAltitude", "flipUpAxis"}))
+      if (any({"unitsPerMeter", "worldScale", "hazeWorldScale", "groundLevel", "groundSmoothing", "cloudVerticalOffset",
+               "useCameraWorldOverride", "cameraWorldOverride", "cloudAnchorCut", "seaLevel", "altitudeScale",
+               "viewAltitude", "flipUpAxis"}))
         return 0;
-      if (any({"sun", "timeCycle", "timeOfDay", "dayLength", "dayOfYear", "calendarYear", "latitude",
-               "northOffset", "directionalLight"}))
+      if (any({"sun", "timeCycle", "timeOfDay", "dayLength", "dayOfYear", "calendarYear", "latitude", "northOffset",
+               "directionalLight"}))
         return 1;
       if (any({"debug", "skyView", "skyLut", "cloudProfiling"}))
         return 11;
@@ -60,9 +60,9 @@ namespace remix::ui {
         return 4;
       if (any({"cloudShadow", "cloudVoxelShadows", "cloudVoxelGrid", "cloudSkyAmbient"}))
         return 5;
-      if (any({"cloudTemporal", "cloudHistory", "cloudSpatial", "cloudMarch", "cloudPerformance",
-               "cloudViewSamples", "cloudViewStep", "cloudSecondary", "cloudDetailLod", "cloudLightingLod",
-               "nvdfStepScale", "nubis3AdaptiveStep", "nubis3Jitter", "cloudRenderRT"}))
+      if (any({"cloudTemporal", "cloudHistory", "cloudSpatial", "cloudMarch", "cloudPerformance", "cloudViewSamples",
+               "cloudViewStep", "cloudSecondary", "cloudDetailLod", "cloudLightingLod", "nvdfStepScale",
+               "nubis3AdaptiveStep", "nubis3Jitter", "cloudRenderRT"}))
         return 6;
       if (any({"cloud", "nvdf", "nubis3"}))
         return 3;
@@ -114,9 +114,9 @@ namespace remix::ui {
         const bool isInt = type == numos::SettingType::Int;
         auto value = isInt ? int64_t(*static_cast<int32_t *>(field)) : int64_t(*static_cast<uint32_t *>(field));
         const int64_t min = int64_t(lo), max = int64_t(hi);
-        const bool changed = slide ? ImGui::SliderScalar(label, ImGuiDataType_S64, &value, &min, &max, nullptr, flags)
-                                   : ImGui::DragScalar(label, ImGuiDataType_S64, &value, range.step, &min, &max,
-                                                       nullptr, flags);
+        const bool changed = slide
+                                 ? sliderScalar(label, ImGuiDataType_S64, &value, &min, &max, nullptr, flags)
+                                 : dragScalar(label, ImGuiDataType_S64, &value, range.step, &min, &max, nullptr, flags);
         if (changed && isInt)
           *static_cast<int32_t *>(field) = int32_t(value);
         else if (changed)
@@ -128,15 +128,15 @@ namespace remix::ui {
         const float unit = range.metersPerSecond ? 1000.f : 1.f;
         float value = stored * unit;
         const char *format = range.format ? range.format : "%.5g";
-        if (!(slide ? ImGui::SliderFloat(label, &value, lo, hi, format, flags)
-                    : ImGui::DragFloat(label, &value, range.step, lo, hi, format, flags)))
+        if (!(slide ? sliderScalar(label, ImGuiDataType_Float, &value, &lo, &hi, format, flags)
+                    : dragScalar(label, ImGuiDataType_Float, &value, range.step, &lo, &hi, format, flags)))
           return false;
         stored = value / unit;
         return true;
       }
       case numos::SettingType::Vec3:
-        return ImGui::DragFloat3(label, static_cast<float *>(field), range.step, lo, hi,
-                                 range.format ? range.format : "%.5g", ImGuiSliderFlags_AlwaysClamp);
+        return dragScalarN(label, ImGuiDataType_Float, field, 3, range.step, &lo, &hi,
+                           range.format ? range.format : "%.5g", ImGuiSliderFlags_AlwaysClamp);
       default:
         return false;
       }
@@ -149,21 +149,20 @@ namespace remix::ui {
         return curatedWidget(field, info.type, *range, label);
       switch (info.type) {
       case numos::SettingType::Bool:
-        return ImGui::Checkbox(label, reinterpret_cast<bool *>(field));
+        return checkbox(label, reinterpret_cast<bool *>(field));
       case numos::SettingType::Int: {
-        const int32_t lo = low ? int32_t(info.minValue) : INT32_MIN / 2, hi = high ? int32_t(info.maxValue) : INT32_MAX / 2;
+        const int32_t lo = low ? int32_t(info.minValue) : INT32_MIN / 2,
+                      hi = high ? int32_t(info.maxValue) : INT32_MAX / 2;
         return low && high && hi - lo <= 4096
-                   ? ImGui::SliderScalar(label, ImGuiDataType_S32, field, &lo, &hi, nullptr, ImGuiSliderFlags_AlwaysClamp)
-                   : ImGui::DragScalar(label, ImGuiDataType_S32, field, .2f, &lo, &hi, nullptr,
-                                       ImGuiSliderFlags_AlwaysClamp);
+                   ? sliderScalar(label, ImGuiDataType_S32, field, &lo, &hi, nullptr, ImGuiSliderFlags_AlwaysClamp)
+                   : dragScalar(label, ImGuiDataType_S32, field, .2f, &lo, &hi, nullptr, ImGuiSliderFlags_AlwaysClamp);
       }
       case numos::SettingType::Uint: {
         const uint32_t lo = low ? uint32_t(std::max(info.minValue, 0.f)) : 0u,
                        hi = high ? uint32_t(info.maxValue) : UINT32_MAX / 2;
         return low && high && hi - lo <= 4096
-                   ? ImGui::SliderScalar(label, ImGuiDataType_U32, field, &lo, &hi, nullptr, ImGuiSliderFlags_AlwaysClamp)
-                   : ImGui::DragScalar(label, ImGuiDataType_U32, field, .2f, &lo, &hi, nullptr,
-                                       ImGuiSliderFlags_AlwaysClamp);
+                   ? sliderScalar(label, ImGuiDataType_U32, field, &lo, &hi, nullptr, ImGuiSliderFlags_AlwaysClamp)
+                   : dragScalar(label, ImGuiDataType_U32, field, .2f, &lo, &hi, nullptr, ImGuiSliderFlags_AlwaysClamp);
       }
       case numos::SettingType::Float: {
         auto &value = *reinterpret_cast<float *>(field);
@@ -171,17 +170,17 @@ namespace remix::ui {
           ImGuiSliderFlags flags = ImGuiSliderFlags_AlwaysClamp;
           if (info.minValue > 0 && info.maxValue / info.minValue >= 1000)
             flags |= ImGuiSliderFlags_Logarithmic;
-          return ImGui::SliderFloat(label, &value, info.minValue, info.maxValue, "%.5g", flags);
+          return sliderScalar(label, ImGuiDataType_Float, &value, &info.minValue, &info.maxValue, "%.5g", flags);
         }
-        return ImGui::DragFloat(label, &value, std::max(std::abs(value) * .005f, .001f), low ? info.minValue : -FLT_MAX,
-                                high ? info.maxValue : FLT_MAX, "%.5g",
-                                low || high ? ImGuiSliderFlags_AlwaysClamp : ImGuiSliderFlags_None);
+        const float lo = low ? info.minValue : -FLT_MAX, hi = high ? info.maxValue : FLT_MAX;
+        return dragScalar(label, ImGuiDataType_Float, &value, std::max(std::abs(value) * .005f, .001f), &lo, &hi,
+                          "%.5g", low || high ? ImGuiSliderFlags_AlwaysClamp : ImGuiSliderFlags_None);
       }
       case numos::SettingType::Vec3: {
         auto *value = reinterpret_cast<float *>(field);
         const bool changed = isColour(shortKey(info))
-                                 ? ImGui::ColorEdit3(label, value, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_HDR)
-                                 : ImGui::DragFloat3(label, value, .01f, 0, 0, "%.5g");
+                                 ? colorSwatch(label, value, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_HDR)
+                                 : dragScalarN(label, ImGuiDataType_Float, value, 3, .01f, nullptr, nullptr, "%.5g");
         for (int i = 0; changed && i < 3; ++i)
           value[i] = std::clamp(value[i], low ? info.minValue : -FLT_MAX, high ? info.maxValue : FLT_MAX);
         return changed;
@@ -214,9 +213,8 @@ namespace remix::ui {
         words.back() += c;
       }
       static const std::pair<std::string_view, std::string_view> units[] = {
-          {"Meters", "m"}, {"Km", "km"},          {"Deg", "deg"},       {"Degrees", "deg"},
-          {"Hours", "h"},  {"Minutes", "min"},    {"Seconds", "s"},     {"Stops", "stops"},
-          {"Pixels", "pixels"}};
+          {"Meters", "m"},    {"Km", "km"},     {"Deg", "deg"},     {"Degrees", "deg"},  {"Hours", "h"},
+          {"Minutes", "min"}, {"Seconds", "s"}, {"Stops", "stops"}, {"Pixels", "pixels"}};
       static const std::string_view acronyms[] = {"LUT", "LOD", "SDF", "NVDF", "RT", "AP"};
       std::string unit;
       if (words.size() > 2 && words[words.size() - 2] == "World" && words.back() == "Units") {
@@ -235,9 +233,9 @@ namespace remix::ui {
         for (auto &ch : word)
           ch = char(std::tolower(uint8_t(ch)));
         const auto acronym = std::find_if(std::begin(acronyms), std::end(acronyms), [&](std::string_view entry) {
-          return entry.size() == word.size() && std::equal(entry.begin(), entry.end(), word.begin(), [](char a, char b) {
-                   return std::tolower(uint8_t(a)) == b;
-                 });
+          return entry.size() == word.size() &&
+                 std::equal(entry.begin(), entry.end(), word.begin(),
+                            [](char a, char b) { return std::tolower(uint8_t(a)) == b; });
         });
         if (acronym != std::end(acronyms))
           word = *acronym;
@@ -308,7 +306,7 @@ namespace remix::ui {
       static int preset = int(numos::WeatherPreset::PartlyCloudy);
       const auto name = [](void *, int i) { return numos::weatherPresetName(numos::WeatherPreset(i)); };
       ImGui::PushItemWidth(ImGui::CalcItemWidth() * .7f);
-      ImGui::Combo("##weather preset", &preset, name, nullptr, int(numos::WeatherPreset::Count));
+      ui::combo("##weather preset", &preset, name, nullptr, int(numos::WeatherPreset::Count));
       ImGui::PopItemWidth();
       ImGui::SameLine();
       if (ImGui::Button("Apply weather")) {
@@ -324,10 +322,9 @@ namespace remix::ui {
                           "air, fog and lightning. The game can blend weather over time through the API.");
       size_t count = 0;
       const auto *fields = numos::weatherFields(count);
-      if (ImGui::TreeNode("Weather fields")) {
+      if (ui::Panel panel{"Weather fields"}) {
         for (size_t i = 0; i < count; ++i)
           drawSetting(sky, values, fields[i].name);
-        ImGui::TreePop();
       }
     }
 
@@ -382,11 +379,11 @@ namespace remix::ui {
             rows.push_back(&info);
         if (rows.empty())
           continue;
-        const std::string header = std::string(groups[group]) + " (" + std::to_string(rows.size()) + ")###" + groups[group];
-        if (ImGui::TreeNode(header.c_str())) {
+        const std::string header =
+            std::string(groups[group]) + " (" + std::to_string(rows.size()) + ")###" + groups[group];
+        if (ui::Panel panel{header.c_str()}) {
           for (const auto *info : rows)
             settingRow(sky, values, *info);
-          ImGui::TreePop();
         }
       }
       ImGui::PopID();
@@ -397,12 +394,13 @@ namespace remix::ui {
   static void drawSky(config::Settings &settings, const SkyStatus &status) {
     auto &sky = settings.sky;
 #if REMIX_HAS_NUMOS
-    if (ImGui::CollapsingHeader("Sky", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (ui::Panel panel{"Sky", ImGuiTreeNodeFlags_DefaultOpen}) {
       Checkbox("NUMOS sky", &sky.enabled);
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Physically based sky, atmosphere and volumetric clouds, with weather and night sky.");
       if (!status.supported)
-        ImGui::TextWrapped("%s", status.reason.empty() ? "This backend does not render the sky." : status.reason.c_str());
+        ImGui::TextWrapped("%s",
+                           status.reason.empty() ? "This backend does not render the sky." : status.reason.c_str());
       else if (sky.enabled && !status.active && !status.reason.empty())
         ImGui::TextWrapped("Inactive: %s", status.reason.c_str());
       else if (status.active && status.gpuMilliseconds > 0)
@@ -442,16 +440,16 @@ namespace remix::ui {
     if (!sky.enabled)
       return;
     auto values = effective(sky);
-    if (ImGui::CollapsingHeader("Sun and time", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (ui::Panel panel{"Sun and time", ImGuiTreeNodeFlags_DefaultOpen}) {
       for (const auto key : {"timeCycleEnable", "timeOfDayHours", "dayLengthMinutes", "dayOfYear", "latitudeDegrees",
                              "northOffsetDegrees", "sunElevation", "sunRotation", "sunIntensity", "sunSize"})
         drawSetting(sky, values, key);
     }
-    if (ImGui::CollapsingHeader("Weather", ImGuiTreeNodeFlags_DefaultOpen))
+    if (ui::Panel panel{"Weather", ImGuiTreeNodeFlags_DefaultOpen})
       drawWeather(sky, values);
-    if (ImGui::CollapsingHeader("All NUMOS settings"))
+    if (ui::Panel panel{"All NUMOS settings"})
       drawAllSettings(sky, values);
-    if (ImGui::CollapsingHeader("Seeds"))
+    if (ui::Panel panel{"Seeds"})
       drawSeeds(sky, values);
     ImGui::Spacing();
     ImGui::TextDisabled("Sky and clouds: NUMOS by Kim2091 (Sparkles)");
@@ -465,7 +463,8 @@ namespace remix::ui {
   // Particle emitters: the API's and these test emitters. Nothing spawns
   // unless an emitter asks.
   static void drawParticles(config::ParticleSettings &particles) {
-    if (!ImGui::CollapsingHeader("Particles"))
+    ui::Panel panel{"Particles"};
+    if (!panel)
       return;
     ImGui::PushID("Particles");
     const auto statistics = scene::particles().statistics();

@@ -16,9 +16,9 @@ namespace remix::scene {
     constexpr uint32_t presetParticles = 32768;
 
     float presetRate(uint32_t preset) {
-      return preset == REMIXAPI_PARTICLE_PRESET_RAIN_EXT ? 30000.f
+      return preset == REMIXAPI_PARTICLE_PRESET_RAIN_EXT   ? 30000.f
              : preset == REMIXAPI_PARTICLE_PRESET_SNOW_EXT ? 4000.f
-                                                            : 0.f;
+                                                           : 0.f;
     }
     uint32_t wantedCapacity(const remixapi_ParticleEmitterInfoEXT &info) {
       if (info.maxParticles)
@@ -54,9 +54,9 @@ namespace remix::scene {
       for (float value : row)
         if (!finite(value))
           return "transform not finite";
-    const float scalars[] = {info.spawnRate, info.lifetimeMin,   info.lifetimeMax, info.speed,
-                             info.coneAngleDegrees, info.drag, info.turbulence,   info.sizeStart,
-                             info.sizeEnd,   info.sizeJitter,  info.stretch,      info.softDistance};
+    const float scalars[] = {info.spawnRate,        info.lifetimeMin, info.lifetimeMax, info.speed,
+                             info.coneAngleDegrees, info.drag,        info.turbulence,  info.sizeStart,
+                             info.sizeEnd,          info.sizeJitter,  info.stretch,     info.softDistance};
     for (float value : scalars)
       if (!finite(value))
         return "value not finite";
@@ -97,8 +97,8 @@ namespace remix::scene {
       const bool defaultExtent = info.extent.x == 0 && info.extent.y == 0 && info.extent.z == 0;
       info.shape = REMIXAPI_PARTICLE_SHAPE_CAMERA_VOLUME_EXT;
       if (defaultExtent)
-        info.extent = rain ? remixapi_Float3D{14 * unit, 14 * unit, 8 * unit}
-                           : remixapi_Float3D{12 * unit, 12 * unit, 6 * unit};
+        info.extent =
+            rain ? remixapi_Float3D{14 * unit, 14 * unit, 8 * unit} : remixapi_Float3D{12 * unit, 12 * unit, 6 * unit};
       if (info.spawnRate == 0)
         info.spawnRate = presetRate(info.preset);
       info.lifetimeMin = info.lifetimeMax = rain ? 3.f : 14.f;
@@ -115,8 +115,8 @@ namespace remix::scene {
       info.sizeStart = info.sizeEnd = (rain ? .012f : .03f) * unit;
       info.sizeJitter = rain ? .3f : .5f;
       info.stretch = rain ? .025f : 0.f;
-      info.colorStart = info.colorEnd = rain ? remixapi_Float4D{.75f, .78f, .82f, .3f}
-                                             : remixapi_Float4D{.92f, .93f, .96f, .9f};
+      info.colorStart = info.colorEnd =
+          rain ? remixapi_Float4D{.75f, .78f, .82f, .3f} : remixapi_Float4D{.92f, .93f, .96f, .9f};
       info.emission = {};
       info.texture = nullptr;
       info.softDistance = .2f * unit;

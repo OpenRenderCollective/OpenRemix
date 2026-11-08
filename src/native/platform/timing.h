@@ -31,7 +31,7 @@ namespace remix {
     }
     ~Stopwatch() { stop(); }
   };
-  template<class F> auto measured(double &total, F &&call) {
+  template <class F> auto measured(double &total, F &&call) {
     ScopedMilliseconds time{total};
     return call();
   }
@@ -70,4 +70,4 @@ namespace remix {
     uint64_t begin = ticks();
     ~ScopedTicks() { total += ticks() - begin; }
   };
-}
+} // namespace remix

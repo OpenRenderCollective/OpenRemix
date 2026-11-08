@@ -17,8 +17,8 @@ int main(int argc, char **argv) {
           "CPU-only extension load");
   remixapi_USDDiagnosticsEXT diagnostics{};
   diagnostics.structSize = sizeof(diagnostics);
-  require(!remixapi_GetUSDDiagnosticsEXT(scene, &diagnostics) && diagnostics.version == 1 &&
-              diagnostics.meshes == 2 && diagnostics.generation == 1,
+  require(!remixapi_GetUSDDiagnosticsEXT(scene, &diagnostics) && diagnostics.version == 1 && diagnostics.meshes == 2 &&
+              diagnostics.generation == 1,
           "versioned scene diagnostics");
   require(!remixapi_ReloadUSDSceneEXT(scene), "schedule asynchronous reload");
   require(!remixapi_DestroyUSDSceneEXT(scene), "destroy joins parser without a renderer");

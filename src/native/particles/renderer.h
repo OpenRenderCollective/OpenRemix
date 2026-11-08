@@ -17,12 +17,12 @@ namespace remix::particles {
   struct FrameInputs {
     scene::Matrix viewProjection = scene::identity(); // the world camera, as raster overlays
     scene::Matrix view = scene::identity();
-    float time = 0;                     // seconds since start, for turbulence
+    float time = 0; // seconds since start, for turbulence
     float metersPerUnit = 1;
     uint32_t upAxis = 2;
-    float sunDirection[3] = {0, 0, 1};  // toward the sun
+    float sunDirection[3] = {0, 0, 1}; // toward the sun
     float sunIrradiance[3] = {};
-    float ambient[3] = {};              // the sky's mean radiance without an environment
+    float ambient[3] = {}; // the sky's mean radiance without an environment
     // The path tracer's environment (sampled for the sky's mean radiance) and
     // the scene's TLAS (the sun's visibility, SHELTER). Null: none.
     VkDescriptorImageInfo environment{};

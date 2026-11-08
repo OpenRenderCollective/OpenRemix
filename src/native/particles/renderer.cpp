@@ -81,9 +81,10 @@ namespace remix::particles {
       const VkMemoryAllocateInfo allocation{
           .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
           .allocationSize = requirements.size,
-          .memoryTypeIndex = memoryType(physical, requirements.memoryTypeBits,
-                                        host ? VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
-                                             : VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
+          .memoryTypeIndex =
+              memoryType(physical, requirements.memoryTypeBits,
+                         host ? VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+                              : VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
       check(vkAllocateMemory(device, &allocation, nullptr, &out->memory));
       check(vkBindBufferMemory(device, out->handle, out->memory, 0));
       if (host)
@@ -200,15 +201,14 @@ namespace remix::particles {
     VkDescriptorSetLayoutCreateInfo info{
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, .bindingCount = 8, .pBindings = pool};
     check(pipeline::createDescriptorSetLayout(device, &info, nullptr, &poolLayout));
-    const VkDescriptorSetLayoutBinding draws[] = {
-        {.binding = 0,
-         .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-         .descriptorCount = 1,
-         .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT},
-        {.binding = 1,
-         .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-         .descriptorCount = 1,
-         .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT}};
+    const VkDescriptorSetLayoutBinding draws[] = {{.binding = 0,
+                                                   .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                                                   .descriptorCount = 1,
+                                                   .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT},
+                                                  {.binding = 1,
+                                                   .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                                                   .descriptorCount = 1,
+                                                   .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT}};
     info.bindingCount = 2;
     info.pBindings = draws;
     check(pipeline::createDescriptorSetLayout(device, &info, nullptr, &drawLayout));
@@ -226,19 +226,18 @@ namespace remix::particles {
     layout.pPushConstantRanges = &drawPush;
     check(pipeline::createPipelineLayout(device, &layout, nullptr, &drawPipelineLayout));
     if (rayQuery) {
-      const VkDescriptorSetLayoutBinding traced[] = {
-          {.binding = 0,
-           .descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
-           .descriptorCount = 1,
-           .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT},
-          {.binding = 1,
-           .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-           .descriptorCount = 1,
-           .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT},
-          {.binding = 2,
-           .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-           .descriptorCount = 1,
-           .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT}};
+      const VkDescriptorSetLayoutBinding traced[] = {{.binding = 0,
+                                                      .descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
+                                                      .descriptorCount = 1,
+                                                      .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT},
+                                                     {.binding = 1,
+                                                      .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                                                      .descriptorCount = 1,
+                                                      .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT},
+                                                     {.binding = 2,
+                                                      .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                                                      .descriptorCount = 1,
+                                                      .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT}};
       info.bindingCount = 3;
       info.pBindings = traced;
       check(pipeline::createDescriptorSetLayout(device, &info, nullptr, &tracedLayout));
@@ -317,23 +316,21 @@ namespace remix::particles {
     for (uint32_t blend = 0; blend < 2; ++blend) {
       if (draw[blend])
         continue;
-      const VkPipelineShaderStageCreateInfo stages[] = {
-          {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-           .stage = VK_SHADER_STAGE_VERTEX_BIT,
-           .module = vertex,
-           .pName = "main"},
-          {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-           .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-           .module = fragment,
-           .pName = "main"}};
+      const VkPipelineShaderStageCreateInfo stages[] = {{.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                                                         .stage = VK_SHADER_STAGE_VERTEX_BIT,
+                                                         .module = vertex,
+                                                         .pName = "main"},
+                                                        {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                                                         .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+                                                         .module = fragment,
+                                                         .pName = "main"}};
       const VkPipelineVertexInputStateCreateInfo input{.sType =
-                                                            VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+                                                           VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
       const VkPipelineInputAssemblyStateCreateInfo assembly{
           .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
           .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST};
-      const VkPipelineViewportStateCreateInfo viewport{.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
-                                                       .viewportCount = 1,
-                                                       .scissorCount = 1};
+      const VkPipelineViewportStateCreateInfo viewport{
+          .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO, .viewportCount = 1, .scissorCount = 1};
       const VkPipelineRasterizationStateCreateInfo raster{
           .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
           .polygonMode = VK_POLYGON_MODE_FILL,
@@ -342,11 +339,11 @@ namespace remix::particles {
       const VkPipelineMultisampleStateCreateInfo multisample{
           .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
           .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT};
-      const VkPipelineDepthStencilStateCreateInfo depth{
-          .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-          .depthTestEnable = VK_TRUE,
-          .depthWriteEnable = VK_FALSE,
-          .depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL};
+      const VkPipelineDepthStencilStateCreateInfo depth{.sType =
+                                                            VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+                                                        .depthTestEnable = VK_TRUE,
+                                                        .depthWriteEnable = VK_FALSE,
+                                                        .depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL};
       // The fragment shader's colour is premultiplied by its alpha.
       const VkPipelineColorBlendAttachmentState attachment{
           .blendEnable = VK_TRUE,
@@ -358,10 +355,10 @@ namespace remix::particles {
           .alphaBlendOp = VK_BLEND_OP_ADD,
           .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT |
                             VK_COLOR_COMPONENT_A_BIT};
-      const VkPipelineColorBlendStateCreateInfo blending{
-          .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-          .attachmentCount = 1,
-          .pAttachments = &attachment};
+      const VkPipelineColorBlendStateCreateInfo blending{.sType =
+                                                             VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+                                                         .attachmentCount = 1,
+                                                         .pAttachments = &attachment};
       const VkDynamicState dynamics[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
       const VkPipelineDynamicStateCreateInfo dynamic{.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
                                                      .dynamicStateCount = 2,
@@ -394,7 +391,8 @@ namespace remix::particles {
       statistics = buffer(physical, device, 16,
                           VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
                               VK_BUFFER_USAGE_TRANSFER_DST_BIT);
-      light = buffer(physical, device, lightBytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+      light =
+          buffer(physical, device, lightBytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
       for (auto &c : counts)
         c = buffer(physical, device, sizeof(uint32_t) * maxEmitters,
                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
@@ -476,8 +474,8 @@ namespace remix::particles {
     barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
     barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
     barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0,
-                         nullptr, 0, nullptr, 1, &barrier);
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr,
+                         0, nullptr, 1, &barrier);
     whiteReady = true;
   }
 
@@ -694,25 +692,24 @@ namespace remix::particles {
       const VkDescriptorImageInfo white{g.sampler, g.whiteView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
       const VkDescriptorImageInfo image = environment ? inputs.environment : white;
       const VkDescriptorImageInfo shadow = clouds ? inputs.cloudShadow : white;
-      const VkWriteDescriptorSet tracedWrites[] = {
-          {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-           .pNext = &accel,
-           .dstSet = tracedSet,
-           .dstBinding = 0,
-           .descriptorCount = 1,
-           .descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR},
-          {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-           .dstSet = tracedSet,
-           .dstBinding = 1,
-           .descriptorCount = 1,
-           .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-           .pImageInfo = &image},
-          {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-           .dstSet = tracedSet,
-           .dstBinding = 2,
-           .descriptorCount = 1,
-           .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-           .pImageInfo = &shadow}};
+      const VkWriteDescriptorSet tracedWrites[] = {{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                                                    .pNext = &accel,
+                                                    .dstSet = tracedSet,
+                                                    .dstBinding = 0,
+                                                    .descriptorCount = 1,
+                                                    .descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR},
+                                                   {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                                                    .dstSet = tracedSet,
+                                                    .dstBinding = 1,
+                                                    .descriptorCount = 1,
+                                                    .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                                                    .pImageInfo = &image},
+                                                   {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                                                    .dstSet = tracedSet,
+                                                    .dstBinding = 2,
+                                                    .descriptorCount = 1,
+                                                    .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                                                    .pImageInfo = &shadow}};
       vkUpdateDescriptorSets(g.device, 3, tracedWrites, 0, nullptr);
     }
 

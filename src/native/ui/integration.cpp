@@ -30,6 +30,7 @@ namespace remix {
     io.LogFilename = nullptr;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     ui::toolkitStyle();
+    ui::toolkitFont();
     if (!ImGui_ImplSDL3_InitForVulkan(m_window.handle())) {
       return false;
     }
@@ -100,8 +101,8 @@ namespace remix::ui {
   void updateTexture(ImTextureData *texture) { ImGui_ImplVulkan_UpdateTexture(texture); }
 
   ImTextureID addTexture(const void *view) {
-    return ImTextureID(ImGui_ImplVulkan_AddTexture(VkImageView(const_cast<void *>(view)),
-                                                   VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL));
+    return ImTextureID(
+        ImGui_ImplVulkan_AddTexture(VkImageView(const_cast<void *>(view)), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL));
   }
 
   void removeTexture(ImTextureID texture) {

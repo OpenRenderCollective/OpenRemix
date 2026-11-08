@@ -61,7 +61,9 @@ namespace remix {
     remixapi_FramePerformanceEXT framePerformance() const {
       return busyState() ? busyState()->performance : m_framePerformance;
     }
-    remixapi_FrameBreakdownEXT frameBreakdown() const { return busyState() ? busyState()->breakdown : m_frameBreakdown; }
+    remixapi_FrameBreakdownEXT frameBreakdown() const {
+      return busyState() ? busyState()->breakdown : m_frameBreakdown;
+    }
     // The developer UI's view of the runtime (ui/status.h), the same
     // queries the Vulkan runtime answers (metal/ui.mm).
     ui::DeviceStatus uiDevice() const;
@@ -80,6 +82,8 @@ namespace remix {
     void uiInspectPixel(int x, int y);
     bool hostPassesSupported() const { return true; } // metal/host_passes.mm
     bool textureCompressionSupported() const;
+    // Metal has no opacity micromaps (rtx.native.pathtrace.opacityMicromaps).
+    bool opacityMicromapsSupported() const { return false; }
     bool gpuTimersSupported() const;
     metal::Raster::MemoryStatistics rasterMemoryStatistics() const {
       return busyState() ? busyState()->memory : renderer().memoryStatistics();
@@ -95,14 +99,16 @@ namespace remix {
     remixapi_LocalLightSetStatisticsEXT localLightSetStatistics() const {
       if (const auto *busy = busyState())
         return busy->localLightSet;
-      return m_pathTracer && m_backend ? m_pathTracer->localLightSetStatistics()
-                                       : remixapi_LocalLightSetStatisticsEXT{.structSize = sizeof(remixapi_LocalLightSetStatisticsEXT)};
+      return m_pathTracer && m_backend
+                 ? m_pathTracer->localLightSetStatistics()
+                 : remixapi_LocalLightSetStatisticsEXT{.structSize = sizeof(remixapi_LocalLightSetStatisticsEXT)};
     }
     remixapi_CameraCullingStatisticsEXT cameraCullingStatistics() const {
       if (const auto *busy = busyState())
         return busy->cameraCulling;
-      return m_pathTracer && m_backend ? m_pathTracer->cameraCullingStatistics()
-                                       : remixapi_CameraCullingStatisticsEXT{.structSize = sizeof(remixapi_CameraCullingStatisticsEXT)};
+      return m_pathTracer && m_backend
+                 ? m_pathTracer->cameraCullingStatistics()
+                 : remixapi_CameraCullingStatisticsEXT{.structSize = sizeof(remixapi_CameraCullingStatisticsEXT)};
     }
     bool latencyRequested() const { return false; }
     bool latencyActive() const { return false; }
@@ -314,13 +320,17 @@ namespace remix {
     scene::ParticleFrame m_particleFrame;
     std::chrono::steady_clock::time_point m_particleClock{}, m_particleStart = std::chrono::steady_clock::now();
     uint32_t m_particleUpAxis = 2; // the up axis the last traced frame resolved
-    // The developer UI's tabs (ui/rendering.cpp, lighting.cpp,
-    // post_processing.cpp, diagnostics.cpp, textures.cpp), shared with Vulkan builds.
-    void drawRenderingTab(config::Settings &settings);
+    // The panel's settings tabs, shared with Vulkan builds (ui/settings.cpp,
+    // dispatched by ui::Tab; the tool tabs have their own ui/ sources).
+    void drawSettingsTab(int tab, config::Settings &settings);
+    void drawDisplayTab(config::Settings &settings);
     void drawLightingTab(config::Settings &settings);
+    void drawMaterialsTab(config::Settings &settings);
     void drawSkyTab(config::Settings &settings);
-    void drawPostProcessingTab(config::Settings &settings);
+    void drawPostProcessTab(config::Settings &settings);
+    void drawPerformanceTab(config::Settings &settings);
     void drawDiagnosticsTab(config::Settings &settings);
+    void drawCaptureTab(config::Settings &settings);
     void drawGpuPassTimings(bool enabled);
     void drawTexturesTab(config::Settings &settings);
     // The diagnostics tab's path inspector (uiPathInspection).

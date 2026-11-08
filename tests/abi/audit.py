@@ -45,7 +45,8 @@ required_exports += ['remixapi_GetReconstructionDiagnosticsEXT', 'remixapi_GetBa
              'remixapi_ClearSkyWeatherEXT', 'remixapi_TriggerSkyLightningEXT', 'remixapi_GetSkyStateEXT']
 required_exports += ['remixapi_AddSceneInstancesEXT', 'remixapi_SetSceneInstanceEXT', 'remixapi_ChangeSceneInstancesEXT',
              'remixapi_RemoveSceneInstancesEXT', 'remixapi_DrawSceneInstancesEXT']
-required_exports += ['remixapi_UpdateTextureEXT', 'remixapi_GetTextureStatisticsEXT']
+required_exports += ['remixapi_UpdateTextureEXT', 'remixapi_GetTextureStatisticsEXT', 'remixapi_UpdateMeshVerticesEXT']
+required_exports += ['remixapi_GetRayPortalCapabilities']
 required_exports += ['remixapi_CreateParticleEmitterEXT', 'remixapi_UpdateParticleEmitterEXT',
              'remixapi_SetParticleEmitterTransformEXT', 'remixapi_SetParticleEmitterEnabledEXT',
              'remixapi_BurstParticleEmitterEXT', 'remixapi_ClearParticleEmitterEXT',

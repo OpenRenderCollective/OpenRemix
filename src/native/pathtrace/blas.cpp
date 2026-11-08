@@ -39,33 +39,41 @@ namespace remix {
       if (vkGetQueryPoolResults(device, timestamps, 0, 12, sizeof(times), times, sizeof(uint64_t),
                                 VK_QUERY_RESULT_64_BIT) == VK_SUCCESS) {
         const uint64_t mask = timestampBits >= 64 ? UINT64_MAX : (uint64_t(1) << timestampBits) - 1;
-        stats.gpuBuildMilliseconds =
-            float((times[1] - times[0]) & mask) * properties.limits.timestampPeriod / 1e6f;
-        stats.gpuTraceMilliseconds =
-            float(((times[3] - times[2]) & mask) - ((times[11] - times[10]) & mask)) * properties.limits.timestampPeriod / 1e6f;
+        stats.gpuBuildMilliseconds = float((times[1] - times[0]) & mask) * properties.limits.timestampPeriod / 1e6f;
+        stats.gpuTraceMilliseconds = float(((times[3] - times[2]) & mask) - ((times[11] - times[10]) & mask)) *
+                                     properties.limits.timestampPeriod / 1e6f;
         stats.gpuTimingsAvailable = 1;
         if (stageProfile) {
           if (stateProfile && !traceState.empty()) {
             if (auto *file = std::fopen(stateProfile, "a")) {
               if (std::ftell(file) == 0)
-                std::fprintf(file, "time_ms,opaque_ms,sequence,slot,sharc,scene_device_local,split,opaque,opaque_key,producer,producer_key,transparency,transparency_key,tlas_static,tlas_dynamic,table,table_memory,table_bytes,uniform,uniform_memory,light_nodes,light_emitters,cache_hash,cache_accumulation,cache_resolved,indirect_results,scene_generation,static_builds,table_hash,frame_hex\n");
+                std::fprintf(
+                    file, "time_ms,opaque_ms,sequence,slot,sharc,scene_device_local,split,opaque,opaque_key,producer,"
+                          "producer_key,transparency,transparency_key,tlas_static,tlas_dynamic,table,table_memory,"
+                          "table_bytes,uniform,uniform_memory,light_nodes,light_emitters,cache_hash,cache_accumulation,"
+                          "cache_resolved,indirect_results,scene_generation,static_builds,table_hash,frame_hex\n");
               const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
-                  std::chrono::system_clock::now().time_since_epoch()).count();
+                                   std::chrono::system_clock::now().time_since_epoch())
+                                   .count();
               std::fprintf(file, "%lld,%.6f,%s\n", static_cast<long long>(now),
-                  double((times[6] - times[5]) & mask) * properties.limits.timestampPeriod / 1e6, traceState.c_str());
+                           double((times[6] - times[5]) & mask) * properties.limits.timestampPeriod / 1e6,
+                           traceState.c_str());
               std::fclose(file);
             }
           }
           if (auto *file = std::fopen(stageProfile, "a")) {
             if (std::ftell(file) == 0)
-              std::fprintf(file, "time_ms,primary_ms,sharc_ms,opaque_ms,local_ms,transparency_ms,confidence_ms,denoise_ms,prepare_ms\n");
+              std::fprintf(file, "time_ms,primary_ms,sharc_ms,opaque_ms,local_ms,transparency_ms,confidence_ms,denoise_"
+                                 "ms,prepare_ms\n");
             const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::system_clock::now().time_since_epoch()).count();
+                                 std::chrono::system_clock::now().time_since_epoch())
+                                 .count();
             auto elapsed = [&](unsigned first, unsigned last) {
               return double((times[last] - times[first]) & mask) * properties.limits.timestampPeriod / 1e6;
             };
             std::fprintf(file, "%lld,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f\n", static_cast<long long>(now),
-                elapsed(2, 4), elapsed(4, 5), elapsed(5, 6), elapsed(6, 7), elapsed(11, 3), elapsed(10, 8), elapsed(8, 11) + elapsed(3, 9), elapsed(1, 2));
+                         elapsed(2, 4), elapsed(4, 5), elapsed(5, 6), elapsed(6, 7), elapsed(11, 3), elapsed(10, 8),
+                         elapsed(8, 11) + elapsed(3, 9), elapsed(1, 2));
             std::fclose(file);
           }
         }
@@ -74,15 +82,15 @@ namespace remix {
     }
     if (!compactPending.empty()) {
       std::vector<uint64_t> sizes(compactPending.size());
-      check(vkGetQueryPoolResults(device, compaction, 0, uint32_t(sizes.size()), sizes.size() * 8,
-                                  sizes.data(), 8, VK_QUERY_RESULT_64_BIT));
+      check(vkGetQueryPoolResults(device, compaction, 0, uint32_t(sizes.size()), sizes.size() * 8, sizes.data(), 8,
+                                  VK_QUERY_RESULT_64_BIT));
       for (size_t i = 0; i < sizes.size(); ++i) {
         auto &geometry = *compactPending[i];
         if (!sizes[i] || sizes[i] >= geometry.accel->size)
           continue;
         auto compact = acceleration(sizes[i], VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR);
-        VkCopyAccelerationStructureInfoKHR copy = {.sType =
-                                                       VK_STRUCTURE_TYPE_COPY_ACCELERATION_STRUCTURE_INFO_KHR,
+        compact->micromap = geometry.accel->micromap;
+        VkCopyAccelerationStructureInfoKHR copy = {.sType = VK_STRUCTURE_TYPE_COPY_ACCELERATION_STRUCTURE_INFO_KHR,
                                                    .src = geometry.accel->handle,
                                                    .dst = compact->handle,
                                                    .mode = VK_COPY_ACCELERATION_STRUCTURE_MODE_COMPACT_KHR};
@@ -116,6 +124,61 @@ namespace remix {
     }
   }
 
+  void PathTracer::Gpu::buildMicromaps(VkCommandBuffer command, const std::vector<std::shared_ptr<Geometry>> &work) {
+    std::vector<Micromap *> pending;
+    for (const auto &geometry : work)
+      if (geometry->micromap && geometry->micromap->pending)
+        pending.push_back(geometry->micromap.get());
+    if (pending.empty())
+      return;
+    const VkDeviceSize alignment =
+        std::max<VkDeviceSize>(asProperties.minAccelerationStructureScratchOffsetAlignment, 256);
+    VkDeviceSize scratchBytes = 0;
+    for (const auto *micromap : pending)
+      scratchBytes += align(micromap->sizes.buildScratchSize, alignment);
+    if (!micromapScratch || micromapScratch->size < scratchBytes + alignment) {
+      if (micromapScratch)
+        retiredBuffers.push_back(std::move(micromapScratch)); // Earlier frames' builds may still use it.
+      micromapScratch = buffer(scratchBytes + alignment, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    }
+    VkDeviceAddress address = align(micromapScratch->address, alignment);
+    std::vector<VkMicromapBuildInfoEXT> builds;
+    for (auto *micromap : pending) {
+      builds.push_back({.sType = VK_STRUCTURE_TYPE_MICROMAP_BUILD_INFO_EXT,
+                        .type = VK_MICROMAP_TYPE_OPACITY_MICROMAP_EXT,
+                        .flags = VK_BUILD_MICROMAP_PREFER_FAST_TRACE_BIT_EXT,
+                        .mode = VK_BUILD_MICROMAP_MODE_BUILD_EXT,
+                        .dstMicromap = micromap->handle,
+                        .usageCountsCount = uint32_t(micromap->usage.size()),
+                        .pUsageCounts = micromap->usage.data(),
+                        .data = {.deviceAddress = micromap->data},
+                        .scratchData = {.deviceAddress = address},
+                        .triangleArray = {.deviceAddress = micromap->triangles},
+                        .triangleArrayStride = sizeof(scene::OpacityMicromap::Triangle)});
+      address += align(micromap->sizes.buildScratchSize, alignment);
+      micromap->pending = false;
+    }
+    // Inputs uploaded this frame and scratch reused from earlier builds; then
+    // the micromaps are read by the BLAS builds.
+    auto memoryBarrier = [&](VkPipelineStageFlags2 sourceStage, VkAccessFlags2 source,
+                             VkPipelineStageFlags2 destinationStage, VkAccessFlags2 destination) {
+      const VkMemoryBarrier2 barrier = {.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+                                        .srcStageMask = sourceStage,
+                                        .srcAccessMask = source,
+                                        .dstStageMask = destinationStage,
+                                        .dstAccessMask = destination};
+      const VkDependencyInfo dependency = {
+          .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO, .memoryBarrierCount = 1, .pMemoryBarriers = &barrier};
+      pipelineBarrier2(command, &dependency);
+    };
+    memoryBarrier(VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT,
+                  VK_PIPELINE_STAGE_2_MICROMAP_BUILD_BIT_EXT,
+                  VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT);
+    cmdBuildMicromaps(command, uint32_t(builds.size()), builds.data());
+    memoryBarrier(VK_PIPELINE_STAGE_2_MICROMAP_BUILD_BIT_EXT, VK_ACCESS_2_MICROMAP_WRITE_BIT_EXT,
+                  VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, VK_ACCESS_2_MICROMAP_READ_BIT_EXT);
+  }
+
   void PathTracer::Gpu::buildBottom(VkCommandBuffer command) {
     ScopedMilliseconds time{performance.accelerationMilliseconds};
     ScopedMilliseconds whole{trace::g_accelNow.bottom};
@@ -130,15 +193,13 @@ namespace remix {
     if (work.empty())
       return;
     for (const auto &geometry : work)
-      scratchBytes +=
-          align(geometry->update ? geometry->sizes.updateScratchSize : geometry->sizes.buildScratchSize,
-                asProperties.minAccelerationStructureScratchOffsetAlignment);
-    if (!scratch ||
-        scratch->size < scratchBytes + asProperties.minAccelerationStructureScratchOffsetAlignment)
+      scratchBytes += align(geometry->update ? geometry->sizes.updateScratchSize : geometry->sizes.buildScratchSize,
+                            asProperties.minAccelerationStructureScratchOffsetAlignment);
+    if (!scratch || scratch->size < scratchBytes + asProperties.minAccelerationStructureScratchOffsetAlignment)
       scratch = buffer(scratchBytes + asProperties.minAccelerationStructureScratchOffsetAlignment,
                        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-    VkDeviceAddress address =
-        align(scratch->address, asProperties.minAccelerationStructureScratchOffsetAlignment);
+    VkDeviceAddress address = align(scratch->address, asProperties.minAccelerationStructureScratchOffsetAlignment);
+    buildMicromaps(command, work);
     std::vector<VkAccelerationStructureBuildGeometryInfoKHR> builds;
     std::vector<const VkAccelerationStructureBuildRangeInfoKHR *> ranges;
     for (auto &g : work) {
@@ -155,10 +216,17 @@ namespace remix {
       ranges.push_back(g->ranges.data());
       address += align(g->update ? g->sizes.updateScratchSize : g->sizes.buildScratchSize,
                        asProperties.minAccelerationStructureScratchOffsetAlignment);
-      if (g->update)
+      uint64_t triangles = 0;
+      for (const auto &range : g->ranges)
+        triangles += range.primitiveCount;
+      if (g->update) {
         ++stats.blasRefits;
-      else
+        ++trace::g_accelNow.bottomRefits;
+        trace::g_accelNow.refitTriangles += triangles;
+      } else {
         ++stats.blasBuilds;
+        trace::g_accelNow.builtTriangles += triangles;
+      }
       if (!g->deform)
         compactPending.push_back(g);
       g->pending = false;

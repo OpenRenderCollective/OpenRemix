@@ -22,19 +22,14 @@ namespace remix::upscale {
   namespace {
 #if REMIX_HAS_DLSS5
     static const wchar_t *const kNeuralUpliftLibraryPaths[] = {
-      L"openremix\\dlss\\nvngx_dlssnr.dll",
-      L".trex\\nvngx_dlssnr.dll",
-      L"bin\\.trex\\nvngx_dlssnr.dll",
-      L".trex\\bin\\nvngx_dlssnr.dll",
-      L"dlss\\310.9.1\\nvngx_dlssnr.dll",
-      L"nvngx_dlssnr.dll",
+        L"openremix\\dlss\\nvngx_dlssnr.dll", L".trex\\nvngx_dlssnr.dll",         L"bin\\.trex\\nvngx_dlssnr.dll",
+        L".trex\\bin\\nvngx_dlssnr.dll",      L"dlss\\310.9.1\\nvngx_dlssnr.dll", L"nvngx_dlssnr.dll",
     };
 
     std::filesystem::path moduleDirectory() {
 #ifdef _WIN32
       HMODULE module{};
-      if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
-                                  GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+      if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                               reinterpret_cast<LPCWSTR>(&moduleDirectory), &module))
         return {};
       std::wstring path(32768, L'\0');
@@ -49,7 +44,7 @@ namespace remix::upscale {
     }
 
 #ifdef _WIN32
-    using PFN_GetModuleFileNameW = DWORD (WINAPI*)(HMODULE, LPWSTR, DWORD);
+    using PFN_GetModuleFileNameW = DWORD(WINAPI *)(HMODULE, LPWSTR, DWORD);
     PFN_GetModuleFileNameW g_realGetModuleFileNameW = nullptr;
     HMODULE g_spoofedModule = nullptr;
     constexpr DWORD kNvngxFileNameLength = 9;
@@ -81,8 +76,7 @@ namespace remix::upscale {
       }
 
       const auto *nt = reinterpret_cast<const IMAGE_NT_HEADERS *>(base + dos->e_lfanew);
-      if (nt->Signature != IMAGE_NT_SIGNATURE ||
-          nt->OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR_MAGIC) {
+      if (nt->Signature != IMAGE_NT_SIGNATURE || nt->OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR_MAGIC) {
         return nullptr;
       }
 
@@ -100,8 +94,7 @@ namespace remix::upscale {
         return nullptr;
       }
 
-      for (uint32_t descriptorRva = importDir.VirtualAddress;
-           rvaFits(descriptorRva, sizeof(IMAGE_IMPORT_DESCRIPTOR));
+      for (uint32_t descriptorRva = importDir.VirtualAddress; rvaFits(descriptorRva, sizeof(IMAGE_IMPORT_DESCRIPTOR));
            descriptorRva += static_cast<uint32_t>(sizeof(IMAGE_IMPORT_DESCRIPTOR))) {
         const auto *descriptor = reinterpret_cast<const IMAGE_IMPORT_DESCRIPTOR *>(base + descriptorRva);
         if (descriptor->FirstThunk == 0 && descriptor->OriginalFirstThunk == 0) {
@@ -144,9 +137,10 @@ namespace remix::upscale {
           auto **slot = reinterpret_cast<void **>(base + slotRva);
           HMODULE ourModule = nullptr;
           if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                                  reinterpret_cast<LPCWSTR>(&neuralUpliftGetModuleFileNameW),
-                                  &ourModule) || ourModule == nullptr) {
-            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "[DLSS-NR] Could not identify this module; caller check left in place");
+                                  reinterpret_cast<LPCWSTR>(&neuralUpliftGetModuleFileNameW), &ourModule) ||
+              ourModule == nullptr) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "[DLSS-NR] Could not identify this module; caller check left in place");
             return nullptr;
           }
 
@@ -156,7 +150,8 @@ namespace remix::upscale {
 
           DWORD oldProtect = 0;
           if (!VirtualProtect(slot, sizeof(void *), PAGE_READWRITE, &oldProtect)) {
-            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "[DLSS-NR] Could not unprotect snippet IAT; caller check left in place");
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "[DLSS-NR] Could not unprotect snippet IAT; caller check left in place");
             return nullptr;
           }
 
@@ -219,11 +214,16 @@ namespace remix::upscale {
     void *module = nullptr;
     void *callerCheckHookSlot = nullptr;
 
-    using PFN_CreateFeature1 = NVSDK_NGX_Result (NVSDK_CONV *)(VkDevice, VkCommandBuffer, NVSDK_NGX_Feature, NVSDK_NGX_Parameter*, NVSDK_NGX_Handle**);
-    using PFN_EvaluateFeature = NVSDK_NGX_Result (NVSDK_CONV *)(VkCommandBuffer, const NVSDK_NGX_Handle*, const NVSDK_NGX_Parameter*, void*);
-    using PFN_ReleaseFeature = NVSDK_NGX_Result (NVSDK_CONV *)(NVSDK_NGX_Handle*);
-    using PFN_Init_Ext2 = NVSDK_NGX_Result (NVSDK_CONV *)(unsigned long long, const wchar_t*, VkInstance, VkPhysicalDevice, VkDevice, PFN_vkGetInstanceProcAddr, PFN_vkGetDeviceProcAddr, const NVSDK_NGX_FeatureCommonInfo*, NVSDK_NGX_Version);
-    using PFN_Shutdown1 = NVSDK_NGX_Result (NVSDK_CONV *)(VkDevice);
+    using PFN_CreateFeature1 = NVSDK_NGX_Result(NVSDK_CONV *)(VkDevice, VkCommandBuffer, NVSDK_NGX_Feature,
+                                                              NVSDK_NGX_Parameter *, NVSDK_NGX_Handle **);
+    using PFN_EvaluateFeature = NVSDK_NGX_Result(NVSDK_CONV *)(VkCommandBuffer, const NVSDK_NGX_Handle *,
+                                                               const NVSDK_NGX_Parameter *, void *);
+    using PFN_ReleaseFeature = NVSDK_NGX_Result(NVSDK_CONV *)(NVSDK_NGX_Handle *);
+    using PFN_Init_Ext2 = NVSDK_NGX_Result(NVSDK_CONV *)(unsigned long long, const wchar_t *, VkInstance,
+                                                         VkPhysicalDevice, VkDevice, PFN_vkGetInstanceProcAddr,
+                                                         PFN_vkGetDeviceProcAddr, const NVSDK_NGX_FeatureCommonInfo *,
+                                                         NVSDK_NGX_Version);
+    using PFN_Shutdown1 = NVSDK_NGX_Result(NVSDK_CONV *)(VkDevice);
 
     PFN_CreateFeature1 pfnCreateFeature1 = nullptr;
     PFN_EvaluateFeature pfnEvaluateFeature = nullptr;
@@ -340,7 +340,8 @@ namespace remix::upscale {
     }
 
     void createPreparedImages(VkExtent2D extent) {
-      if (preparedDepthImages[0] && preparedDepthExtent.width == extent.width && preparedDepthExtent.height == extent.height)
+      if (preparedDepthImages[0] && preparedDepthExtent.width == extent.width &&
+          preparedDepthExtent.height == extent.height)
         return;
       destroyPrepared();
 
@@ -349,17 +350,17 @@ namespace remix::upscale {
 
       for (uint32_t f = 0; f < kFrames; ++f) {
         VkImageCreateInfo depthInfo{
-          .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-          .imageType = VK_IMAGE_TYPE_2D,
-          .format = VK_FORMAT_R32_SFLOAT,
-          .extent = {extent.width, extent.height, 1},
-          .mipLevels = 1,
-          .arrayLayers = 1,
-          .samples = VK_SAMPLE_COUNT_1_BIT,
-          .tiling = VK_IMAGE_TILING_OPTIMAL,
-          .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-          .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-          .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+            .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+            .imageType = VK_IMAGE_TYPE_2D,
+            .format = VK_FORMAT_R32_SFLOAT,
+            .extent = {extent.width, extent.height, 1},
+            .mipLevels = 1,
+            .arrayLayers = 1,
+            .samples = VK_SAMPLE_COUNT_1_BIT,
+            .tiling = VK_IMAGE_TILING_OPTIMAL,
+            .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+            .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+            .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
         };
         if (vkCreateImage(device, &depthInfo, nullptr, &preparedDepthImages[f]) != VK_SUCCESS)
           return;
@@ -380,9 +381,9 @@ namespace remix::upscale {
         }
 
         VkMemoryAllocateInfo allocInfo{
-          .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-          .allocationSize = req.size,
-          .memoryTypeIndex = typeIndex,
+            .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+            .allocationSize = req.size,
+            .memoryTypeIndex = typeIndex,
         };
         if (vkAllocateMemory(device, &allocInfo, nullptr, &preparedDepthMemories[f]) != VK_SUCCESS) {
           destroyPrepared();
@@ -391,11 +392,11 @@ namespace remix::upscale {
         vkBindImageMemory(device, preparedDepthImages[f], preparedDepthMemories[f], 0);
 
         VkImageViewCreateInfo depthViewInfo{
-          .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-          .image = preparedDepthImages[f],
-          .viewType = VK_IMAGE_VIEW_TYPE_2D,
-          .format = VK_FORMAT_R32_SFLOAT,
-          .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
+            .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            .image = preparedDepthImages[f],
+            .viewType = VK_IMAGE_VIEW_TYPE_2D,
+            .format = VK_FORMAT_R32_SFLOAT,
+            .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
         };
         if (vkCreateImageView(device, &depthViewInfo, nullptr, &preparedDepthViews[f]) != VK_SUCCESS) {
           destroyPrepared();
@@ -403,17 +404,17 @@ namespace remix::upscale {
         }
 
         VkImageCreateInfo motionInfo{
-          .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-          .imageType = VK_IMAGE_TYPE_2D,
-          .format = VK_FORMAT_R32G32_SFLOAT,
-          .extent = {extent.width, extent.height, 1},
-          .mipLevels = 1,
-          .arrayLayers = 1,
-          .samples = VK_SAMPLE_COUNT_1_BIT,
-          .tiling = VK_IMAGE_TILING_OPTIMAL,
-          .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-          .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-          .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+            .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+            .imageType = VK_IMAGE_TYPE_2D,
+            .format = VK_FORMAT_R32G32_SFLOAT,
+            .extent = {extent.width, extent.height, 1},
+            .mipLevels = 1,
+            .arrayLayers = 1,
+            .samples = VK_SAMPLE_COUNT_1_BIT,
+            .tiling = VK_IMAGE_TILING_OPTIMAL,
+            .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+            .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+            .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
         };
         if (vkCreateImage(device, &motionInfo, nullptr, &preparedMotionImages[f]) != VK_SUCCESS) {
           destroyPrepared();
@@ -441,11 +442,11 @@ namespace remix::upscale {
         vkBindImageMemory(device, preparedMotionImages[f], preparedMotionMemories[f], 0);
 
         VkImageViewCreateInfo motionViewInfo{
-          .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-          .image = preparedMotionImages[f],
-          .viewType = VK_IMAGE_VIEW_TYPE_2D,
-          .format = VK_FORMAT_R32G32_SFLOAT,
-          .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
+            .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            .image = preparedMotionImages[f],
+            .viewType = VK_IMAGE_VIEW_TYPE_2D,
+            .format = VK_FORMAT_R32G32_SFLOAT,
+            .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
         };
         if (vkCreateImageView(device, &motionViewInfo, nullptr, &preparedMotionViews[f]) != VK_SUCCESS) {
           destroyPrepared();
@@ -464,84 +465,83 @@ namespace remix::upscale {
       VkDescriptorSetLayoutBinding bindings[4]{};
       for (uint32_t i = 0; i < 4; ++i) {
         bindings[i] = {
-          .binding = i,
-          .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-          .descriptorCount = 1,
-          .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
-          .pImmutableSamplers = nullptr,
+            .binding = i,
+            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+            .descriptorCount = 1,
+            .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+            .pImmutableSamplers = nullptr,
         };
       }
       VkDescriptorSetLayoutCreateInfo layoutInfo{
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-        .bindingCount = 4,
-        .pBindings = bindings,
+          .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+          .bindingCount = 4,
+          .pBindings = bindings,
       };
       if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &prepSetLayout) != VK_SUCCESS)
         return;
 
       VkDescriptorPoolSize poolSize{
-        .type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-        .descriptorCount = 4 * kFrames,
+          .type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+          .descriptorCount = 4 * kFrames,
       };
       VkDescriptorPoolCreateInfo poolInfo{
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-        .maxSets = kFrames,
-        .poolSizeCount = 1,
-        .pPoolSizes = &poolSize,
+          .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+          .maxSets = kFrames,
+          .poolSizeCount = 1,
+          .pPoolSizes = &poolSize,
       };
       if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &prepPool) != VK_SUCCESS)
         return;
 
       VkDescriptorSetLayout layouts[kFrames] = {prepSetLayout, prepSetLayout};
       VkDescriptorSetAllocateInfo setInfo{
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-        .descriptorPool = prepPool,
-        .descriptorSetCount = kFrames,
-        .pSetLayouts = layouts,
+          .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+          .descriptorPool = prepPool,
+          .descriptorSetCount = kFrames,
+          .pSetLayouts = layouts,
       };
       if (vkAllocateDescriptorSets(device, &setInfo, prepSets) != VK_SUCCESS)
         return;
 
       VkPushConstantRange pushRange{
-        .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
-        .offset = 0,
-        .size = sizeof(float) * 16 + sizeof(uint32_t),
+          .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+          .offset = 0,
+          .size = sizeof(float) * 16 + sizeof(uint32_t),
       };
       VkPipelineLayoutCreateInfo pipeLayoutInfo{
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-        .setLayoutCount = 1,
-        .pSetLayouts = &prepSetLayout,
-        .pushConstantRangeCount = 1,
-        .pPushConstantRanges = &pushRange,
+          .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+          .setLayoutCount = 1,
+          .pSetLayouts = &prepSetLayout,
+          .pushConstantRangeCount = 1,
+          .pPushConstantRanges = &pushRange,
       };
       if (vkCreatePipelineLayout(device, &pipeLayoutInfo, nullptr, &prepPipelineLayout) != VK_SUCCESS)
         return;
 
       VkShaderModuleCreateInfo moduleInfo{
-        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-        .codeSize = sizeof(prepCompShader),
-        .pCode = prepCompShader,
+          .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+          .codeSize = sizeof(prepCompShader),
+          .pCode = prepCompShader,
       };
       if (vkCreateShaderModule(device, &moduleInfo, nullptr, &prepShaderModule) != VK_SUCCESS)
         return;
 
       VkComputePipelineCreateInfo pipelineInfo{
-        .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
-        .stage = {
-          .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-          .stage = VK_SHADER_STAGE_COMPUTE_BIT,
-          .module = prepShaderModule,
-          .pName = "main",
-        },
-        .layout = prepPipelineLayout,
+          .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+          .stage =
+              {
+                  .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                  .stage = VK_SHADER_STAGE_COMPUTE_BIT,
+                  .module = prepShaderModule,
+                  .pName = "main",
+              },
+          .layout = prepPipelineLayout,
       };
       vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &prepPipeline);
     }
 
-    int32_t prepareInputs(VkCommandBuffer command,
-                          VkImage linearDepth, VkImageView linearDepthView,
-                          VkImage guideMotion, VkImageView guideMotionView,
-                          VkExtent2D extent, const float *projection,
+    int32_t prepareInputs(VkCommandBuffer command, VkImage linearDepth, VkImageView linearDepthView,
+                          VkImage guideMotion, VkImageView guideMotionView, VkExtent2D extent, const float *projection,
                           bool depthInverted) {
       if (!device || !linearDepth || !linearDepthView || !guideMotion || !guideMotionView || !projection ||
           extent.width == 0 || extent.height == 0) {
@@ -560,82 +560,79 @@ namespace remix::upscale {
       frameSlot = (frameSlot + 1) % kFrames;
 
       // Layout transition for prepared images to GENERAL
-      VkImageMemoryBarrier initBarriers[2] = {
-        {
-          .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-          .srcAccessMask = 0,
-          .dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
-          .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-          .newLayout = VK_IMAGE_LAYOUT_GENERAL,
-          .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-          .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-          .image = preparedDepthImages[slot],
-          .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
-        },
-        {
-          .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-          .srcAccessMask = 0,
-          .dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
-          .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-          .newLayout = VK_IMAGE_LAYOUT_GENERAL,
-          .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-          .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-          .image = preparedMotionImages[slot],
-          .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
-        }
-      };
-      vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0,
-                           0, nullptr, 0, nullptr, 2, initBarriers);
+      VkImageMemoryBarrier initBarriers[2] = {{
+                                                  .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                                                  .srcAccessMask = 0,
+                                                  .dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+                                                  .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                                                  .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+                                                  .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                                                  .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                                                  .image = preparedDepthImages[slot],
+                                                  .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
+                                              },
+                                              {
+                                                  .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                                                  .srcAccessMask = 0,
+                                                  .dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+                                                  .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                                                  .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+                                                  .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                                                  .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                                                  .image = preparedMotionImages[slot],
+                                                  .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
+                                              }};
+      vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0,
+                           nullptr, 0, nullptr, 2, initBarriers);
 
       // Input barriers: make sure previous writes to linearDepth and guideMotion are visible
-      VkImageMemoryBarrier inBarriers[2] = {
-        {
-          .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-          .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
-          .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
-          .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
-          .newLayout = VK_IMAGE_LAYOUT_GENERAL,
-          .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-          .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-          .image = linearDepth,
-          .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
-        },
-        {
-          .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-          .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
-          .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
-          .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
-          .newLayout = VK_IMAGE_LAYOUT_GENERAL,
-          .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-          .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-          .image = guideMotion,
-          .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
-        }
-      };
-      vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0,
-                           0, nullptr, 0, nullptr, 2, inBarriers);
+      VkImageMemoryBarrier inBarriers[2] = {{
+                                                .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                                                .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+                                                .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
+                                                .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
+                                                .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+                                                .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                                                .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                                                .image = linearDepth,
+                                                .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
+                                            },
+                                            {
+                                                .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                                                .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+                                                .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
+                                                .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
+                                                .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+                                                .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                                                .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                                                .image = guideMotion,
+                                                .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
+                                            }};
+      vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0,
+                           nullptr, 0, nullptr, 2, inBarriers);
 
       VkDescriptorImageInfo imageInfos[4] = {
-        { VK_NULL_HANDLE, linearDepthView, VK_IMAGE_LAYOUT_GENERAL },
-        { VK_NULL_HANDLE, guideMotionView, VK_IMAGE_LAYOUT_GENERAL },
-        { VK_NULL_HANDLE, preparedDepthViews[slot], VK_IMAGE_LAYOUT_GENERAL },
-        { VK_NULL_HANDLE, preparedMotionViews[slot], VK_IMAGE_LAYOUT_GENERAL },
+          {VK_NULL_HANDLE, linearDepthView, VK_IMAGE_LAYOUT_GENERAL},
+          {VK_NULL_HANDLE, guideMotionView, VK_IMAGE_LAYOUT_GENERAL},
+          {VK_NULL_HANDLE, preparedDepthViews[slot], VK_IMAGE_LAYOUT_GENERAL},
+          {VK_NULL_HANDLE, preparedMotionViews[slot], VK_IMAGE_LAYOUT_GENERAL},
       };
       VkWriteDescriptorSet writes[4]{};
       for (uint32_t i = 0; i < 4; ++i) {
         writes[i] = {
-          .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-          .dstSet = prepSets[slot],
-          .dstBinding = i,
-          .descriptorCount = 1,
-          .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-          .pImageInfo = &imageInfos[i],
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstSet = prepSets[slot],
+            .dstBinding = i,
+            .descriptorCount = 1,
+            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+            .pImageInfo = &imageInfos[i],
         };
       }
       vkUpdateDescriptorSets(device, 4, writes, 0, nullptr);
 
       vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, prepPipeline);
-      vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, prepPipelineLayout, 0, 1, &prepSets[slot], 0, nullptr);
+      vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, prepPipelineLayout, 0, 1, &prepSets[slot], 0,
+                              nullptr);
 
       struct PushData {
         float proj[16];
@@ -652,32 +649,30 @@ namespace remix::upscale {
       vkCmdDispatch(command, (extent.width + 7) / 8, (extent.height + 7) / 8, 1);
 
       // Barrier: prepared images write -> read (GENERAL for NGX compute evaluation)
-      VkImageMemoryBarrier postBarriers[2] = {
-        {
-          .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-          .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
-          .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
-          .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
-          .newLayout = VK_IMAGE_LAYOUT_GENERAL,
-          .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-          .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-          .image = preparedDepthImages[slot],
-          .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
-        },
-        {
-          .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-          .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
-          .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
-          .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
-          .newLayout = VK_IMAGE_LAYOUT_GENERAL,
-          .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-          .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-          .image = preparedMotionImages[slot],
-          .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
-        }
-      };
-      vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0,
-                           0, nullptr, 0, nullptr, 2, postBarriers);
+      VkImageMemoryBarrier postBarriers[2] = {{
+                                                  .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                                                  .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+                                                  .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
+                                                  .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
+                                                  .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+                                                  .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                                                  .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                                                  .image = preparedDepthImages[slot],
+                                                  .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
+                                              },
+                                              {
+                                                  .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                                                  .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+                                                  .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
+                                                  .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
+                                                  .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+                                                  .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                                                  .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                                                  .image = preparedMotionImages[slot],
+                                                  .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
+                                              }};
+      vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0,
+                           nullptr, 0, nullptr, 2, postBarriers);
       return static_cast<int32_t>(slot);
     }
 
@@ -687,17 +682,17 @@ namespace remix::upscale {
       destroyStaging();
 
       VkImageCreateInfo info{
-        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-        .imageType = VK_IMAGE_TYPE_2D,
-        .format = VK_FORMAT_R16G16B16A16_SFLOAT,
-        .extent = {extent.width, extent.height, 1},
-        .mipLevels = 1,
-        .arrayLayers = 1,
-        .samples = VK_SAMPLE_COUNT_1_BIT,
-        .tiling = VK_IMAGE_TILING_OPTIMAL,
-        .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+          .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+          .imageType = VK_IMAGE_TYPE_2D,
+          .format = VK_FORMAT_R16G16B16A16_SFLOAT,
+          .extent = {extent.width, extent.height, 1},
+          .mipLevels = 1,
+          .arrayLayers = 1,
+          .samples = VK_SAMPLE_COUNT_1_BIT,
+          .tiling = VK_IMAGE_TILING_OPTIMAL,
+          .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+          .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+          .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
       };
       if (vkCreateImage(device, &info, nullptr, &stagingImage) != VK_SUCCESS)
         return;
@@ -721,9 +716,9 @@ namespace remix::upscale {
       }
 
       VkMemoryAllocateInfo allocInfo{
-        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        .allocationSize = req.size,
-        .memoryTypeIndex = typeIndex,
+          .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+          .allocationSize = req.size,
+          .memoryTypeIndex = typeIndex,
       };
       if (vkAllocateMemory(device, &allocInfo, nullptr, &stagingMemory) != VK_SUCCESS) {
         destroyStaging();
@@ -732,11 +727,11 @@ namespace remix::upscale {
       vkBindImageMemory(device, stagingImage, stagingMemory, 0);
 
       VkImageViewCreateInfo viewInfo{
-        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-        .image = stagingImage,
-        .viewType = VK_IMAGE_VIEW_TYPE_2D,
-        .format = VK_FORMAT_R16G16B16A16_SFLOAT,
-        .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
+          .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+          .image = stagingImage,
+          .viewType = VK_IMAGE_VIEW_TYPE_2D,
+          .format = VK_FORMAT_R16G16B16A16_SFLOAT,
+          .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
       };
       if (vkCreateImageView(device, &viewInfo, nullptr, &stagingView) != VK_SUCCESS) {
         destroyStaging();
@@ -776,7 +771,8 @@ namespace remix::upscale {
 
       pfnInit_Ext2 = reinterpret_cast<PFN_Init_Ext2>(GetProcAddress(hMod, "NVSDK_NGX_VULKAN_Init_Ext2"));
       pfnCreateFeature1 = reinterpret_cast<PFN_CreateFeature1>(GetProcAddress(hMod, "NVSDK_NGX_VULKAN_CreateFeature1"));
-      pfnEvaluateFeature = reinterpret_cast<PFN_EvaluateFeature>(GetProcAddress(hMod, "NVSDK_NGX_VULKAN_EvaluateFeature"));
+      pfnEvaluateFeature =
+          reinterpret_cast<PFN_EvaluateFeature>(GetProcAddress(hMod, "NVSDK_NGX_VULKAN_EvaluateFeature"));
       pfnReleaseFeature = reinterpret_cast<PFN_ReleaseFeature>(GetProcAddress(hMod, "NVSDK_NGX_VULKAN_ReleaseFeature"));
       pfnShutdown1 = reinterpret_cast<PFN_Shutdown1>(GetProcAddress(hMod, "NVSDK_NGX_VULKAN_Shutdown1"));
 
@@ -790,13 +786,9 @@ namespace remix::upscale {
         callerCheckHookSlot = hookNeuralUpliftGetModuleFileName(hMod);
       }
 
-      const auto initResult = pfnInit_Ext2(
-        0x1c6bfafe, // Application / project identifier
-        L".",
-        instance, physical, device,
-        vkGetInstanceProcAddr, vkGetDeviceProcAddr,
-        nullptr,
-        NVSDK_NGX_Version_API);
+      const auto initResult = pfnInit_Ext2(0x1c6bfafe, // Application / project identifier
+                                           L".", instance, physical, device, vkGetInstanceProcAddr, vkGetDeviceProcAddr,
+                                           nullptr, NVSDK_NGX_Version_API);
 
       if (NVSDK_NGX_FAILED(initResult)) {
         stats.notLoadedReason = "NVSDK_NGX_VULKAN_Init_Ext2 failed (" + std::to_string(uint32_t(initResult)) + ")";
@@ -859,18 +851,16 @@ namespace remix::upscale {
       for (uint32_t p = 0; p < targetPasses; ++p) {
         parameters->Set(NVSDK_NGX_Parameter_DLSSNR_Width, extent.width);
         parameters->Set(NVSDK_NGX_Parameter_DLSSNR_Height, extent.height);
-        parameters->Set(NVSDK_NGX_Parameter_DLSSNR_Hint_Render_Preset, static_cast<int>(std::clamp(settings.preset, 0u, 7u)));
+        parameters->Set(NVSDK_NGX_Parameter_DLSSNR_Hint_Render_Preset,
+                        static_cast<int>(std::clamp(settings.preset, 0u, 7u)));
         parameters->Set(NVSDK_NGX_Parameter_DLSSNR_DepthInverted, settings.depthInverted ? 1 : 0);
         parameters->Set(NVSDK_NGX_Parameter_DLSSNR_Enabled, 1);
         parameters->Set(NVSDK_NGX_Parameter_CreationNodeMask, 1u);
         parameters->Set(NVSDK_NGX_Parameter_VisibilityNodeMask, 1u);
 
         NVSDK_NGX_Handle *feat = nullptr;
-        const NVSDK_NGX_Result res = pfnCreateFeature1(
-          device, command,
-          static_cast<NVSDK_NGX_Feature>(settings.featureId),
-          parameters,
-          &feat);
+        const NVSDK_NGX_Result res =
+            pfnCreateFeature1(device, command, static_cast<NVSDK_NGX_Feature>(settings.featureId), parameters, &feat);
 
         if (NVSDK_NGX_SUCCEED(res) && feat) {
           features.push_back(feat);
@@ -880,7 +870,8 @@ namespace remix::upscale {
             SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "[DLSS-NR] CreateFeature1 failed: 0x%08x", uint32_t(res));
             return;
           } else {
-            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "[DLSS-NR] Multi-pass feature count capped at %u (code 0x%08x)", p, uint32_t(res));
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "[DLSS-NR] Multi-pass feature count capped at %u (code 0x%08x)",
+                        p, uint32_t(res));
             break;
           }
         }
@@ -897,8 +888,9 @@ namespace remix::upscale {
       currentSettings = settings;
       stats.initCount++;
       stats.statusReason = "active";
-      SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "[DLSS-NR] Created %zu feature(s) at %ux%u (preset %u, id %u, passes %u)",
-                  features.size(), extent.width, extent.height, settings.preset, settings.featureId, targetPasses);
+      SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                  "[DLSS-NR] Created %zu feature(s) at %ux%u (preset %u, id %u, passes %u)", features.size(),
+                  extent.width, extent.height, settings.preset, settings.featureId, targetPasses);
     }
 #endif // REMIX_HAS_DLSS5
   };
@@ -927,7 +919,8 @@ namespace remix::upscale {
   }
 
   const std::string &NeuralUplift::notSupportedReason() {
-    static const std::string reason = "NVIDIA DLSS-NR (Neural Uplift) unavailable: build with -Ddlss5=true and provide nvngx_dlssnr.dll.";
+    static const std::string reason =
+        "NVIDIA DLSS-NR (Neural Uplift) unavailable: build with -Ddlss5=true and provide nvngx_dlssnr.dll.";
     return reason;
   }
 
@@ -958,13 +951,10 @@ namespace remix::upscale {
     m->initialized = false;
   }
 
-  void NeuralUplift::record(VkCommandBuffer command,
-                            VkImage inOutColor, VkImageView inOutColorView,
-                            VkImage linearDepth, VkImageView linearDepthView,
-                            VkImage guideMotion, VkImageView guideMotionView,
-                            VkExtent2D gbufferExtent, const float *projection,
-                            const NeuralUpliftSettings &settings,
-                            bool resetHistory) {
+  void NeuralUplift::record(VkCommandBuffer command, VkImage inOutColor, VkImageView inOutColorView,
+                            VkImage linearDepth, VkImageView linearDepthView, VkImage guideMotion,
+                            VkImageView guideMotionView, VkExtent2D gbufferExtent, const float *projection,
+                            const NeuralUpliftSettings &settings, bool resetHistory) {
 #if REMIX_HAS_DLSS5
     if (!settings.enable) {
       m->stats.active = false;
@@ -998,13 +988,11 @@ namespace remix::upscale {
     }
 
     const uint32_t passCount = std::clamp(settings.passes, 1u, 7u);
-    const bool recreate = !m->initialized || m->features.empty() ||
-                          (m->createdExtent.width != m->displayExtent.width) ||
-                          (m->createdExtent.height != m->displayExtent.height) ||
-                          (m->createdPasses != passCount) ||
-                          (m->currentSettings.preset != settings.preset) ||
-                          (m->currentSettings.featureId != settings.featureId) ||
-                          (m->currentSettings.depthInverted != settings.depthInverted);
+    const bool recreate =
+        !m->initialized || m->features.empty() || (m->createdExtent.width != m->displayExtent.width) ||
+        (m->createdExtent.height != m->displayExtent.height) || (m->createdPasses != passCount) ||
+        (m->currentSettings.preset != settings.preset) || (m->currentSettings.featureId != settings.featureId) ||
+        (m->currentSettings.depthInverted != settings.depthInverted);
 
     if (recreate) {
       m->createFeature(command, settings, m->displayExtent);
@@ -1018,43 +1006,40 @@ namespace remix::upscale {
       m->currentSettings = settings;
     }
 
-    const int32_t prepSlot = m->prepareInputs(command, linearDepth, linearDepthView,
-                                              guideMotion, guideMotionView,
+    const int32_t prepSlot = m->prepareInputs(command, linearDepth, linearDepthView, guideMotion, guideMotionView,
                                               gbufferExtent, projection, settings.depthInverted);
 
     m->stats.lastHadDepth = (prepSlot >= 0);
     m->stats.lastHadMotionVectors = (prepSlot >= 0);
 
     const VkImageCopy copyRegion{
-      .srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
-      .srcOffset = {0, 0, 0},
-      .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
-      .dstOffset = {0, 0, 0},
-      .extent = {m->displayExtent.width, m->displayExtent.height, 1},
+        .srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
+        .srcOffset = {0, 0, 0},
+        .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
+        .dstOffset = {0, 0, 0},
+        .extent = {m->displayExtent.width, m->displayExtent.height, 1},
     };
 
     NVSDK_NGX_Resource_VK colorRes = NVSDK_NGX_Create_ImageView_Resource_VK(
-      m->stagingView, m->stagingImage, {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
-      VK_FORMAT_R16G16B16A16_SFLOAT, m->displayExtent.width, m->displayExtent.height, false);
+        m->stagingView, m->stagingImage, {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}, VK_FORMAT_R16G16B16A16_SFLOAT,
+        m->displayExtent.width, m->displayExtent.height, false);
 
     NVSDK_NGX_Resource_VK outputRes = NVSDK_NGX_Create_ImageView_Resource_VK(
-      inOutColorView, inOutColor, {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
-      VK_FORMAT_R16G16B16A16_SFLOAT, m->displayExtent.width, m->displayExtent.height, true);
+        inOutColorView, inOutColor, {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}, VK_FORMAT_R16G16B16A16_SFLOAT,
+        m->displayExtent.width, m->displayExtent.height, true);
 
     NVSDK_NGX_Resource_VK depthRes{};
     if (prepSlot >= 0) {
       depthRes = NVSDK_NGX_Create_ImageView_Resource_VK(
-        m->preparedDepthViews[prepSlot], m->preparedDepthImages[prepSlot],
-        {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
-        VK_FORMAT_R32_SFLOAT, gbufferExtent.width, gbufferExtent.height, false);
+          m->preparedDepthViews[prepSlot], m->preparedDepthImages[prepSlot], {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
+          VK_FORMAT_R32_SFLOAT, gbufferExtent.width, gbufferExtent.height, false);
     }
 
     NVSDK_NGX_Resource_VK motionRes{};
     if (prepSlot >= 0) {
       motionRes = NVSDK_NGX_Create_ImageView_Resource_VK(
-        m->preparedMotionViews[prepSlot], m->preparedMotionImages[prepSlot],
-        {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
-        VK_FORMAT_R32G32_SFLOAT, gbufferExtent.width, gbufferExtent.height, false);
+          m->preparedMotionViews[prepSlot], m->preparedMotionImages[prepSlot], {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
+          VK_FORMAT_R32G32_SFLOAT, gbufferExtent.width, gbufferExtent.height, false);
     }
 
     bool allEvaluated = true;
@@ -1062,71 +1047,68 @@ namespace remix::upscale {
 
     for (uint32_t pass = 0; pass < passCount; ++pass) {
       // Step 1: Copy inOutColor -> stagingImage
-      const VkAccessFlags inSrcAccess = (pass == 0)
-        ? static_cast<VkAccessFlags>(VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT)
-        : static_cast<VkAccessFlags>(VK_ACCESS_SHADER_WRITE_BIT);
-      const VkAccessFlags stgSrcAccess = (pass == 0)
-        ? static_cast<VkAccessFlags>(0)
-        : static_cast<VkAccessFlags>(VK_ACCESS_SHADER_READ_BIT);
+      const VkAccessFlags inSrcAccess =
+          (pass == 0) ? static_cast<VkAccessFlags>(VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT)
+                      : static_cast<VkAccessFlags>(VK_ACCESS_SHADER_WRITE_BIT);
+      const VkAccessFlags stgSrcAccess =
+          (pass == 0) ? static_cast<VkAccessFlags>(0) : static_cast<VkAccessFlags>(VK_ACCESS_SHADER_READ_BIT);
 
       VkImageMemoryBarrier copyBarriers[2] = {
-        {
-          .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-          .srcAccessMask = inSrcAccess,
-          .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
-          .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
-          .newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-          .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-          .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-          .image = inOutColor,
-          .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
-        },
-        {
-          .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-          .srcAccessMask = stgSrcAccess,
-          .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-          .oldLayout = (pass == 0) ? VK_IMAGE_LAYOUT_UNDEFINED : VK_IMAGE_LAYOUT_GENERAL,
-          .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-          .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-          .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-          .image = m->stagingImage,
-          .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
-        }
-      };
-      vkCmdPipelineBarrier(command, (pass == 0) ? VK_PIPELINE_STAGE_ALL_COMMANDS_BIT : VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                           VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
-                           0, nullptr, 0, nullptr, 2, copyBarriers);
+          {
+              .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+              .srcAccessMask = inSrcAccess,
+              .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+              .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
+              .newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+              .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+              .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+              .image = inOutColor,
+              .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
+          },
+          {
+              .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+              .srcAccessMask = stgSrcAccess,
+              .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+              .oldLayout = (pass == 0) ? VK_IMAGE_LAYOUT_UNDEFINED : VK_IMAGE_LAYOUT_GENERAL,
+              .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+              .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+              .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+              .image = m->stagingImage,
+              .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
+          }};
+      vkCmdPipelineBarrier(command,
+                           (pass == 0) ? VK_PIPELINE_STAGE_ALL_COMMANDS_BIT : VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                           VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 2, copyBarriers);
 
-      vkCmdCopyImage(command, inOutColor, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                     m->stagingImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
+      vkCmdCopyImage(command, inOutColor, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, m->stagingImage,
+                     VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
 
       // Step 2: Transition stagingImage -> GENERAL (read), inOutColor -> GENERAL (read/write)
       VkImageMemoryBarrier evalBarriers[2] = {
-        {
-          .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-          .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-          .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
-          .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-          .newLayout = VK_IMAGE_LAYOUT_GENERAL,
-          .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-          .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-          .image = m->stagingImage,
-          .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
-        },
-        {
-          .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-          .srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
-          .dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
-          .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-          .newLayout = VK_IMAGE_LAYOUT_GENERAL,
-          .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-          .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-          .image = inOutColor,
-          .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
-        }
-      };
-      vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0,
-                           0, nullptr, 0, nullptr, 2, evalBarriers);
+          {
+              .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+              .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+              .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
+              .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+              .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+              .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+              .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+              .image = m->stagingImage,
+              .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
+          },
+          {
+              .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+              .srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+              .dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+              .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+              .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+              .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+              .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+              .image = inOutColor,
+              .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
+          }};
+      vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr,
+                           0, nullptr, 2, evalBarriers);
 
       // Step 3: Configure NGX parameters and evaluate
       m->parameters->Set(NVSDK_NGX_Parameter_DLSSNR_Color, &colorRes);
@@ -1158,13 +1140,14 @@ namespace remix::upscale {
         m->parameters->Set(NVSDK_NGX_Parameter_DLSSNR_MVecScaleX, mvScale);
         m->parameters->Set(NVSDK_NGX_Parameter_DLSSNR_MVecScaleY, mvScale);
       } else {
-        m->parameters->Set(NVSDK_NGX_Parameter_DLSSNR_Depth, static_cast<void*>(nullptr));
-        m->parameters->Set(NVSDK_NGX_Parameter_DLSSNR_MVec, static_cast<void*>(nullptr));
+        m->parameters->Set(NVSDK_NGX_Parameter_DLSSNR_Depth, static_cast<void *>(nullptr));
+        m->parameters->Set(NVSDK_NGX_Parameter_DLSSNR_MVec, static_cast<void *>(nullptr));
       }
 
       m->parameters->Set(NVSDK_NGX_Parameter_DLSSNR_Enabled, 1);
       m->parameters->Set(NVSDK_NGX_Parameter_DLSSNR_DepthInverted, settings.depthInverted ? 1 : 0);
-      m->parameters->Set(NVSDK_NGX_Parameter_DLSSNR_Reset, (pass == 0 && (resetHistory || m->forceHistoryReset)) ? 1 : 0);
+      m->parameters->Set(NVSDK_NGX_Parameter_DLSSNR_Reset,
+                         (pass == 0 && (resetHistory || m->forceHistoryReset)) ? 1 : 0);
       m->parameters->Set(NVSDK_NGX_Parameter_DLSSNR_UseAutoMask, settings.autoMask ? 1 : 0);
       m->parameters->Set(NVSDK_NGX_Parameter_DLSSNR_Style, std::clamp(settings.style, 0u, 2u));
       m->parameters->Set(NVSDK_NGX_Parameter_DLSSNR_Intensity, settings.intensity);
@@ -1189,18 +1172,19 @@ namespace remix::upscale {
 
     // Barrier: inOutColor back to GENERAL / read/write after compute
     VkImageMemoryBarrier postBarrier{
-      .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-      .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
-      .dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-      .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
-      .newLayout = VK_IMAGE_LAYOUT_GENERAL,
-      .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-      .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-      .image = inOutColor,
-      .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+        .dstAccessMask =
+            VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+        .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
+        .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = inOutColor,
+        .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
     };
-    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0,
-                         0, nullptr, 0, nullptr, 1, &postBarrier);
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0,
+                         nullptr, 0, nullptr, 1, &postBarrier);
 #else
     m->stats.statusReason = "DLSS disabled in build";
     m->stats.active = false;

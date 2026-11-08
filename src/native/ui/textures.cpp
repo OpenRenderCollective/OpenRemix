@@ -218,16 +218,14 @@ namespace remix {
     for (const auto &[hash, tex] : combined) {
       if (!tex)
         continue;
-      const bool hidden = std::find(settings.hideTextures.begin(), settings.hideTextures.end(), hash) !=
-                          settings.hideTextures.end();
+      const bool hidden =
+          std::find(settings.hideTextures.begin(), settings.hideTextures.end(), hash) != settings.hideTextures.end();
       if (hidden)
         ++hiddenCount;
       items.push_back({hash, tex, hidden});
     }
 
-    std::sort(items.begin(), items.end(), [](const TextureItem &a, const TextureItem &b) {
-      return a.hash < b.hash;
-    });
+    std::sort(items.begin(), items.end(), [](const TextureItem &a, const TextureItem &b) { return a.hash < b.hash; });
 
     ImGui::Text("Textures: %zu loaded, %zu hidden", items.size(), hiddenCount);
     ImGui::SameLine();
@@ -262,9 +260,8 @@ namespace remix {
 
     // Selected Texture Inspector Panel
     if (s_selectedHash != 0) {
-      auto it = std::find_if(items.begin(), items.end(), [](const TextureItem &item) {
-        return item.hash == s_selectedHash;
-      });
+      auto it =
+          std::find_if(items.begin(), items.end(), [](const TextureItem &item) { return item.hash == s_selectedHash; });
       if (it != items.end()) {
         ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.12f, 0.14f, 0.18f, 0.9f));
         ImGui::BeginChild("SelectedTexturePanel", ImVec2(0, 116.0f), ImGuiChildFlags_Borders);
@@ -284,14 +281,14 @@ namespace remix {
         }
 
         const float panelH = 100.0f;
-        const float aspect = float(std::max(1u, it->texture->pixels.width)) /
-                             float(std::max(1u, it->texture->pixels.height));
+        const float aspect =
+            float(std::max(1u, it->texture->pixels.width)) / float(std::max(1u, it->texture->pixels.height));
         const ImVec2 previewExtent(aspect >= 1.0f ? panelH : panelH * aspect,
                                    aspect <= 1.0f ? panelH : panelH / aspect);
 
         if (selRef._TexData != nullptr || selRef._TexID != ImTextureID_Invalid) {
-          ImGui::Image(selRef, previewExtent, ImVec2(0, 0), ImVec2(1, 1),
-                       ImVec4(1, 1, 1, 1), ImVec4(0.25f, 0.25f, 0.3f, 1.0f));
+          ImGui::Image(selRef, previewExtent, ImVec2(0, 0), ImVec2(1, 1), ImVec4(1, 1, 1, 1),
+                       ImVec4(0.25f, 0.25f, 0.3f, 1.0f));
           ImGui::SameLine();
         }
 
@@ -309,10 +306,8 @@ namespace remix {
           s_selectedHash = 0;
         }
 
-        ImGui::Text("Resolution: %u x %u | Mips: %u | %s",
-                    it->texture->pixels.width, it->texture->pixels.height,
-                    it->texture->pixels.levels(),
-                    it->texture->pixels.srgb ? "sRGB" : "Linear");
+        ImGui::Text("Resolution: %u x %u | Mips: %u | %s", it->texture->pixels.width, it->texture->pixels.height,
+                    it->texture->pixels.levels(), it->texture->pixels.srgb ? "sRGB" : "Linear");
 
         const bool isHidden = it->hidden;
         if (isHidden) {
@@ -387,8 +382,8 @@ namespace remix {
       }
 
       // Aspect ratio extent
-      const float aspect = float(std::max(1u, item.texture->pixels.width)) /
-                           float(std::max(1u, item.texture->pixels.height));
+      const float aspect =
+          float(std::max(1u, item.texture->pixels.width)) / float(std::max(1u, item.texture->pixels.height));
       const ImVec2 extent(aspect >= 1.0f ? s_thumbSize : s_thumbSize * aspect,
                           aspect <= 1.0f ? s_thumbSize : s_thumbSize / aspect);
 

@@ -1,4 +1,5 @@
 #include "scene/images.h"
+#include "scene/portals.h"
 #include "scene/resources.h"
 #include "scene/validation.h"
 #include <remix/remix_native_ext.h>
@@ -13,8 +14,8 @@ namespace remix::scene {
   MaterialDecode materialDecode(const Material &m) {
     MaterialDecode d;
     if (m.selfIllumination) {
-      d.flags |= MaterialDecode::selfIllumination |
-                 uint32_t(m.selfIllumination - 1) << MaterialDecode::selfIlluminationMaskShift;
+      d.flags |= MaterialDecode::selfIllumination | uint32_t(m.selfIllumination - 1)
+                                                        << MaterialDecode::selfIlluminationMaskShift;
       d.selfIlluminationScale = m.selfIlluminationScale;
     }
     if (m.metalColored) {
@@ -28,6 +29,10 @@ namespace remix::scene {
     }
     if (m.gradient)
       d.flags |= MaterialDecode::gradientMap;
+    if (m.portalRim)
+      d.flags |= MaterialDecode::portalRim;
+    if (m.solidEnergy)
+      d.flags |= MaterialDecode::solidEnergy;
     return d;
   }
 } // namespace remix::scene
@@ -63,10 +68,16 @@ namespace remix {
         extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT));
     const auto *translucent = static_cast<const remixapi_MaterialInfoTranslucentEXT *>(
         extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_TRANSLUCENT_EXT));
-    const auto *portal = extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_PORTAL_EXT);
-    if (unsigned(opaque != nullptr) + unsigned(translucent != nullptr) + unsigned(portal != nullptr) != 1) {
+    const auto *portal = static_cast<const remixapi_MaterialInfoPortalEXT *>(
+        extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_PORTAL_EXT));
+    // A portal stands alone (RTX Remix's portal material) or extends an
+    // opaque material, the look of its surface where it does not open.
+    if (unsigned(opaque != nullptr) + unsigned(translucent != nullptr) + unsigned(portal && !opaque) != 1) {
       throw invalid;
     }
+    // Indices past remixapi_GetRayPortalCapabilities' count open nothing.
+    if (portal && portal->rayPortalIndex < scene::rayPortalSlots)
+      material->rayPortal = uint8_t(portal->rayPortalIndex + 1);
     remixapi_Path texture = info.albedoTexture;
     if (opaque) {
       finite(&opaque->roughnessConstant, 1);
@@ -185,20 +196,65 @@ namespace remix {
     material->fps = info.spriteSheetFps;
     const auto *gradient = static_cast<const remixapi_MaterialGradientMapEXT *>(
         extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_GRADIENT_MAP_EXT));
-    // A gradient map reads the albedo texture as stored: its alpha is luminance.
-    material->texture = gradient && texture && *texture ? dataTexturePath(texture) : texturePath(texture);
+    const auto *rim = static_cast<const remixapi_MaterialPortalRimEXT *>(
+        extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_PORTAL_RIM_EXT));
+    // A gradient map reads the albedo texture as stored: its alpha is
+    // luminance. So does a portal rim: it is its noise.
+    material->texture = (gradient || rim) && texture && *texture ? dataTexturePath(texture) : texturePath(texture);
+    if (rim) {
+      // The rim's parameters take the film's fields (frame_tables.h
+      // portalRimFields), its colour and coverage the material's own.
+      if (!opaque || gradient || portal || opaque->thinFilmThickness_hasvalue || opaque->alphaIsThinFilmThickness ||
+          extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_IRIDESCENCE_EXT) || !rim->colorTexture ||
+          !*rim->colorTexture || !std::isfinite(rim->colorScale) || rim->colorScale < 0)
+        throw invalid;
+      auto out = std::make_shared<PortalRim>();
+      out->ramp = texturePath(rim->colorTexture);
+      out->rampSampler = samplerMaterial(out->ramp, 1, 0);
+      out->colorScale = rim->colorScale;
+      material->portalRim = std::move(out);
+    }
+    if (const auto *energy = static_cast<const remixapi_MaterialSolidEnergyEXT *>(
+            extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_SOLID_ENERGY_EXT))) {
+      // Its details and rates take the film's fields (frame_tables.h
+      // solidEnergyFields): half floats.
+      const float values[] = {energy->intensity,        energy->baseScroll[0],    energy->baseScroll[1],
+                              energy->detail1Scroll[0], energy->detail1Scroll[1], energy->detail2Scroll[0],
+                              energy->detail2Scroll[1], energy->detail1Sway[0],   energy->detail1Sway[1]};
+      if (!opaque || gradient || rim || portal || opaque->thinFilmThickness_hasvalue ||
+          opaque->alphaIsThinFilmThickness || extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_IRIDESCENCE_EXT) ||
+          !energy->detail1Texture || !*energy->detail1Texture || !energy->detail2Texture || !*energy->detail2Texture)
+        throw invalid;
+      finite(values, 9);
+      for (const float v : values)
+        if (std::fabs(v) > 65504)
+          throw invalid;
+      if (energy->intensity < 0 || energy->detail1Sway[1] < 0)
+        throw invalid;
+      auto out = std::make_shared<SolidEnergy>();
+      out->detail1 = texturePath(energy->detail1Texture);
+      out->detail2 = texturePath(energy->detail2Texture);
+      out->detail1Sampler = samplerMaterial(out->detail1, 1, 1);
+      out->detail2Sampler = samplerMaterial(out->detail2, 1, 1);
+      out->intensity = energy->intensity;
+      std::copy_n(energy->baseScroll, 2, out->baseScroll);
+      std::copy_n(energy->detail1Scroll, 2, out->detail1Scroll);
+      std::copy_n(energy->detail2Scroll, 2, out->detail2Scroll);
+      std::copy_n(energy->detail1Sway, 2, out->detail1Sway);
+      material->solidEnergy = std::move(out);
+    }
     if (gradient) {
       // B.a is luminance, not coverage: an opaque material without alpha test
       // or a film (the film's fields hold the gradient's parameters), whose
       // opacityConstant alone gives its opacity.
-      if (!opaque || opaque->thinFilmThickness_hasvalue ||
-          opaque->alphaIsThinFilmThickness || extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_IRIDESCENCE_EXT) ||
-          !gradient->gradientTexture || !*gradient->gradientTexture)
+      if (!opaque || opaque->thinFilmThickness_hasvalue || opaque->alphaIsThinFilmThickness ||
+          extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_IRIDESCENCE_EXT) || !gradient->gradientTexture ||
+          !*gradient->gradientTexture)
         throw invalid;
-      const float values[] = {gradient->skinRow,        gradient->clothRow,       gradient->spriteOffset[0],
-                              gradient->spriteOffset[1], gradient->detailU[0],     gradient->detailU[1],
-                              gradient->detailV[0],      gradient->detailV[1],     gradient->bloodRange[0],
-                              gradient->bloodRange[1],   gradient->bloodColor.x,   gradient->bloodColor.y,
+      const float values[] = {gradient->skinRow,         gradient->clothRow,     gradient->spriteOffset[0],
+                              gradient->spriteOffset[1], gradient->detailU[0],   gradient->detailU[1],
+                              gradient->detailV[0],      gradient->detailV[1],   gradient->bloodRange[0],
+                              gradient->bloodRange[1],   gradient->bloodColor.x, gradient->bloodColor.y,
                               gradient->bloodColor.z,    gradient->burnStrength};
       finite(values, 14);
       // Packed as half floats (frame_tables.h gradientFields), the colour as unorm8;
@@ -246,8 +302,8 @@ namespace remix {
     // Water shares the packed remap fields (frame_tables.h materialFields).
     if (material->normalEncoding == 5 && (material->roughnessTexture || material->metallicTexture))
       throw invalid;
-    const auto *pbr = static_cast<const remixapi_MaterialInfoPbrEXT *>(
-        extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_PBR_EXT));
+    const auto *pbr =
+        static_cast<const remixapi_MaterialInfoPbrEXT *>(extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_PBR_EXT));
     if (pbr && (!opaque || pbr->enabled > 1))
       throw invalid;
     if (const auto *film = static_cast<const remixapi_MaterialIridescenceEXT *>(
@@ -293,8 +349,8 @@ namespace remix {
       out.diffusionProfile = sss->subsurfaceDiffusionProfile != 0;
       out.measurementDistance = out.diffusionProfile ? 0 : std::max(sss->subsurfaceMeasurementDistance, 0.f);
       out.anisotropy = std::clamp(sss->subsurfaceVolumetricAnisotropy, -.9f, .9f);
-      const remixapi_Float3D &color = sss->subsurfaceTransmittanceColor, &single = sss->subsurfaceSingleScatteringAlbedo,
-                             &radius = sss->subsurfaceRadius;
+      const remixapi_Float3D &color = sss->subsurfaceTransmittanceColor,
+                             &single = sss->subsurfaceSingleScatteringAlbedo, &radius = sss->subsurfaceRadius;
       out.transmittance[0] = std::clamp(color.x, 0.f, 1.f);
       out.transmittance[1] = std::clamp(color.y, 0.f, 1.f);
       out.transmittance[2] = std::clamp(color.z, 0.f, 1.f);
@@ -330,13 +386,12 @@ namespace remix {
       if ((out.diffusionProfile && scatters) || out.measurementDistance > 0)
         out.weight = sssWeight ? sssWeight->weight : 1;
     }
-    material->pbr =
-        material->transmittanceDistance > 0 ||
-        (opaque && (pbr ? pbr->enabled != 0
-                       : material->roughness > 0 || material->metallic > 0 || material->roughnessTexture ||
-                             material->metallicTexture || material->normalTexture)) ||
-        material->iridescence.strength > 0 || // a film is a reflection
-        material->subsurface.weight > 0;
+    material->pbr = material->transmittanceDistance > 0 ||
+                    (opaque && (pbr ? pbr->enabled != 0
+                                    : material->roughness > 0 || material->metallic > 0 || material->roughnessTexture ||
+                                          material->metallicTexture || material->normalTexture)) ||
+                    material->iridescence.strength > 0 || // a film is a reflection
+                    material->subsurface.weight > 0;
     finite(&info.emissiveColorConstant.x, 3);
     finite(&info.emissiveIntensity, 1);
     if (info.emissiveIntensity < 0 || info.emissiveColorConstant.x < 0 || info.emissiveColorConstant.y < 0 ||
@@ -390,16 +445,18 @@ namespace remix {
              a.normalEncoding == b.normalEncoding && a.roughness == b.roughness && a.metallic == b.metallic &&
              a.remap[0] == b.remap[0] && a.remap[1] == b.remap[1] && a.scrollLayers == b.scrollLayers &&
              std::equal(a.scroll, a.scroll + 6, b.scroll) && a.refractiveIndex == b.refractiveIndex &&
-             a.transmittanceDistance == b.transmittanceDistance &&
-             a.iridescence == b.iridescence && a.subsurface == b.subsurface && a.metalColored == b.metalColored &&
+             a.transmittanceDistance == b.transmittanceDistance && a.iridescence == b.iridescence &&
+             a.subsurface == b.subsurface && a.metalColored == b.metalColored &&
              std::equal(a.metalColor, a.metalColor + 3, b.metalColor) && a.pbrBlur == b.pbrBlur &&
              (a.gradient == b.gradient || (a.gradient && b.gradient && *a.gradient == *b.gradient)) &&
+             (a.portalRim == b.portalRim || (a.portalRim && b.portalRim && *a.portalRim == *b.portalRim)) &&
+             (a.solidEnergy == b.solidEnergy || (a.solidEnergy && b.solidEnergy && *a.solidEnergy == *b.solidEnergy)) &&
              a.pbr == b.pbr && std::equal(a.emission, a.emission + 3, b.emission) &&
              std::equal(a.tint, a.tint + 4, b.tint) && a.compare == b.compare && a.reference == b.reference &&
-             a.drawAlpha == b.drawAlpha && a.translucent == b.translucent &&
-             a.transmission == b.transmission && a.caustics == b.caustics &&
-             a.screenCamera == b.screenCamera && a.filter == b.filter && a.wrapU == b.wrapU &&
-             a.wrapV == b.wrapV && a.rows == b.rows && a.columns == b.columns && a.fps == b.fps;
+             a.drawAlpha == b.drawAlpha && a.translucent == b.translucent && a.transmission == b.transmission &&
+             a.caustics == b.caustics && a.screenCamera == b.screenCamera && a.rayPortal == b.rayPortal &&
+             a.filter == b.filter && a.wrapU == b.wrapU && a.wrapV == b.wrapV && a.rows == b.rows &&
+             a.columns == b.columns && a.fps == b.fps;
     };
     if (previous == m_materials.end() || !equal(*previous->second, *material)) {
       if (previous != m_materials.end()) {

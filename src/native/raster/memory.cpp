@@ -76,8 +76,7 @@ namespace remix {
     out->allocationSize = requirements.size;
     const VkMemoryAllocateInfo allocation = {.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
                                              .allocationSize = requirements.size,
-                                             .memoryTypeIndex =
-                                                 memoryType(requirements.memoryTypeBits, flags)};
+                                             .memoryTypeIndex = memoryType(requirements.memoryTypeBits, flags)};
     if (flags == VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
       stagingMemoryFlags = memory.memoryTypes[allocation.memoryTypeIndex].propertyFlags;
     check(vkAllocateMemory(device, &allocation, nullptr, &out->memory));
@@ -85,8 +84,7 @@ namespace remix {
     return out;
   }
 
-  std::unique_ptr<Buffer> RasterRenderer::Gpu::buffer(const void *data, size_t size,
-                                                      VkBufferUsageFlags usage) {
+  std::unique_ptr<Buffer> RasterRenderer::Gpu::buffer(const void *data, size_t size, VkBufferUsageFlags usage) {
     return buffer(size, usage, [&](uint8_t *mapped) { std::memcpy(mapped, data, size); });
   }
 
@@ -104,10 +102,8 @@ namespace remix {
     stagingAllocateMs += std::chrono::duration<double, std::milli>(mappedAt - begin).count();
     write(static_cast<uint8_t *>(mapped));
     stagingWriteMs += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - mappedAt).count();
-    const VkMappedMemoryRange flush = {.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
-                                       .memory = out->memory,
-                                       .offset = 0,
-                                       .size = VK_WHOLE_SIZE};
+    const VkMappedMemoryRange flush = {
+        .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, .memory = out->memory, .offset = 0, .size = VK_WHOLE_SIZE};
     const auto result = vkFlushMappedMemoryRanges(device, 1, &flush);
     vkUnmapMemory(device, out->memory);
     check(result);
@@ -134,14 +130,13 @@ namespace remix {
   }
 
   std::shared_ptr<MemoryBlock> RasterRenderer::Gpu::allocateBlock(VkDevice device, VkDeviceSize size, uint32_t type,
-                                                                 bool warm) {
+                                                                  bool warm) {
     auto block = std::make_shared<MemoryBlock>();
     block->device = device;
     block->size = size;
     block->type = type;
-    const VkMemoryAllocateInfo allocation = {.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-                                             .allocationSize = size,
-                                             .memoryTypeIndex = type};
+    const VkMemoryAllocateInfo allocation = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, .allocationSize = size, .memoryTypeIndex = type};
     // Out of memory: no block, and the image gets memory of its own (or its
     // caller's smaller mip chain).
     if (vkAllocateMemory(device, &allocation, nullptr, &block->memory) != VK_SUCCESS)
@@ -230,20 +225,19 @@ namespace remix {
     return out;
   }
 
-  std::unique_ptr<Buffer> RasterRenderer::Gpu::geometryBuffer(const void *data, size_t size,
-                                                              VkBufferUsageFlags usage,
+  std::unique_ptr<Buffer> RasterRenderer::Gpu::geometryBuffer(const void *data, size_t size, VkBufferUsageFlags usage,
                                                               VkCommandBuffer command) {
     // Geometry stays on the GPU, including devices without CPU-visible local memory.
     // Small geometry (a frame's effects and skinned vertices, most meshes) is
     // a part of an arena, and so is its staging copy; large geometry keeps a
     // buffer of its own.
     constexpr VkDeviceSize smallGeometry = 512u * 1024u, arenaSize = 8u * 1024u * 1024u;
-    constexpr VkBufferUsageFlags geometryUsage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
-                                                 VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    constexpr VkBufferUsageFlags geometryUsage =
+        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
     const bool shared = size && size <= smallGeometry && !(usage & ~geometryUsage);
-    auto out = shared ? part(geometryArenas, size, geometryUsage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, arenaSize)
-                     : allocateBuffer(size, usage | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                                      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    auto out =
+        shared ? part(geometryArenas, size, geometryUsage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, arenaSize)
+               : allocateBuffer(size, usage | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
     if (shared) {
       auto staged = part(stagingArenas[frameIndex], size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, arenaSize);
@@ -280,14 +274,14 @@ namespace remix {
                                            .buffer = out->buffer,
                                            .offset = out->offset,
                                            .size = out->arena ? VkDeviceSize(size) : VK_WHOLE_SIZE};
-    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT, 0, 0,
-                         nullptr, 1, &barrier, 0, nullptr);
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT, 0, 0, nullptr, 1,
+                         &barrier, 0, nullptr);
     // prepare() releases staging buffers only after the previous frame fence completes.
     return out;
   }
 
-  std::unique_ptr<Image> RasterRenderer::Gpu::image(uint32_t width, uint32_t height, uint32_t levels,
-                                                    VkFormat format, bool isDepth, VkImageCreateFlags flags,
+  std::unique_ptr<Image> RasterRenderer::Gpu::image(uint32_t width, uint32_t height, uint32_t levels, VkFormat format,
+                                                    bool isDepth, VkImageCreateFlags flags,
                                                     VkComponentMapping components) {
     if (width > properties.limits.maxImageDimension2D || height > properties.limits.maxImageDimension2D) {
       throw VK_ERROR_FORMAT_NOT_SUPPORTED;
@@ -322,10 +316,10 @@ namespace remix {
         .tiling = VK_IMAGE_TILING_OPTIMAL,
         // A depth image is the target's attachment or the sampled copy sprite
         // overlays take of it (captureSceneDepth).
-        .usage = isDepth ? VkImageUsageFlags(VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
-                                             VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-                                             VK_IMAGE_USAGE_SAMPLED_BIT)
-                         : VkImageUsageFlags(VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT),
+        .usage = isDepth
+                     ? VkImageUsageFlags(VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                                         VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)
+                     : VkImageUsageFlags(VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT),
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
         .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED};
     using Clock = std::chrono::steady_clock;
@@ -386,8 +380,8 @@ namespace remix {
         .viewType = VK_IMAGE_VIEW_TYPE_2D,
         .format = format,
         .components = components,
-        .subresourceRange = {VkImageAspectFlags(isDepth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT), 0, levels, 0,
-                             1}};
+        .subresourceRange = {VkImageAspectFlags(isDepth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT), 0,
+                             levels, 0, 1}};
     check(vkCreateImageView(device, &view, nullptr, &out->view));
     if (!isDepth) {
       const auto t4 = Clock::now();

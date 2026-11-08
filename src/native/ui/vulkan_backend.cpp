@@ -14,12 +14,12 @@
 #include "../../../third_party/imgui/backends/imgui_impl_vulkan.cpp"
 
 namespace remix::ui {
-bool prepareVulkanPipeline(bool request) {
-  auto *data = ImGui_ImplVulkan_GetBackendData();
-  if (!data)
-    return false;
-  if (request && !data->Pipeline)
-    ImGui_ImplVulkan_CreateMainPipeline(&data->VulkanInitInfo.PipelineInfoMain);
-  return data->Pipeline != VK_NULL_HANDLE;
-}
+  bool prepareVulkanPipeline(bool request) {
+    auto *data = ImGui_ImplVulkan_GetBackendData();
+    if (!data)
+      return false;
+    if (request && !data->Pipeline)
+      ImGui_ImplVulkan_CreateMainPipeline(&data->VulkanInitInfo.PipelineInfoMain);
+    return data->Pipeline != VK_NULL_HANDLE;
+  }
 } // namespace remix::ui

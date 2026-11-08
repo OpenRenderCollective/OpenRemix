@@ -59,8 +59,8 @@ namespace remix::usd {
     const auto geom_bind = skin.GetGeomBindTransform(time);
     const auto method = skin.GetSkinningMethod();
     auto posed_points = points;
-    if (!UsdSkelSkinPoints(method, geom_bind, joint_xforms, joints, weights,
-                           skin.GetNumInfluencesPerComponent(), posed_points))
+    if (!UsdSkelSkinPoints(method, geom_bind, joint_xforms, joints, weights, skin.GetNumInfluencesPerComponent(),
+                           posed_points))
       throw std::runtime_error("Could not skin mesh vertices");
 
     // USD skinning produces skeleton-space positions. Convert to mesh-local
@@ -94,9 +94,9 @@ namespace remix::usd {
       VtMatrix3dArray normal_xforms(joint_xforms.size());
       for (size_t i = 0; i < joint_xforms.size(); ++i)
         normal_xforms[i] = joint_xforms[i].ExtractRotationMatrix().GetInverse().GetTranspose();
-      if (!UsdSkelSkinFaceVaryingNormals(
-              method, geom_bind.ExtractRotationMatrix().GetInverse().GetTranspose(), normal_xforms, joints,
-              weights, skin.GetNumInfluencesPerComponent(), indices, posed_normals))
+      if (!UsdSkelSkinFaceVaryingNormals(method, geom_bind.ExtractRotationMatrix().GetInverse().GetTranspose(),
+                                         normal_xforms, joints, weights, skin.GetNumInfluencesPerComponent(), indices,
+                                         posed_normals))
         throw std::runtime_error("Could not skin mesh normals");
       const auto to_mesh_normals = to_mesh.ExtractRotationMatrix().GetInverse().GetTranspose();
       for (auto &normal : posed_normals) {

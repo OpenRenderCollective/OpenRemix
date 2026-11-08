@@ -1,5 +1,6 @@
 #include <cstdio>
 #include "runtime/runtime.h"
+#include "ui/theme.h"
 #if REMIX_HAS_USD
 #include "usd/mods.h"
 #endif
@@ -34,23 +35,19 @@ namespace remix {
     ImGui_ImplSDL3_NewFrame();
     // A host window usually hides the OS cursor on its thread (games do), so
     // draw ImGui's own while the menu is open and the OS cursor is hidden.
-    ImGui::GetIO().MouseDrawCursor =
-        m_window.embedded() && m_uiState != REMIXAPI_UI_STATE_NONE && !SDL_CursorVisible();
+    ImGui::GetIO().MouseDrawCursor = m_window.embedded() && m_uiState != REMIXAPI_UI_STATE_NONE && !SDL_CursorVisible();
+    ui::theme::setColors(m_profiles.panel().background, m_profiles.panel().accent);
     ImGui::NewFrame();
     if (preparationPending() || !m_preparationFailure.empty()) {
       const auto stats = m_pipelines->statistics();
       const auto &io = ImGui::GetIO();
-      ImGui::SetNextWindowPos(
-          m_loading ? ImVec2(io.DisplaySize.x * .5f, io.DisplaySize.y * .5f)
-                    : ImVec2(16, 16),
-          ImGuiCond_Always, m_loading ? ImVec2(.5f, .5f) : ImVec2(0, 0));
+      ImGui::SetNextWindowPos(m_loading ? ImVec2(io.DisplaySize.x * .5f, io.DisplaySize.y * .5f) : ImVec2(16, 16),
+                              ImGuiCond_Always, m_loading ? ImVec2(.5f, .5f) : ImVec2(0, 0));
       ImGui::SetNextWindowBgAlpha(.94f);
-      ImGui::Begin(
-          "Renderer preparation", nullptr,
-          ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoDecoration |
-              ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoSavedSettings);
-      ImGui::TextUnformatted(m_loading ? "Preparing renderer"
-                                       : "Preparing requested settings");
+      ImGui::Begin("Renderer preparation", nullptr,
+                   ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs |
+                       ImGuiWindowFlags_NoSavedSettings);
+      ImGui::TextUnformatted(m_loading ? "Preparing renderer" : "Preparing requested settings");
       // The compiles so far as a bar; the scene variants prewarmed in the
       // background keep it going after activation.
       char progress[48];
@@ -61,9 +58,7 @@ namespace remix {
                          ImVec2(280, 0), progress);
       if (m_preparation) {
         const auto seconds =
-            std::chrono::duration<double>(std::chrono::steady_clock::now() -
-                                          m_preparation->started)
-                .count();
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - m_preparation->started).count();
         ImGui::Text("Elapsed: %.1f s", seconds);
       }
       if (!m_preparationFailure.empty())
@@ -87,27 +82,7 @@ namespace remix {
     if (m_uiState != REMIXAPI_UI_STATE_NONE) {
       const bool open =
           ui::drawPanel(m_profiles, m_profileUi, this, [](void *user, int tab, config::Settings &settings) {
-            auto &runtime = *static_cast<RemixNativeRuntime *>(user);
-            switch (tab) {
-            case 0:
-              runtime.drawRenderingTab(settings);
-              break;
-            case 1:
-              runtime.drawLightingTab(settings);
-              break;
-            case 2:
-              runtime.drawSkyTab(settings);
-              break;
-            case 3:
-              runtime.drawPostProcessingTab(settings);
-              break;
-            case 4:
-              runtime.drawDiagnosticsTab(settings);
-              break;
-            case 5:
-              runtime.drawTexturesTab(settings);
-              break;
-            }
+            static_cast<RemixNativeRuntime *>(user)->drawSettingsTab(tab, settings);
           });
       if (!open)
         setUiState(REMIXAPI_UI_STATE_NONE);
@@ -126,12 +101,14 @@ namespace remix {
   }
 
   void RemixNativeRuntime::updateFreeCamera() {
-    if (!m_gui) return;
+    if (!m_gui)
+      return;
     ui::UiScope scope(m_gui);
     auto now = std::chrono::steady_clock::now();
     float dt = std::chrono::duration<float>(now - m_freeCamera.lastTime).count();
     m_freeCamera.lastTime = now;
-    if (dt <= 0.0f || dt > 0.1f) dt = 1.0f / 60.0f;
+    if (dt <= 0.0f || dt > 0.1f)
+      dt = 1.0f / 60.0f;
 
     if (!m_freeCamera.enabled || m_freeCamera.locked) {
       return;
@@ -154,20 +131,30 @@ namespace remix {
     float moveRight = 0.0f;
     float moveUp = 0.0f;
 
-    if (ImGui::IsKeyDown(ImGuiKey_W)) moveForward += speed;
-    if (ImGui::IsKeyDown(ImGuiKey_S)) moveForward -= speed;
-    if (ImGui::IsKeyDown(ImGuiKey_D)) moveRight += speed;
-    if (ImGui::IsKeyDown(ImGuiKey_A)) moveRight -= speed;
-    if (ImGui::IsKeyDown(ImGuiKey_E)) moveUp += speed;
-    if (ImGui::IsKeyDown(ImGuiKey_Q)) moveUp -= speed;
+    if (ImGui::IsKeyDown(ImGuiKey_W))
+      moveForward += speed;
+    if (ImGui::IsKeyDown(ImGuiKey_S))
+      moveForward -= speed;
+    if (ImGui::IsKeyDown(ImGuiKey_D))
+      moveRight += speed;
+    if (ImGui::IsKeyDown(ImGuiKey_A))
+      moveRight -= speed;
+    if (ImGui::IsKeyDown(ImGuiKey_E))
+      moveUp += speed;
+    if (ImGui::IsKeyDown(ImGuiKey_Q))
+      moveUp -= speed;
 
     float turnSpeed = m_freeCamera.turningSpeed * dt * 2.0f;
     const float pitchDir = m_freeCamera.invertY ? -1.0f : 1.0f;
 
-    if (ImGui::IsKeyDown(ImGuiKey_J)) m_freeCamera.yaw -= turnSpeed;
-    if (ImGui::IsKeyDown(ImGuiKey_L)) m_freeCamera.yaw += turnSpeed;
-    if (ImGui::IsKeyDown(ImGuiKey_I)) m_freeCamera.pitch += pitchDir * turnSpeed;
-    if (ImGui::IsKeyDown(ImGuiKey_K)) m_freeCamera.pitch -= pitchDir * turnSpeed;
+    if (ImGui::IsKeyDown(ImGuiKey_J))
+      m_freeCamera.yaw -= turnSpeed;
+    if (ImGui::IsKeyDown(ImGuiKey_L))
+      m_freeCamera.yaw += turnSpeed;
+    if (ImGui::IsKeyDown(ImGuiKey_I))
+      m_freeCamera.pitch += pitchDir * turnSpeed;
+    if (ImGui::IsKeyDown(ImGuiKey_K))
+      m_freeCamera.pitch -= pitchDir * turnSpeed;
 
     if (!io.WantCaptureMouse) {
       if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
@@ -184,8 +171,10 @@ namespace remix {
     m_freeCamera.pitch = std::clamp(m_freeCamera.pitch, -maxPitch, maxPitch);
 
     constexpr float twoPi = 6.28318530718f;
-    while (m_freeCamera.yaw > 3.14159265359f) m_freeCamera.yaw -= twoPi;
-    while (m_freeCamera.yaw < -3.14159265359f) m_freeCamera.yaw += twoPi;
+    while (m_freeCamera.yaw > 3.14159265359f)
+      m_freeCamera.yaw -= twoPi;
+    while (m_freeCamera.yaw < -3.14159265359f)
+      m_freeCamera.yaw += twoPi;
 
     if (moveForward != 0.0f || moveRight != 0.0f || moveUp != 0.0f) {
       if (m_raster.cameraValid()) {
@@ -196,15 +185,18 @@ namespace remix {
           scene::Matrix rot = scene::getEulerRotationMatrix(upSign * m_freeCamera.pitch, m_freeCamera.yaw);
 
           scene::Matrix viewToWorldRot = viewToWorld;
-          viewToWorldRot[12] = 0.0f; viewToWorldRot[13] = 0.0f; viewToWorldRot[14] = 0.0f; viewToWorldRot[15] = 1.0f;
+          viewToWorldRot[12] = 0.0f;
+          viewToWorldRot[13] = 0.0f;
+          viewToWorldRot[14] = 0.0f;
+          viewToWorldRot[15] = 1.0f;
           scene::Matrix freeCamRot = scene::multiply(viewToWorldRot, rot);
 
           for (int i = 0; i < 3; ++i) {
-            m_freeCamera.positionOffset[i] += moveRight * freeCamRot[i]
-                                           + (upSign * moveUp) * freeCamRot[4 + i]
-                                           + moveForward * freeCamRot[8 + i];
+            m_freeCamera.positionOffset[i] +=
+                moveRight * freeCamRot[i] + (upSign * moveUp) * freeCamRot[4 + i] + moveForward * freeCamRot[8 + i];
           }
-        } catch (...) {}
+        } catch (...) {
+        }
       }
     }
   }

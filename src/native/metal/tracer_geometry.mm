@@ -41,7 +41,7 @@ namespace remix::metal {
     for (size_t i = 0; i < partitionCount; ++i)
       opaque.append(partitions[i]->key);
     const bool skinned = draw.bones && std::any_of(draw.mesh->surfaces.begin(), draw.mesh->surfaces.end(),
-                                                  [](const auto &s) { return s->bonesPerVertex != 0; });
+                                                   [](const auto &s) { return s->bonesPerVertex != 0; });
     const bool streaming = bool(draw.mesh->updateStream);
     const bool deform = skinned || streaming;
     auto key =
@@ -97,7 +97,7 @@ namespace remix::metal {
     for (size_t i = 0; i < partitionCount; ++i)
       opaque.append(partitions[i]->key);
     const bool skinned = draw.bones && std::any_of(draw.mesh->surfaces.begin(), draw.mesh->surfaces.end(),
-                                                  [](const auto &s) { return s->bonesPerVertex != 0; });
+                                                   [](const auto &s) { return s->bonesPerVertex != 0; });
     const MeshViewKey key{draw.mesh.get(), skinned ? draw.instanceId : 0, skinned ? draw.instanceIndex : 0,
                           std::move(opaque)};
     const auto found = meshes.find(key);
@@ -158,13 +158,13 @@ namespace remix::metal {
             size_t index = i * surface->bonesPerVertex + b;
             const auto &matrix = (*draw.bones)[surface->bones[index]];
             for (int r = 0; r < 3; ++r)
-              vertex.position[r] += surface->weights[index] *
-                                    (matrix[r] * original.position[0] + matrix[4 + r] * original.position[1] +
-                                     matrix[8 + r] * original.position[2] + matrix[12 + r]);
+              vertex.position[r] +=
+                  surface->weights[index] * (matrix[r] * original.position[0] + matrix[4 + r] * original.position[1] +
+                                             matrix[8 + r] * original.position[2] + matrix[12 + r]);
             for (int r = 0; r < 3; ++r)
-              vertex.normal[r] += surface->weights[index] * (matrix[r] * original.normal[0] +
-                                                             matrix[4 + r] * original.normal[1] +
-                                                             matrix[8 + r] * original.normal[2]);
+              vertex.normal[r] +=
+                  surface->weights[index] * (matrix[r] * original.normal[0] + matrix[4 + r] * original.normal[1] +
+                                             matrix[8 + r] * original.normal[2]);
           }
           const float length = std::hypot(vertex.normal[0], vertex.normal[1], vertex.normal[2]);
           if (std::isfinite(length) && length > 1e-12f)
@@ -288,8 +288,7 @@ namespace remix::metal {
       ScopedTicks time{g.geometryTicks};
       constexpr size_t instancesPerTask = 512;
       g.workers->run((count + instancesPerTask - 1) / instancesPerTask, [&](size_t task) {
-        for (size_t index = task * instancesPerTask; index < std::min(count, (task + 1) * instancesPerTask);
-             ++index) {
+        for (size_t index = task * instancesPerTask; index < std::min(count, (task + 1) * instancesPerTask); ++index) {
           const auto instance = instances[index];
           auto *partitions = g.partitionStorage.data() + g.partitionOffsets[index];
           for (const auto &preparedSurface : instance)
@@ -307,8 +306,8 @@ namespace remix::metal {
       if (pendingConversions == g.conversions.size())
         g.conversions.emplace_back();
       bool convert = false;
-      auto &view = g.meshView(draw, g.partitionStorage.data() + g.partitionOffsets[index],
-                              draw.mesh->surfaces.size(), g.conversions[pendingConversions], convert);
+      auto &view = g.meshView(draw, g.partitionStorage.data() + g.partitionOffsets[index], draw.mesh->surfaces.size(),
+                              g.conversions[pendingConversions], convert);
       g.instanceViews[index] = {&view, convert ? int32_t(pendingConversions++) : -1};
     }
     if (pendingConversions) {
@@ -388,7 +387,10 @@ namespace remix::metal {
                                                       options:MTLResourceStorageModePrivate];
     check(scratchBuffer, "acceleration structure scratch");
     retire(scratchBuffer);
-    [encoder buildAccelerationStructure:structure descriptor:descriptor scratchBuffer:scratchBuffer scratchBufferOffset:0];
+    [encoder buildAccelerationStructure:structure
+                             descriptor:descriptor
+                          scratchBuffer:scratchBuffer
+                    scratchBufferOffset:0];
     stats.accelerationBytes += sizes.accelerationStructureSize;
     return structure;
   }

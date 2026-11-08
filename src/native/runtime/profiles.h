@@ -26,6 +26,8 @@ namespace remix::config {
     uint32_t sceneCaptureKey = 0, sceneCaptureModifiers = 0;
     // The screenshot shortcut, the same way. Alt+F12 (Cmd+F12 on macOS).
     uint32_t screenshotKey = REMIXAPI_KEY_F12, screenshotModifiers = defaultShortcutModifiers;
+    // The panel's background and accent colors, 0xRRGGBB (ui::theme::setColors).
+    uint32_t background = 0x303030, accent = 0x4772b3;
     bool operator==(const PanelState &) const = default;
   };
 
@@ -76,7 +78,7 @@ namespace remix::config {
     void remember();
     Settings m_current, m_saved;
     UnknownSettings m_unknown;
-    std::set<std::string> m_listed; // the keys the active profile's file has
+    std::set<std::string> m_listed;                              // the keys the active profile's file has
     std::vector<std::pair<std::string, std::string>> m_defaults; // the host's, in order
     std::filesystem::path m_directory, m_folder;
     std::vector<std::string> m_files;

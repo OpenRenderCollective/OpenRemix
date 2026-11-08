@@ -75,16 +75,16 @@ typedef uint64_t remixapi_ParticleEmitterHandleEXT; // 0: none
 #define REMIXAPI_STRUCT_TYPE_PARTICLE_EMITTER_INFO_EXT ((remixapi_StructType)0x7fff1050)
 typedef struct remixapi_ParticleEmitterInfoEXT {
   remixapi_StructType sType;
-  const void* pNext;
-  uint32_t shape;         // REMIXAPI_PARTICLE_SHAPE_*_EXT
-  uint32_t preset;        // REMIXAPI_PARTICLE_PRESET_*_EXT
-  uint32_t flags;         // REMIXAPI_PARTICLE_*_EXT flags
-  uint32_t blend;         // REMIXAPI_PARTICLE_BLEND_*_EXT
-  uint32_t facing;        // REMIXAPI_PARTICLE_FACING_*_EXT
-  uint32_t maxParticles;  // live at once, up to 65536 (0: 32768 with a preset, else 4096); within the budget
-  remixapi_Transform transform; // emitter space to world (rows)
-  remixapi_Float3D extent;      // see the shapes
-  float spawnRate;              // particles per second, >= 0
+  const void *pNext;
+  uint32_t shape;                 // REMIXAPI_PARTICLE_SHAPE_*_EXT
+  uint32_t preset;                // REMIXAPI_PARTICLE_PRESET_*_EXT
+  uint32_t flags;                 // REMIXAPI_PARTICLE_*_EXT flags
+  uint32_t blend;                 // REMIXAPI_PARTICLE_BLEND_*_EXT
+  uint32_t facing;                // REMIXAPI_PARTICLE_FACING_*_EXT
+  uint32_t maxParticles;          // live at once, up to 65536 (0: 32768 with a preset, else 4096); within the budget
+  remixapi_Transform transform;   // emitter space to world (rows)
+  remixapi_Float3D extent;        // see the shapes
+  float spawnRate;                // particles per second, >= 0
   float lifetimeMin, lifetimeMax; // seconds, 0 < min <= max
   // Initial velocity: velocity plus speed in a random direction within
   // coneAngleDegrees (0..180) of the emitter's +Z axis; velocity and the
@@ -92,35 +92,35 @@ typedef struct remixapi_ParticleEmitterInfoEXT {
   remixapi_Float3D velocity;
   float speed;
   float coneAngleDegrees;
-  remixapi_Float3D acceleration; // world space, units/s^2 (gravity)
-  float drag;                    // 1/s, >= 0: velocity decays by exp(-drag t)
-  float turbulence;              // random acceleration, units/s^2, >= 0 (drift)
-  float sizeStart, sizeEnd;      // billboard width over life, units, >= 0
-  float sizeJitter;              // 0..1: each particle's size scaled by 1 - jitter..1
-  float stretch;                 // VELOCITY facing: seconds of motion added to the length, >= 0
+  remixapi_Float3D acceleration;         // world space, units/s^2 (gravity)
+  float drag;                            // 1/s, >= 0: velocity decays by exp(-drag t)
+  float turbulence;                      // random acceleration, units/s^2, >= 0 (drift)
+  float sizeStart, sizeEnd;              // billboard width over life, units, >= 0
+  float sizeJitter;                      // 0..1: each particle's size scaled by 1 - jitter..1
+  float stretch;                         // VELOCITY facing: seconds of motion added to the length, >= 0
   remixapi_Float4D colorStart, colorEnd; // linear colour (lit like a diffuse surface) and alpha over life, >= 0
-  remixapi_Float3D emission;     // radiance added, unlit, >= 0
+  remixapi_Float3D emission;             // radiance added, unlit, >= 0
   // A texture from CreateTexture sampled over the billboard (RGBA, its
   // alpha multiplies), or null for a soft round sprite.
   remixapi_TextureHandle texture;
-  float softDistance;            // units over which particles fade into surfaces behind them, >= 0 (0: hard)
+  float softDistance; // units over which particles fade into surfaces behind them, >= 0 (0: hard)
   uint32_t seed;
 } remixapi_ParticleEmitterInfoEXT;
 
 // Live counts are the last completed frame's.
 typedef struct remixapi_ParticleStatisticsEXT {
-  uint64_t structSize;       // caller sets to at least sizeof; written back
-  uint32_t emitters;         // created (API and developer UI)
-  uint32_t activeEmitters;   // enabled with a slice of the budget
+  uint64_t structSize;     // caller sets to at least sizeof; written back
+  uint32_t emitters;       // created (API and developer UI)
+  uint32_t activeEmitters; // enabled with a slice of the budget
   uint32_t liveParticles;
-  uint32_t allocatedParticles; // slices given to emitters
+  uint32_t allocatedParticles;  // slices given to emitters
   uint32_t budget, spawnBudget; // rtx.native.particles.budget / .spawnBudget
-  uint32_t spawnsRequested;  // last frame: spawns asked for (rates and bursts, within the spawn budget)
-  uint32_t spawnsDropped;    // last frame: spawns past an emitter's slice, the spawn budget or the budget
-  uint32_t spawnsSheltered;  // last frame: spawns SHELTER kept out
+  uint32_t spawnsRequested;     // last frame: spawns asked for (rates and bursts, within the spawn budget)
+  uint32_t spawnsDropped;       // last frame: spawns past an emitter's slice, the spawn budget or the budget
+  uint32_t spawnsSheltered;     // last frame: spawns SHELTER kept out
   uint32_t simulatedFrames;
-  float gpuMilliseconds;     // last frame's particle passes (needs rtx.native.gpuPassTimers), else 0
-  uint32_t enabled;          // rtx.native.particles.enabled and a backend that draws them
+  float gpuMilliseconds; // last frame's particle passes (needs rtx.native.gpuPassTimers), else 0
+  uint32_t enabled;      // rtx.native.particles.enabled and a backend that draws them
 } remixapi_ParticleStatisticsEXT;
 
 #ifdef __cplusplus
@@ -130,53 +130,49 @@ extern "C" {
 // blend, facing or flag bit, maxParticles above 65536, values that are not
 // finite or outside the ranges above. Creating beyond 256 emitters fails
 // with GENERAL_FAILURE. An emitter starts enabled.
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_CreateParticleEmitterEXT)(
-    const remixapi_ParticleEmitterInfoEXT* info, remixapi_ParticleEmitterHandleEXT* out);
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_CreateParticleEmitterEXT(
-    const remixapi_ParticleEmitterInfoEXT* info, remixapi_ParticleEmitterHandleEXT* out);
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_CreateParticleEmitterEXT)(
+    const remixapi_ParticleEmitterInfoEXT *info, remixapi_ParticleEmitterHandleEXT *out);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_CreateParticleEmitterEXT(const remixapi_ParticleEmitterInfoEXT *info,
+                                                                            remixapi_ParticleEmitterHandleEXT *out);
 // Replaces every parameter from the next frame; live particles keep moving
 // and take the new appearance. A new maxParticles clears them.
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_UpdateParticleEmitterEXT)(
-    remixapi_ParticleEmitterHandleEXT emitter, const remixapi_ParticleEmitterInfoEXT* info);
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_UpdateParticleEmitterEXT)(
+    remixapi_ParticleEmitterHandleEXT emitter, const remixapi_ParticleEmitterInfoEXT *info);
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_UpdateParticleEmitterEXT(
-    remixapi_ParticleEmitterHandleEXT emitter, const remixapi_ParticleEmitterInfoEXT* info);
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_SetParticleEmitterTransformEXT)(
-    remixapi_ParticleEmitterHandleEXT emitter, const remixapi_Transform* transform);
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_SetParticleEmitterTransformEXT(
-    remixapi_ParticleEmitterHandleEXT emitter, const remixapi_Transform* transform);
+    remixapi_ParticleEmitterHandleEXT emitter, const remixapi_ParticleEmitterInfoEXT *info);
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_SetParticleEmitterTransformEXT)(
+    remixapi_ParticleEmitterHandleEXT emitter, const remixapi_Transform *transform);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL
+remixapi_SetParticleEmitterTransformEXT(remixapi_ParticleEmitterHandleEXT emitter, const remixapi_Transform *transform);
 // A disabled emitter stops spawning; its live particles finish their lives.
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_SetParticleEmitterEnabledEXT)(
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_SetParticleEmitterEnabledEXT)(
     remixapi_ParticleEmitterHandleEXT emitter, remixapi_Bool enabled);
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_SetParticleEmitterEnabledEXT(
-    remixapi_ParticleEmitterHandleEXT emitter, remixapi_Bool enabled);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL
+remixapi_SetParticleEmitterEnabledEXT(remixapi_ParticleEmitterHandleEXT emitter, remixapi_Bool enabled);
 // Spawns count particles at the next frame, on top of the rate, enabled or
 // not (within the spawn budget).
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_BurstParticleEmitterEXT)(
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_BurstParticleEmitterEXT)(
     remixapi_ParticleEmitterHandleEXT emitter, uint32_t count);
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_BurstParticleEmitterEXT(
-    remixapi_ParticleEmitterHandleEXT emitter, uint32_t count);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_BurstParticleEmitterEXT(remixapi_ParticleEmitterHandleEXT emitter,
+                                                                           uint32_t count);
 // Removes the emitter's live particles at the next frame.
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_ClearParticleEmitterEXT)(
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_ClearParticleEmitterEXT)(
     remixapi_ParticleEmitterHandleEXT emitter);
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_ClearParticleEmitterEXT(
-    remixapi_ParticleEmitterHandleEXT emitter);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_ClearParticleEmitterEXT(remixapi_ParticleEmitterHandleEXT emitter);
 // The emitter and its particles go at the next frame.
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_DestroyParticleEmitterEXT)(
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_DestroyParticleEmitterEXT)(
     remixapi_ParticleEmitterHandleEXT emitter);
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_DestroyParticleEmitterEXT(
-    remixapi_ParticleEmitterHandleEXT emitter);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_DestroyParticleEmitterEXT(remixapi_ParticleEmitterHandleEXT emitter);
 // Sets rtx.native.particles.budget (live particles of all emitters,
 // 1024..262144) and rtx.native.particles.spawnBudget (spawns a frame,
 // 64..65536). Emitters past the budget get no slice (no particles) until
 // others go; a change of the budget clears every emitter.
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_SetParticleBudgetEXT)(
-    uint32_t maxParticles, uint32_t maxSpawnsPerFrame);
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_SetParticleBudgetEXT(
-    uint32_t maxParticles, uint32_t maxSpawnsPerFrame);
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_GetParticleStatisticsEXT)(
-    remixapi_ParticleStatisticsEXT* out);
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetParticleStatisticsEXT(
-    remixapi_ParticleStatisticsEXT* out);
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_SetParticleBudgetEXT)(uint32_t maxParticles,
+                                                                            uint32_t maxSpawnsPerFrame);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_SetParticleBudgetEXT(uint32_t maxParticles,
+                                                                        uint32_t maxSpawnsPerFrame);
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_GetParticleStatisticsEXT)(remixapi_ParticleStatisticsEXT *out);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetParticleStatisticsEXT(remixapi_ParticleStatisticsEXT *out);
 #ifdef __cplusplus
 }
 #endif

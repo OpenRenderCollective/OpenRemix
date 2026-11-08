@@ -88,6 +88,6 @@ namespace remix::scene {
     std::vector<uint8_t> m_unrestricted;
     void locate(const VisibilityPartition &partition, size_t light, const float *position, float probe);
     void build(const VisibilityPartition &partition, const LightBvh &tree);
-    std::vector<float> m_positions;       // per static emitter, since the tree was built
+    std::vector<float> m_positions; // per static emitter, since the tree was built
   };
 } // namespace remix::scene

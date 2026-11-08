@@ -12,8 +12,8 @@ namespace remix::scene {
       if (size_t(index) >= nodes.size())
         return -1;
       const auto &n = nodes[index];
-      index = n.plane[0] * p[0] + n.plane[1] * p[1] + n.plane[2] * p[2] - n.plane[3] >= 0 ? n.children[0]
-                                                                                          : n.children[1];
+      index =
+          n.plane[0] * p[0] + n.plane[1] * p[1] + n.plane[2] * p[2] - n.plane[3] >= 0 ? n.children[0] : n.children[1];
     }
     if (index >= 0)
       return -1;
@@ -98,8 +98,8 @@ namespace remix::scene {
     // only those that move afterwards become unrestricted. A light that left
     // keeps its slot and its bits: a superset of the visible lights is safe.
     const size_t statics = tree.staticEmitters();
-    bool rebuild = partition->version != m_partitionVersion || tree.builds != m_treeBuilds ||
-                   m_unrestricted.size() != statics;
+    bool rebuild =
+        partition->version != m_partitionVersion || tree.builds != m_treeBuilds || m_unrestricted.size() != statics;
     if (rebuild) {
       m_partition = partition;
       m_partitionVersion = partition->version;

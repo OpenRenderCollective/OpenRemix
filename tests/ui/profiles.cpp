@@ -1,11 +1,15 @@
 #include "ui/profiles.h"
+#include "ui/widgets.h"
 #include <SDL3/SDL.h>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <imgui_impl_sdl3.h>
 #include <imgui_internal.h>
+#include <cstdio>
 #include <iostream>
+#include <map>
+#include <string>
 
 using namespace remix;
 static void require(bool condition, const char *message) {
@@ -75,8 +79,7 @@ int main(int argc, char **argv) {
   text("Night caf\xc3\xa9");
   key(SDL_SCANCODE_RETURN, true);
   key(SDL_SCANCODE_RETURN, false);
-  require(profiles.active() == "Night caf\xc3\xa9" && !ui.nameDialog,
-          "Enter did not duplicate with Unicode name");
+  require(profiles.active() == "Night caf\xc3\xa9" && !ui.nameDialog, "Enter did not duplicate with Unicode name");
   ui.nameDialog = ui.duplicate = ui.focusName = true;
   ui.name[0] = 0;
   frame();
@@ -176,6 +179,52 @@ int main(int argc, char **argv) {
   config::Profiles layoutRestored;
   layoutRestored.startup(argv[1]);
   require(std::abs(layoutRestored.panel().width - 352) < 1, "Released panel width was not persisted");
+  // Property search: every settings tab at once, only the rows that match (or whose panel's title
+  // matches) shown; a panel without matches stays hidden. Rows record whether they were drawn visibly.
+  static std::map<std::string, bool> shown;
+  const auto searchFrames = [&](const char *search) {
+    std::snprintf(ui.search, sizeof(ui.search), "%s", search);
+    for (int i = 0; i < 3; ++i) { // panels show from the frame after their first match
+      shown.clear();
+      ImGui_ImplSDL3_NewFrame();
+      io.DisplaySize = ImVec2(600, 900);
+      ImGui::NewFrame();
+      ui::drawPanel(profiles, ui, nullptr, [](void *, int tab, config::Settings &) {
+        const auto row = [](const char *label) {
+          ui::field(label, [&](const char *id) {
+            ImGui::Button(id);
+            shown[label] = ImGui::IsItemVisible();
+            return false;
+          });
+        };
+        if (tab == int(ui::Tab::Display)) {
+          if (ui::Panel panel{"Renderer"})
+            row("VSync");
+        } else if (tab == int(ui::Tab::Lighting)) {
+          if (ui::Panel panel{"Local lights"}) {
+            row("Local light samples");
+            row("Light reach");
+            if (ui::Panel restir{"ReSTIR DI"})
+              row("ReSTIR candidates");
+          }
+          if (ui::Panel panel{"Volumetrics"}) {
+            row("Sight distance");
+            row("Scattered light");
+          }
+        }
+      });
+      ImGui::Render();
+    }
+    ui.search[0] = 0;
+  };
+  const auto visible = [&](const char *label) { return shown.count(label) && shown[label]; };
+  searchFrames("loc samp");
+  require(visible("Local light samples"), "Search did not show a matching row");
+  require(!visible("Light reach") && !visible("ReSTIR candidates") && !visible("Sight distance") && !visible("VSync"),
+          "Search showed rows that do not match");
+  searchFrames("volumetrics");
+  require(visible("Sight distance") && visible("Scattered light") && !visible("Local light samples"),
+          "A matching panel title did not show its rows");
   ImGui_ImplSDL3_Shutdown();
   SDL_StopTextInput(window);
   ImGui::DestroyContext();

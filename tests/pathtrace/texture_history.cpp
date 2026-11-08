@@ -13,13 +13,13 @@
 #include <image/stb_image.h>
 
 namespace {
-void require(bool value, const char *message) {
-  if (!value) {
-    std::fprintf(stderr, "%s\n", message);
-    std::exit(1);
+  void require(bool value, const char *message) {
+    if (!value) {
+      std::fprintf(stderr, "%s\n", message);
+      std::exit(1);
+    }
   }
-}
-void ok(remixapi_ErrorCode result) { require(!result, "Texture history API failure"); }
+  void ok(remixapi_ErrorCode result) { require(!result, "Texture history API failure"); }
 } // namespace
 int main(int argc, char **argv) {
   require(argc == 2, "Supply capture directory");
@@ -60,7 +60,8 @@ int main(int argc, char **argv) {
   config("localLights", "0");
   const char *ngxMode = std::getenv("REMIX_TEST_NGX");
   config("upscaler", ngxMode ? "dlss" : "fsr31");
-  if (ngxMode) config("dlssRayReconstruction", std::string(ngxMode) == "rr" ? "1" : "0");
+  if (ngxMode)
+    config("dlssRayReconstruction", std::string(ngxMode) == "rr" ? "1" : "0");
   std::array<uint8_t, 128 * 128 * 4> texels{};
   for (unsigned y = 0; y < 128; ++y)
     for (unsigned x = 0; x < 128; ++x) {
@@ -129,9 +130,8 @@ int main(int argc, char **argv) {
   instance.doubleSided = 1;
   // Rotate both the camera and its receiver, then move them together. The
   // image should be independent of their shared world-space translation.
-  const float rotation[3][3] = {{.9776261f, 0, -.21035033f},
-                                {-.017052714f, .9967086f, -.079254344f},
-                                {.20965798f, .08106816f, .9744083f}};
+  const float rotation[3][3] = {
+      {.9776261f, 0, -.21035033f}, {-.017052714f, .9967086f, -.079254344f}, {.20965798f, .08106816f, .9744083f}};
   remixapi_CameraTemporalEXT epoch{};
   epoch.sType = REMIXAPI_STRUCT_TYPE_CAMERA_TEMPORAL_EXT;
   epoch.worldEpoch = 1;
@@ -172,9 +172,13 @@ int main(int argc, char **argv) {
   if (ngxMode) {
     // NGX capabilities become available after the requested renderer prepares.
     frame();
-    remixapi_ReconstructionDiagnosticsEXT d{}; d.structSize = sizeof(d);
+    remixapi_ReconstructionDiagnosticsEXT d{};
+    d.structSize = sizeof(d);
     ok(remixapi_GetReconstructionDiagnosticsEXT(&d));
-    if (!(d.capabilities & (std::string(ngxMode) == "rr" ? 4 : 2))) { ok(api.Shutdown()); return 77; }
+    if (!(d.capabilities & (std::string(ngxMode) == "rr" ? 4 : 2))) {
+      ok(api.Shutdown());
+      return 77;
+    }
   }
   double lastMean = 0;
   auto capture = [&](const std::string &name) {
@@ -211,8 +215,7 @@ int main(int argc, char **argv) {
       config(ngxMode ? "dlssQuality" : "fsrQuality", quality);
       std::array<double, 2> reference{};
       for (bool translated : {false, true}) {
-        const float position[] = {translated ? 1023.247f : 0, translated ? 71.62f : 0,
-                                  translated ? 1023.926f : 0};
+        const float position[] = {translated ? 1023.247f : 0, translated ? 71.62f : 0, translated ? 1023.926f : 0};
         for (int r = 0; r < 3; ++r) {
           instance.transform.matrix[r][3] = position[r];
           camera.view[3][r] = 0;
@@ -223,16 +226,15 @@ int main(int argc, char **argv) {
         const auto label = std::string(primary) + "-" + quality + (translated ? "-translated" : "-origin");
         for (int i = 0; i < 16; ++i)
           frame();
-        require(!stats().activeTaa && stats().requestedTaa,
-                "FSR must replace native TAA during texture history test");
+        require(!stats().activeTaa && stats().requestedTaa, "FSR must replace native TAA during texture history test");
         const auto resets = stats().historyResets;
         auto early = capture(label + "-early");
         for (int i = 0; i < 510; ++i)
           frame();
         auto late = capture(label + "-late");
         require(stats().historyResets == resets, "Stationary texture history was reset");
-        std::printf("%s: gradient %.6f -> %.6f, variance %.6f -> %.6f\n", label.c_str(), early[0], late[0],
-                    early[1], late[1]);
+        std::printf("%s: gradient %.6f -> %.6f, variance %.6f -> %.6f\n", label.c_str(), early[0], late[0], early[1],
+                    late[1]);
         if (!translated)
           reference = late;
         require(late[0] > .05 && late[1] > .01, "Texture contrast disappeared");
@@ -245,7 +247,8 @@ int main(int argc, char **argv) {
     }
   }
   if (ngxMode) {
-    remixapi_ReconstructionDiagnosticsEXT d{}; d.structSize = sizeof(d);
+    remixapi_ReconstructionDiagnosticsEXT d{};
+    d.structSize = sizeof(d);
     ok(remixapi_GetReconstructionDiagnosticsEXT(&d));
     require(d.activeBackend == (std::string(ngxMode) == "rr" ? 3u : 2u), "Texture test reconstruction unavailable");
     // Replace the streamed texture and move its instance without a camera cut.
@@ -253,12 +256,14 @@ int main(int argc, char **argv) {
     for (unsigned tick = 0; tick < 4; ++tick) {
       for (unsigned i = 0; i < 128 * 128; ++i) {
         texels[i * 4] = tick & 1 ? 230 : 40;
-        texels[i * 4 + 1] = 80; texels[i * 4 + 2] = 80;
+        texels[i * 4 + 1] = 80;
+        texels[i * 4 + 2] = 80;
       }
       ok(api.CreateTexture(&texture, &textureHandle));
       ok(api.CreateMaterial(&material, &materialHandle));
       instance.transform.matrix[0][3] += tick & 1 ? -.02f : .02f;
-      for (int i = 0; i < 16; ++i) frame();
+      for (int i = 0; i < 16; ++i)
+        frame();
       capture("animated-moving-" + std::to_string(tick));
       require(tick & 1 ? lastMean > .6 : lastMean < .4, "Animated texture retained stale color");
     }

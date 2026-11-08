@@ -194,16 +194,22 @@ int main(int argc, char **argv) {
   ok(api.SetConfigVariable("rtx.native.pathtrace.accumulate", "1"));
   // The defaults are a tuned game profile's: the references compare the
   // passes under the settings these checks were written for.
-  for (const auto &[key, value] : {std::pair{"bounces", "2"}, {"russianRoulette", "0"}, {"sharcSceneScale", "50"},
-                                   {"separateLocalLighting", "0"}, {"localFireflyFilter", "0"}, {"pbrLocalReuse", "0"},
-                                   {"translucencyReuse", "0"}, {"viewModel", "0"}, {"upscaler", "auto"},
+  for (const auto &[key, value] : {std::pair{"bounces", "2"},
+                                   {"russianRoulette", "0"},
+                                   {"sharcSceneScale", "50"},
+                                   {"separateLocalLighting", "0"},
+                                   {"localFireflyFilter", "0"},
+                                   {"pbrLocalReuse", "0"},
+                                   {"translucencyReuse", "0"},
+                                   {"viewModel", "0"},
+                                   {"upscaler", "auto"},
                                    // The thresholds are for the fixed exposure, not the metered one.
                                    {"autoExposure", "0"}})
     ok(api.SetConfigVariable((std::string("rtx.native.pathtrace.") + key).c_str(), value));
-  const auto capabilitiesOf = reinterpret_cast<PFN_remixapi_GetBackendCapabilitiesEXT>(
-      dlsym(library, "remixapi_GetBackendCapabilitiesEXT"));
-  const auto tracingOf = reinterpret_cast<PFN_remixapi_GetTracingStatisticsEXT>(
-      dlsym(library, "remixapi_GetTracingStatisticsEXT"));
+  const auto capabilitiesOf =
+      reinterpret_cast<PFN_remixapi_GetBackendCapabilitiesEXT>(dlsym(library, "remixapi_GetBackendCapabilitiesEXT"));
+  const auto tracingOf =
+      reinterpret_cast<PFN_remixapi_GetTracingStatisticsEXT>(dlsym(library, "remixapi_GetTracingStatisticsEXT"));
   require(capabilitiesOf && tracingOf, "Backend and tracing statistics are not exported");
   // The path tracer is prepared on a thread (pipelines compile on first use):
   // frames present meanwhile. Wait until it traces with accumulation.
@@ -247,8 +253,8 @@ int main(int argc, char **argv) {
   // Reconstruction is off here (MetalFX is checked below).
   ok(api.SetConfigVariable("rtx.native.pathtrace.upscaler", "off"));
   ok(api.SetConfigVariable("rtx.native.pathtrace.accumulate", "0"));
-  const auto denoisingOf = reinterpret_cast<PFN_remixapi_GetDenoisingStatisticsEXT>(
-      dlsym(library, "remixapi_GetDenoisingStatisticsEXT"));
+  const auto denoisingOf =
+      reinterpret_cast<PFN_remixapi_GetDenoisingStatisticsEXT>(dlsym(library, "remixapi_GetDenoisingStatisticsEXT"));
   require(denoisingOf != nullptr, "remixapi_GetDenoisingStatisticsEXT is not exported");
   remixapi_DenoisingStatisticsEXT denoising = {.structSize = sizeof(denoising)};
   for (unsigned frame = 0; frame < 200000; ++frame) {

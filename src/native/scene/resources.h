@@ -116,9 +116,11 @@ namespace remix {
     // name their materials by then; nothing is copied.
     static std::shared_ptr<scene::Surface> prepareSurface(const remixapi_MeshInfoSurfaceTriangles &source,
                                                           bool spriteVertices, uint64_t &bytes);
-    void adoptMesh(uint64_t hash, std::vector<std::shared_ptr<scene::Surface>> surfaces,
-                   remixapi_MeshHandle &handle);
+    void adoptMesh(uint64_t hash, std::vector<std::shared_ptr<scene::Surface>> surfaces, remixapi_MeshHandle &handle);
     void destroyMesh(remixapi_MeshHandle handle);
+    // remixapi_UpdateMeshVerticesEXT: a new version of a registered mesh with
+    // only these surfaces' positions (normals, texture coordinates) replaced.
+    void updateMeshVertices(remixapi_MeshHandle handle, uint32_t count, const remixapi_MeshVerticesEXT *surfaces);
     void createTexture(const remixapi_TextureInfo &info, remixapi_TextureHandle &handle);
     // Stores pixels prepared outside the API mutex (see scene::compressTexture).
     void createTexture(const remixapi_TextureInfo &info, scene::Pixels &&pixels, remixapi_TextureHandle &handle);
@@ -242,8 +244,8 @@ namespace remix {
     // Set while frames are rendered on another thread: shared resource state
     // that rendering writes (Material::emissionCache) is not read from here.
     void setConcurrentConsumer(bool value) { m_concurrentConsumer = value; }
-    void registerUiTexture(uint64_t id, uint32_t width, uint32_t height, remixapi_Format format,
-                           const void *pixels, uint64_t size);
+    void registerUiTexture(uint64_t id, uint32_t width, uint32_t height, remixapi_Format format, const void *pixels,
+                           uint64_t size);
     void updateUiTextureRegion(uint64_t id, uint32_t x, uint32_t y, uint32_t width, uint32_t height,
                                remixapi_Format format, const void *pixels, uint32_t rowPitch);
     void freeUiTexture(uint64_t id);

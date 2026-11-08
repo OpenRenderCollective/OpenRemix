@@ -27,9 +27,9 @@ namespace remix::gpu {
   };
   struct FrameTimings {
     bool available = false;
-    uint32_t truncated = 0;  // passes dropped for lack of queries
+    uint32_t truncated = 0; // passes dropped for lack of queries
     uint32_t queueFamily = 0, timestampValidBits = 0;
-    uint64_t frame = 0;      // runtime frame number of the measured frame
+    uint64_t frame = 0;             // runtime frame number of the measured frame
     double frameMilliseconds = 0;   // first to last timestamp of the frame
     double passMilliseconds = 0;    // top-level passes
     double untimedMilliseconds = 0; // frame minus top-level passes
@@ -44,9 +44,7 @@ namespace remix::gpu {
                               uint32_t frameEnd, uint32_t validBits, double period) {
     FrameTimings out;
     const uint64_t mask = validBits >= 64 ? UINT64_MAX : validBits ? (uint64_t(1) << validBits) - 1 : 0;
-    auto elapsed = [&](uint32_t a, uint32_t b) {
-      return double((stamps[b] - stamps[a]) & mask) * period / 1e6;
-    };
+    auto elapsed = [&](uint32_t a, uint32_t b) { return double((stamps[b] - stamps[a]) & mask) * period / 1e6; };
     out.available = true;
     out.timestampValidBits = validBits;
     out.timestampPeriod = period;

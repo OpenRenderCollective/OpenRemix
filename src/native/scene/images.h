@@ -35,8 +35,7 @@ namespace remix::scene {
   void updateMips(Pixels &pixels, uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1);
   // The region of the next level whose texels read [x0, x1) x [y0, y1) of a
   // width x height level through generateMips' 2x2 box.
-  inline void nextMipRegion(uint32_t &x0, uint32_t &y0, uint32_t &x1, uint32_t &y1, uint32_t width,
-                            uint32_t height) {
+  inline void nextMipRegion(uint32_t &x0, uint32_t &y0, uint32_t &x1, uint32_t &y1, uint32_t width, uint32_t height) {
     const uint32_t w = width > 1 ? width / 2 : 1, h = height > 1 ? height / 2 : 1;
     x0 /= 2;
     y0 /= 2;

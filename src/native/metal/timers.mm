@@ -111,8 +111,8 @@ namespace remix::metal {
     bool started = false;
     for (NSUInteger i = 0; i < count; ++i) {
       const uint64_t s = stamps[i];
-      const bool valid = s != MTLCounterErrorValue &&
-                         std::abs(double(s) - double(median)) < second && (!started || s >= previous);
+      const bool valid =
+          s != MTLCounterErrorValue && std::abs(double(s) - double(median)) < second && (!started || s >= previous);
       if (valid) {
         previous = s;
         started = true;

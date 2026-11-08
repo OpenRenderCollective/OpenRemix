@@ -44,8 +44,7 @@ int main(int argc, char **argv) {
   reconstruction.trace.upscaler = upscale::Mode::Fsr31;
   reconstruction.trace.denoiser = true;
   reconstruction.trace.taa = true;
-  require(profiles.edit(reconstruction) && profiles.duplicate("C reconstruction"),
-          "Reconstruction profile fixture");
+  require(profiles.edit(reconstruction) && profiles.duplicate("C reconstruction"), "Reconstruction profile fixture");
   require(profiles.load("A pathtrace"), "Select startup profile");
   remixapi_InitializeLibraryInfo initialize{};
   initialize.sType = REMIXAPI_STRUCT_TYPE_INITIALIZE_LIBRARY_INFO;
@@ -192,8 +191,7 @@ int main(int argc, char **argv) {
         }
         require(selected.active() == expected, "Live profile selector did not load requested profile");
         ok(remixapi_GetBackendCapabilitiesEXT(&caps));
-        require(caps.requestedBackend == selected.current().backend,
-                "Profile load did not update runtime request");
+        require(caps.requestedBackend == selected.current().backend, "Profile load did not update runtime request");
       }
       // Closing the menu retains live edits; it only releases UI capture.
       ok(api.SetUIState(REMIXAPI_UI_STATE_NONE));
@@ -217,8 +215,7 @@ int main(int argc, char **argv) {
   // Shutdown never saves API/UI edits over the startup file.
   config::Profiles restored;
   restored.startup(argv[1]);
-  require(restored.current() == tracing && restored.active() == "A pathtrace",
-          "Exit silently saved live edits");
+  require(restored.current() == tracing && restored.active() == "A pathtrace", "Exit silently saved live edits");
   // Start directly from a requested backend unsupported by the selected device.
   remixapi_StartupInfo startup{};
   startup.sType = REMIXAPI_STRUCT_TYPE_STARTUP_INFO;

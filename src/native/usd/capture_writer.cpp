@@ -244,7 +244,8 @@ namespace remix::usd {
       const std::string mdl = m.translucent ? "AperturePBR_Translucent" : "AperturePBR_Opacity";
       shader.SetSourceAsset(SdfAssetPath(mdl + ".mdl"), TfToken("mdl"));
       shader.SetSourceAssetSubIdentifier(TfToken(mdl), TfToken("mdl"));
-      material.CreateSurfaceOutput(TfToken("mdl")).ConnectToSource(shader.CreateOutput(TfToken("out"), SdfValueTypeNames->Token));
+      material.CreateSurfaceOutput(TfToken("mdl"))
+          .ConnectToSource(shader.CreateOutput(TfToken("out"), SdfValueTypeNames->Token));
       auto input = [&](const char *name, const SdfValueTypeName &type, const VtValue &value) {
         shader.CreateInput(TfToken(name), type).Set(value);
       };
@@ -282,8 +283,7 @@ namespace remix::usd {
           input("thin_film_thickness_from_albedo_alpha", SdfValueTypeNames->Bool, VtValue(m.film.fromAlpha));
           auto extra = [&](const char *name, float value) {
             shader.GetPrim()
-                .CreateAttribute(TfToken(std::string("openremix:iridescence:") + name), SdfValueTypeNames->Float,
-                                 true)
+                .CreateAttribute(TfToken(std::string("openremix:iridescence:") + name), SdfValueTypeNames->Float, true)
                 .Set(value);
           };
           extra("strength", m.film.strength);
@@ -430,7 +430,8 @@ namespace remix::usd {
 
     void writeInstance(const SdfPrimSpecHandle &prim, const CaptureScene::Instance &instance,
                        const CaptureScene::Mesh &mesh) {
-      prim->GetReferenceList().Prepend(SdfReference(std::string(), SdfPath("/RootNode/meshes/mesh_" + hex(instance.mesh))));
+      prim->GetReferenceList().Prepend(
+          SdfReference(std::string(), SdfPath("/RootNode/meshes/mesh_" + hex(instance.mesh))));
       set(prim, "visibility", SdfValueTypeNames->Token, VtValue(UsdGeomTokens->inherited));
       transform(prim, matrix(instance.model));
       for (uint32_t bit = 1; bit; bit <<= 1)
@@ -480,13 +481,26 @@ namespace remix::usd {
       const auto &light = captured.source;
       const char *type = nullptr;
       switch (light.type) {
-      case REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT: type = "SphereLight"; break;
-      case REMIXAPI_STRUCT_TYPE_LIGHT_INFO_RECT_EXT: type = "RectLight"; break;
-      case REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DISK_EXT: type = "DiskLight"; break;
-      case REMIXAPI_STRUCT_TYPE_LIGHT_INFO_CYLINDER_EXT: type = "CylinderLight"; break;
-      case REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DISTANT_EXT: type = "DistantLight"; break;
-      case REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DOME_EXT: type = "DomeLight"; break;
-      default: return;
+      case REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT:
+        type = "SphereLight";
+        break;
+      case REMIXAPI_STRUCT_TYPE_LIGHT_INFO_RECT_EXT:
+        type = "RectLight";
+        break;
+      case REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DISK_EXT:
+        type = "DiskLight";
+        break;
+      case REMIXAPI_STRUCT_TYPE_LIGHT_INFO_CYLINDER_EXT:
+        type = "CylinderLight";
+        break;
+      case REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DISTANT_EXT:
+        type = "DistantLight";
+        break;
+      case REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DOME_EXT:
+        type = "DomeLight";
+        break;
+      default:
+        return;
       }
       auto prim = define(layer, "/RootNode/lights/light_" + hex(hash), type);
       GfMatrix4d placement = matrix(light.transform);
@@ -506,7 +520,8 @@ namespace remix::usd {
       auto value = [&](const char *name, float number) {
         set(prim, std::string("inputs:") + name, SdfValueTypeNames->Float, VtValue(number));
       };
-      set(prim, "inputs:color", SdfValueTypeNames->Color3f, VtValue(GfVec3f(light.color.x, light.color.y, light.color.z)));
+      set(prim, "inputs:color", SdfValueTypeNames->Color3f,
+          VtValue(GfVec3f(light.color.x, light.color.y, light.color.z)));
       value("intensity", light.intensity);
       value("exposure", light.exposure);
       if (light.temperatureEnabled) {

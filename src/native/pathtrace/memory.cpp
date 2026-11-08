@@ -12,7 +12,7 @@ namespace remix {
   }
 
   std::unique_ptr<Buffer> PathTracer::Gpu::buffer(VkDeviceSize size, VkBufferUsageFlags usage, bool host,
-                                                 bool reusable) {
+                                                  bool reusable) {
     ScopedMilliseconds time{performance.allocationMilliseconds};
     auto out = std::make_unique<Buffer>();
     out->device = device;
@@ -35,13 +35,14 @@ namespace remix {
     {
       const auto began = std::chrono::steady_clock::now();
       check(vkCreateBuffer(device, &info, nullptr, &out->handle));
-      trace::g_blockCosts.slowestCreate = std::max(trace::g_blockCosts.slowestCreate,
-          std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - began).count());
+      trace::g_blockCosts.slowestCreate =
+          std::max(trace::g_blockCosts.slowestCreate,
+                   std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - began).count());
     }
     VkMemoryDedicatedRequirements dedicated{.sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS};
     VkMemoryRequirements2 query{.sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2, .pNext = &dedicated};
     VkBufferMemoryRequirementsInfo2 request{.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_REQUIREMENTS_INFO_2,
-                                           .buffer = out->handle};
+                                            .buffer = out->handle};
     vkGetBufferMemoryRequirements2(device, &request, &query);
     const auto &requirements = query.memoryRequirements;
     out->allocationSize = requirements.size;
@@ -53,24 +54,26 @@ namespace remix {
         .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
         .pNext = &flags,
         .allocationSize = requirements.size,
-        .memoryTypeIndex =
-            memoryType(requirements.memoryTypeBits,
-                       host ? VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT : VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
+        .memoryTypeIndex = memoryType(requirements.memoryTypeBits, host ? VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+                                                                        : VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
     // Device-local buffers are parts of a block, the idle cache's (reusable)
     // or not: a memory allocation of its own cost each new acceleration
     // structure and table the driver's allocation time. Host-visible buffers
     // outside the cache keep memory of their own, which their readers map.
     bool firstInBlock = false;
     if (!dedicated.requiresDedicatedAllocation && (reusable || !host)) {
-      const VkDeviceSize alignment = std::max(requirements.alignment,
-          host ? properties.limits.nonCoherentAtomSize : VkDeviceSize(1));
-      out->allocationSize = align(requirements.size,alignment);
+      const VkDeviceSize alignment =
+          std::max(requirements.alignment, host ? properties.limits.nonCoherentAtomSize : VkDeviceSize(1));
+      out->allocationSize = align(requirements.size, alignment);
       out->atomSize = host ? properties.limits.nonCoherentAtomSize : 1;
-      for (const auto &block : bufferMemory) if (block->type == allocate.memoryTypeIndex) {
-        if (const auto offset = block->take(out->allocationSize,alignment)) {
-          out->block = block; out->memoryOffset = *offset; break;
+      for (const auto &block : bufferMemory)
+        if (block->type == allocate.memoryTypeIndex) {
+          if (const auto offset = block->take(out->allocationSize, alignment)) {
+            out->block = block;
+            out->memoryOffset = *offset;
+            break;
+          }
         }
-      }
       if (!out->block) {
         const uint32_t type = allocate.memoryTypeIndex;
         std::shared_ptr<BufferMemory> block;
@@ -88,8 +91,7 @@ namespace remix {
         const auto noteBlock = [&] {
           auto &c = trace::g_blockCosts;
           ++(how == 0 ? c.ready : how == 1 ? c.awaited : how == 2 ? c.none : c.large);
-          const double ms =
-              std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - began).count();
+          const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - began).count();
           if (ms > c.slowest) {
             c.slowest = ms;
             c.slowestBuffer = out->allocationSize;
@@ -110,9 +112,11 @@ namespace remix {
         if (standard && std::none_of(sparesWanted.begin(), sparesWanted.end(),
                                      [&](const SpareWanted &wanted) { return wanted.type == type; }))
           sparesWanted.push_back({type, host, 0});
-        ++performance.memoryAllocations; performance.memoryAllocationBytes += block->size;
-        const auto offset = block->take(out->allocationSize,alignment);
-        out->block = block; out->memoryOffset = *offset;
+        ++performance.memoryAllocations;
+        performance.memoryAllocationBytes += block->size;
+        const auto offset = block->take(out->allocationSize, alignment);
+        out->block = block;
+        out->memoryOffset = *offset;
         firstInBlock = true;
         bufferMemory.push_back(std::move(block));
       }
@@ -120,18 +124,21 @@ namespace remix {
       if (host) {
         if (!out->block->mapped) {
           const auto began = std::chrono::steady_clock::now();
-          check(vkMapMemory(device,out->memory,0,VK_WHOLE_SIZE,0,&out->block->mapped));
-          trace::g_blockCosts.slowestMap = std::max(trace::g_blockCosts.slowestMap,
-              std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - began).count());
+          check(vkMapMemory(device, out->memory, 0, VK_WHOLE_SIZE, 0, &out->block->mapped));
+          trace::g_blockCosts.slowestMap =
+              std::max(trace::g_blockCosts.slowestMap,
+                       std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - began).count());
         }
-        out->mapped = static_cast<char*>(out->block->mapped)+out->memoryOffset;
+        out->mapped = static_cast<char *>(out->block->mapped) + out->memoryOffset;
       }
     } else {
       VkMemoryDedicatedAllocateInfo dedicatedInfo{.sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO,
-                                                   .buffer = out->handle};
-      if (dedicated.requiresDedicatedAllocation) flags.pNext = &dedicatedInfo;
+                                                  .buffer = out->handle};
+      if (dedicated.requiresDedicatedAllocation)
+        flags.pNext = &dedicatedInfo;
       check(vkAllocateMemory(device, &allocate, nullptr, &out->memory));
-      ++performance.memoryAllocations; performance.memoryAllocationBytes += allocate.allocationSize;
+      ++performance.memoryAllocations;
+      performance.memoryAllocationBytes += allocate.allocationSize;
     }
     {
       const auto began = std::chrono::steady_clock::now();
@@ -142,8 +149,7 @@ namespace remix {
         trace::g_blockCosts.bindFirst = firstInBlock;
       }
     }
-    VkBufferDeviceAddressInfo address = {.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
-                                         .buffer = out->handle};
+    VkBufferDeviceAddressInfo address = {.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO, .buffer = out->handle};
     out->address = getBufferAddress(device, &address);
     // Failed or partially initialized allocations always take the ordinary destruction path.
     if (reusable)
@@ -164,8 +170,8 @@ namespace remix {
     });
   }
 
-  std::shared_ptr<BufferMemory> PathTracer::Gpu::allocateBufferMemory(VkDevice device, VkDeviceSize size,
-                                                                     uint32_t type, bool host, bool warm) {
+  std::shared_ptr<BufferMemory> PathTracer::Gpu::allocateBufferMemory(VkDevice device, VkDeviceSize size, uint32_t type,
+                                                                      bool host, bool warm) {
     auto block = std::make_shared<BufferMemory>();
     block->device = device;
     block->type = type;
@@ -214,10 +220,10 @@ namespace remix {
     if (!buffer.mapped)
       check(vkMapMemory(device, buffer.memory, 0, VK_WHOLE_SIZE, 0, &buffer.mapped));
     std::memcpy(buffer.mapped, data, size);
-    VkMappedMemoryRange flush = {
-        .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, .memory = buffer.memory,
-        .offset = buffer.memoryOffset,
-        .size = buffer.block ? align(size,buffer.atomSize) : VK_WHOLE_SIZE};
+    VkMappedMemoryRange flush = {.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
+                                 .memory = buffer.memory,
+                                 .offset = buffer.memoryOffset,
+                                 .size = buffer.block ? align(size, buffer.atomSize) : VK_WHOLE_SIZE};
     const auto result = vkFlushMappedMemoryRanges(device, 1, &flush);
     check(result);
   }
@@ -241,10 +247,10 @@ namespace remix {
                     bytes - skip);
       position += bytes;
     }
-    VkMappedMemoryRange flush = {
-        .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, .memory = buffer.memory,
-        .offset = buffer.memoryOffset,
-        .size = buffer.block ? align(size, buffer.atomSize) : VK_WHOLE_SIZE};
+    VkMappedMemoryRange flush = {.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
+                                 .memory = buffer.memory,
+                                 .offset = buffer.memoryOffset,
+                                 .size = buffer.block ? align(size, buffer.atomSize) : VK_WHOLE_SIZE};
     check(vkFlushMappedMemoryRanges(device, 1, &flush));
   }
 
@@ -266,9 +272,8 @@ namespace remix {
     VkDeviceSize offset = align(staging.used, 16);
     if (!staging.buffer || offset + size > staging.buffer->size) {
       // Copies recorded from the full buffer keep it until this slot's fence.
-      const VkDeviceSize capacity =
-          std::max<VkDeviceSize>({VkDeviceSize(size), staging.buffer ? staging.buffer->size * 2 : 0,
-                                  VkDeviceSize(4 * 1024 * 1024)});
+      const VkDeviceSize capacity = std::max<VkDeviceSize>(
+          {VkDeviceSize(size), staging.buffer ? staging.buffer->size * 2 : 0, VkDeviceSize(4 * 1024 * 1024)});
       if (staging.buffer)
         uploads.push_back(std::move(staging.buffer));
       staging.buffer = buffer(capacity, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true, true);
@@ -285,8 +290,9 @@ namespace remix {
     VkMappedMemoryRange flush = {.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
                                  .memory = target.memory,
                                  .offset = target.memoryOffset + begin,
-                                 .size = target.block ? std::min(end, target.allocationSize) - begin
-                                         : end > target.allocationSize ? VK_WHOLE_SIZE : end - begin};
+                                 .size = target.block                  ? std::min(end, target.allocationSize) - begin
+                                         : end > target.allocationSize ? VK_WHOLE_SIZE
+                                                                       : end - begin};
     check(vkFlushMappedMemoryRanges(device, 1, &flush));
     staging.used = offset + size;
     return offset;
@@ -301,8 +307,7 @@ namespace remix {
     return out;
   }
 
-  std::shared_ptr<Accel> PathTracer::Gpu::acceleration(VkDeviceSize size,
-                                                       VkAccelerationStructureTypeKHR type) {
+  std::shared_ptr<Accel> PathTracer::Gpu::acceleration(VkDeviceSize size, VkAccelerationStructureTypeKHR type) {
     size = align(size, 256);
     std::shared_ptr<Arena> arena;
     VkDeviceSize offset = 0;
@@ -333,8 +338,7 @@ namespace remix {
     out->arena = arena;
     out->offset = offset;
     out->size = size;
-    VkAccelerationStructureCreateInfoKHR info = {.sType =
-                                                     VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR,
+    VkAccelerationStructureCreateInfoKHR info = {.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR,
                                                  .buffer = arena->buffer->handle,
                                                  .offset = offset,
                                                  .size = size,

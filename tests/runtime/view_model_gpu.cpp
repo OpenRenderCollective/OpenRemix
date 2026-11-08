@@ -18,136 +18,136 @@
 #include <image/stb_image.h>
 
 namespace {
-void require(bool value, const char *message) {
-  if (!value) {
-    std::fprintf(stderr, "FAIL: %s\n", message);
-    std::exit(1);
+  void require(bool value, const char *message) {
+    if (!value) {
+      std::fprintf(stderr, "FAIL: %s\n", message);
+      std::exit(1);
+    }
   }
-}
-void check(remixapi_ErrorCode code, int line) {
-  if (code) {
-    std::fprintf(stderr, "FAIL: API call failed (code %d, line %d)\n", int(code), line);
-    std::exit(1);
+  void check(remixapi_ErrorCode code, int line) {
+    if (code) {
+      std::fprintf(stderr, "FAIL: API call failed (code %d, line %d)\n", int(code), line);
+      std::exit(1);
+    }
   }
-}
 #define ok(call) check((call), __LINE__)
 
-constexpr uint32_t kWidth = 640, kHeight = 480;
+  constexpr uint32_t kWidth = 640, kHeight = 480;
 
-remixapi_MaterialHandle material(remixapi_Interface &api, uint64_t hash, float r, float g, float b) {
-  remixapi_MaterialInfoOpaqueEXT opaque = {};
-  opaque.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
-  opaque.albedoConstant = {r, g, b};
-  opaque.opacityConstant = 1;
-  opaque.alphaTestType = 7;
-  remixapi_MaterialInfo info = {};
-  info.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
-  info.pNext = &opaque;
-  info.hash = hash;
+  remixapi_MaterialHandle material(remixapi_Interface &api, uint64_t hash, float r, float g, float b) {
+    remixapi_MaterialInfoOpaqueEXT opaque = {};
+    opaque.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
+    opaque.albedoConstant = {r, g, b};
+    opaque.opacityConstant = 1;
+    opaque.alphaTestType = 7;
+    remixapi_MaterialInfo info = {};
+    info.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
+    info.pNext = &opaque;
+    info.hash = hash;
 #ifdef _WIN32
-  info.albedoTexture = L"";
+    info.albedoTexture = L"";
 #else
-  info.albedoTexture = "";
+    info.albedoTexture = "";
 #endif
-  remixapi_MaterialHandle handle = nullptr;
-  ok(api.CreateMaterial(&info, &handle));
-  return handle;
-}
-
-// A square of half size 1 in the z = 0 plane, facing -z (the camera).
-remixapi_MeshHandle quad(remixapi_Interface &api, uint64_t hash, remixapi_MaterialHandle surfaceMaterial) {
-  remixapi_HardcodedVertex vertices[4] = {};
-  const float corners[4][2] = {{-1, -1}, {1, -1}, {1, 1}, {-1, 1}};
-  for (int i = 0; i < 4; ++i) {
-    vertices[i].position[0] = corners[i][0];
-    vertices[i].position[1] = corners[i][1];
-    vertices[i].normal[2] = -1;
-    vertices[i].color = 0xffffffff;
+    remixapi_MaterialHandle handle = nullptr;
+    ok(api.CreateMaterial(&info, &handle));
+    return handle;
   }
-  const uint32_t indices[] = {0, 2, 1, 0, 3, 2};
-  remixapi_MeshInfoSurfaceTriangles surface = {};
-  surface.vertices_values = vertices;
-  surface.vertices_count = 4;
-  surface.indices_values = indices;
-  surface.indices_count = 6;
-  surface.material = surfaceMaterial;
-  remixapi_MeshInfo info = {};
-  info.sType = REMIXAPI_STRUCT_TYPE_MESH_INFO;
-  info.hash = hash;
-  info.surfaces_count = 1;
-  info.surfaces_values = &surface;
-  remixapi_MeshHandle handle = nullptr;
-  ok(api.CreateMeshBatched(&info, &handle));
-  return handle;
-}
 
-float eyeX = 0; // the cameras' position along x (scene 4 moves them)
-void camera(remixapi_Interface &api, remixapi_CameraType type) {
-  remixapi_CameraInfoParameterizedEXT params = {};
-  params.sType = REMIXAPI_STRUCT_TYPE_CAMERA_INFO_PARAMETERIZED_EXT;
-  params.position = {eyeX, 0, 0};
-  params.forward = {0, 0, 1};
-  params.up = {0, 1, 0};
-  params.right = {1, 0, 0};
-  params.aspect = float(kWidth) / kHeight;
-  params.fovYInDegrees = 60;
-  params.nearPlane = .05f;
-  params.farPlane = 100;
-  remixapi_CameraInfo info = {};
-  info.sType = REMIXAPI_STRUCT_TYPE_CAMERA_INFO;
-  info.pNext = &params;
-  info.type = type;
-  ok(api.SetupCamera(&info));
-}
-
-// mask: 0 none; CUT or SOURCE of group 1 (remixapi_InstanceInfoMaskEXT).
-void draw(remixapi_Interface &api, remixapi_MeshHandle mesh, float scale, float z, bool viewModel,
-          bool rasterOnly = false, int mask = -1) {
-  remixapi_InstanceInfoMaskEXT maskInfo = {};
-  maskInfo.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_MASK_EXT;
-  maskInfo.group = 1;
-  maskInfo.role = mask < 0 ? 0u : uint32_t(mask);
-  remixapi_InstanceIdentityEXT identity = {};
-  identity.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_IDENTITY_EXT;
-  identity.classification = REMIXAPI_INSTANCE_RASTER_ONLY_EXT;
-  identity.rasterVisible = 1;
-  remixapi_InstanceInfo instance = {};
-  instance.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO;
-  instance.pNext = rasterOnly ? static_cast<void *>(&identity) : mask >= 0 ? static_cast<void *>(&maskInfo) : nullptr;
-  instance.mesh = mesh;
-  instance.doubleSided = 1;
-  instance.categoryFlags = viewModel ? REMIXAPI_INSTANCE_CATEGORY_BIT_VIEW_MODEL : 0;
-  instance.transform.matrix[0][0] = instance.transform.matrix[1][1] = scale;
-  instance.transform.matrix[2][2] = 1;
-  instance.transform.matrix[2][3] = z;
-  instance.transform.matrix[0][3] = eyeX; // in front of the eye
-  ok(api.DrawInstance(&instance));
-}
-
-struct Image {
-  int width = 0, height = 0;
-  std::vector<unsigned char> pixels;
-  // Mean RGB over a 9x9 window.
-  std::array<float, 3> at(int x, int y) const {
-    std::array<float, 3> sum = {};
-    int count = 0;
-    for (int dy = -4; dy <= 4; ++dy)
-      for (int dx = -4; dx <= 4; ++dx) {
-        const int px = x * width / int(kWidth) + dx, py = y * height / int(kHeight) + dy;
-        if (px < 0 || py < 0 || px >= width || py >= height)
-          continue;
-        for (int c = 0; c < 3; ++c)
-          sum[c] += pixels[(size_t(py) * width + px) * 4 + c];
-        ++count;
-      }
-    for (auto &v : sum)
-      v /= std::max(count, 1);
-    return sum;
+  // A square of half size 1 in the z = 0 plane, facing -z (the camera).
+  remixapi_MeshHandle quad(remixapi_Interface &api, uint64_t hash, remixapi_MaterialHandle surfaceMaterial) {
+    remixapi_HardcodedVertex vertices[4] = {};
+    const float corners[4][2] = {{-1, -1}, {1, -1}, {1, 1}, {-1, 1}};
+    for (int i = 0; i < 4; ++i) {
+      vertices[i].position[0] = corners[i][0];
+      vertices[i].position[1] = corners[i][1];
+      vertices[i].normal[2] = -1;
+      vertices[i].color = 0xffffffff;
+    }
+    const uint32_t indices[] = {0, 2, 1, 0, 3, 2};
+    remixapi_MeshInfoSurfaceTriangles surface = {};
+    surface.vertices_values = vertices;
+    surface.vertices_count = 4;
+    surface.indices_values = indices;
+    surface.indices_count = 6;
+    surface.material = surfaceMaterial;
+    remixapi_MeshInfo info = {};
+    info.sType = REMIXAPI_STRUCT_TYPE_MESH_INFO;
+    info.hash = hash;
+    info.surfaces_count = 1;
+    info.surfaces_values = &surface;
+    remixapi_MeshHandle handle = nullptr;
+    ok(api.CreateMeshBatched(&info, &handle));
+    return handle;
   }
-};
-float luminance(const std::array<float, 3> &c) { return .2126f * c[0] + .7152f * c[1] + .0722f * c[2]; }
-// The lit red quad (tonemapped: salmon), not the grey wall.
-bool red(const std::array<float, 3> &c) { return c[0] > 40 && c[0] > 1.4f * c[1] && c[0] > 1.4f * c[2]; }
+
+  float eyeX = 0; // the cameras' position along x (scene 4 moves them)
+  void camera(remixapi_Interface &api, remixapi_CameraType type) {
+    remixapi_CameraInfoParameterizedEXT params = {};
+    params.sType = REMIXAPI_STRUCT_TYPE_CAMERA_INFO_PARAMETERIZED_EXT;
+    params.position = {eyeX, 0, 0};
+    params.forward = {0, 0, 1};
+    params.up = {0, 1, 0};
+    params.right = {1, 0, 0};
+    params.aspect = float(kWidth) / kHeight;
+    params.fovYInDegrees = 60;
+    params.nearPlane = .05f;
+    params.farPlane = 100;
+    remixapi_CameraInfo info = {};
+    info.sType = REMIXAPI_STRUCT_TYPE_CAMERA_INFO;
+    info.pNext = &params;
+    info.type = type;
+    ok(api.SetupCamera(&info));
+  }
+
+  // mask: 0 none; CUT or SOURCE of group 1 (remixapi_InstanceInfoMaskEXT).
+  void draw(remixapi_Interface &api, remixapi_MeshHandle mesh, float scale, float z, bool viewModel,
+            bool rasterOnly = false, int mask = -1) {
+    remixapi_InstanceInfoMaskEXT maskInfo = {};
+    maskInfo.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_MASK_EXT;
+    maskInfo.group = 1;
+    maskInfo.role = mask < 0 ? 0u : uint32_t(mask);
+    remixapi_InstanceIdentityEXT identity = {};
+    identity.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_IDENTITY_EXT;
+    identity.classification = REMIXAPI_INSTANCE_RASTER_ONLY_EXT;
+    identity.rasterVisible = 1;
+    remixapi_InstanceInfo instance = {};
+    instance.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO;
+    instance.pNext = rasterOnly ? static_cast<void *>(&identity) : mask >= 0 ? static_cast<void *>(&maskInfo) : nullptr;
+    instance.mesh = mesh;
+    instance.doubleSided = 1;
+    instance.categoryFlags = viewModel ? REMIXAPI_INSTANCE_CATEGORY_BIT_VIEW_MODEL : 0;
+    instance.transform.matrix[0][0] = instance.transform.matrix[1][1] = scale;
+    instance.transform.matrix[2][2] = 1;
+    instance.transform.matrix[2][3] = z;
+    instance.transform.matrix[0][3] = eyeX; // in front of the eye
+    ok(api.DrawInstance(&instance));
+  }
+
+  struct Image {
+    int width = 0, height = 0;
+    std::vector<unsigned char> pixels;
+    // Mean RGB over a 9x9 window.
+    std::array<float, 3> at(int x, int y) const {
+      std::array<float, 3> sum = {};
+      int count = 0;
+      for (int dy = -4; dy <= 4; ++dy)
+        for (int dx = -4; dx <= 4; ++dx) {
+          const int px = x * width / int(kWidth) + dx, py = y * height / int(kHeight) + dy;
+          if (px < 0 || py < 0 || px >= width || py >= height)
+            continue;
+          for (int c = 0; c < 3; ++c)
+            sum[c] += pixels[(size_t(py) * width + px) * 4 + c];
+          ++count;
+        }
+      for (auto &v : sum)
+        v /= std::max(count, 1);
+      return sum;
+    }
+  };
+  float luminance(const std::array<float, 3> &c) { return .2126f * c[0] + .7152f * c[1] + .0722f * c[2]; }
+  // The lit red quad (tonemapped: salmon), not the grey wall.
+  bool red(const std::array<float, 3> &c) { return c[0] > 40 && c[0] > 1.4f * c[1] && c[0] > 1.4f * c[2]; }
 } // namespace
 
 int main(int argc, char **argv) {

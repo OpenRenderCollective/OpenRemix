@@ -1,0 +1,12 @@
+# First-party C, C++ and Objective-C++. Format with `meson compile -C <build> clang-format`
+# (or `clang-format -i`); .clang-format-ignore lists vendored, generated and recorded sources.
+BasedOnStyle: LLVM
+ColumnLimit: 120
+IndentWidth: 2
+NamespaceIndentation: All
+PointerAlignment: Right
+AllowShortFunctionsOnASingleLine: All
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortBlocksOnASingleLine: Never
+# Include order can matter (platform headers); keep it as written.
+SortIncludes: Never

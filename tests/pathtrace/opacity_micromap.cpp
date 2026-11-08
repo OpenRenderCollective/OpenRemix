@@ -7,6 +7,7 @@
 #include "api/exports.h"
 #include "runtime/prepared.h"
 #include <SDL3/SDL.h>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -15,6 +16,7 @@
 #include <remix/remix_native_ext.h>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_ONLY_PNG
@@ -40,19 +42,24 @@ namespace {
     std::string header, line, last;
     require(std::getline(input, header).good(), "Missing ray profile");
     while (std::getline(input, line))
-      if (!line.empty()) last = line;
+      if (!line.empty())
+        last = line;
     std::vector<std::string> names, values;
     for (auto *out : {&names, &values}) {
       std::stringstream stream(out == &names ? header : last);
       std::string cell;
-      while (std::getline(stream, cell, ',')) out->push_back(cell);
+      while (std::getline(stream, cell, ','))
+        out->push_back(cell);
     }
     require(names.size() == values.size(), "Malformed ray profile");
     Rays rays;
     for (size_t i = 0; i < names.size(); ++i) {
-      if (names[i].ends_with("_alpha")) rays.alpha += std::stod(values[i]);
-      if (names[i].ends_with("_candidates")) rays.candidates += std::stod(values[i]);
-      if (names[i].ends_with("_queries")) rays.queries += std::stod(values[i]);
+      if (names[i].ends_with("_alpha"))
+        rays.alpha += std::stod(values[i]);
+      if (names[i].ends_with("_candidates"))
+        rays.candidates += std::stod(values[i]);
+      if (names[i].ends_with("_queries"))
+        rays.queries += std::stod(values[i]);
     }
     return rays;
   }
@@ -93,6 +100,12 @@ int main(int argc, char **argv) {
     ok(api.Shutdown());
     return 77;
   }
+  // Skipped where the device cannot build micromaps (the setting does nothing).
+  if (!remix::api::g_runtime.opacityMicromapsSupported()) {
+    std::puts("SKIP: VK_EXT_opacity_micromap unavailable");
+    ok(api.Shutdown());
+    return 77;
+  }
   ok(api.SetConfigVariable("rtx.native.backend", "pathtrace"));
   ok(api.SetConfigVariable("rtx.native.vsync", "0"));
   auto config = [&](const char *key, const char *value) {
@@ -100,8 +113,8 @@ int main(int argc, char **argv) {
   };
   // Deterministic direct lighting: ray-traced primary visibility and one
   // hard-shadowed sun, without temporal or stochastic passes.
-  for (const char *key : {"sharc", "sigma", "taa", "bounces", "autoExposure", "bloom",
-                          "accumulate", "localLights", "sky"})
+  for (const char *key :
+       {"sharc", "sigma", "taa", "bounces", "autoExposure", "bloom", "accumulate", "localLights", "sky"})
     config(key, "0");
   config("primaryVisibility", "ray");
   config("sunAngularDiameter", "0");
@@ -131,7 +144,8 @@ int main(int argc, char **argv) {
     return float(seed >> 8) / float(1u << 24);
   };
   float leaves[12][3];
-  for (auto &leaf : leaves) leaf[0] = random(), leaf[1] = random(), leaf[2] = .06f + .1f * random();
+  for (auto &leaf : leaves)
+    leaf[0] = random(), leaf[1] = random(), leaf[2] = .06f + .1f * random();
   for (uint32_t y = 0; y < textureSize; ++y)
     for (uint32_t x = 0; x < textureSize; ++x) {
       float coverage = 0;
@@ -198,7 +212,8 @@ int main(int argc, char **argv) {
     for (uint32_t y = 0; y < cells; ++y)
       for (uint32_t x = 0; x < cells; ++x) {
         const uint32_t i = y * (cells + 1) + x;
-        for (uint32_t k : {i, i + 1, i + cells + 2, i, i + cells + 2, i + cells + 1}) indices.push_back(k);
+        for (uint32_t k : {i, i + 1, i + cells + 2, i, i + cells + 2, i + cells + 1})
+          indices.push_back(k);
       }
     remixapi_MeshInfoSurfaceTriangles surface{};
     surface.vertices_values = vertices.data();
@@ -227,7 +242,8 @@ int main(int argc, char **argv) {
   const auto skinnedFoliage = plane(12, cutout, 2.5f, 1.6f, grid, true);
   bool skin = false;
   remixapi_Transform bone{};
-  for (int i = 0; i < 3; ++i) bone.matrix[i][i] = 1;
+  for (int i = 0; i < 3; ++i)
+    bone.matrix[i][i] = 1;
   remixapi_LightInfoDistantEXT distant{};
   distant.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DISTANT_EXT;
   const float length = std::sqrt(.3f * .3f + .4f * .4f + 1.f);
@@ -260,7 +276,8 @@ int main(int argc, char **argv) {
       instance.pNext = mesh == skinnedFoliage ? static_cast<void *>(&bones) : &identity;
       instance.mesh = mesh;
       instance.doubleSided = 1;
-      for (int i = 0; i < 3; ++i) instance.transform.matrix[i][i] = 1;
+      for (int i = 0; i < 3; ++i)
+        instance.transform.matrix[i][i] = 1;
       ok(api.DrawInstance(&instance));
     }
     ok(api.Present(nullptr));
@@ -270,13 +287,20 @@ int main(int argc, char **argv) {
     Rays rays;
   };
   auto capture = [&](const std::string &name) {
-    for (unsigned i = 0; i < 12; ++i) frame(); // Settle BLAS rebuilds and pipelines.
+    for (unsigned i = 0; i < 12; ++i)
+      frame(); // Settle BLAS rebuilds and pipelines.
     const auto file = (directory / (name + ".png")).string();
     ok(remix::test::requestScreenshot(api, file.c_str(), frame));
     frame();
     frame();
-    int w, h, channels;
-    auto *data = stbi_load(file.c_str(), &w, &h, &channels, 4);
+    // The PNG is encoded on a worker thread: wait for it.
+    int w = 0, h = 0, channels = 0;
+    stbi_uc *data = nullptr;
+    for (unsigned attempt = 0; attempt < 1000 && !data; ++attempt) {
+      data = stbi_load(file.c_str(), &w, &h, &channels, 4);
+      if (!data)
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
     require(data && w == int(width) && h == int(height), "Opacity micromap capture unavailable");
     Capture result{{data, data + size_t(w) * h * 4}, lastProfile(profile)};
     stbi_image_free(data);
@@ -286,7 +310,8 @@ int main(int argc, char **argv) {
   };
   auto differing = [](const Capture &a, const Capture &b) {
     size_t count = 0;
-    for (size_t i = 0; i < a.pixels.size(); ++i) count += a.pixels[i] != b.pixels[i];
+    for (size_t i = 0; i < a.pixels.size(); ++i)
+      count += a.pixels[i] != b.pixels[i];
     return count;
   };
   const auto off = capture("off");

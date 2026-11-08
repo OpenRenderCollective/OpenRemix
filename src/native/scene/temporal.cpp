@@ -7,8 +7,7 @@ namespace remix::scene {
     m_nextIntegrator = integrator;
     m_nextWidth = width;
     m_nextHeight = height;
-    m_reset =
-        !m_frames || epoch != m_epoch || integrator != m_integrator || width != m_width || height != m_height;
+    m_reset = !m_frames || epoch != m_epoch || integrator != m_integrator || width != m_width || height != m_height;
   }
   uint64_t TemporalHistory::materialSignature(const Draw &draw) {
     const auto &m = *draw.material;
@@ -104,8 +103,7 @@ namespace remix::scene {
     const uint64_t instanceId = draw.instanceId;
     stage(std::move(draw), instanceId, textureFrame);
   }
-  void TemporalHistory::stage(Draw &&draw, uint64_t instanceId, uint32_t textureFrame,
-                              const std::array<float, 4> &uv) {
+  void TemporalHistory::stage(Draw &&draw, uint64_t instanceId, uint32_t textureFrame, const std::array<float, 4> &uv) {
     if (!instanceId)
       return;
     const TemporalKey key{instanceId, draw.instanceIndex, draw.surfaceIndex};

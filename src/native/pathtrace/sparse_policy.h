@@ -33,7 +33,5 @@ namespace remix::trace {
   inline constexpr SparsePreset sparsePresets[] = {
       {"Ultra", .357f, .69f}, {"High", .228f, .83f}, {"Medium", .125f, .83f}, {"Low", .1f, .91f}};
   // The rate as the shader applies it: threshold levels passed of 256.
-  inline uint32_t sparseLevels(float rate) {
-    return uint32_t(std::clamp(std::lround(rate * 256), 1l, 256l));
-  }
+  inline uint32_t sparseLevels(float rate) { return uint32_t(std::clamp(std::lround(rate * 256), 1l, 256l)); }
 } // namespace remix::trace

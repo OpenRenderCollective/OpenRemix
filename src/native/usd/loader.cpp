@@ -63,21 +63,26 @@ namespace remix::usd {
           {roughness, {"inputs:reflection_roughness_constant", "inputs:reflectionroughness_texture"}},
           {metallic, {"inputs:metallic_constant", "inputs:metallic_texture"}},
           {normal, {"inputs:normalmap_texture", "inputs:encoding"}},
-          {emission, {"inputs:enable_emission", "inputs:emissive_intensity", "inputs:emissive_color_constant",
-                      "inputs:emissive_mask_texture"}},
-          {transmission, {"info:mdl:sourceAsset", "inputs:ior_constant", "inputs:transmittance_color",
-                          "inputs:transmittance_texture", "inputs:transmittance_measurement_distance",
-                          "inputs:thin_walled", "inputs:thin_wall_thickness", "inputs:use_diffuse_layer"}},
-          {film, {"inputs:enable_thin_film", "inputs:thin_film_thickness_constant",
-                  "inputs:thin_film_thickness_from_albedo_alpha"}},
-          {subsurface, {"inputs:subsurface_diffusion_profile", "inputs:subsurface_radius",
-                        "inputs:subsurface_radius_scale", "inputs:subsurface_max_sample_radius",
-                        "inputs:subsurface_volumetric_anisotropy", "inputs:subsurface_transmittance_color",
-                        "inputs:subsurface_measurement_distance", "inputs:subsurface_single_scattering_albedo",
-                        "inputs:subsurface_transmittance_texture", "inputs:subsurface_thickness_texture",
-                        "inputs:subsurface_single_scattering_texture", "inputs:subsurface_radius_texture"}},
-          {alpha, {"inputs:use_legacy_alpha_state", "inputs:blend_enabled", "inputs:blend_type",
-                   "inputs:inverted_blend", "inputs:alpha_test_type", "inputs:alpha_test_reference_value"}},
+          {emission,
+           {"inputs:enable_emission", "inputs:emissive_intensity", "inputs:emissive_color_constant",
+            "inputs:emissive_mask_texture"}},
+          {transmission,
+           {"info:mdl:sourceAsset", "inputs:ior_constant", "inputs:transmittance_color", "inputs:transmittance_texture",
+            "inputs:transmittance_measurement_distance", "inputs:thin_walled", "inputs:thin_wall_thickness",
+            "inputs:use_diffuse_layer"}},
+          {film,
+           {"inputs:enable_thin_film", "inputs:thin_film_thickness_constant",
+            "inputs:thin_film_thickness_from_albedo_alpha"}},
+          {subsurface,
+           {"inputs:subsurface_diffusion_profile", "inputs:subsurface_radius", "inputs:subsurface_radius_scale",
+            "inputs:subsurface_max_sample_radius", "inputs:subsurface_volumetric_anisotropy",
+            "inputs:subsurface_transmittance_color", "inputs:subsurface_measurement_distance",
+            "inputs:subsurface_single_scattering_albedo", "inputs:subsurface_transmittance_texture",
+            "inputs:subsurface_thickness_texture", "inputs:subsurface_single_scattering_texture",
+            "inputs:subsurface_radius_texture"}},
+          {alpha,
+           {"inputs:use_legacy_alpha_state", "inputs:blend_enabled", "inputs:blend_type", "inputs:inverted_blend",
+            "inputs:alpha_test_type", "inputs:alpha_test_reference_value"}},
           {sampling, {"inputs:filter_mode", "inputs:wrap_mode_u", "inputs:wrap_mode_v"}}};
       uint32_t result = 0;
       for (const auto &[bit, names] : parts)
@@ -106,8 +111,8 @@ namespace remix::usd {
       for (size_t i; (i = next++) < paths.size();) {
         try {
           auto texture = std::make_shared<scene::Texture>();
-          texture->pixels = maxEdge ? scene::loadTexturePreview(utf8Path(paths[i]), maxEdge)
-                                    : scene::loadTexture(utf8Path(paths[i]));
+          texture->pixels =
+              maxEdge ? scene::loadTexturePreview(utf8Path(paths[i]), maxEdge) : scene::loadTexture(utf8Path(paths[i]));
           texture->fingerprint();
           decoded[i] = std::move(texture);
         } catch (...) {
@@ -147,8 +152,8 @@ namespace remix::usd {
   } // namespace
   std::vector<std::string> materialTextureFiles(const Json &material) {
     std::vector<std::string> paths;
-    for (const char *key : {"albedo_texture", "normal_texture", "roughness_texture", "metallic_texture",
-                            "emissive_texture"})
+    for (const char *key :
+         {"albedo_texture", "normal_texture", "roughness_texture", "metallic_texture", "emissive_texture"})
       if (auto path = material.value(key, std::string()); !path.empty())
         paths.push_back(path);
     if (const auto film = material.find("iridescence"); film != material.end())
@@ -193,7 +198,8 @@ namespace remix::usd {
         return asset.lexically_normal();
       };
       std::optional<std::string> failure;
-      const auto makeLayer = [&](const std::filesystem::path &path, const std::string &key, bool root) -> SdfLayerRefPtr {
+      const auto makeLayer = [&](const std::filesystem::path &path, const std::string &key,
+                                 bool root) -> SdfLayerRefPtr {
         // A layer another layer names but which is not on disk is left out, as
         // USD itself composes around an unresolved reference: Remix mods
         // commonly reference material templates (SubUSDs/AperturePBR_*.usda)
@@ -213,12 +219,20 @@ namespace remix::usd {
           auto layer = SdfLayer::CreateAnonymous(stem + ".usda");
           const std::string text = "#usda 1.0\n"
                                    "def Scope \"Looks\"\n{\n"
-                                   "    def Material \"mat_" + stem + "\"\n    {\n"
-                                   "        token outputs:mdl:surface.connect = </Looks/mat_" + stem + "/Shader.outputs:out>\n"
+                                   "    def Material \"mat_" +
+                                   stem +
+                                   "\"\n    {\n"
+                                   "        token outputs:mdl:surface.connect = </Looks/mat_" +
+                                   stem +
+                                   "/Shader.outputs:out>\n"
                                    "        def Shader \"Shader\"\n        {\n"
                                    "            uniform token info:implementationSource = \"sourceAsset\"\n"
-                                   "            uniform asset info:mdl:sourceAsset = @" + stem + ".mdl@\n"
-                                   "            uniform token info:mdl:sourceAsset:subIdentifier = \"" + stem + "\"\n"
+                                   "            uniform asset info:mdl:sourceAsset = @" +
+                                   stem +
+                                   ".mdl@\n"
+                                   "            uniform token info:mdl:sourceAsset:subIdentifier = \"" +
+                                   stem +
+                                   "\"\n"
                                    "            token outputs:out\n"
                                    "        }\n    }\n}\n";
           if (!layer || !layer->ImportFromString(text))
@@ -260,8 +274,7 @@ namespace remix::usd {
             return authored;
           const auto asset = assetOf(path, authored);
           auto ext = asset.extension().string();
-          std::transform(ext.begin(), ext.end(), ext.begin(),
-                         [](unsigned char c) { return std::tolower(c); });
+          std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return std::tolower(c); });
           if (ext == ".usd" || ext == ".usda" || ext == ".usdc") {
             // An empty path removes the reference, sublayer or payload.
             const auto opened = openLayer(asset);
@@ -345,9 +358,7 @@ namespace remix::usd {
       if (!std::isfinite(sourceMeters) || sourceMeters <= 0)
         throw std::runtime_error("Invalid stage metersPerUnit");
       const auto sourceAxis = UsdGeomGetStageUpAxis(stage);
-      const auto axis = options.axis == 1   ? UsdGeomTokens->y
-                        : options.axis == 2 ? UsdGeomTokens->z
-                                            : sourceAxis;
+      const auto axis = options.axis == 1 ? UsdGeomTokens->y : options.axis == 2 ? UsdGeomTokens->z : sourceAxis;
       GfMatrix4d conversion(1);
       if (axis != sourceAxis)
         conversion.SetRotate(GfRotation(GfVec3d(1, 0, 0), axis == UsdGeomTokens->y ? -90 : 90));
@@ -404,10 +415,8 @@ namespace remix::usd {
             (void)child, ++count;
         options.progress->enter(LoadStage::Materials, count);
       }
-      for (const auto &[group, path] :
-           std::vector<std::pair<std::string, std::string>>{{"meshes", "/RootNode/meshes"},
-                                                            {"lights", "/RootNode/lights"},
-                                                            {"materials", "/RootNode/Looks"}}) {
+      for (const auto &[group, path] : std::vector<std::pair<std::string, std::string>>{
+               {"meshes", "/RootNode/meshes"}, {"lights", "/RootNode/lights"}, {"materials", "/RootNode/Looks"}}) {
         auto root = stage->GetPrimAtPath(SdfPath(path));
         if (!root)
           continue;
@@ -515,15 +524,14 @@ namespace remix::usd {
           // Authored dimensions of a property-only override are in mod units.
           for (const char *key : {"radius", "width", "height", "length"})
             if (overrides.contains(key))
-              overrides[key] = overrides[key].get<double>() * sourceMeters /
-                               (options.meters > 0 ? options.meters : sourceMeters);
+              overrides[key] =
+                  overrides[key].get<double>() * sourceMeters / (options.meters > 0 ? options.meters : sourceMeters);
         }
       }
       for (auto &material : result.scene["materials"]) {
         material["hash"] = capturedHash(material["id"]);
         for (auto it = material.begin(); it != material.end(); ++it)
-          if (it.key().ends_with("_texture") && it.value().is_string() &&
-              !it.value().get<std::string>().empty())
+          if (it.key().ends_with("_texture") && it.value().is_string() && !it.value().get<std::string>().empty())
             result.dependencies.insert(it.value());
       }
       for (const auto &light : result.scene["lights"])

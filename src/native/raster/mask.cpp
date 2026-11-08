@@ -103,8 +103,7 @@ namespace remix {
     const auto &m = m_gpu->mask;
     out.count = m.cut.count;
     for (uint32_t i = 0; i < out.count; ++i)
-      out.images[i] = {m_gpu->halo.sampler, m.targets[m.cut.targets[i]].view,
-                       VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+      out.images[i] = {m_gpu->halo.sampler, m.targets[m.cut.targets[i]].view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     std::copy(std::begin(m.cut.slots), std::end(m.cut.slots), out.slots);
     out.digest = m.cut.digest;
     return out;
@@ -129,8 +128,7 @@ namespace remix {
         continue;
       // The whole target is cleared: masked draws sample it anywhere.
       const VkClearValue clear = {};
-      const VkRenderPass passes[2][2] = {{g.halo.loadPass, g.halo.maskPass},
-                                         {g.halo.earlyLoadPass, g.halo.earlyPass}};
+      const VkRenderPass passes[2][2] = {{g.halo.loadPass, g.halo.maskPass}, {g.halo.earlyLoadPass, g.halo.earlyPass}};
       const VkRenderPassBeginInfo begin = {.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
                                            .renderPass = passes[early][run.clear],
                                            .framebuffer = m.targets[run.target].framebuffer,
@@ -140,8 +138,8 @@ namespace remix {
       vkCmdBeginRenderPass(command, &begin, VK_SUBPASS_CONTENTS_INLINE);
       const auto layout = run.within >= 0 ? m.layout : g.layout;
       if (run.within >= 0)
-        vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 1, 1, &m.targets[run.within].set,
-                                0, nullptr);
+        vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 1, 1, &m.targets[run.within].set, 0,
+                                nullptr);
       // Ahead of the scene nothing is depth-tested: the untested silhouette.
       const VkPipeline untested = run.within >= 0 ? m.within[0] : g.halo.mask[0];
       for (uint32_t i = run.first; i < run.first + run.count; ++i) {
@@ -150,8 +148,8 @@ namespace remix {
         vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &draw.set, 0, nullptr);
         vkCmdBindVertexBuffers(command, 0, 1, &draw.vertices, &draw.vertexOffset);
         vkCmdBindIndexBuffer(command, draw.indices, draw.indexOffset, VK_INDEX_TYPE_UINT32);
-        vkCmdPushConstants(command, layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-                           sizeof(Push), &draw.push);
+        vkCmdPushConstants(command, layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(Push),
+                           &draw.push);
         vkCmdDrawIndexed(command, draw.count, 1, draw.firstIndex, draw.baseVertex, 0);
       }
       vkCmdEndRenderPass(command);

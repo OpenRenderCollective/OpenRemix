@@ -2,8 +2,11 @@
 #include "raster/shaders/embedded.h"
 #include "runtime/pipelines.h"
 
+#include <cmath>
+
 // remixapi_MaterialGradientMapEXT and remixapi_InstanceInfoWoundCutEXT in the
-// raster backend: Left 4 Dead 2's Infected shader. Such draws take the raster
+// raster backend: Left 4 Dead 2's Infected shader (and, in the same stages,
+// remixapi_MaterialPortalRimEXT: Portal 2's portal rim). Such draws take the raster
 // stages with INFECTED (shaders/infected.glsl): the vertex stage evaluates the
 // wound at the mesh's own positions (the bind pose, binding 1: the mesh's
 // vertices whether or not binding 0 holds skinned ones), the fragment stage
@@ -53,12 +56,10 @@ namespace remix {
           {0, image, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
           {1, image, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
           {2, image, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
-          {3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-           nullptr},
+          {3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
           {4, image, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr}};
-      const VkDescriptorSetLayoutCreateInfo info = {.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-                                                    .bindingCount = 5,
-                                                    .pBindings = bindings};
+      const VkDescriptorSetLayoutCreateInfo info = {
+          .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, .bindingCount = 5, .pBindings = bindings};
       check(pipeline::createDescriptorSetLayout(device, &info, nullptr, &s.setLayout));
     }
     if (!s.layout) {
@@ -83,7 +84,8 @@ namespace remix {
     return true;
   }
 
-  void RasterRenderer::Gpu::infectedParameters(const Draw &draw, Command &out, VkCommandBuffer command) {
+  void RasterRenderer::Gpu::infectedParameters(const Draw &draw, Command &out, VkCommandBuffer command,
+                                               double seconds) {
     auto &s = infected;
     // shaders/infected.glsl Infected, std140: 15 vec4.
     struct Block {
@@ -145,6 +147,18 @@ namespace remix {
         block.rows[2] = g->burnStrength;
       } else
         images[3] = sampled(nullptr);
+    } else if (const auto &rim = draw.material->portalRim) {
+      // A portal rim (remixapi_MaterialPortalRimEXT): its ramp takes the
+      // gradient's binding; its colour scale, the noise's scroll and the
+      // material's emission take the rows and the blood colour.
+      flags |= 64;
+      images[0] = sampled(rim->rampSampler);
+      if (textures.at(rim->ramp.get()).srgb)
+        flags |= 8;
+      images[1] = images[3] = sampled(nullptr);
+      block.rows[0] = rim->colorScale;
+      block.rows[1] = float(std::fmod(.0275 * seconds, 1.0));
+      std::copy_n(draw.material->emission, 3, block.blood);
     } else
       images[0] = images[1] = images[3] = sampled(nullptr);
     std::memcpy(&block.wound[3], &flags, sizeof(flags));
@@ -191,8 +205,7 @@ namespace remix {
     std::vector<VkWriteDescriptorSet> writes;
     writes.reserve(size_t(count) * 5);
     for (uint32_t i = 0; i < count; ++i) {
-      blocks[i] = {parameters->buffer, parameters->offset + VkDeviceSize(i) * Infected::blockSize,
-                   Infected::blockSize};
+      blocks[i] = {parameters->buffer, parameters->offset + VkDeviceSize(i) * Infected::blockSize, Infected::blockSize};
       for (uint32_t image = 0; image < 4; ++image)
         writes.push_back({.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                           .dstSet = sets[i],

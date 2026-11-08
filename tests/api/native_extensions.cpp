@@ -94,19 +94,24 @@ int main(int argc, char **argv) {
   static_assert(sizeof(remixapi_ReconstructionDiagnosticsEXT) == 336);
   static_assert(offsetof(remixapi_ReconstructionDiagnosticsEXT, memoryBytes) == 64);
   remixapi_ReconstructionDiagnosticsEXT reconstruction{};
-  require(remixapi_GetReconstructionDiagnosticsEXT(nullptr) == REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS, "Null reconstruction accepted");
-  require(remixapi_GetReconstructionDiagnosticsEXT(&reconstruction) == REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS, "Zero diagnostics capacity accepted");
+  require(remixapi_GetReconstructionDiagnosticsEXT(nullptr) == REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS,
+          "Null reconstruction accepted");
+  require(remixapi_GetReconstructionDiagnosticsEXT(&reconstruction) == REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS,
+          "Zero diagnostics capacity accepted");
   // Prefix callers must not have their adjacent data overwritten.
-  struct { uint32_t size, version; uint64_t sentinel; } prefix{8,0,0x12345678abcdefull};
+  struct {
+    uint32_t size, version;
+    uint64_t sentinel;
+  } prefix{8, 0, 0x12345678abcdefull};
   ok(remixapi_GetReconstructionDiagnosticsEXT(reinterpret_cast<remixapi_ReconstructionDiagnosticsEXT *>(&prefix)));
-  require(prefix.version == 1 && prefix.size == sizeof(reconstruction) && prefix.sentinel == 0x12345678abcdefull, "Diagnostics prefix write exceeded capacity");
+  require(prefix.version == 1 && prefix.size == sizeof(reconstruction) && prefix.sentinel == 0x12345678abcdefull,
+          "Diagnostics prefix write exceeded capacity");
   reconstruction.structSize = sizeof(reconstruction);
   ok(remixapi_GetReconstructionDiagnosticsEXT(&reconstruction));
   // The default profile asks for DLSS (3; MetalFX on Metal), nothing active before a frame.
   require(reconstruction.requestedMode == 3 && !reconstruction.activeBackend, "Default reconstruction request changed");
   ok(remixapi_GetFramePerformanceEXT(&framePerformance));
-  require(!framePerformance.attempts && !framePerformance.presentations,
-          "Frame performance not reset on startup");
+  require(!framePerformance.attempts && !framePerformance.presentations, "Frame performance not reset on startup");
   ok(remixapi_GetDenoisingCapabilitiesEXT(&denoiseCaps));
   ok(remixapi_GetDenoisingStatisticsEXT(&denoiseStats));
   require(denoiseStats.requestedDenoiser && denoiseStats.requestedTaa && !denoiseStats.activeDenoiser &&
@@ -148,8 +153,7 @@ int main(int argc, char **argv) {
   ok(remixapi_PollInputEvents(nullptr, 0, &count));
   require(count == 5, "Input query consumed or lost events");
   ok(remixapi_PollInputEvents(events.data(), 2, &count));
-  require(count == 2 && events[0].code == REMIXAPI_KEY_A && events[0].down && !events[0].repeat &&
-              events[1].repeat,
+  require(count == 2 && events[0].code == REMIXAPI_KEY_A && events[0].down && !events[0].repeat && events[1].repeat,
           "Key/repeat ordering");
   ok(remixapi_PollInputEvents(events.data(), events.size(), &count));
   require(count == 3 && !events[0].down && events[1].type == REMIXAPI_INPUT_TEXT && events[1].code == 0xe9 &&
@@ -159,8 +163,7 @@ int main(int argc, char **argv) {
     uint32_t count = 1;
     require(remixapi_PollInputEvents(nullptr, 0, &count) == REMIXAPI_ERROR_CODE_WRONG_THREAD && !count,
             "Input thread ownership");
-    require(remixapi_SetTextInputEnabled(0) == REMIXAPI_ERROR_CODE_WRONG_THREAD,
-            "Text input thread ownership");
+    require(remixapi_SetTextInputEnabled(0) == REMIXAPI_ERROR_CODE_WRONG_THREAD, "Text input thread ownership");
   });
   wrongThread.join();
   event = {};
@@ -206,8 +209,8 @@ int main(int argc, char **argv) {
           "Screenshot missing or wrong dimensions");
   // The clear color (0.025, 0.035, 0.055) as stored: the swapchain is UNORM and
   // the clear is not gamma-encoded (runtime/swapchain.cpp chooseSurfaceFormat).
-  require(pixels[0] > 3 && pixels[0] < 10 && pixels[1] > 6 && pixels[1] < 13 && pixels[2] > 10 &&
-              pixels[2] < 18 && pixels[3] == 255,
+  require(pixels[0] > 3 && pixels[0] < 10 && pixels[1] > 6 && pixels[1] < 13 && pixels[2] > 10 && pixels[2] < 18 &&
+              pixels[3] == 255,
           "Screenshot color/BGRA conversion");
   stbi_image_free(pixels);
   {

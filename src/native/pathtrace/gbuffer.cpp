@@ -29,12 +29,12 @@ namespace remix {
     // Position and previous position retain float32 precision. Normal/flags and
     // linear albedo use smaller attachments to limit G-buffer bandwidth.
     const VkFormat formats[] = {VK_FORMAT_R32G32B32A32_SFLOAT, VK_FORMAT_R16G16B16A16_SFLOAT,
-                                VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_R32G32B32A32_SFLOAT,
-                                VK_FORMAT_R32_SFLOAT, VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_R16G16B16A16_SFLOAT};
+                                VK_FORMAT_R8G8B8A8_UNORM,      VK_FORMAT_R32G32B32A32_SFLOAT,
+                                VK_FORMAT_R32_SFLOAT,          VK_FORMAT_R16G16B16A16_SFLOAT,
+                                VK_FORMAT_R16G16B16A16_SFLOAT};
     for (unsigned i = 0; i < 7; ++i)
       primary[i] = image(true, formats[i], i == 4 ? displayExtent : extent);
-    VkPushConstantRange push{VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-                             sizeof(PrimaryPush)};
+    VkPushConstantRange push{VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PrimaryPush)};
     VkPipelineLayoutCreateInfo li{.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
                                   .setLayoutCount = 1,
                                   .pSetLayouts = &setLayout,
@@ -86,16 +86,15 @@ namespace remix {
            .srcStageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
            .dstStageMask = attachmentStages,
            .srcAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
-           .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
-                            VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT |
+           .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT |
                             VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT},
           {.srcSubpass = 0,
            .dstSubpass = VK_SUBPASS_EXTERNAL,
            .srcStageMask = attachmentStages,
            .dstStageMask = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | attachmentStages,
-           .srcAccessMask =
-               VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-           .dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT |
+           .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+           .dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT |
+                            VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT |
                             VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT}};
       VkRenderPassCreateInfo rp{.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
                                 .attachmentCount = colors + 1,
@@ -104,8 +103,7 @@ namespace remix {
                                 .pSubpasses = &subpass,
                                 .dependencyCount = 2,
                                 .pDependencies = dependencies};
-      check(
-          pipeline::createRenderPass(device, &rp, nullptr, &primaryPass[pass]));
+      check(pipeline::createRenderPass(device, &rp, nullptr, &primaryPass[pass]));
       VkFramebufferCreateInfo fb{.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
                                  .renderPass = primaryPass[pass],
                                  .attachmentCount = colors + 1,
@@ -123,48 +121,41 @@ namespace remix {
         for (unsigned i = 0; i < 2; ++i) {
           VkShaderModuleCreateInfo info{
               .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, .codeSize = code[i].bytes, .pCode = code[i].code};
-          check(pipeline::createShaderModule(device, &info, nullptr,
-                                             &modules[i]));
+          check(pipeline::createShaderModule(device, &info, nullptr, &modules[i]));
           stages[i] = {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
                        .stage = i ? VK_SHADER_STAGE_FRAGMENT_BIT : VK_SHADER_STAGE_VERTEX_BIT,
                        .module = modules[i],
                        .pName = "main"};
         }
-        VkPipelineVertexInputStateCreateInfo vertex{
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
-        VkPipelineInputAssemblyStateCreateInfo assembly{
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
-            .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST};
-        VkPipelineViewportStateCreateInfo viewport{.sType =
-                                                       VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
-                                                   .viewportCount = 1,
-                                                   .scissorCount = 1};
-        VkPipelineRasterizationStateCreateInfo raster{
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
-            .polygonMode = VK_POLYGON_MODE_FILL,
-            .cullMode = VK_CULL_MODE_NONE,
-            .frontFace = VK_FRONT_FACE_CLOCKWISE,
-            .lineWidth = 1};
-        VkPipelineMultisampleStateCreateInfo samples{
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-            .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT};
-        VkPipelineDepthStencilStateCreateInfo depthState{
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-            .depthTestEnable = VK_TRUE,
-            .depthWriteEnable = VK_TRUE,
-            .depthCompareOp = VK_COMPARE_OP_GREATER_OR_EQUAL,
-            .maxDepthBounds = 1};
+        VkPipelineVertexInputStateCreateInfo vertex{.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+        VkPipelineInputAssemblyStateCreateInfo assembly{.sType =
+                                                            VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+                                                        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST};
+        VkPipelineViewportStateCreateInfo viewport{
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO, .viewportCount = 1, .scissorCount = 1};
+        VkPipelineRasterizationStateCreateInfo raster{.sType =
+                                                          VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+                                                      .polygonMode = VK_POLYGON_MODE_FILL,
+                                                      .cullMode = VK_CULL_MODE_NONE,
+                                                      .frontFace = VK_FRONT_FACE_CLOCKWISE,
+                                                      .lineWidth = 1};
+        VkPipelineMultisampleStateCreateInfo samples{.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+                                                     .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT};
+        VkPipelineDepthStencilStateCreateInfo depthState{.sType =
+                                                             VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+                                                         .depthTestEnable = VK_TRUE,
+                                                         .depthWriteEnable = VK_TRUE,
+                                                         .depthCompareOp = VK_COMPARE_OP_GREATER_OR_EQUAL,
+                                                         .maxDepthBounds = 1};
         VkPipelineColorBlendAttachmentState blend[6] = {};
         for (unsigned i = 0; i < colors; ++i)
-          blend[i].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-                                    VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-        VkPipelineColorBlendStateCreateInfo blending{
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-            .attachmentCount = colors,
-            .pAttachments = blend};
+          blend[i].colorWriteMask =
+              VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+        VkPipelineColorBlendStateCreateInfo blending{.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+                                                     .attachmentCount = colors,
+                                                     .pAttachments = blend};
         VkDynamicState states[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
-        VkPipelineDynamicStateCreateInfo dynamic{.sType =
-                                                     VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+        VkPipelineDynamicStateCreateInfo dynamic{.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
                                                  .dynamicStateCount = 2,
                                                  .pDynamicStates = states};
         VkGraphicsPipelineCreateInfo pipeline{.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
@@ -180,9 +171,7 @@ namespace remix {
                                               .pDynamicState = &dynamic,
                                               .layout = primaryLayout,
                                               .renderPass = primaryPass[pass]};
-        check(pipeline::createGraphicsPipelines(device, VK_NULL_HANDLE, 1,
-                                                &pipeline, nullptr,
-                                                &primaryPipeline[pass]));
+        check(pipeline::createGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipeline, nullptr, &primaryPipeline[pass]));
       } catch (...) {
         for (auto module : modules)
           if (module)
@@ -215,11 +204,12 @@ namespace remix {
                             .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                             .image = primary[i]->handle,
                             .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}};
-        vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                             0, 0, nullptr, 0, nullptr, 7, transitions);
+        vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0,
+                             nullptr, 0, nullptr, 7, transitions);
         primaryInitialized = true;
       }
-      if (!upscaler) return;
+      if (!upscaler)
+        return;
     }
     for (unsigned pass = rasterPrimary ? 0 : 1; pass < 2; ++pass) {
       const VkExtent2D size = pass ? displayExtent : extent;
@@ -249,12 +239,10 @@ namespace remix {
         vkCmdSetViewport(target, 0, 1, &viewport);
         vkCmdSetScissor(target, 0, 1, &scissor);
         vkCmdBindPipeline(target, VK_PIPELINE_BIND_POINT_GRAPHICS, primaryPipeline[pass]);
-        vkCmdBindDescriptorSets(target, VK_PIPELINE_BIND_POINT_GRAPHICS, primaryLayout, 0, 1, &set, 0,
-                                nullptr);
+        vkCmdBindDescriptorSets(target, VK_PIPELINE_BIND_POINT_GRAPHICS, primaryLayout, 0, 1, &set, 0, nullptr);
         if (viewModels) {
-          const VkClearAttachment depth{.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
-                                        .colorAttachment = 0,
-                                        .clearValue = {.depthStencil = {0, 0}}};
+          const VkClearAttachment depth{
+              .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT, .colorAttachment = 0, .clearValue = {.depthStencil = {0, 0}}};
           const VkClearRect rect{scissor, 0, 1};
           vkCmdClearAttachments(target, 1, &depth, 1, &rect);
         }
@@ -267,8 +255,8 @@ namespace remix {
                            draw.surfaceIndex,
                            pass | uint32_t(draw.viewModel) << 1,
                            primaryReverseDepth};
-          vkCmdPushConstants(target, primaryLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                             0, sizeof(push), &push);
+          vkCmdPushConstants(target, primaryLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                             sizeof(push), &push);
           vkCmdDraw(target, draw.count, 1, 0, 0);
         }
       };
@@ -278,8 +266,7 @@ namespace remix {
       bool viewModels = false;
       for (size_t i = 0; i < count && !viewModels; ++i)
         viewModels = primaryDraw(i).viewModel;
-      const size_t tasks =
-          workers && count >= 4096 ? std::min<size_t>(workers->threads(), (count + 2047) / 2048) : 0;
+      const size_t tasks = workers && count >= 4096 ? std::min<size_t>(workers->threads(), (count + 2047) / 2048) : 0;
       vkCmdBeginRenderPass(command, &begin,
                            tasks ? VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS : VK_SUBPASS_CONTENTS_INLINE);
       if (tasks) {

@@ -18,7 +18,7 @@ namespace remix::usd {
   struct ComposedSurface {
     std::string material;
     uint32_t categoryFlags = 0;
-    std::vector<float> vertices; // Position, normal and texcoord: 8 a corner.
+    std::vector<float> vertices;                // Position, normal and texcoord: 8 a corner.
     std::vector<uint32_t> colors, jointIndices; // Colors: none, or one a corner.
     std::vector<float> jointWeights;
     uint32_t influences = 0;

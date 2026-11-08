@@ -1,6 +1,5 @@
 // The developer UI's view of the Vulkan runtime (ui/status.h): what the shared
-// tabs (ui/rendering.cpp, lighting.cpp, post_processing.cpp, diagnostics.cpp,
-// textures.cpp) ask of the backend, answered from its own state. metal/ui.mm
+// tabs (ui/settings.cpp, diagnostics.cpp, textures.cpp) ask of the backend, answered from its own state. metal/ui.mm
 // answers the same queries in Metal builds.
 #include "runtime/runtime.h"
 #include "upscale/ngx.h"
@@ -55,7 +54,7 @@ namespace remix {
     result.ungenerated = m_ungeneratedFrames;
     result.renderedInterval = m_renderedInterval;
     result.presentImages = m_swapchainImages.size();
-    result.presentMode = m_presentMode == VK_PRESENT_MODE_IMMEDIATE_KHR  ? "immediate"
+    result.presentMode = m_presentMode == VK_PRESENT_MODE_IMMEDIATE_KHR ? "immediate"
                          : m_presentMode == VK_PRESENT_MODE_MAILBOX_KHR ? "mailbox"
                          : m_presentMode == VK_PRESENT_MODE_FIFO_KHR    ? "FIFO (vsync)"
                                                                         : "other present mode";

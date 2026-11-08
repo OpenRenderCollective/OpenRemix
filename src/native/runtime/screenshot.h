@@ -43,8 +43,8 @@ namespace remix {
     void complete(bool wait = false);
     void reset(bool keepRequest = false);
 #else
-    void record(VkPhysicalDevice physical, VkDevice device, VkCommandBuffer command, VkImage image,
-                VkExtent2D extent, VkFormat format, VkImageLayout layout, HdrNits nits = {});
+    void record(VkPhysicalDevice physical, VkDevice device, VkCommandBuffer command, VkImage image, VkExtent2D extent,
+                VkFormat format, VkImageLayout layout, HdrNits nits = {});
     void submitted(VkFence fence);
     void complete(VkDevice device, bool wait = false);
     void reset(VkDevice device, bool keepRequest = false);

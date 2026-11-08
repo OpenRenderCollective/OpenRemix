@@ -92,8 +92,7 @@ namespace remix {
                                   SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
     }
 #else
-    const char *title =
-        info.windowTitle != nullptr && info.windowTitle[0] != '\0' ? info.windowTitle : "Remix Shell";
+    const char *title = info.windowTitle != nullptr && info.windowTitle[0] != '\0' ? info.windowTitle : "Remix Shell";
     const int width = static_cast<int>(info.windowWidth != 0 ? info.windowWidth : 1280u);
     const int height = static_cast<int>(info.windowHeight != 0 ? info.windowHeight : 720u);
 #if REMIX_METAL
@@ -173,8 +172,8 @@ namespace remix {
   }
 
   bool RemixSdlWindow::hdrEnabled() const {
-    return m_window && SDL_GetBooleanProperty(SDL_GetWindowProperties(m_window), SDL_PROP_WINDOW_HDR_ENABLED_BOOLEAN,
-                                              false);
+    return m_window &&
+           SDL_GetBooleanProperty(SDL_GetWindowProperties(m_window), SDL_PROP_WINDOW_HDR_ENABLED_BOOLEAN, false);
   }
 
   remixapi_ErrorCode RemixSdlWindow::getWindowState(remixapi_WindowState &state) const {
@@ -246,8 +245,8 @@ namespace remix {
 
   bool RemixSdlWindow::isSurfaceAvailable() const {
 #if defined(__ANDROID__)
-    return SDL_GetPointerProperty(SDL_GetWindowProperties(m_window), SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER,
-                                  nullptr) != nullptr;
+    return SDL_GetPointerProperty(SDL_GetWindowProperties(m_window), SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER, nullptr) !=
+           nullptr;
 #else
     return true;
 #endif
@@ -255,16 +254,15 @@ namespace remix {
 
   bool RemixSdlWindow::isVulkanSurfaceCurrent() const {
 #if defined(__ANDROID__)
-    return m_surfaceWindow == SDL_GetPointerProperty(SDL_GetWindowProperties(m_window),
-                                                     SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER, nullptr);
+    return m_surfaceWindow ==
+           SDL_GetPointerProperty(SDL_GetWindowProperties(m_window), SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER, nullptr);
 #else
     return true;
 #endif
   }
 
 #if !REMIX_METAL
-  remixapi_ErrorCode RemixSdlWindow::createVulkanSurface(VkInstance instance,
-                                                         const VkAllocationCallbacks *allocator,
+  remixapi_ErrorCode RemixSdlWindow::createVulkanSurface(VkInstance instance, const VkAllocationCallbacks *allocator,
                                                          VkSurfaceKHR &surface) const {
     remixapi_ErrorCode threadStatus = checkPresentThread();
     if (threadStatus != REMIXAPI_ERROR_CODE_SUCCESS) {
@@ -277,8 +275,8 @@ namespace remix {
     }
 
 #if defined(__ANDROID__)
-    m_surfaceWindow = SDL_GetPointerProperty(SDL_GetWindowProperties(m_window),
-                                             SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER, nullptr);
+    m_surfaceWindow =
+        SDL_GetPointerProperty(SDL_GetWindowProperties(m_window), SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER, nullptr);
 #endif
     return REMIXAPI_ERROR_CODE_SUCCESS;
   }
@@ -290,8 +288,7 @@ namespace remix {
     if (status != REMIXAPI_ERROR_CODE_SUCCESS)
       return status;
     int width, height, pixelsX, pixelsY;
-    if (!SDL_GetWindowSize(m_window, &width, &height) ||
-        !SDL_GetWindowSizeInPixels(m_window, &pixelsX, &pixelsY)) {
+    if (!SDL_GetWindowSize(m_window, &width, &height) || !SDL_GetWindowSizeInPixels(m_window, &pixelsX, &pixelsY)) {
       return REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
     }
     metrics = {static_cast<uint32_t>(std::max(0, width)), static_cast<uint32_t>(std::max(0, height)),
@@ -303,8 +300,7 @@ namespace remix {
     if (m_window == nullptr) {
       return REMIXAPI_ERROR_CODE_NOT_INITIALIZED;
     }
-    return m_ownerThread == std::this_thread::get_id() ? REMIXAPI_ERROR_CODE_SUCCESS
-                                                       : REMIXAPI_ERROR_CODE_WRONG_THREAD;
+    return m_ownerThread == std::this_thread::get_id() ? REMIXAPI_ERROR_CODE_SUCCESS : REMIXAPI_ERROR_CODE_WRONG_THREAD;
   }
 
   remixapi_ErrorCode RemixSdlWindow::checkPresentThread() const {

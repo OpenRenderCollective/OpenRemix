@@ -30,10 +30,10 @@ namespace remix::ui {
     ui.capturingMenuShortcut = window.capturingMenuShortcut();
     ui.capturingSceneCaptureShortcut = window.capturingSceneCaptureShortcut();
     ui.menuShortcut = RemixSdlWindow::shortcutName(static_cast<remixapi_Key>(panel.menuKey), panel.menuModifiers);
-    ui.sceneCaptureShortcut =
-        panel.sceneCaptureKey ? RemixSdlWindow::shortcutName(static_cast<remixapi_Key>(panel.sceneCaptureKey),
-                                                             panel.sceneCaptureModifiers)
-                              : std::string();
+    ui.sceneCaptureShortcut = panel.sceneCaptureKey
+                                  ? RemixSdlWindow::shortcutName(static_cast<remixapi_Key>(panel.sceneCaptureKey),
+                                                                 panel.sceneCaptureModifiers)
+                                  : std::string();
     // Pressed with the panel open or closed alike.
     if (window.takeSceneCapturePress()) {
 #if REMIX_HAS_USD

@@ -1,9 +1,9 @@
 #pragma once
-// The developer panel's view of the runtime. The tabs (ui/rendering.cpp,
-// lighting.cpp, post_processing.cpp, diagnostics.cpp, textures.cpp) are shared
-// by the Vulkan and Metal runtimes and ask what differs between them (device,
-// swapchain or drawables, reconstruction, frame generation) through these
-// queries, which each runtime answers (runtime/ui_status.cpp, metal/ui.mm).
+// The developer panel's view of the runtime. The tabs (ui/settings.cpp,
+// diagnostics.cpp, textures.cpp) are shared by the Vulkan and Metal runtimes
+// and ask what differs between them (device, swapchain or drawables,
+// reconstruction, frame generation) through these queries, which each runtime answers (runtime/ui_status.cpp,
+// metal/ui.mm).
 #include "pathtrace/path_inspection.h"
 #include "ui/sky.h"
 #include "upscale/options.h"

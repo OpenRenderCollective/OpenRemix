@@ -21,8 +21,7 @@ namespace {
   }
   void checked(remixapi_ErrorCode code, int line) {
     if (code) {
-      std::fprintf(stderr, "Unexpected error: 0x%x at line %d (SDL: %s)\n", unsigned(code), line,
-                   SDL_GetError());
+      std::fprintf(stderr, "Unexpected error: 0x%x at line %d (SDL: %s)\n", unsigned(code), line, SDL_GetError());
       std::exit(1);
     }
   }
@@ -84,8 +83,7 @@ namespace {
     remixapi_MaterialHandle handle = reinterpret_cast<remixapi_MaterialHandle>(1);
     const bool initialized = expected != REMIXAPI_ERROR_CODE_NOT_INITIALIZED;
     const auto supported = initialized ? REMIXAPI_ERROR_CODE_SUCCESS : expected;
-    require(api.CreateMaterial(&material, &handle) == supported &&
-                (initialized ? handle != nullptr : !handle),
+    require(api.CreateMaterial(&material, &handle) == supported && (initialized ? handle != nullptr : !handle),
             "Material/output");
     remixapi_VramStats stats;
     std::memset(&stats, 0xff, sizeof(stats));
@@ -99,8 +97,7 @@ namespace {
     require(api.RequestTextureVramFree() == supported, "Texture VRAM stub");
     require(api.CreateMesh(nullptr, nullptr) == REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS, "Argument validation");
     uint32_t pixel = 0;
-    require(api.RegisterUITexture(1, 1, 1, REMIXAPI_FORMAT_R8G8B8A8_UNORM, &pixel, 4) == supported,
-            "UI texture stub");
+    require(api.RegisterUITexture(1, 1, 1, REMIXAPI_FORMAT_R8G8B8A8_UNORM, &pixel, 4) == supported, "UI texture stub");
     require(api.RegisterUITexture(0, 1, 1, REMIXAPI_FORMAT_R8G8B8A8_UNORM, &pixel, 4) ==
                 REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS,
             "UI texture validation");
@@ -117,8 +114,7 @@ namespace {
       ok(api.UpdateLightDefinition(dummy, &light));
       ok(api.DrawLightInstance(dummy));
       ok(api.DestroyLight(dummy));
-      require(api.DrawLightInstance(dummy) == REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS,
-              "Stale light handle accepted");
+      require(api.DrawLightInstance(dummy) == REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS, "Stale light handle accepted");
       ok(api.DestroyLight(dummy));
       ok(api.SetConfigVariable("rtx.someLegacyRendererSetting", "true"));
       remixapi_FogInfo fog = {};
@@ -210,8 +206,9 @@ int main(int argc, char **argv) {
     uint32_t seed = 12345;
     std::vector<remixapi_MeshHandle> meshes;
     for (unsigned i = 0; i < std::size(formats); ++i) {
-      const bool halfBlocks = formats[i] == REMIXAPI_FORMAT_BC1_RGB_SRGB || formats[i] == REMIXAPI_FORMAT_BC1_RGBA_SRGB_EXT ||
-                         formats[i] == REMIXAPI_FORMAT_BC4_UNORM_EXT;
+      const bool halfBlocks = formats[i] == REMIXAPI_FORMAT_BC1_RGB_SRGB ||
+                              formats[i] == REMIXAPI_FORMAT_BC1_RGBA_SRGB_EXT ||
+                              formats[i] == REMIXAPI_FORMAT_BC4_UNORM_EXT;
       std::vector<uint8_t> blocks;
       for (uint32_t size = 64; size; size /= 2) // 64x64 with 7 mips; the last three are partial blocks.
         for (uint32_t b = 0; b < ((size + 3) / 4) * ((size + 3) / 4) * (halfBlocks ? 8u : 16u); ++b)
@@ -229,7 +226,8 @@ int main(int argc, char **argv) {
       ok(api.CreateTexture(&texture, &handle));
 #if defined(_WIN32)
       const std::wstring albedo = L"0x900";
-      const std::wstring hex[] = {L"0x900", L"0x901", L"0x902", L"0x903", L"0x904", L"0x905", L"0x906", L"0x907", L"0x908"};
+      const std::wstring hex[] = {L"0x900", L"0x901", L"0x902", L"0x903", L"0x904",
+                                  L"0x905", L"0x906", L"0x907", L"0x908"};
       const std::wstring &own = hex[i];
 #else
       const std::string hex[] = {"0x900", "0x901", "0x902", "0x903", "0x904", "0x905", "0x906", "0x907", "0x908"};
@@ -319,15 +317,13 @@ int main(int argc, char **argv) {
     std::fprintf(stderr,
                  "VRAM: textures %llu B (%llu entries), buffers %llu B, pool %llu B, AS %llu B, "
                  "targets %llu B, driver %llu / %llu MiB\n",
-                (unsigned long long)vram.usedMaterialTextureBytes, (unsigned long long)vram.forkTextureCacheCount,
-                (unsigned long long)vram.usedBufferBytes, (unsigned long long)vram.poolRetainedBytes,
-                (unsigned long long)vram.usedAccelerationStructureBytes,
-                (unsigned long long)vram.usedRenderTargetBytes,
-                (unsigned long long)(vram.driverAllocatedBytes >> 20),
-                (unsigned long long)(vram.driverBudgetBytes >> 20));
+                 (unsigned long long)vram.usedMaterialTextureBytes, (unsigned long long)vram.forkTextureCacheCount,
+                 (unsigned long long)vram.usedBufferBytes, (unsigned long long)vram.poolRetainedBytes,
+                 (unsigned long long)vram.usedAccelerationStructureBytes,
+                 (unsigned long long)vram.usedRenderTargetBytes, (unsigned long long)(vram.driverAllocatedBytes >> 20),
+                 (unsigned long long)(vram.driverBudgetBytes >> 20));
     require(vram.usedMaterialTextureBytes > 0 && vram.forkTextureCacheCount >= std::size(formats) &&
-                vram.totalAllocatedBytes >= vram.totalUsedBytes &&
-                vram.totalUsedBytes >= vram.usedMaterialTextureBytes,
+                vram.totalAllocatedBytes >= vram.totalUsedBytes && vram.totalUsedBytes >= vram.usedMaterialTextureBytes,
             "VRAM statistics missing textures");
     ok(api.SetConfigVariable("rtx.native.vramStatistics", "0"));
     require(api.GetVramStats(&vram) == REMIXAPI_ERROR_CODE_FEATURE_UNAVAILABLE && !vram.totalUsedBytes,
@@ -340,8 +336,7 @@ int main(int argc, char **argv) {
   if (!gpu && !fault) {
     SDL_SetHintWithPriority(SDL_HINT_VIDEO_DRIVER, "dummy", SDL_HINT_OVERRIDE);
     for (int i = 0; i < 3; ++i) {
-      require(api.Startup(&startup) != REMIXAPI_ERROR_CODE_SUCCESS,
-              "Dummy driver unexpectedly supports Vulkan");
+      require(api.Startup(&startup) != REMIXAPI_ERROR_CODE_SUCCESS, "Dummy driver unexpectedly supports Vulkan");
       require(api.Present(nullptr) == REMIXAPI_ERROR_CODE_NOT_INITIALIZED, "Failed startup retained runtime");
       ok(api.Shutdown());
       ok(api.GetFeatureAvailability(&features));
@@ -488,8 +483,8 @@ int main(int argc, char **argv) {
       require(!features.availableFeatures, "Shutdown retained device feature availability");
     }
 #if defined(_WIN32)
-    HWND borrowed = CreateWindowExW(0, L"STATIC", L"Borrowed Remix window", WS_OVERLAPPEDWINDOW | WS_VISIBLE,
-                                    0, 0, 640, 480, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
+    HWND borrowed = CreateWindowExW(0, L"STATIC", L"Borrowed Remix window", WS_OVERLAPPEDWINDOW | WS_VISIBLE, 0, 0, 640,
+                                    480, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
     require(borrowed != nullptr, "Create borrowed HWND");
     startup.hwnd = borrowed;
     ok(api.Startup(&startup));
@@ -506,8 +501,7 @@ int main(int argc, char **argv) {
     require(IsWindow(borrowed), "Shutdown destroyed borrowed HWND");
     DestroyWindow(borrowed);
     startup.forceNoVkSwapchain = 1;
-    require(api.Startup(&startup) == REMIXAPI_ERROR_CODE_FEATURE_UNAVAILABLE,
-            "External swapchain startup accepted");
+    require(api.Startup(&startup) == REMIXAPI_ERROR_CODE_FEATURE_UNAVAILABLE, "External swapchain startup accepted");
 #endif
   }
   if (gpu) {
