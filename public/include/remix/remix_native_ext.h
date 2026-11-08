@@ -1190,6 +1190,22 @@ typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_GetTextureStatisticsEXT)(
     remixapi_TextureStatisticsEXT *statistics);
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetTextureStatisticsEXT(remixapi_TextureStatisticsEXT *statistics);
 
+// The last presented frame (the game's image, without OpenRemix's own UI) as
+// 8-bit BGRA with alpha 255, sRGB-encoded SDR: HDR10 output tone mapped as an
+// SDR screenshot is. Fills width x height pixels, rowPitch bytes apart,
+// scaled (nearest) from the presented size, which presentedWidth and
+// presentedHeight report. Waits for the GPU: for occasional readbacks, such as
+// a D3D9 host's screenshot of its own back buffer, which OpenRemix never draws.
+// FEATURE_UNAVAILABLE: nothing presented yet (or the swapchain cannot be
+// copied from).
+typedef struct remixapi_PresentedImageEXT {
+  uint32_t width, height, rowPitch;
+  void *pixels;                             // rowPitch * height bytes
+  uint32_t presentedWidth, presentedHeight; // out
+} remixapi_PresentedImageEXT;
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_ReadPresentedImageEXT)(remixapi_PresentedImageEXT *image);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_ReadPresentedImageEXT(remixapi_PresentedImageEXT *image);
+
 typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_SetVisibilityPartitionEXT)(
     const remixapi_VisibilityPartitionEXT *partition);
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL

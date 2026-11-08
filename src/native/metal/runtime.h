@@ -50,6 +50,9 @@ namespace remix {
     // A screenshot set in the profiles directory's screenshots folder (runtime/presentation.cpp).
     remixapi_ErrorCode requestScreenshotSet();
     void completeScreenshot();
+    remixapi_ErrorCode readPresentedImage(remixapi_PresentedImageEXT &) {
+      return REMIXAPI_ERROR_CODE_FEATURE_UNAVAILABLE;
+    }
     bool modsDisabled() const { return m_disableMods; }
     bool isHeadless() const { return false; }
     bool isInitialized() const { return m_initialized; }
