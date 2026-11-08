@@ -24,3 +24,5 @@
 
 # Runtime profiles and pipeline cache written when the renderer runs from the repo root.
 /openremix/
+scripts/shaders/
+scripts/windows/_work/
