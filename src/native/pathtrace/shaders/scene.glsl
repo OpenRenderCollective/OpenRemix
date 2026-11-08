@@ -131,6 +131,7 @@ layout(set=0,binding=3,std140) uniform Frame {
   vec4 rayPortals[32]; // remixapi_MaterialInfoPortalEXT, 4 per index: the map to the partner (3 rows), the front's normal (w: 1 open pair, +2 moved)
   uvec4 rayPortalConfig; // teleports per camera ray, exit offset (float bits, world units), reserved
   vec4 rayPortalPlanes[2]; // per index: dot(front normal, p) at its opening's plane (local x = 0)
+  uint64_t wavefrontPaths; uint wavefrontStride,wavefrontReserved; // wavefront indirect records (pathtrace.comp WavefrontPlanes), plane stride in vec4s
 } frame;
 // Instance mask bit of view models (pathtrace/tlas_policy.h).
 const uint viewModelInstanceMask=64u;

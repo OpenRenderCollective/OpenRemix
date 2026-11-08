@@ -258,8 +258,14 @@ namespace remix::trace::detail {
     float rayPortals[scene::rayPortalSlots][4][4] = {};
     uint32_t rayPortalConfig[4] = {};
     float rayPortalPlanes[scene::rayPortalSlots] = {};
+    // rtx.native.pathtrace.wavefrontIndirect: the wavefront indirect kernels'
+    // path records (pathtrace.comp WavefrontPlanes; 0: off) and the distance
+    // between their planes in 16-byte elements.
+    uint64_t wavefrontPaths = 0;
+    uint32_t wavefrontStride = 0, wavefrontReserved = 0;
   };
-  static_assert(sizeof(Frame) == 2896 && offsetof(Frame, rayPortalPlanes) == 2864 &&
+  static_assert(sizeof(Frame) == 2912 && offsetof(Frame, wavefrontPaths) == 2896 &&
+                offsetof(Frame, rayPortalPlanes) == 2864 &&
                 offsetof(Frame, rayPortals) == 2336 && offsetof(Frame, woundVertices) == 2320 &&
                 offsetof(Frame, screenCameras) == 1808 && offsetof(Frame, srgbTextures) == 1280 &&
                 offsetof(Frame, pathDebug) == 1792 && offsetof(Frame, localProbeRead) == 1168 &&
@@ -383,8 +389,19 @@ namespace remix {
       }();
       const char *modeFile = std::getenv("REMIX_INDIRECT_MODE_FILE");
       uint64_t controlReset = UINT64_MAX;
+      // rtx.native.pathtrace.wavefrontIndirect: the pass as four kernels
+      // (pathtrace.comp WAVEFRONT_PASS: start, trace, shade, rest) over the
+      // path records in `paths` (wavefrontPlanes 16-byte planes a pixel).
+      // Dispatched only while all four exist (wavefrontActive), else the
+      // single kernel runs. Temporal (denoised) lighting, one sample a pixel.
+      static constexpr uint32_t wavefrontPlanes = 22;
+      static constexpr size_t wavefrontKernels = 4;
+      VkPipeline wavefront[wavefrontKernels] = {};
+      std::unique_ptr<Buffer> paths;
+      bool wavefrontActive = false, wavefrontFailed = false;
     } indirectPass;
     void configureIndirect(Frame &frame, const TraceOptions &options, bool querySharc);
+    void configureWavefront(Frame &frame, const TraceOptions &options);
     // Whether the separate indirect pass is built for these options.
     bool indirectPlanned(const TraceOptions &options) const {
       return indirectPass.mode != 0 && !indirectPass.failed && options.bounces != 0 && !options.sparseRendering;
@@ -1165,6 +1182,8 @@ namespace remix {
     };
     std::vector<LightingRequest> temporalRequests(bool split, bool sigma, bool local, bool restirPasses, bool reblur,
                                                   bool separateIndirect, const TemporalTargets &targets) const;
+    // The wavefront indirect kernels' requests (configureWavefront).
+    std::vector<LightingRequest> wavefrontRequests();
     // Queues the other configurations' temporal pipelines for idle compiler
     // workers (rtx.native.pathtrace.precompileConfigurations).
     void prewarmTemporalConfigurations(bool separateIndirect);

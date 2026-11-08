@@ -367,6 +367,11 @@ namespace remix {
     bool combinedTlas = true;
     // Boolean shadow and local-light rays stop at their first blocker.
     bool shadowEarlyOut = true;
+    // The separate indirect pass as wavefront kernels (path start, first
+    // bounce ray, its shading, the rest of the path) over per-pixel path
+    // records, each kernel compiled alone. Experimental: denoised lighting
+    // with one sample a pixel; otherwise the single kernel runs.
+    bool wavefrontIndirect = false;
     // Alpha-tested geometry carries VK_EXT_opacity_micromap data, so
     // traversal settles proved micro-triangles without the shader's alpha
     // test (docs/features/gpu-optimizations.md). No effect without device

@@ -1452,12 +1452,38 @@ namespace remix {
               VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT);
       indirectPipeline = selectLightingPipeline(indirectPass.pipeline);
       indirectKey = selectedLightingKey;
-      gpu::GpuScope scope(command,
-                          querySharc ? "Trace indirect (separate pass, SHARC query)" : "Trace indirect (separate pass)",
-                          extent);
-      bindSelected(command, indirectPipeline);
-      vkCmdDispatch(command, (extent.width + 7) / 8, (extent.height + 7) / 8, 1);
-      scope.close();
+      const auto indirectFeatures = selectedFeatures;
+      const auto indirectLayout = selectedLayout;
+      // The wavefront kernels (configureWavefront) run as a set or not at all:
+      // each reads the records the one before wrote.
+      VkPipeline kernels[IndirectPass::wavefrontKernels] = {};
+      uint32_t kernelFeatures[IndirectPass::wavefrontKernels] = {};
+      VkPipelineLayout kernelLayouts[IndirectPass::wavefrontKernels] = {};
+      bool wavefront = indirectPass.wavefrontActive;
+      for (size_t i = 0; wavefront && i < std::size(kernels); ++i) {
+        kernels[i] = selectLightingPipeline(indirectPass.wavefront[i]);
+        kernelFeatures[i] = selectedFeatures;
+        kernelLayouts[i] = selectedLayout;
+        wavefront = kernels[i] != VK_NULL_HANDLE;
+      }
+      if (wavefront) {
+        const char *names[] = {"Trace indirect (wavefront start)", "Trace indirect (wavefront trace)",
+                               "Trace indirect (wavefront shade)", "Trace indirect (wavefront rest)"};
+        for (size_t i = 0; i < std::size(kernels); ++i) {
+          if (i)
+            barrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
+                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+          gpu::GpuScope scope(command, names[i], extent);
+          bindTrace(command, kernels[i], kernelLayouts[i], kernelFeatures[i]);
+          vkCmdDispatch(command, (extent.width + 7) / 8, (extent.height + 7) / 8, 1);
+        }
+      } else {
+        gpu::GpuScope scope(command,
+                            querySharc ? "Trace indirect (separate pass, SHARC query)" : "Trace indirect (separate pass)",
+                            extent);
+        bindTrace(command, indirectPipeline, indirectLayout, indirectFeatures);
+        vkCmdDispatch(command, (extent.width + 7) / 8, (extent.height + 7) / 8, 1);
+      }
       barrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
               VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
     }

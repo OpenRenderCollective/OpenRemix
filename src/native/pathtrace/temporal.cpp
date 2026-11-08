@@ -14,6 +14,14 @@ namespace remix {
     indirectPass.pipeline = VK_NULL_HANDLE;
     indirectPass.results.reset();
     indirectPass.active = indirectPass.failed = false;
+    for (auto &kernel : indirectPass.wavefront) {
+      forgetLightingPipeline(kernel);
+      if (kernel)
+        pipeline::destroyPipeline(device, kernel, nullptr);
+      kernel = VK_NULL_HANDLE;
+    }
+    indirectPass.paths.reset();
+    indirectPass.wavefrontActive = indirectPass.wavefrontFailed = false;
   }
 
   void PathTracer::Gpu::configureProfile(const TraceOptions &options) {
@@ -36,7 +44,7 @@ namespace remix {
   }
 
   void PathTracer::Gpu::configureIndirect(Frame &frame, const TraceOptions &options, bool querySharc) {
-    indirectPass.active = false;
+    indirectPass.active = indirectPass.wavefrontActive = false;
     // Mode 1 (auto): only where the combined kernel's registers made it pay.
     const bool planned = indirectPlanned(options) &&
                          !(indirectPass.mode == 1 &&
@@ -75,6 +83,52 @@ namespace remix {
         return; // compiling: inline tracing meanwhile
       indirectPass.failed = true;
       std::fprintf(stderr, "Separate indirect pass unavailable (%d); using inline tracing\n", int(error));
+      return;
+    }
+    configureWavefront(frame, options);
+  }
+
+  // Its kernels, selected like the pass (selectLightingPipeline).
+  std::vector<PathTracer::Gpu::LightingRequest> PathTracer::Gpu::wavefrontRequests() {
+    using trace::Stage;
+    const Stage stages[IndirectPass::wavefrontKernels] = {Stage::wavefrontStartTemporal, Stage::wavefrontTraceTemporal,
+                                                          Stage::wavefrontShadeTemporal, Stage::wavefrontRestTemporal};
+    std::vector<LightingRequest> requests;
+    for (size_t i = 0; i < std::size(stages); ++i)
+      requests.push_back({lightingStage(stages[i]), temporalLayout, &indirectPass.wavefront[i], true});
+    return requests;
+  }
+
+  // The wavefront form of the separate pass (TraceOptions::wavefrontIndirect):
+  // its kernels compile in the background on first use, and the single
+  // kernel runs until all four have.
+  void PathTracer::Gpu::configureWavefront(Frame &frame, const TraceOptions &options) {
+    auto &pass = indirectPass;
+    if (!options.wavefrontIndirect || !denoiser || options.samples != 1 || pass.wavefrontFailed) {
+      if (!options.wavefrontIndirect && pass.paths)
+        retiredBuffers.push_back(std::move(pass.paths));
+      return;
+    }
+    try {
+      createLightingPipelines(wavefrontRequests());
+      const VkDeviceSize pixels = VkDeviceSize(extent.width) * extent.height;
+      const VkDeviceSize bytes = pixels * pass.wavefrontPlanes * 16;
+      if (!pass.paths || pass.paths->size < bytes) {
+        auto next = buffer(bytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, false);
+        if (pass.paths)
+          retiredBuffers.push_back(std::move(pass.paths));
+        pass.paths = std::move(next);
+      }
+      frame.wavefrontPaths = pass.paths->address;
+      frame.wavefrontStride = uint32_t(pixels);
+      pass.wavefrontActive = true;
+    } catch (VkResult error) {
+      if (error == VK_ERROR_DEVICE_LOST)
+        throw;
+      if (error == VK_NOT_READY)
+        return; // compiling: the single kernel meanwhile
+      pass.wavefrontFailed = true;
+      std::fprintf(stderr, "Wavefront indirect pass unavailable (%d); using the single kernel\n", int(error));
     }
   }
 
@@ -223,8 +277,13 @@ namespace remix {
                                       &frontGuidesCompute,    &psrCompute,         &singleTemporalTransparencyCompute,
                                       &sheetTemporalCompute,  &splitDirectCompute, &restir.initial,
                                       &restir.spatial,        &confidenceCompute};
-        awaitLightingPipelines(temporalRequests(postSplit, postSigma, postLocal, postSplit && options.restir, reblur,
-                                                separateIndirect, targets));
+        auto requests = temporalRequests(postSplit, postSigma, postLocal, postSplit && options.restir, reblur,
+                                         separateIndirect, targets);
+        // The wavefront kernels compile with the pass they replace.
+        if (separateIndirect && options.wavefrontIndirect && options.samples == 1)
+          for (const auto &request : wavefrontRequests())
+            requests.push_back(request);
+        awaitLightingPipelines(requests);
         prewarmTemporalConfigurations(separateIndirect);
         denoiser = std::move(next);
         return;
