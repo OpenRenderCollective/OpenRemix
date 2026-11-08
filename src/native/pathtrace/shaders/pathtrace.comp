@@ -253,6 +253,15 @@ vec3 carriedNormal(vec3 n,vec3 e1,vec3 e2,vec3 f1,vec3 f2) {
 // double-sided, so a ray leaving a painted surface meets every layer above
 // it; one query passes them all.
 float originPaint=0;
+// Whether closest()'s paint queries pass the paint at the ray's origin (set
+// above). A ray leaving a surface (a bounce, a light or sky ray, a mirror's
+// reflection) starts under its paint. A ray along the camera's line of sight
+// (cameraHit: the primary and its continuations past glass and water) starts
+// at the camera or on a sheet, under no paint: passing paint near its origin
+// dropped a displacement's second texture (a decal sheet) where the ground
+// lay within the attachment distance under a water surface (grass wedges on
+// gm_construct's shallow beach).
+bool passOriginPaint=true;
 // The geometric normal of the surface a path's bounce ray leaves (zero for
 // any other ray): the paint over that surface lies within the attachment
 // distance across it, so closest()'s paint queries start past it and
@@ -478,7 +487,7 @@ Hit closest(vec3 origin,vec3 direction,float maximum,bool motion) {
       if(minimum>=end)break;
       continue;
     }
-    originPaint=attach;
+    originPaint=passOriginPaint?attach:0;
     Intersection x=nearest(origin,direction,end,minimum);
     originPaint=0;
     if(x.surface==~0u)break;
@@ -537,7 +546,7 @@ Hit closest(vec3 origin,vec3 direction,float maximum,bool motion) {
   // source-over transport. Do not project paint onto the sky or change glass.
   if(!attached||hit.blended) {
     const bool tint=attached&&remaining==1;
-    traceMask=decalInstanceMask;originPaint=attach;
+    traceMask=decalInstanceMask;originPaint=passOriginPaint?attach:0;
     Intersection first=nearest(origin,direction,uintBitsToFloat(floatBitsToUint(firstT)+1u),0);
     traceMask=mask;originPaint=0;
     hit=missedHit(direction,maximum);
@@ -569,14 +578,14 @@ Hit closest(vec3 origin,vec3 direction) { return closest(origin,direction,1e30,t
 // nearer (it reaches into walls); the path it starts sees view models.
 // (One closest() in a loop: it is inlined wherever cameraHit is.)
 Hit cameraHit(vec3 origin,vec3 direction) {
-  cameraCut=pixelCut;cameraRay=frame.cameraCull.x!=0u&&!screenSheets;
+  cameraCut=pixelCut;cameraRay=frame.cameraCull.x!=0u&&!screenSheets;passOriginPaint=false;
   Hit hit;
   for(uint pass=(frame.pathConfig.w&0x100u)!=0u&&!screenSheets?0u:1u;pass<2u;++pass) {
     traceMask=pass==0u?viewModelInstanceMask:screenSheets?cameraMask|reflectionOnlyInstanceMask:cameraMask;
     hit=closest(origin,direction);
     if(pass==0u&&hit.t<1e30){viewModelPath=true;break;}
   }
-  traceMask=cameraMask;cameraCut=0u;cameraRay=false;return hit;
+  traceMask=cameraMask;cameraCut=0u;cameraRay=false;passOriginPaint=true;return hit;
 }
 // Bounce rays may ignore blended layers (frame.pathConfig.w; see
 // skipBlendedSecondaryRays). Camera and transparency rays keep every instance.
@@ -1861,7 +1870,7 @@ uvec4 replaceScreen(ivec2 pixel,vec3 origin,vec3 direction,float kind) {
   traceMask=cameraMask|reflectionOnlyInstanceMask;
   Hit hit;uint layers=0u;
   for(uint step=0u;step<17u;++step) {
-    hit=closest(eye,seen);
+    passOriginPaint=false;hit=closest(eye,seen);passOriginPaint=true;
     if(hit.t==1e30)break;
     if(hit.blended) {
       if(slot==0xffu||++layers>8u)break;
