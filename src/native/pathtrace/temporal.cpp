@@ -92,12 +92,13 @@ namespace remix {
   std::vector<PathTracer::Gpu::LightingRequest> PathTracer::Gpu::wavefrontRequests() {
     using trace::Stage;
     const Stage stages[] = {Stage::wavefrontStartTemporal, Stage::wavefrontTraceTemporal, Stage::wavefrontShadeTemporal,
-                            Stage::wavefrontFinishTemporal, Stage::wavefrontTailTemporal};
+                            Stage::wavefrontFinishTemporal, Stage::wavefrontTailTemporal, Stage::wavefrontShadowTemporal,
+                            Stage::wavefrontShadeDeferTemporal};
     std::vector<LightingRequest> requests;
     for (size_t i = 0; i < std::size(stages); ++i)
       requests.push_back({lightingStage(stages[i]), temporalLayout, &indirectPass.wavefront[i], true});
     // The bounces' dispatch arguments: one invocation, no lighting.
-    requests.push_back({Stage::wavefrontArgs, temporalLayout, &indirectPass.wavefront[5], false, false, false, false});
+    requests.push_back({Stage::wavefrontArgs, temporalLayout, &indirectPass.wavefront[7], false, false, false, false});
     return requests;
   }
 
@@ -126,6 +127,7 @@ namespace remix {
       }
       frame.wavefrontPaths = pass.paths->address;
       frame.wavefrontStride = uint32_t(pixels);
+      frame.wavefrontFlags = options.wavefrontShadowQueue ? 1u : 0u;
       pass.wavefrontActive = true;
     } catch (VkResult error) {
       if (error == VK_ERROR_DEVICE_LOST)

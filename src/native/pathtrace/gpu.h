@@ -259,10 +259,11 @@ namespace remix::trace::detail {
     uint32_t rayPortalConfig[4] = {};
     float rayPortalPlanes[scene::rayPortalSlots] = {};
     // rtx.native.pathtrace.wavefrontIndirect: the wavefront indirect kernels'
-    // path records (pathtrace.comp WavefrontPlanes; 0: off) and the distance
-    // between their planes in 16-byte elements.
+    // path records (pathtrace.comp WavefrontPlanes; 0: off), the distance
+    // between their planes in 16-byte elements and flags (bit 0: the shadow
+    // queue, rtx.native.pathtrace.wavefrontShadowQueue).
     uint64_t wavefrontPaths = 0;
-    uint32_t wavefrontStride = 0, wavefrontReserved = 0;
+    uint32_t wavefrontStride = 0, wavefrontFlags = 0;
   };
   static_assert(sizeof(Frame) == 2912 && offsetof(Frame, wavefrontPaths) == 2896 &&
                 offsetof(Frame, rayPortalPlanes) == 2864 &&
@@ -393,13 +394,15 @@ namespace remix {
       // (pathtrace.comp WAVEFRONT_PASS: start; per bounce arguments, trace
       // and shade over the bounce's live paths; finish) over the path records
       // in `paths`: wavefrontPlanes 16-byte planes a pixel, then the queue
-      // header and two lists of 4 bytes a pixel (pathtrace.comp
-      // WavefrontQueue). Dispatched only while every kernel exists, else the
-      // single kernel runs. Temporal (denoised) lighting, one sample a pixel.
-      static constexpr uint32_t wavefrontPlanes = 15, wavefrontQueueHeader = 512, wavefrontMaxBounces = 16;
-      static constexpr size_t wavefrontKernels = 6; // start, trace, shade, finish, tail, arguments
+      // header, two lists of 4 bytes a pixel and the shadow rays, 32 bytes a
+      // pixel (pathtrace.comp WavefrontQueue). Dispatched only while every
+      // kernel exists, else the single kernel runs. Temporal (denoised)
+      // lighting, one sample a pixel.
+      static constexpr uint32_t wavefrontPlanes = 16, wavefrontQueueHeader = 1024, wavefrontMaxBounces = 16;
+      // start, trace, shade, finish, tail, shadow, shade leaving its shadow rays, arguments
+      static constexpr size_t wavefrontKernels = 8;
       static VkDeviceSize wavefrontBytes(VkDeviceSize pixels) {
-        return pixels * wavefrontPlanes * 16 + wavefrontQueueHeader + pixels * 2 * 4;
+        return pixels * wavefrontPlanes * 16 + wavefrontQueueHeader + (pixels * 2 * 4 + 15) / 16 * 16 + pixels * 32;
       }
       VkPipeline wavefront[wavefrontKernels] = {};
       std::unique_ptr<Buffer> paths;

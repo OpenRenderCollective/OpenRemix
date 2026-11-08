@@ -1456,7 +1456,7 @@ namespace remix {
       const auto indirectLayout = selectedLayout;
       // The wavefront kernels (configureWavefront) run as a set or not at all:
       // each reads the records the one before wrote.
-      constexpr size_t lit = 5; // start, trace, shade, finish, tail; then the arguments kernel
+      constexpr size_t lit = 7; // start, trace, shade, finish, tail, shadow, deferring shade; then the arguments
       VkPipeline kernels[lit] = {};
       uint32_t kernelFeatures[lit] = {};
       VkPipelineLayout kernelLayouts[lit] = {};
@@ -1488,25 +1488,36 @@ namespace remix {
           vkCmdDispatch(command, screenX, screenY, 1);
         }
         // Each split bounce over the paths the one before left going: its
-        // arguments, its rays' receivers, its shading (a dispatch of no groups
-        // once every path has ended). Then the tail: the remaining bounces of
-        // the few paths left, in one kernel (each bounce's own kernels cost
-        // more in launches and barriers than its paths do).
+        // arguments, the shadow rays of the bounce before, its rays'
+        // receivers, its shading (dispatches of no groups once every path has
+        // ended). Then the tail: the remaining bounces of the few paths left,
+        // in one kernel (each bounce's own kernels cost more in launches and
+        // barriers than its paths do).
         const uint32_t bounces = std::min(options.bounces, IndirectPass::wavefrontMaxBounces);
         const uint32_t split = std::clamp(options.wavefrontBounces, 1u, bounces);
-        for (uint32_t bounce = 0; bounce <= split && bounce < bounces; ++bounce) {
+        for (uint32_t bounce = 0;; ++bounce) {
           barrier(command, compute, computeWrite, compute, computeAccess);
           bindTrace(command, arguments, temporalLayout, defaultFeatures);
           vkCmdDispatch(command, 1, 1, 1);
           barrier(command, compute, computeWrite, compute | indirect,
                   computeAccess | VK_ACCESS_INDIRECT_COMMAND_READ_BIT);
-          const VkDeviceSize slot = header + (8 + 4 * bounce) * 4;
+          const uint32_t argument = std::min(bounce, IndirectPass::wavefrontMaxBounces - 1);
+          const VkDeviceSize slot = header + (8 + 4 * argument) * 4, shadowSlot = header + (80 + 4 * argument) * 4;
+          if (bounce && options.wavefrontShadowQueue) {
+            gpu::GpuScope scope(command, "Trace indirect (wavefront shadow)", extent);
+            bindTrace(command, kernels[5], kernelLayouts[5], kernelFeatures[5]);
+            vkCmdDispatchIndirect(command, paths, shadowSlot);
+          }
+          if (bounce == bounces)
+            break;
           if (bounce == split) {
+            barrier(command, compute, computeWrite, compute, computeAccess);
             gpu::GpuScope scope(command, "Trace indirect (wavefront tail)", extent);
             bindTrace(command, kernels[4], kernelLayouts[4], kernelFeatures[4]);
             vkCmdDispatchIndirect(command, paths, slot);
             break;
           }
+          barrier(command, compute, computeWrite, compute, computeAccess);
           {
             gpu::GpuScope scope(command, "Trace indirect (wavefront trace)", extent);
             bindTrace(command, kernels[1], kernelLayouts[1], kernelFeatures[1]);
@@ -1515,7 +1526,8 @@ namespace remix {
           barrier(command, compute, computeWrite, compute, computeAccess);
           {
             gpu::GpuScope scope(command, "Trace indirect (wavefront shade)", extent);
-            bindTrace(command, kernels[2], kernelLayouts[2], kernelFeatures[2]);
+            const size_t shade = options.wavefrontShadowQueue ? 6 : 2;
+            bindTrace(command, kernels[shade], kernelLayouts[shade], kernelFeatures[shade]);
             vkCmdDispatchIndirect(command, paths, slot);
           }
         }

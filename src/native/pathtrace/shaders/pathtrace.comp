@@ -950,6 +950,13 @@ vec3 sunVisibility(Hit receiver,ivec2 pixel,out float blockerDistance) {
 #endif
 #include "pbr_reuse.glsl"
 bool skipSheetLocal=false; // set around direct() for PBR sheets (see sheetLocalLights)
+#ifdef WAVEFRONT_DEFER_SHADOWS
+// The wavefront shade kernel's sun and sky light at its vertex before their
+// shadow rays, which the shadow kernel traces (wavefrontShadow): the light
+// unshadowed (cloud shadow and sky radiance in), the rays' origin and the
+// sky ray's direction.
+vec3 wavefrontSun=vec3(0),wavefrontSky=vec3(0),wavefrontShadowOrigin=vec3(0),wavefrontSkyDirection=vec3(0);
+#endif
 #include "subsurface.glsl"
 vec3 direct(Hit hit,bool primary,out vec3 specular,out float distance) {
   vec3 toLight=-frame.lightDirection.xyz;
@@ -979,6 +986,12 @@ vec3 direct(Hit hit,bool primary,out vec3 specular,out float distance) {
       if(frame.skyRadiance.w==0)continue;
       weight=materialSample(hit,direction,lobeSpecular);
     }
+#ifdef WAVEFRONT_DEFER_SHADOWS
+    if(source==0)wavefrontSun=weight*cloudShadow(hit.p);
+    else{wavefrontSky=weight*environmentRadiance(direction);wavefrontSkyDirection=direction;}
+    wavefrontShadowOrigin=shadowOrigin(hit);
+    continue;
+#endif
     vec3 visibility=shadow(shadowOrigin(hit),direction);
     if(source==0)visibility*=cloudShadow(hit.p);
     if(source==1)visibility*=environmentRadiance(direction);
@@ -1354,13 +1367,18 @@ void pathSteps(Hit primary,inout PathState s,uint maxBounces,uint untilBounce,
       if(s.dead){profilePath(6u);break;}
       continue;
     }
-    vec3 lighting=s.throughput*vertexLight;
+    vec3 lighting=s.throughput*vertexLight,unshadowed=vec3(0);
+#ifdef WAVEFRONT_DEFER_SHADOWS
+    // The sun and sky light waits for its shadow rays; the motion below
+    // counts it unshadowed.
+    wavefrontSun*=s.throughput;wavefrontSky*=s.throughput;unshadowed=wavefrontSun+wavefrontSky;
+#endif
     s.result+=lighting;
     if(s.diffuseMotion<.2) {
       // The next segment counts by how much of the light so far comes from
       // this vertex and how mirror-like the path is here: the vertex itself
       // and the lobe that reached it (exact for a selected primary lobe).
-      float importance=dot(lighting,luma)/(dot(s.result,luma)+1e-6);
+      float importance=dot(lighting+unshadowed,luma)/(dot(s.result,luma)+dot(unshadowed,luma)+1e-6);
       float like=diffuseLikeMotion(hit);
       if(s.bounce==0)like=mix(like,1.,1-s.specularShare);
       s.diffuseMotion+=1-importance*(1-like);
@@ -1755,7 +1773,10 @@ IndirectResult traceIndirect(Hit primary,ivec2 pixel,vec3 diffuseFactor,vec3 spe
 // receiver, appending the paths that go on to the next list); after
 // wavefrontBounces of those, the tail (6: the remaining bounces of the paths
 // left, after its arguments); finish (4, over the screen: the results
-// traceIndirect writes). Neither nearest() nor
+// traceIndirect writes). With rtx.native.pathtrace.wavefrontShadowQueue
+// (frame.wavefrontFlags bit 0) the shade kernel (its WAVEFRONT_DEFER_SHADOWS
+// variant) leaves its vertex's sun and sky shadow rays to the shadow kernel
+// (7, after the next arguments kernel). Neither nearest() nor
 // the candidate tests draw random numbers, so resuming from the saved rng
 // and roulette state continues the inline pass's path; the records keep what
 // the next ray depends on exactly (origin, direction, throughput, radiance,
@@ -1764,7 +1785,8 @@ IndirectResult traceIndirect(Hit primary,ivec2 pixel,vec3 diffuseFactor,vec3 spe
 // frame.wavefrontStride apart, so a group's accesses to a plane are
 // contiguous. 0-5 (96 bytes): the PathState and the globals its steps read
 // (written by the start and shade kernels); 6-9 (64 bytes): what the finish
-// kernel needs of the start; 10-14: the receiver the trace kernel found.
+// kernel needs of the start; 10-14: the receiver the trace kernel found; 15:
+// the light the shadow kernel found unblocked.
 const uint wavefrontPathPlanes=0u,wavefrontFinishPlanes=6u,wavefrontReceiverPlanes=10u;
 layout(buffer_reference,std430,buffer_reference_align=16) buffer WavefrontPlanes { uvec4 v[]; };
 uvec4 wavefrontLoad(uint plane,uint index) {
@@ -1869,40 +1891,88 @@ bool wavefrontStart(Hit primary,ivec2 pixel,uint index,vec3 diffuseFactor,vec3 s
   else if(frame.config.y==0)profilePath(8u);
   storePath(index,s);
   storeFinish(index,p,extraSky,extraSkySpecular,firstDir,probability,s.specularWeight/max(s.weight,vec3(1e-20)));
+  if((frame.wavefrontFlags&1u)!=0u)wavefrontStore(15u,index,uvec4(0));
   return wavefrontSteps(s);
 }
 // The live paths of each bounce (after the planes): a header, then two lists
 // of path indices, the current bounce's and the next's, frame.wavefrontStride
-// each. Header: the two lists' counts (appended by the start and shade
+// each, then the shadow rays of a shade kernel's vertices (two planes of
+// 16 bytes). Header: the two lists' counts (appended by the start and shade
 // kernels), the current bounce's count and number, the next bounce's number,
-// its dispatch's group columns (x), then each bounce's indirect dispatch
-// arguments from word 8 (four words each). The host zeroes it every frame.
-const uint wavefrontPlaneCount=15u;
-layout(buffer_reference,std430,buffer_reference_align=4) buffer WavefrontQueue { uint header[128]; uint list[]; };
+// its dispatch's group columns (x); the shadow rays' count (appended by the
+// shade kernel) and the count the shadow kernel takes; each bounce's indirect
+// dispatch arguments from word 8 (four words each), the shadow kernel's
+// group columns at 72 and its arguments from word 80. The host zeroes it
+// every frame.
+const uint wavefrontPlaneCount=16u,wavefrontHeaderWords=256u;
+layout(buffer_reference,std430,buffer_reference_align=4) buffer WavefrontQueue {
+  uint header[wavefrontHeaderWords]; uint list[];
+};
+layout(buffer_reference,std430,buffer_reference_align=16) buffer WavefrontShadows { uvec4 v[]; };
 WavefrontQueue wavefrontQueue() {
   return WavefrontQueue(frame.wavefrontPaths+uint64_t(wavefrontPlaneCount)*frame.wavefrontStride*16u);
 }
-// Adds the path to the list if `add`: one atomic for the subgroup, so the
-// list keeps a subgroup's neighbouring pixels together.
-void wavefrontEnqueue(uint list,uint index,bool add) {
+WavefrontShadows wavefrontShadows() {
+  return WavefrontShadows(frame.wavefrontPaths+uint64_t(wavefrontPlaneCount)*frame.wavefrontStride*16u+
+                          wavefrontHeaderWords*4u+((uint64_t(frame.wavefrontStride)*8u+15u)&~uint64_t(15u)));
+}
+// A place in the list counted by header word `counter` for each invocation
+// that adds: one atomic for the subgroup, so the list keeps a subgroup's
+// neighbouring pixels together.
+uint wavefrontAppend(uint counter,bool add) {
   uvec4 ballot=subgroupBallot(add);
   uint total=subgroupBallotBitCount(ballot);
-  if(total==0u)return;
-  WavefrontQueue q=wavefrontQueue();
+  if(total==0u)return 0u;
   uint base=0u;
-  if(subgroupElect())base=atomicAdd(q.header[list],total);
-  base=subgroupBroadcastFirst(base);
-  if(add)q.list[list*frame.wavefrontStride+base+subgroupBallotExclusiveBitCount(ballot)]=index;
+  if(subgroupElect())base=atomicAdd(wavefrontQueue().header[counter],total);
+  return subgroupBroadcastFirst(base)+subgroupBallotExclusiveBitCount(ballot);
 }
-// The arguments kernel (one invocation, before each bounce's kernels).
+// Adds the path to the list if `add`.
+void wavefrontEnqueue(uint list,uint index,bool add) {
+  uint at=wavefrontAppend(list,add);
+  if(add)wavefrontQueue().list[list*frame.wavefrontStride+at]=index;
+}
+// Indirect dispatch arguments for `count` invocations at header word `slot`
+// (groups of 64 in columns, their count at word `columns`).
+void wavefrontDispatch(uint count,uint slot,uint columns) {
+  WavefrontQueue q=wavefrontQueue();
+  uint groups=(count+63u)/64u,x=min(groups,32768u);
+  q.header[columns]=max(x,1u);
+  q.header[slot]=x;q.header[slot+1u]=x==0u?0u:(groups+x-1u)/x;q.header[slot+2u]=1u;
+}
+// The arguments kernel (one invocation, before each bounce's kernels): the
+// bounce's, and the shadow kernel's for the bounce before.
 void wavefrontArgs() {
   WavefrontQueue q=wavefrontQueue();
-  uint bounce=q.header[4],list=bounce&1u,count=q.header[list];
+  uint bounce=q.header[4],list=bounce&1u,count=q.header[list],shadows=q.header[6];
   // This list takes the bounce after next's paths.
   q.header[list]=0u;q.header[2]=count;q.header[3]=bounce;q.header[4]=bounce+1u;
-  uint groups=(count+63u)/64u,columns=min(groups,32768u),slot=8u+4u*min(bounce,15u);
-  q.header[5]=max(columns,1u);
-  q.header[slot]=columns;q.header[slot+1u]=columns==0u?0u:(groups+columns-1u)/columns;q.header[slot+2u]=1u;
+  q.header[6]=0u;q.header[7]=shadows;
+  wavefrontDispatch(count,8u+4u*min(bounce,15u),5u);
+  wavefrontDispatch(shadows,80u+4u*min(bounce,15u),72u);
+}
+// The shadow kernel: a shade kernel vertex's sun and sky shadow rays; their
+// light that arrives, added to the path's (plane 15).
+void wavefrontShadow() {
+  WavefrontQueue q=wavefrontQueue();
+  uint id=(gl_WorkGroupID.y*q.header[72]+gl_WorkGroupID.x)*64u+gl_LocalInvocationIndex;
+  if(id>=q.header[7])return;
+  WavefrontShadows items=wavefrontShadows();
+  uvec4 a=items.v[id],b=items.v[frame.wavefrontStride+id];
+  uint index=a.w&0x7fffffffu;
+  viewModelPath=(a.w>>31)!=0u;
+  shadingPixel=ivec2(index%frame.target.x,index/frame.target.x);
+  vec3 origin=uintBitsToFloat(a.xyz),skyDirection=decodeGeometricNormal(unpackSnorm2x16(b.x));
+  vec2 b1=unpackHalf2x16(b.y),b2=unpackHalf2x16(b.z),b3=unpackHalf2x16(b.w);
+  vec3 sun=vec3(b1,b2.x),sky=vec3(b2.y,b3),light=vec3(0);
+  // One shadow() call site for both (each inlined copy is a set of queries).
+  for(uint source=0u;source<2u;++source) {
+    vec3 weight=source==0u?sun:sky;
+    if(!any(greaterThan(weight,vec3(0))))continue;
+    light+=weight*shadow(origin,source==0u?-frame.lightDirection.xyz:skyDirection);
+  }
+  if(any(greaterThan(light,vec3(0))))
+    wavefrontStore(15u,index,wavefrontPack(uintBitsToFloat(wavefrontLoad(15u,index).xyz)+light,0u));
 }
 // This invocation's path of the bounce's list (shadingPixel set).
 bool wavefrontQueued(out uint index) {
@@ -1947,7 +2017,8 @@ void wavefrontTail(uint index) {
 #if WAVEFRONT_PASS==3
 // The path's next bounce, from the receiver the trace kernel found (the
 // blended layers it passes on the way traced here); whether another follows.
-bool wavefrontShade(uint index) {
+bool wavefrontShade(uint index,out bool shadowed) {
+  shadowed=false;
   bool traced;PathState s=loadPath(index,traced);
   if(!traced||!wavefrontSteps(s))return false;
   const uint r=wavefrontReceiverPlanes;
@@ -1964,8 +2035,22 @@ bool wavefrontShade(uint index) {
   vec3 primaryLight,primarySpecular;float primaryDistance;
   pathSteps(primary,s,frame.config.y,s.bounce+1u,primaryLight,primarySpecular,primaryDistance);
   storePath(index,s);
+#ifdef WAVEFRONT_DEFER_SHADOWS
+  shadowed=any(greaterThan(wavefrontSun+wavefrontSky,vec3(0)));
+#endif
   return wavefrontSteps(s);
 }
+#ifdef WAVEFRONT_DEFER_SHADOWS
+// The vertex's shadow rays for the shadow kernel.
+void wavefrontShadowEnqueue(uint index,bool add) {
+  uint at=wavefrontAppend(6u,add);
+  if(!add)return;
+  WavefrontShadows items=wavefrontShadows();
+  items.v[at]=wavefrontPack(wavefrontShadowOrigin,index|(viewModelPath?0x80000000u:0u));
+  items.v[frame.wavefrontStride+at]=uvec4(packSnorm2x16(encodeGeometricNormal(wavefrontSkyDirection)),
+    packHalves(wavefrontSun.r,wavefrontSun.g),packHalves(wavefrontSun.b,wavefrontSky.r),packHalves(wavefrontSky.g,wavefrontSky.b));
+}
+#endif
 #endif
 // The pixel's result once its path is done; false without a path (the start
 // kernel wrote its result).
@@ -1978,6 +2063,7 @@ bool wavefrontFinish(ivec2 pixel,uint index,out IndirectResult result) {
   IndirectPrimary p=loadFinish(index,extraSky,extraSkySpecular,firstDir,probability,specularRatio);
   // The specular share as the ratio the start kept (pathFinish).
   s.specularWeight=specularRatio;s.weight=vec3(1);
+  if((frame.wavefrontFlags&1u)!=0u)s.result+=uintBitsToFloat(wavefrontLoad(15u,index).xyz);
   vec3 sampleSpecular;
   vec3 sampleLight=pathFinish(primary,s,s.dead,extraSky,extraSkySpecular,probability,sampleSpecular);
   indirectSample(pixel,0u,p,sampleLight,sampleSpecular,firstDir,s.pathDistance,result);
@@ -2431,6 +2517,9 @@ void main() {
 #if WAVEFRONT_PASS==5
   if(gl_GlobalInvocationID==uvec3(0))wavefrontArgs();
   return;
+#elif WAVEFRONT_PASS==7
+  wavefrontShadow();
+  return;
 #elif WAVEFRONT_PASS==2 || WAVEFRONT_PASS==3 || WAVEFRONT_PASS==6
   // Over the bounce's live paths (wavefrontArgs' indirect dispatch).
   uint queued;
@@ -2440,8 +2529,13 @@ void main() {
 #elif WAVEFRONT_PASS==6
   if(live)wavefrontTail(queued);
 #else
-  bool next=live&&wavefrontShade(queued);
-  if(live)wavefrontEnqueue(wavefrontNextList(),queued,next);
+  bool shadowed=false,next=live&&wavefrontShade(queued,shadowed);
+  if(live) {
+    wavefrontEnqueue(wavefrontNextList(),queued,next);
+#ifdef WAVEFRONT_DEFER_SHADOWS
+    wavefrontShadowEnqueue(queued,shadowed);
+#endif
+  }
 #endif
   return;
 #endif

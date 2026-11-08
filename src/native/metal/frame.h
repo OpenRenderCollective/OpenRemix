@@ -131,7 +131,7 @@ namespace remix::metal::trace {
     float rayPortalPlanes[scene::rayPortalSlots] = {};
     // The wavefront indirect pass (pathtrace/gpu.h): Vulkan only.
     uint64_t wavefrontPaths = 0;
-    uint32_t wavefrontStride = 0, wavefrontReserved = 0;
+    uint32_t wavefrontStride = 0, wavefrontFlags = 0;
   };
   static_assert(sizeof(Frame) == 2912 && offsetof(Frame, wavefrontPaths) == 2896 &&
                 offsetof(Frame, rayPortalPlanes) == 2864 &&
