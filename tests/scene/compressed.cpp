@@ -98,8 +98,8 @@ namespace {
     check(c.hdrPreview.empty() == decoded.hdrMips.empty(), "HDR preview presence");
     for (uint32_t y = 0; y < c.previewHeight; ++y)
       for (uint32_t x = 0; x < c.previewWidth; ++x) {
-        const size_t source = (size_t(std::min(lh - 1, y * step + step / 2)) * lw +
-                               std::min(lw - 1, x * step + step / 2)) * 4;
+        const size_t source =
+            (size_t(std::min(lh - 1, y * step + step / 2)) * lw + std::min(lw - 1, x * step + step / 2)) * 4;
         const size_t target = (size_t(y) * c.previewWidth + x) * 4;
         check(std::memcmp(&c.preview[target], &decoded.mips[level][source], 4) == 0, "preview texel");
         if (!c.hdrPreview.empty())
@@ -121,10 +121,10 @@ namespace {
 
 int main() {
   const remixapi_Format formats[] = {
-      REMIXAPI_FORMAT_BC1_RGB_UNORM,      REMIXAPI_FORMAT_BC1_RGB_SRGB,    REMIXAPI_FORMAT_BC1_RGBA_UNORM_EXT,
-      REMIXAPI_FORMAT_BC1_RGBA_SRGB_EXT,  REMIXAPI_FORMAT_BC3_UNORM,       REMIXAPI_FORMAT_BC3_SRGB,
-      REMIXAPI_FORMAT_BC4_UNORM_EXT,      REMIXAPI_FORMAT_BC5_UNORM,       REMIXAPI_FORMAT_BC6H_UFLOAT_EXT,
-      REMIXAPI_FORMAT_BC6H_SFLOAT_EXT,    REMIXAPI_FORMAT_BC7_UNORM,       REMIXAPI_FORMAT_BC7_SRGB};
+      REMIXAPI_FORMAT_BC1_RGB_UNORM,     REMIXAPI_FORMAT_BC1_RGB_SRGB, REMIXAPI_FORMAT_BC1_RGBA_UNORM_EXT,
+      REMIXAPI_FORMAT_BC1_RGBA_SRGB_EXT, REMIXAPI_FORMAT_BC3_UNORM,    REMIXAPI_FORMAT_BC3_SRGB,
+      REMIXAPI_FORMAT_BC4_UNORM_EXT,     REMIXAPI_FORMAT_BC5_UNORM,    REMIXAPI_FORMAT_BC6H_UFLOAT_EXT,
+      REMIXAPI_FORMAT_BC6H_SFLOAT_EXT,   REMIXAPI_FORMAT_BC7_UNORM,    REMIXAPI_FORMAT_BC7_SRGB};
   // Odd sizes cover partial edge blocks; 256x96 exercises the preview level
   // search and, with one mip, point sampling of a short chain.
   const uint32_t sizes[][3] = {{20, 13, 5}, {256, 96, 9}, {256, 96, 1}, {1, 1, 1}, {130, 7, 3}};
@@ -206,8 +206,8 @@ int main() {
       draw.material->texture->pixels = std::move(pixels);
       return *cache.partition(draw, uv);
     };
-    for (const auto &uv : {std::array<float, 4>{1, 1, 0, 0}, std::array<float, 4>{1, 1, .5f, .6f},
-                           std::array<float, 4>{3, 3, 0, 0}}) {
+    for (const auto &uv :
+         {std::array<float, 4>{1, 1, 0, 0}, std::array<float, 4>{1, 1, .5f, .6f}, std::array<float, 4>{3, 3, 0, 0}}) {
       const auto a = partition(decodeTexture(info), uv), b = partition(compressTexture(info), uv);
       require(a.key == b.key && a.reasons == b.reasons, "Compressed opacity partition differs");
     }
@@ -216,8 +216,8 @@ int main() {
     auto opaqueData = opaque;
     for (size_t i = 0; i < opaqueData.size(); i += 16)
       opaqueData[i] = 1; // Mode 0: no alpha.
-    const auto solid = partition(compressTexture(textureInfo(REMIXAPI_FORMAT_BC7_UNORM, 8, 8, 1, opaqueData)),
-                                 {1, 1, 0, 0});
+    const auto solid =
+        partition(compressTexture(textureInfo(REMIXAPI_FORMAT_BC7_UNORM, 8, 8, 1, opaqueData)), {1, 1, 0, 0});
     require(solid.reasons[OpacityPartition::Solid] == solid.triangles, "Opaque compressed texture not solid");
   }
 
@@ -231,7 +231,8 @@ int main() {
         Draw draw;
         draw.material = std::make_shared<Material>();
         draw.surface = std::make_shared<Surface>();
-        draw.surface->vertices = {{{0, 0, 0}, {.1f, .2f}, {}}, {{1, 0, 0}, {.9f, .3f}, {}}, {{0, 1, 0}, {.4f, .95f}, {}}};
+        draw.surface->vertices = {
+            {{0, 0, 0}, {.1f, .2f}, {}}, {{1, 0, 0}, {.9f, .3f}, {}}, {{0, 1, 0}, {.4f, .95f}, {}}};
         draw.surface->indices = {0, 1, 2};
         std::fill_n(draw.material->emission, 3, 2.f);
         draw.material->emissionTexture = std::make_shared<Texture>();

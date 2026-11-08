@@ -2,6 +2,9 @@ usd_test = executable('remix-usd-test', 'loading.cpp',
   include_directories : test_includes, cpp_args : usd_args,
   dependencies : usd_deps + [threads_dep], link_with : [usd_library, scene_library])
 test('USD composition, host coordinates and reload', usd_test, args : [meson.current_source_dir() / 'fixtures'], timeout : 120)
+usd_mods_probe = executable('remix-usd-mods-probe', 'mods_probe.cpp',
+  include_directories : test_includes, cpp_args : usd_args,
+  dependencies : usd_deps + [threads_dep], link_with : [usd_library, scene_library])
 usd_probe = executable('remix-usd-probe', 'probe.cpp',
   include_directories : test_includes, cpp_args : usd_args,
   dependencies : usd_deps + [threads_dep], link_with : [usd_library, scene_library])

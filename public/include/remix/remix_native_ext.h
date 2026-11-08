@@ -14,7 +14,7 @@ typedef enum remixapi_LightBakingHintEXT {
 
 typedef struct remixapi_LightInfoBakingEXT {
   remixapi_StructType sType;
-  const void* pNext;
+  const void *pNext;
   remixapi_LightBakingHintEXT hint;
 } remixapi_LightInfoBakingEXT;
 
@@ -25,7 +25,7 @@ typedef struct remixapi_LightInfoBakingEXT {
 #define REMIXAPI_STRUCT_TYPE_MATERIAL_PBR_EXT ((remixapi_StructType)0x7fff1007)
 typedef struct remixapi_MaterialInfoPbrEXT {
   remixapi_StructType sType;
-  const void* pNext;
+  const void *pNext;
   remixapi_Bool enabled;
 } remixapi_MaterialInfoPbrEXT;
 
@@ -35,7 +35,7 @@ typedef struct remixapi_MaterialInfoPbrEXT {
 #define REMIXAPI_STRUCT_TYPE_MATERIAL_EMISSION_EXT ((remixapi_StructType)0x7fff100a)
 typedef struct remixapi_MaterialInfoEmissionEXT {
   remixapi_StructType sType;
-  const void* pNext;
+  const void *pNext;
   remixapi_Bool suppressLightGeneration;
 } remixapi_MaterialInfoEmissionEXT;
 
@@ -69,9 +69,9 @@ typedef struct remixapi_MaterialInfoEmissionEXT {
 #define REMIXAPI_SELF_ILLUMINATION_MASK_EMISSIVE_ALPHA_EXT 2u
 typedef struct remixapi_MaterialInfoSelfIlluminationEXT {
   remixapi_StructType sType;
-  const void* pNext;
-  uint32_t mask;    // REMIXAPI_SELF_ILLUMINATION_MASK_*_EXT
-  float maskScale;  // > 0
+  const void *pNext;
+  uint32_t mask;   // REMIXAPI_SELF_ILLUMINATION_MASK_*_EXT
+  float maskScale; // > 0
 } remixapi_MaterialInfoSelfIlluminationEXT;
 
 // Optional InstanceInfo pNext: the instance is a halo source. It is not part
@@ -105,13 +105,13 @@ typedef struct remixapi_MaterialInfoSelfIlluminationEXT {
 #define REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_HALO_EXT ((remixapi_StructType)0x7fff100c)
 typedef struct remixapi_InstanceInfoHaloEXT {
   remixapi_StructType sType;
-  const void* pNext;
-  remixapi_Float3D color;   // display-referred (sRGB-encoded) 0..1, as a game's UI colour
-  float blurX;              // blur extent in pixels at 1080p height (scaled with the output), > 0
+  const void *pNext;
+  remixapi_Float3D color; // display-referred (sRGB-encoded) 0..1, as a game's UI colour
+  float blurX;            // blur extent in pixels at 1080p height (scaled with the output), > 0
   float blurY;
-  uint32_t passes;          // the blurred halo is composited this many times (strength), 1..8
-  remixapi_Bool additive;   // add (glow) or, if false, multiply toward the colour (dark outline)
-  remixapi_Bool ignoreZ;    // visible through scene geometry; otherwise depth-tested against it
+  uint32_t passes;        // the blurred halo is composited this many times (strength), 1..8
+  remixapi_Bool additive; // add (glow) or, if false, multiply toward the colour (dark outline)
+  remixapi_Bool ignoreZ;  // visible through scene geometry; otherwise depth-tested against it
 } remixapi_InstanceInfoHaloEXT;
 
 // Optional InstanceInfo pNext: screen-space masking, what a host did with the
@@ -194,11 +194,11 @@ typedef struct remixapi_InstanceInfoHaloEXT {
 #define REMIXAPI_INSTANCE_MASK_MAX_GROUP_EXT 32u
 typedef struct remixapi_InstanceInfoMaskEXT {
   remixapi_StructType sType;
-  const void* pNext;
-  uint32_t group;           // 1..REMIXAPI_INSTANCE_MASK_MAX_GROUP_EXT
-  uint32_t role;            // REMIXAPI_INSTANCE_MASK_*_EXT
-  uint32_t within;          // SOURCE only: 0, or the group limiting this source's coverage
-  remixapi_Bool depthTest;  // SOURCE only
+  const void *pNext;
+  uint32_t group;          // 1..REMIXAPI_INSTANCE_MASK_MAX_GROUP_EXT
+  uint32_t role;           // REMIXAPI_INSTANCE_MASK_*_EXT
+  uint32_t within;         // SOURCE only: 0, or the group limiting this source's coverage
+  remixapi_Bool depthTest; // SOURCE only
 } remixapi_InstanceInfoMaskEXT;
 // remixapi_UIDrawCommand::flags: bits 16..21 hold a mask group (0: unmasked,
 // above 32: invalid); the command is drawn only inside its coverage, or only
@@ -255,8 +255,8 @@ typedef struct remixapi_InstanceInfoMaskEXT {
 #define REMIXAPI_INSTANCE_CAMERA_CULL_VISIBILITY_EXT 2u
 typedef struct remixapi_InstanceInfoCameraCullingEXT {
   remixapi_StructType sType;
-  const void* pNext;
-  uint32_t flags;  // REMIXAPI_INSTANCE_CAMERA_CULL_*_EXT
+  const void *pNext;
+  uint32_t flags; // REMIXAPI_INSTANCE_CAMERA_CULL_*_EXT
 } remixapi_InstanceInfoCameraCullingEXT;
 
 // Optional TextureInfo pNext. With `generate` set and a single supplied level
@@ -268,7 +268,7 @@ typedef struct remixapi_InstanceInfoCameraCullingEXT {
 #define REMIXAPI_STRUCT_TYPE_TEXTURE_GENERATE_MIPS_EXT ((remixapi_StructType)0x7fff100b)
 typedef struct remixapi_TextureInfoGenerateMipsEXT {
   remixapi_StructType sType;
-  const void* pNext;
+  const void *pNext;
   remixapi_Bool generate;
 } remixapi_TextureInfoGenerateMipsEXT;
 
@@ -307,7 +307,7 @@ typedef struct remixapi_TextureInfoGenerateMipsEXT {
 #define REMIXAPI_DYNAMIC_TEXTURE_EMISSION_SECONDS_EXT 0.25
 typedef struct remixapi_TextureInfoDynamicEXT {
   remixapi_StructType sType;
-  const void* pNext;
+  const void *pNext;
   remixapi_Bool dynamic;
 } remixapi_TextureInfoDynamicEXT;
 
@@ -319,7 +319,7 @@ typedef struct remixapi_TextureInfoDynamicEXT {
 #define REMIXAPI_STRUCT_TYPE_MESH_UPDATE_EXT ((remixapi_StructType)0x7fff1008)
 typedef struct remixapi_MeshInfoUpdateEXT {
   remixapi_StructType sType;
-  const void* pNext;
+  const void *pNext;
   remixapi_Bool enabled;
 } remixapi_MeshInfoUpdateEXT;
 
@@ -332,7 +332,7 @@ typedef struct remixapi_MeshInfoUpdateEXT {
 #define REMIXAPI_STRUCT_TYPE_MESH_MOTION_EXT ((remixapi_StructType)0x7fff1009)
 typedef struct remixapi_MeshInfoMotionEXT {
   remixapi_StructType sType;
-  const void* pNext;
+  const void *pNext;
   remixapi_Bool enabled;
 } remixapi_MeshInfoMotionEXT;
 
@@ -343,7 +343,7 @@ typedef struct remixapi_MeshInfoMotionEXT {
 #define REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_REPLACEMENT_HASH_EXT ((remixapi_StructType)0x7fff1012)
 typedef struct remixapi_InstanceInfoReplacementHashEXT {
   remixapi_StructType sType;
-  const void* pNext;
+  const void *pNext;
   uint64_t meshHash;
 } remixapi_InstanceInfoReplacementHashEXT;
 
@@ -355,7 +355,7 @@ typedef struct remixapi_InstanceInfoReplacementHashEXT {
 #define REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_REPLACEMENT_HASH_EXT ((remixapi_StructType)0x7fff1017)
 typedef struct remixapi_MaterialInfoReplacementHashEXT {
   remixapi_StructType sType;
-  const void* pNext;
+  const void *pNext;
   uint64_t materialHash;
 } remixapi_MaterialInfoReplacementHashEXT;
 
@@ -366,9 +366,9 @@ typedef struct remixapi_MaterialInfoReplacementHashEXT {
 #define REMIXAPI_STRUCT_TYPE_MATERIAL_REPLACEMENT_KEYS_EXT ((remixapi_StructType)0x7fff1032)
 typedef struct remixapi_MaterialReplacementKeysEXT {
   remixapi_StructType sType;
-  const void* pNext;
+  const void *pNext;
   uint32_t count;
-  const uint64_t* keys;
+  const uint64_t *keys;
 } remixapi_MaterialReplacementKeysEXT;
 
 // Raw BC1 uploads with one-bit alpha. The retained BC1_RGB formats remain opaque.
@@ -389,7 +389,7 @@ typedef struct remixapi_MaterialReplacementKeysEXT {
 #define REMIXAPI_STRUCT_TYPE_INSTANCE_RASTER_STATE_EXT ((remixapi_StructType)0x7fff1001)
 typedef struct remixapi_InstanceRasterStateEXT {
   remixapi_StructType sType;
-  const void* pNext;
+  const void *pNext;
   remixapi_Bool depthTest;
   remixapi_Bool depthWrite;
   uint32_t depthCompare;
@@ -421,7 +421,7 @@ typedef struct remixapi_InstanceRasterStateEXT {
 #define REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_WIREFRAME_EXT ((remixapi_StructType)0x7fff101d)
 typedef struct remixapi_InstanceInfoWireframeEXT {
   remixapi_StructType sType;
-  const void* pNext;
+  const void *pNext;
   uint32_t flags;
 } remixapi_InstanceInfoWireframeEXT;
 
@@ -436,7 +436,7 @@ typedef enum remixapi_InstanceClassEXT {
 } remixapi_InstanceClassEXT;
 typedef struct remixapi_InstanceIdentityEXT {
   remixapi_StructType sType;
-  const void* pNext;
+  const void *pNext;
   uint64_t instanceId;
   uint32_t classification;
   remixapi_Bool rasterVisible;
@@ -456,7 +456,7 @@ typedef struct remixapi_InstanceIdentityEXT {
 #define REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_RASTER_ORDER_EXT ((remixapi_StructType)0x7fff1013)
 typedef struct remixapi_InstanceInfoRasterOrderEXT {
   remixapi_StructType sType;
-  const void* pNext;
+  const void *pNext;
   uint32_t order;
 } remixapi_InstanceInfoRasterOrderEXT;
 
@@ -476,7 +476,7 @@ typedef struct remixapi_InstanceInfoRasterOrderEXT {
 #define REMIXAPI_STRUCT_TYPE_MESH_SPRITE_VERTICES_EXT ((remixapi_StructType)0x7fff1014)
 typedef struct remixapi_MeshInfoSpriteVerticesEXT {
   remixapi_StructType sType;
-  const void* pNext;
+  const void *pNext;
   remixapi_Bool enabled;
 } remixapi_MeshInfoSpriteVerticesEXT;
 
@@ -537,7 +537,7 @@ typedef struct remixapi_MeshInfoSpriteVerticesEXT {
 #define REMIXAPI_SPRITE_MODULATE_FADE_EXT 0x100u
 typedef struct remixapi_InstanceInfoSpriteEXT {
   remixapi_StructType sType;
-  const void* pNext;
+  const void *pNext;
   uint32_t flags;
   float softDistance;
   float softFadeStart;
@@ -570,9 +570,12 @@ typedef struct remixapi_PreparationStatisticsEXT {
   char failureReason[256];
 } remixapi_PreparationStatisticsEXT;
 typedef enum remixapi_RebuildReasonEXT {
-  REMIXAPI_REBUILD_NONE_EXT = 0, REMIXAPI_REBUILD_MEMBERSHIP_EXT = 1,
-  REMIXAPI_REBUILD_GEOMETRY_EXT = 2, REMIXAPI_REBUILD_REFIT_LIMIT_EXT = 3,
-  REMIXAPI_REBUILD_DISPLACEMENT_EXT = 4, REMIXAPI_REBUILD_FORCED_EXT = 5,
+  REMIXAPI_REBUILD_NONE_EXT = 0,
+  REMIXAPI_REBUILD_MEMBERSHIP_EXT = 1,
+  REMIXAPI_REBUILD_GEOMETRY_EXT = 2,
+  REMIXAPI_REBUILD_REFIT_LIMIT_EXT = 3,
+  REMIXAPI_REBUILD_DISPLACEMENT_EXT = 4,
+  REMIXAPI_REBUILD_FORCED_EXT = 5,
   REMIXAPI_REBUILD_STATIC_TRANSFORM_EXT = 6,
 } remixapi_RebuildReasonEXT;
 // Optional SHARC diagnostics; counters/times describe the last completed cache frame.
@@ -651,10 +654,10 @@ typedef struct remixapi_CameraCullingStatisticsEXT {
   // in a leaf without a cluster, so everything is seen.
   uint32_t partition, outside;
   int32_t cameraCluster, previousCluster;
-  uint32_t clusterCount, visibleClusters;  // visible: in the frame's united set
-  uint32_t leafCount, visibleLeaves;       // leaves without a cluster count as visible
+  uint32_t clusterCount, visibleClusters; // visible: in the frame's united set
+  uint32_t leafCount, visibleLeaves;      // leaves without a cluster count as visible
   uint32_t reserved;
-  uint64_t updates;  // times the visible set changed (camera crossed a cluster boundary)
+  uint64_t updates; // times the visible set changed (camera crossed a cluster boundary)
 } remixapi_CameraCullingStatisticsEXT;
 
 // Optional visibility-guided local-light diagnostics. Query counters are sampled
@@ -711,10 +714,9 @@ typedef struct remixapi_FramePerformanceEXT {
 // traceAcceleration. Within traceSurfaces, material is the draw-order material
 // slot assignment and temporal the history staging; per-surface table filling
 // (including history lookups) runs on worker threads and is not split out.
-// otherMilliseconds is the part of recordMilliseconds that no phase covers. presentSetup (settings, pipelines, frame slot selection) and
-// presentRelease (history commit, snapshot and draw list release) are the
-// parts of presentMilliseconds outside scene, fence, acquire, record, submit
-// and queue present.
+// otherMilliseconds is the part of recordMilliseconds that no phase covers. presentSetup (settings, pipelines, frame
+// slot selection) and presentRelease (history commit, snapshot and draw list release) are the parts of
+// presentMilliseconds outside scene, fence, acquire, record, submit and queue present.
 typedef struct remixapi_FrameBreakdownEXT {
   uint32_t structSize, reserved;
   double rasterPrepareMilliseconds, rasterSkinningMilliseconds;
@@ -767,7 +769,7 @@ typedef struct remixapi_GpuPassTimingsEXT {
 #define REMIXAPI_STRUCT_TYPE_CAMERA_TEMPORAL_EXT ((remixapi_StructType)0x7fff1003)
 typedef struct remixapi_CameraTemporalEXT {
   remixapi_StructType sType;
-  const void* pNext;
+  const void *pNext;
   uint64_t worldEpoch, historyResetEpoch;
 } remixapi_CameraTemporalEXT;
 // Optional world CameraInfo pNext. Linear, nonnegative, finite RGB radiance at
@@ -776,7 +778,7 @@ typedef struct remixapi_CameraTemporalEXT {
 #define REMIXAPI_STRUCT_TYPE_CAMERA_ENVIRONMENT_EXT ((remixapi_StructType)0x7fff1004)
 typedef struct remixapi_CameraEnvironmentEXT {
   remixapi_StructType sType;
-  const void* pNext;
+  const void *pNext;
   remixapi_Bool enabled;
   remixapi_Float3D radiance;
 } remixapi_CameraEnvironmentEXT;
@@ -790,7 +792,7 @@ typedef struct remixapi_CameraEnvironmentEXT {
 #define REMIXAPI_STRUCT_TYPE_CAMERA_MEDIUM_EXT ((remixapi_StructType)0x7fff101c)
 typedef struct remixapi_CameraMediumEXT {
   remixapi_StructType sType;
-  const void* pNext;
+  const void *pNext;
   remixapi_Bool inside;
   remixapi_Float3D transmittanceColor;
   float transmittanceMeasurementDistance;
@@ -820,9 +822,9 @@ typedef struct remixapi_ScreenCameraEXT {
 } remixapi_ScreenCameraEXT;
 typedef struct remixapi_CameraScreensEXT {
   remixapi_StructType sType;
-  const void* pNext;
+  const void *pNext;
   uint32_t count;
-  const remixapi_ScreenCameraEXT* cameras;
+  const remixapi_ScreenCameraEXT *cameras;
 } remixapi_CameraScreensEXT;
 
 // Optional pNext on an opaque MaterialInfo: the surface is a screen showing
@@ -832,7 +834,7 @@ typedef struct remixapi_CameraScreensEXT {
 #define REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_SCREEN_CAMERA_EXT ((remixapi_StructType)0x7fff1022)
 typedef struct remixapi_MaterialInfoScreenCameraEXT {
   remixapi_StructType sType;
-  const void* pNext;
+  const void *pNext;
   uint32_t slot;
 } remixapi_MaterialInfoScreenCameraEXT;
 
@@ -897,25 +899,25 @@ typedef struct remixapi_HostShaderBindingEXT {
 #define REMIXAPI_STRUCT_TYPE_HOST_SHADER_INFO_EXT ((remixapi_StructType)0x7fff1030)
 typedef struct remixapi_HostShaderInfoEXT {
   remixapi_StructType sType;
-  const void* pNext;
+  const void *pNext;
   uint32_t stage; // REMIXAPI_HOST_SHADER_*
-  const uint32_t* code;
+  const uint32_t *code;
   uint64_t codeBytes;
-  const remixapi_HostShaderBindingEXT* bindings;
+  const remixapi_HostShaderBindingEXT *bindings;
   uint32_t bindingCount;
   uint32_t pushConstantBytes; // a block at offset 0, both stages (0: none)
 } remixapi_HostShaderInfoEXT;
 
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_RegisterHostShaderEXT)(
-    const remixapi_HostShaderInfoEXT* info, remixapi_HostShaderHandleEXT* out);
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_DestroyHostShaderEXT)(remixapi_HostShaderHandleEXT shader);
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_RegisterHostShaderEXT(
-    const remixapi_HostShaderInfoEXT* info, remixapi_HostShaderHandleEXT* out);
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_RegisterHostShaderEXT)(const remixapi_HostShaderInfoEXT *info,
+                                                                             remixapi_HostShaderHandleEXT *out);
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_DestroyHostShaderEXT)(remixapi_HostShaderHandleEXT shader);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_RegisterHostShaderEXT(const remixapi_HostShaderInfoEXT *info,
+                                                                         remixapi_HostShaderHandleEXT *out);
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_DestroyHostShaderEXT(remixapi_HostShaderHandleEXT shader);
 
 typedef struct remixapi_HostPassBufferEXT { // a uniform buffer binding's contents
   uint32_t binding;
-  const void* data;
+  const void *data;
   uint32_t bytes;
 } remixapi_HostPassBufferEXT;
 typedef struct remixapi_HostPassSamplerEXT { // a combined image sampler binding
@@ -925,7 +927,7 @@ typedef struct remixapi_HostPassSamplerEXT { // a combined image sampler binding
   uint32_t addressU, addressV;         // 0 repeat, 1 clamp to edge, 2 mirror
 } remixapi_HostPassSamplerEXT;
 typedef struct remixapi_HostPassVertexBindingEXT {
-  const void* data;
+  const void *data;
   uint32_t bytes;
   uint32_t stride;
 } remixapi_HostPassVertexBindingEXT;
@@ -947,35 +949,36 @@ typedef struct remixapi_HostPassAttributeEXT {
 #define REMIXAPI_HOST_CHANNELS_LUMINANCE_ALPHA_EXT 2u
 #define REMIXAPI_HOST_CHANNELS_NO_ALPHA_EXT 3u
 typedef struct remixapi_HostPassEXT {
-  uint32_t kind;  // REMIXAPI_HOST_PASS_*
-  uint32_t depth; // a draw on the frame or its depth: 0 no depth test, else VkCompareOp + 1, | REMIXAPI_HOST_DEPTH_WRITE_EXT
+  uint32_t kind; // REMIXAPI_HOST_PASS_*
+  uint32_t
+      depth; // a draw on the frame or its depth: 0 no depth test, else VkCompareOp + 1, | REMIXAPI_HOST_DEPTH_WRITE_EXT
   remixapi_HostTargetHandleEXT target;
   uint32_t targetWidth, targetHeight; // of a host target, for its creation
   uint32_t targetFormat;              // VkFormat of a host target (0: the frame's)
   uint32_t targetChannels;            // REMIXAPI_HOST_CHANNELS_*, likewise
   // A draw.
   remixapi_HostShaderHandleEXT vertexShader, fragmentShader;
-  const remixapi_HostPassBufferEXT* buffers;
+  const remixapi_HostPassBufferEXT *buffers;
   uint32_t bufferCount;
-  const remixapi_HostPassSamplerEXT* samplers;
+  const remixapi_HostPassSamplerEXT *samplers;
   uint32_t samplerCount;
-  const void* pushConstants;
+  const void *pushConstants;
   uint32_t pushConstantBytes;
-  const remixapi_HostPassVertexBindingEXT* vertexBindings;
+  const remixapi_HostPassVertexBindingEXT *vertexBindings;
   uint32_t vertexBindingCount; // up to 4
-  const remixapi_HostPassAttributeEXT* attributes;
+  const remixapi_HostPassAttributeEXT *attributes;
   uint32_t attributeCount; // up to 16
-  const uint32_t* indices;
+  const uint32_t *indices;
   uint32_t indexCount;
   uint32_t topology; // 0 triangle list, 1 triangle strip
   uint32_t blendEnable;
   uint32_t srcColorBlend, dstColorBlend, colorBlendOp; // VkBlendFactor / VkBlendOp
   uint32_t srcAlphaBlend, dstAlphaBlend, alphaBlendOp;
   uint32_t colorWriteMask; // VkColorComponentFlags
-  int32_t viewport[4]; // x, y, width, height in D3D's convention (y down); width 0: the whole target
-  int32_t scissor[4];  // likewise
+  int32_t viewport[4];     // x, y, width, height in D3D's convention (y down); width 0: the whole target
+  int32_t scissor[4];      // likewise
   // A copy.
-  remixapi_HostTargetHandleEXT source; // 0 the frame
+  remixapi_HostTargetHandleEXT source;  // 0 the frame
   int32_t sourceRect[4], targetRect[4]; // x, y, width, height; width 0: whole
   uint32_t linear;
   // A clear.
@@ -985,42 +988,63 @@ typedef struct remixapi_HostPassEXT {
 #define REMIXAPI_STRUCT_TYPE_HOST_PASS_LIST_EXT ((remixapi_StructType)0x7fff1031)
 typedef struct remixapi_HostPassListEXT {
   remixapi_StructType sType;
-  const void* pNext;
-  const remixapi_HostPassEXT* passes;
+  const void *pNext;
+  const remixapi_HostPassEXT *passes;
   uint32_t passCount;
 } remixapi_HostPassListEXT;
+// Optional HostPassListEXT pNext: flags of the list's passes, flags[i] for
+// passes[i] (passes past flagCount have none). REMIXAPI_HOST_PASS_ALWAYS_EXT:
+// the pass is replayed whatever the user's host-pass setting (see
+// GetHostPassesEnabledEXT): a host's draw that belongs on the frame (a game's
+// own overlay the path tracer has no stand-in for) rather than an
+// experimental replacement of the runtime's work. While the setting is off,
+// a submission keeps only these passes (the rest are dropped, as without the
+// flag) and target updates are kept for them.
+#define REMIXAPI_HOST_PASS_ALWAYS_EXT 1u
+#define REMIXAPI_STRUCT_TYPE_HOST_PASS_LIST_FLAGS_EXT ((remixapi_StructType)0x7fff1032)
+typedef struct remixapi_HostPassListFlagsEXT {
+  remixapi_StructType sType;
+  const void *pNext;
+  const uint32_t *flags; // REMIXAPI_HOST_PASS_* flags
+  uint32_t flagCount;
+} remixapi_HostPassListFlagsEXT;
 // The passes of the next presented frame, in order (replacing any submitted
 // before it this frame). Pipelines compile on first use in the background: a
 // pass whose pipeline is not ready yet is skipped that frame.
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_SubmitHostPassesEXT)(const remixapi_HostPassListEXT* list);
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_SubmitHostPassesEXT(const remixapi_HostPassListEXT* list);
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_SubmitHostPassesEXT)(const remixapi_HostPassListEXT *list);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_SubmitHostPassesEXT(const remixapi_HostPassListEXT *list);
 
 // A host target's contents from the host's memory: a texture an effect
 // samples (RGBA or BGRA, 8 bits a channel, tightly packed), uploaded before
 // the next frame's passes. The target takes the size and format given.
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_UpdateHostTargetEXT)(
-    remixapi_HostTargetHandleEXT target, uint32_t width, uint32_t height, uint32_t vkFormat, const void* pixels,
-    uint64_t bytes);
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_UpdateHostTargetEXT(
-    remixapi_HostTargetHandleEXT target, uint32_t width, uint32_t height, uint32_t vkFormat, const void* pixels,
-    uint64_t bytes);
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_UpdateHostTargetEXT)(remixapi_HostTargetHandleEXT target,
+                                                                           uint32_t width, uint32_t height,
+                                                                           uint32_t vkFormat, const void *pixels,
+                                                                           uint64_t bytes);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_UpdateHostTargetEXT(remixapi_HostTargetHandleEXT target,
+                                                                       uint32_t width, uint32_t height,
+                                                                       uint32_t vkFormat, const void *pixels,
+                                                                       uint64_t bytes);
 
 // A volume (3D) texture's contents, likewise: sampled only (a 3D sampler
 // in the shader), never a pass's target.
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_UpdateHostVolumeEXT)(
-    remixapi_HostTargetHandleEXT target, uint32_t width, uint32_t height, uint32_t depth, uint32_t vkFormat,
-    const void* pixels, uint64_t bytes);
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_UpdateHostVolumeEXT(
-    remixapi_HostTargetHandleEXT target, uint32_t width, uint32_t height, uint32_t depth, uint32_t vkFormat,
-    const void* pixels, uint64_t bytes);
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_UpdateHostVolumeEXT)(remixapi_HostTargetHandleEXT target,
+                                                                           uint32_t width, uint32_t height,
+                                                                           uint32_t depth, uint32_t vkFormat,
+                                                                           const void *pixels, uint64_t bytes);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_UpdateHostVolumeEXT(remixapi_HostTargetHandleEXT target,
+                                                                       uint32_t width, uint32_t height, uint32_t depth,
+                                                                       uint32_t vkFormat, const void *pixels,
+                                                                       uint64_t bytes);
 
 // Whether host passes run: the user's setting (rtx.native.hostPasses, shown
 // in the Rendering tab as "Pass-through game shaders (experimental)" to a host
-// that has asked this). While it is off, SubmitHostPassesEXT and the target
-// updates succeed but are dropped; a host polls this each frame and keeps
+// that has asked this). While it is off, SubmitHostPassesEXT succeeds but
+// drops every pass not flagged REMIXAPI_HOST_PASS_ALWAYS_EXT, and target
+// updates are kept only for those; a host polls this each frame and keeps
 // its own work (recording, compiling shaders) for when it is on.
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_GetHostPassesEnabledEXT)(remixapi_Bool* enabled);
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetHostPassesEnabledEXT(remixapi_Bool* enabled);
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_GetHostPassesEnabledEXT)(remixapi_Bool *enabled);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetHostPassesEnabledEXT(remixapi_Bool *enabled);
 
 typedef struct remixapi_HostPassStatisticsEXT {
   uint64_t structSize;
@@ -1034,18 +1058,22 @@ typedef struct remixapi_HostPassStatisticsEXT {
   // sampler, a sampled target without an image, no view depth this frame.
   uint32_t skippedCopySource, skippedShaders, skippedPipeline, skippedDescriptors;
   uint32_t skippedBuffer, skippedSampler, skippedTarget, skippedViewDepth;
+  // Versioned by structSize (a caller's smaller struct, without these, gets
+  // the fields it has). Last submission: passes flagged
+  // REMIXAPI_HOST_PASS_ALWAYS_EXT (counted in `passes` too when replayed),
+  // and passes dropped because the setting is off.
+  uint32_t always, dropped;
 } remixapi_HostPassStatisticsEXT;
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_GetHostPassStatisticsEXT)(remixapi_HostPassStatisticsEXT* out);
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetHostPassStatisticsEXT(remixapi_HostPassStatisticsEXT* out);
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_GetHostPassStatisticsEXT)(remixapi_HostPassStatisticsEXT *out);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetHostPassStatisticsEXT(remixapi_HostPassStatisticsEXT *out);
 
 // A host's default for a runtime setting (a SetConfigVariable key): it applies
 // to every profile that has no value of its own for the key (the key is not
 // in its saved file; an unsaved or new profile has none), now and when a
 // profile is loaded or created later. What a user saved stays. Settings a
 // host wants regardless go through SetConfigVariable.
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_SetConfigDefaultEXT)(const char* key, const char* value);
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_SetConfigDefaultEXT(const char* key, const char* value);
-
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_SetConfigDefaultEXT)(const char *key, const char *value);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_SetConfigDefaultEXT(const char *key, const char *value);
 
 typedef enum remixapi_InputEventType {
   REMIXAPI_INPUT_RESET = 1, // Release all held input (focus/capture change or queue overflow).
@@ -1079,26 +1107,34 @@ typedef struct remixapi_WindowMetrics {
 // the panel's header): remixapi_PumpEvents opens and closes the panel on it,
 // and its key events and text reach neither ImGui nor this queue. Clients need
 // no key of their own; GetUIState reports the panel.
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_PollInputEvents)(
-  remixapi_InputEvent* events, uint32_t capacity, uint32_t* out_count);
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_SetTextInputEnabled)(remixapi_Bool enabled);
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_GetWindowMetrics)(remixapi_WindowMetrics* out_metrics);
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_PollInputEvents(
-  remixapi_InputEvent* events, uint32_t capacity, uint32_t* out_count);
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_PollInputEvents)(remixapi_InputEvent *events, uint32_t capacity,
+                                                                       uint32_t *out_count);
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_SetTextInputEnabled)(remixapi_Bool enabled);
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_GetWindowMetrics)(remixapi_WindowMetrics *out_metrics);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_PollInputEvents(remixapi_InputEvent *events, uint32_t capacity,
+                                                                   uint32_t *out_count);
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_SetTextInputEnabled(remixapi_Bool enabled);
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetWindowMetrics(remixapi_WindowMetrics* out_metrics);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetWindowMetrics(remixapi_WindowMetrics *out_metrics);
 // Successful/suboptimal Vulkan queue presentations since Startup. Skipped frames do not count.
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_GetPresentationCount)(uint64_t* out_count);
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetPresentationCount(uint64_t* out_count);
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_GetPresentationCount)(uint64_t *out_count);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetPresentationCount(uint64_t *out_count);
 
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_GetBackendCapabilitiesEXT)(remixapi_BackendCapabilitiesEXT* capabilities);
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_GetPreparationStatisticsEXT)(remixapi_PreparationStatisticsEXT* statistics);
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_GetLocalLightStatisticsEXT)(remixapi_LocalLightStatisticsEXT* statistics);
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetLocalLightStatisticsEXT(remixapi_LocalLightStatisticsEXT* statistics);
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_GetLocalLightSetStatisticsEXT)(remixapi_LocalLightSetStatisticsEXT* statistics);
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetLocalLightSetStatisticsEXT(remixapi_LocalLightSetStatisticsEXT* statistics);
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_GetLocalLightGuidingStatisticsEXT)(remixapi_LocalLightGuidingStatisticsEXT* statistics);
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetLocalLightGuidingStatisticsEXT(remixapi_LocalLightGuidingStatisticsEXT* statistics);
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_GetBackendCapabilitiesEXT)(
+    remixapi_BackendCapabilitiesEXT *capabilities);
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_GetPreparationStatisticsEXT)(
+    remixapi_PreparationStatisticsEXT *statistics);
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_GetLocalLightStatisticsEXT)(
+    remixapi_LocalLightStatisticsEXT *statistics);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL
+remixapi_GetLocalLightStatisticsEXT(remixapi_LocalLightStatisticsEXT *statistics);
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_GetLocalLightSetStatisticsEXT)(
+    remixapi_LocalLightSetStatisticsEXT *statistics);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL
+remixapi_GetLocalLightSetStatisticsEXT(remixapi_LocalLightSetStatisticsEXT *statistics);
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_GetLocalLightGuidingStatisticsEXT)(
+    remixapi_LocalLightGuidingStatisticsEXT *statistics);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL
+remixapi_GetLocalLightGuidingStatisticsEXT(remixapi_LocalLightGuidingStatisticsEXT *statistics);
 // A potentially-visible-set partition of the host's world (a BSP with
 // cluster-to-cluster visibility, as in id Tech and Source maps), in world
 // space. Local lights in clusters not potentially visible from a shading
@@ -1110,25 +1146,27 @@ REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetLocalLightGuidingStatistic
 typedef struct remixapi_VisibilityPartitionEXT {
   uint32_t structSize;
   uint32_t nodeCount;
-  const float* planes;          // nodeCount * 4: normal xyz, distance; front when dot(n, p) - d >= 0
-  const int32_t* children;      // nodeCount * 2: front, back; >= 0 node, < 0 leaf (-1 - leaf index)
+  const float *planes;     // nodeCount * 4: normal xyz, distance; front when dot(n, p) - d >= 0
+  const int32_t *children; // nodeCount * 2: front, back; >= 0 node, < 0 leaf (-1 - leaf index)
   uint32_t leafCount;
-  const int32_t* leafClusters;  // leafCount; -1: no cluster
+  const int32_t *leafClusters; // leafCount; -1: no cluster
   uint32_t clusterCount;
-  uint32_t rowBytes;            // >= (clusterCount + 7) / 8
-  const uint8_t* visibility;    // clusterCount rows; bit c of row s: cluster c potentially visible from s
+  uint32_t rowBytes;         // >= (clusterCount + 7) / 8
+  const uint8_t *visibility; // clusterCount rows; bit c of row s: cluster c potentially visible from s
 } remixapi_VisibilityPartitionEXT;
 // Rewrites a region of a texture registered with RegisterUITexture in place:
 // rows of width * 4 bytes, rowPitch apart, in R8G8B8A8 or B8G8R8A8 (the
 // registration's format family need not match). Only the region is uploaded
 // to the GPU, so hosts can forward partial updates of large UI surfaces
 // (e.g. an embedded browser's dirty rectangles) without re-registering them.
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_UpdateUITextureRegionEXT)(
-    remixapi_UITextureHandle id, uint32_t x, uint32_t y, uint32_t width, uint32_t height, remixapi_Format format,
-    const void* pixels, uint32_t rowPitch);
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_UpdateUITextureRegionEXT(
-    remixapi_UITextureHandle id, uint32_t x, uint32_t y, uint32_t width, uint32_t height, remixapi_Format format,
-    const void* pixels, uint32_t rowPitch);
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_UpdateUITextureRegionEXT)(remixapi_UITextureHandle id, uint32_t x,
+                                                                                uint32_t y, uint32_t width,
+                                                                                uint32_t height, remixapi_Format format,
+                                                                                const void *pixels, uint32_t rowPitch);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_UpdateUITextureRegionEXT(remixapi_UITextureHandle id, uint32_t x,
+                                                                            uint32_t y, uint32_t width, uint32_t height,
+                                                                            remixapi_Format format, const void *pixels,
+                                                                            uint32_t rowPitch);
 
 // Rewrites a region of a dynamic texture (remixapi_TextureInfoDynamicEXT) in
 // place: rows of width * 4 bytes, rowPitch apart, in R8G8B8A8 or B8G8R8A8 (the
@@ -1149,12 +1187,14 @@ REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_UpdateUITextureRegionEXT(
 // format, rowPitch < width * 4.
 // Optional named export: resolve "remixapi_UpdateTextureEXT"; a runtime
 // without it ignores remixapi_TextureInfoDynamicEXT as well.
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_UpdateTextureEXT)(
-    remixapi_TextureHandle handle, uint32_t x, uint32_t y, uint32_t width, uint32_t height, remixapi_Format format,
-    const void* pixels, uint32_t rowPitch);
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_UpdateTextureEXT(
-    remixapi_TextureHandle handle, uint32_t x, uint32_t y, uint32_t width, uint32_t height, remixapi_Format format,
-    const void* pixels, uint32_t rowPitch);
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_UpdateTextureEXT)(remixapi_TextureHandle handle, uint32_t x,
+                                                                        uint32_t y, uint32_t width, uint32_t height,
+                                                                        remixapi_Format format, const void *pixels,
+                                                                        uint32_t rowPitch);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_UpdateTextureEXT(remixapi_TextureHandle handle, uint32_t x,
+                                                                    uint32_t y, uint32_t width, uint32_t height,
+                                                                    remixapi_Format format, const void *pixels,
+                                                                    uint32_t rowPitch);
 
 // Texture and material turnover, cumulative since Startup (a host reports the
 // difference between two calls, e.g. per frame). Creating a texture or a
@@ -1187,33 +1227,45 @@ typedef struct remixapi_TextureStatisticsEXT {
   uint64_t emissionRefreshes;
   double emissionRefreshMilliseconds;
 } remixapi_TextureStatisticsEXT;
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_GetTextureStatisticsEXT)(remixapi_TextureStatisticsEXT* statistics);
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetTextureStatisticsEXT(remixapi_TextureStatisticsEXT* statistics);
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_GetTextureStatisticsEXT)(
+    remixapi_TextureStatisticsEXT *statistics);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetTextureStatisticsEXT(remixapi_TextureStatisticsEXT *statistics);
 
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_SetVisibilityPartitionEXT)(const remixapi_VisibilityPartitionEXT* partition);
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_SetVisibilityPartitionEXT(const remixapi_VisibilityPartitionEXT* partition);
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_GetCameraCullingStatisticsEXT)(remixapi_CameraCullingStatisticsEXT* statistics);
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetCameraCullingStatisticsEXT(remixapi_CameraCullingStatisticsEXT* statistics);
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_GetShadowStatisticsEXT)(remixapi_ShadowStatisticsEXT* statistics);
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetShadowStatisticsEXT(remixapi_ShadowStatisticsEXT* statistics);
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_SetVisibilityPartitionEXT)(
+    const remixapi_VisibilityPartitionEXT *partition);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL
+remixapi_SetVisibilityPartitionEXT(const remixapi_VisibilityPartitionEXT *partition);
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_GetCameraCullingStatisticsEXT)(
+    remixapi_CameraCullingStatisticsEXT *statistics);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL
+remixapi_GetCameraCullingStatisticsEXT(remixapi_CameraCullingStatisticsEXT *statistics);
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_GetShadowStatisticsEXT)(remixapi_ShadowStatisticsEXT *statistics);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetShadowStatisticsEXT(remixapi_ShadowStatisticsEXT *statistics);
 
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_GetSharcStatisticsEXT)(remixapi_SharcStatisticsEXT* statistics);
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetSharcStatisticsEXT(remixapi_SharcStatisticsEXT* statistics);
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_GetSharcStatisticsEXT)(remixapi_SharcStatisticsEXT *statistics);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetSharcStatisticsEXT(remixapi_SharcStatisticsEXT *statistics);
 
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_GetTracingStatisticsEXT)(remixapi_TracingStatisticsEXT* statistics);
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetBackendCapabilitiesEXT(remixapi_BackendCapabilitiesEXT* capabilities);
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetPreparationStatisticsEXT(remixapi_PreparationStatisticsEXT* statistics);
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetTracingStatisticsEXT(remixapi_TracingStatisticsEXT* statistics);
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_GetFramePerformanceEXT)(remixapi_FramePerformanceEXT* statistics);
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetFramePerformanceEXT(remixapi_FramePerformanceEXT* statistics);
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_GetFrameBreakdownEXT)(remixapi_FrameBreakdownEXT* statistics);
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetFrameBreakdownEXT(remixapi_FrameBreakdownEXT* statistics);
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_GetGpuPassTimingsEXT)(remixapi_GpuPassTimingsEXT* timings);
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetGpuPassTimingsEXT(remixapi_GpuPassTimingsEXT* timings);
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_GetDenoisingCapabilitiesEXT)(remixapi_DenoisingCapabilitiesEXT* capabilities);
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_GetDenoisingStatisticsEXT)(remixapi_DenoisingStatisticsEXT* statistics);
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetDenoisingCapabilitiesEXT(remixapi_DenoisingCapabilitiesEXT* capabilities);
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetDenoisingStatisticsEXT(remixapi_DenoisingStatisticsEXT* statistics);
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_GetTracingStatisticsEXT)(
+    remixapi_TracingStatisticsEXT *statistics);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL
+remixapi_GetBackendCapabilitiesEXT(remixapi_BackendCapabilitiesEXT *capabilities);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL
+remixapi_GetPreparationStatisticsEXT(remixapi_PreparationStatisticsEXT *statistics);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetTracingStatisticsEXT(remixapi_TracingStatisticsEXT *statistics);
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_GetFramePerformanceEXT)(remixapi_FramePerformanceEXT *statistics);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetFramePerformanceEXT(remixapi_FramePerformanceEXT *statistics);
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_GetFrameBreakdownEXT)(remixapi_FrameBreakdownEXT *statistics);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetFrameBreakdownEXT(remixapi_FrameBreakdownEXT *statistics);
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_GetGpuPassTimingsEXT)(remixapi_GpuPassTimingsEXT *timings);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetGpuPassTimingsEXT(remixapi_GpuPassTimingsEXT *timings);
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_GetDenoisingCapabilitiesEXT)(
+    remixapi_DenoisingCapabilitiesEXT *capabilities);
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_GetDenoisingStatisticsEXT)(
+    remixapi_DenoisingStatisticsEXT *statistics);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL
+remixapi_GetDenoisingCapabilitiesEXT(remixapi_DenoisingCapabilitiesEXT *capabilities);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL
+remixapi_GetDenoisingStatisticsEXT(remixapi_DenoisingStatisticsEXT *statistics);
 
 // Optional MeshInfo pNext: the mesh already registered under this hash,
 // deformed. The new registration replaces its vertex data and stays the same
@@ -1231,7 +1283,7 @@ REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetDenoisingStatisticsEXT(rem
 #define REMIXAPI_STRUCT_TYPE_MESH_DEFORM_EXT ((remixapi_StructType)0x7fff1018)
 typedef struct remixapi_MeshInfoDeformEXT {
   remixapi_StructType sType;
-  const void* pNext;
+  const void *pNext;
 } remixapi_MeshInfoDeformEXT;
 
 // Optional InstanceInfo pNext (DrawInstance, AddSceneInstancesEXT,
@@ -1244,7 +1296,7 @@ typedef struct remixapi_MeshInfoDeformEXT {
 #define REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_MATERIAL_EXT ((remixapi_StructType)0x7fff1019)
 typedef struct remixapi_InstanceInfoMaterialEXT {
   remixapi_StructType sType;
-  const void* pNext;
+  const void *pNext;
   remixapi_MaterialHandle material;
 } remixapi_InstanceInfoMaterialEXT;
 
@@ -1263,7 +1315,7 @@ typedef struct remixapi_InstanceInfoMaterialEXT {
 #define REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_TEXCOORD_TRANSFORM_EXT ((remixapi_StructType)0x7fff1028)
 typedef struct remixapi_InstanceInfoTexcoordTransformEXT {
   remixapi_StructType sType;
-  const void* pNext;
+  const void *pNext;
   float scale[2], offset[2], velocity[2];
 } remixapi_InstanceInfoTexcoordTransformEXT;
 
@@ -1285,28 +1337,27 @@ typedef struct remixapi_SceneInstanceChangeEXT {
 } remixapi_SceneInstanceChangeEXT;
 // outInstances: count handles, in the order of infos. Nothing is added when a
 // description is refused.
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_AddSceneInstancesEXT)(
-    const remixapi_InstanceInfo* infos, uint32_t count, uint64_t* outInstances);
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_AddSceneInstancesEXT(
-    const remixapi_InstanceInfo* infos, uint32_t count, uint64_t* outInstances);
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_AddSceneInstancesEXT)(const remixapi_InstanceInfo *infos,
+                                                                            uint32_t count, uint64_t *outInstances);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_AddSceneInstancesEXT(const remixapi_InstanceInfo *infos,
+                                                                        uint32_t count, uint64_t *outInstances);
 // Replaces an instance's whole description; its visibility stays.
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_SetSceneInstanceEXT)(
-    uint64_t instance, const remixapi_InstanceInfo* info);
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_SetSceneInstanceEXT(
-    uint64_t instance, const remixapi_InstanceInfo* info);
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_ChangeSceneInstancesEXT)(
-    const remixapi_SceneInstanceChangeEXT* changes, uint32_t count);
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_ChangeSceneInstancesEXT(
-    const remixapi_SceneInstanceChangeEXT* changes, uint32_t count);
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_RemoveSceneInstancesEXT)(
-    const uint64_t* instances, uint32_t count);
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_RemoveSceneInstancesEXT(
-    const uint64_t* instances, uint32_t count);
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_SetSceneInstanceEXT)(uint64_t instance,
+                                                                           const remixapi_InstanceInfo *info);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_SetSceneInstanceEXT(uint64_t instance,
+                                                                       const remixapi_InstanceInfo *info);
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_ChangeSceneInstancesEXT)(
+    const remixapi_SceneInstanceChangeEXT *changes, uint32_t count);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL
+remixapi_ChangeSceneInstancesEXT(const remixapi_SceneInstanceChangeEXT *changes, uint32_t count);
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_RemoveSceneInstancesEXT)(const uint64_t *instances,
+                                                                               uint32_t count);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_RemoveSceneInstancesEXT(const uint64_t *instances, uint32_t count);
 // origin: three floats subtracted from every scene instance's translation
 // this frame (a host that rebases its world around the camera gives the same
 // origin it subtracts from its camera and lights); null for none.
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_DrawSceneInstancesEXT)(const float* origin);
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_DrawSceneInstancesEXT(const float* origin);
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_DrawSceneInstancesEXT)(const float *origin);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_DrawSceneInstancesEXT(const float *origin);
 
 #ifdef __cplusplus
 }
@@ -1512,6 +1563,86 @@ typedef struct remixapi_InstanceInfoWoundCutEXT {
   float cutScaleBias[2][4];
   float threshold;
 } remixapi_InstanceInfoWoundCutEXT;
+
+// Optional pNext on an opaque MaterialInfo: a portal's rim, as Portal 2's
+// PortalRefract shader draws it ($Stage 2: the glow around an opening and,
+// while the portal has no partner, the swirl that fills it). The effect takes
+// the place of the material's colour and emission wherever it is shaded: the
+// surface reflects nothing, covers with alpha a and emits a x C x the
+// emissive colour and intensity; the albedo texture N is its noise (read as
+// stored, with the material's sampler) and colorTexture R its colour ramp
+// (read like an albedo texture: sRGB-decoded if sRGB-encoded; clamped). Per
+// vertex, the colour's red is the opening o (0 closed to 1 open) and its
+// green the static s (1: no partner shown), as stored (no sRGB decode),
+// interpolated like any vertex colour (a mesh keeps them equal at its
+// vertices). With the mesh's texture coordinate uv (0..1 over the engine's
+// quad, v down; the instance's texture coordinate transform is not applied)
+// and t the runtime's clock in seconds:
+//   c = 1.075 uv - 0.0375, d = |2c - 1|, k = smoothstep(o), r = k^2
+//   e = d <= r ? saturate((d - r + 0.3) / 0.3) : 1 - saturate(13.333 (d - r))
+//   E = e max(saturate(2.5 k), s)
+//   w = 0.3 ((uv - 0.5) / saturate(o + 0.001) + 0.5)
+//   A = w + (0.0275 t, 0), B = w - (0.0275 t, 0)
+//   n1 = N(A), n2 = N(B.yx - 0.02 n1.xy), n3 = N(A - 0.02 n2.xy)
+//   h = (n2.g + n3.g) / 2
+//   P = 1 - smoothstep(saturate((h - E + 0.875) / 1.75))
+//   Q = 1 - smoothstep(saturate((1 - s) / h))
+//   I = saturate(E P + (d <= r ? Q : 0))
+//   x = 1.5 I sqrt(P) (0.8 |c.y|^1.5 + 0.2)
+//   C = R(x, 0.5).rgb colorScale, a = saturate(1.5 I)
+// (smoothstep(x) = x^2 (3 - 2x)). A blended instance (source alpha over) shows
+// it as the game's overlay, rasterized or traced (a sheet of coverage a
+// emitting C). Traced rays meet an instance that is not blended wherever its
+// triangles are, its coverage untested (a host cuts its mesh to where a is
+// high: the alpha test reads the albedo texture as usual), and it emits a x C
+// there; light and shadow rays take any surface of it by its albedo texture.
+// Its emitters are estimated with h at 0.42, 0.53 and 0.64 (around the mean
+// of Portal 2's noise). The raster backend evaluates the same (the Metal
+// backend draws the plain material). Not with a gradient map, a thin film, a
+// portal or a translucent material; colorTexture is named as material
+// textures are and required; colorScale finite, at least 0.
+#define REMIXAPI_STRUCT_TYPE_MATERIAL_PORTAL_RIM_EXT ((remixapi_StructType)0x7fff1029)
+typedef struct remixapi_MaterialPortalRimEXT {
+  remixapi_StructType sType;
+  const void *pNext;
+  remixapi_Path colorTexture;
+  float colorScale;
+} remixapi_MaterialPortalRimEXT;
+
+// Optional pNext on an opaque MaterialInfo: Portal 2's SolidEnergy surface
+// (a light bridge, effects/projected_wall: $detail1blendmode 1, $detail2blendmode
+// 0, $additive), a glowing sheet seen through. Its base B is the material's
+// albedo texture, D1 detail1Texture and D2 detail2Texture (sRGB as material
+// textures are), at mesh UVs (the surface's UV transform left out) moved by
+// the runtime's clock t:
+//   B at uv + baseScroll t
+//   D1 at uv + detail1Scroll t + (a + a sin(2 pi t / period), 0), with
+//     detail1Sway = (a, period) (period 0: no sway)
+//   D2 at uv + detail2Scroll t
+//   G = (2 B.rgb D1.rgb + D2.rgb D1.rgb) (1 + B.a) intensity
+// (solidenergy_ps30; the additive blend's output intensity squared in
+// intensity). What it shows is G added over what is behind it, as a blended
+// sheet (source alpha over) of coverage a = min(max(G) / 2, 1/2) emitting
+// G / a: what is behind dims by 1 - a. It reflects nothing and is not a
+// light: its emission is met only by the rays that see it (its material's
+// emissive intensity is 0; it gives no estimate to the light tree). Light and
+// shadow rays take it by its texture stages' alpha, as other blended sheets
+// (a host keeps that low: the bridge casts no shadow in the game). Not with a
+// gradient map, a portal rim, a thin film, a portal or a translucent
+// material; both detail textures are named as material textures are and
+// required; every value finite, intensity and period at least 0.
+#define REMIXAPI_STRUCT_TYPE_MATERIAL_SOLID_ENERGY_EXT ((remixapi_StructType)0x7fff1033)
+typedef struct remixapi_MaterialSolidEnergyEXT {
+  remixapi_StructType sType;
+  const void *pNext;
+  remixapi_Path detail1Texture;
+  remixapi_Path detail2Texture;
+  float intensity;
+  float baseScroll[2];
+  float detail1Scroll[2];
+  float detail2Scroll[2];
+  float detail1Sway[2];
+} remixapi_MaterialSolidEnergyEXT;
 
 // Optional pNext on opaque or translucent MaterialInfo: a thin-film coating
 // whose interference colours the reflection (iridescence), evaluated

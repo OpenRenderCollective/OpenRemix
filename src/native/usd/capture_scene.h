@@ -27,7 +27,8 @@ namespace remix::usd {
       uint64_t filmMap = 0;
       // Subsurface scattering (weight 0: none) and its maps' hashes.
       scene::Material::Subsurface subsurface;
-      uint64_t subsurfaceTransmittance = 0, subsurfaceThickness = 0, subsurfaceSingleScattering = 0, subsurfaceRadius = 0;
+      uint64_t subsurfaceTransmittance = 0, subsurfaceThickness = 0, subsurfaceSingleScattering = 0,
+               subsurfaceRadius = 0;
     };
     struct Mesh {
       std::vector<scene::Surface> surfaces;
@@ -42,7 +43,7 @@ namespace remix::usd {
       scene::Blend blend;
       bool alphaTest = false;
       uint32_t alphaCompare = 7;
-      float alphaReference = 0; // 0..1
+      float alphaReference = 0;         // 0..1
       std::vector<scene::Matrix> bones; // this frame's pose (empty: not skinned)
     };
     struct Light {

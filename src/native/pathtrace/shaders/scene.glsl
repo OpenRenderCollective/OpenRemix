@@ -132,6 +132,9 @@ layout(set=0,binding=3,std140) uniform Frame {
   vec4 screenCameras[32]; // remixapi_CameraScreensEXT, 4 per slot: position (w: 1 set, +2 moved), right and up (half extents), forward
   uint64_t sheetMaterials; // Optional measured-sheet optics, keyed by albedo descriptor.
   uint64_t woundVertices; float subsurfaceUnits,subsurfaceThickness; // remixapi_InstanceInfoWoundCutEXT: WoundVertex per wounded vertex (vertex-wound.comp)
+  vec4 rayPortals[32]; // remixapi_MaterialInfoPortalEXT, 4 per index: the map to the partner (3 rows), the front's normal (w: 1 open pair, +2 moved)
+  uvec4 rayPortalConfig; // teleports per camera ray, exit offset (float bits, world units), reserved
+  vec4 rayPortalPlanes[2]; // per index: dot(front normal, p) at its opening's plane (local x = 0)
 } frame;
 // Instance mask bit of view models (pathtrace/tlas_policy.h).
 const uint viewModelInstanceMask=64u;
@@ -383,6 +386,66 @@ vec4 gradientAlbedo(Surface s,vec2 uv) {
   }
   return vec4(c,1);
 }
+// remixapi_MaterialPortalRimEXT (material.x bit 2048; frame_tables.h
+// portalRimFields): Portal 2's portal rim (PortalRefract $Stage 2), the
+// header's steps. The noise N is the albedo texture (as stored; mesh UVs, the
+// surface's UV transform left out), the ramp filmMaps.x, the colour scale
+// film.y; the opening and the static are the vertex colour's red and green
+// (as stored). Returns the coverage a; colour: C (before the emission scale).
+bool portalRimSurface(Surface s) { return (s.material.x&2048u)!=0u; }
+// The rim's level I and the ramp's attenuation sqrt(P) at uv, given the
+// noise term h.
+vec2 portalRimLevel(vec2 uv,vec4 vertex,float h) {
+  float open=clamp(vertex.r,0.,1.),stat=clamp(vertex.g,0.,1.);
+  vec2 c=uv*1.075-.0375;
+  float d=length(2*c-1),k=open*open*(3-2*open),r=k*k;
+  bool inside=d<=r;
+  float e=inside?clamp((d-r+.3)/.3,0.,1.):1-clamp((d-r)*13.3333,0.,1.);
+  float edge=e*max(clamp(2.5*k,0.,1.),stat);
+  float p=clamp((h-edge+.875)/1.75,0.,1.);p=1-p*p*(3-2*p);
+  float q=clamp((1-stat)/max(h,1e-6),0.,1.);q=1-q*q*(3-2*q);
+  return vec2(clamp(edge*p+(inside?q:0.),0.,1.),sqrt(p));
+}
+float portalRim(Surface s,vec2 uv,vec4 vertex,out vec3 colour) {
+  // The noise's coordinates, two layers scrolling apart (the texture repeats:
+  // the scroll is taken modulo 1).
+  float scale=.3/clamp(vertex.r+.001,0.,1.),shift=fract(.0275*frame.animationTime);
+  vec2 w=(uv-.5)*scale+.15,a=w+vec2(shift,0),b=w-vec2(shift,0);
+  vec2 gx=uvGradX*scale,gy=uvGradY*scale;
+  uint noise=s.textureState.x;
+  vec2 n1=textureGrad(textures[nonuniformEXT(noise)],a,gx,gy).rg;
+  vec2 n2=textureGrad(textures[nonuniformEXT(noise)],b.yx-.02*n1,gx.yx,gy.yx).rg;
+  vec2 n3=textureGrad(textures[nonuniformEXT(noise)],a-.02*n2,gx,gy).rg;
+  vec2 level=portalRimLevel(uv,vertex,.5*(n2.g+n3.g));
+  float x=1.5*level.x*level.y*(.8*pow(abs(uv.y*1.075-.0375),1.5)+.2);
+  uint ramp=s.filmMaps.x;
+  colour=slotTexel(ramp,textureLod(textures[nonuniformEXT(ramp)],vec2(x,.5),0)).rgb*s.film.y;
+  return clamp(1.5*level.x,0.,1.);
+}
+// remixapi_MaterialSolidEnergyEXT (material.x bit 4096; frame_tables.h
+// solidEnergyFields): Portal 2's SolidEnergy (a light bridge), the header's
+// steps: B the albedo texture, D1 and D2 the slots in filmMaps.x and .y, at
+// mesh UVs (the surface's UV transform left out) moved by the runtime's clock.
+// Returns the coverage a; colour: G / a, the emission (a blended sheet's
+// composition weighs it by a: G added over what is behind).
+bool solidEnergySurface(Surface s) { return (s.material.x&4096u)!=0u; }
+float solidEnergy(Surface s,vec2 uv,out vec3 colour) {
+  vec2 rates=unpackHalf2x16(floatBitsToUint(s.film.y)),sway=unpackHalf2x16(s.filmMaps.w);
+  float t=frame.animationTime;
+  // (Offsets taken modulo 1: the textures repeat.)
+  vec2 base=uv+fract(unpackHalf2x16(floatBitsToUint(s.film.z))*t);
+  vec2 d1=uv+fract(unpackHalf2x16(floatBitsToUint(s.film.w))*t);
+  if(rates.y>0)d1.x+=sway.x*(1+sin(6.2831853*fract(t/rates.y)));
+  vec2 d2=uv+fract(unpackHalf2x16(s.filmMaps.z)*t);
+  vec4 b=slotTexel(s.textureState.x,textureGrad(textures[nonuniformEXT(s.textureState.x)],base,uvGradX,uvGradY));
+  uint u1=s.filmMaps.x,u2=s.filmMaps.y;
+  vec3 e1=slotTexel(u1,textureGrad(textures[nonuniformEXT(u1)],d1,uvGradX,uvGradY)).rgb;
+  vec3 e2=slotTexel(u2,textureGrad(textures[nonuniformEXT(u2)],d2,uvGradX,uvGradY)).rgb;
+  vec3 g=(2*b.rgb*e1+e2*e1)*(1+b.a)*rates.x;
+  float a=min(.5*max(g.r,max(g.g,g.b)),.5);
+  colour=a>0?g/a:vec3(0);
+  return a;
+}
 // The albedo texel at uv: the albedo texture's, or a gradient map's composite.
 vec4 albedoTexel(Surface s,vec2 uv) {
   [[dont_flatten]] if((s.material.x&1024u)!=0u)return gradientAlbedo(s,uv);
@@ -552,6 +615,23 @@ vec4 materialColor(Surface s, vec2 uv, vec4 vertex) {
 // (remixapi_MaterialInfoSelfIlluminationEXT: material.x bit 5, the mask in
 // bits 6-7, its scale in emission.w): colour = reflecting + self.
 vec4 materialSurface(Surface s, vec2 uv, vec4 vertex, bool emissive, out vec3 emission, out vec3 self) {
+  self = vec3(0);
+  // A portal rim: coverage a, emitting a x C (a blended one C, which its
+  // composition weighs by a).
+  [[dont_flatten]] if (portalRimSurface(s)) {
+    vec3 c;
+    float a = portalRim(s, uv, vertex, c);
+    emission = emissive ? c * s.emission.rgb * ((s.state.w&2u)!=0u ? 1. : a) : vec3(0);
+    return vec4(0, 0, 0, a);
+  }
+  // A SolidEnergy surface: coverage a emitting G / a (its material's
+  // emissive intensity is 0: not a light; G is what it adds where seen).
+  [[dont_flatten]] if (solidEnergySurface(s)) {
+    vec3 c;
+    float a = solidEnergy(s, uv, c);
+    emission = emissive ? c * ((s.state.w&2u)!=0u ? 1. : a) : vec3(0);
+    return vec4(0, 0, 0, a);
+  }
   vec4 texel = albedoTexel(s, uv);
   vec4 color = materialColor(s, texel, vertex);
   self = vec3(0);

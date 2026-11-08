@@ -36,7 +36,6 @@ namespace remix::metal {
       return *instance;
     }
 
-
     // Pipeline compiles in flight, process-wide. Each runs in Apple's compiler
     // service and the lighting kernels take gigabytes there: unbounded,
     // concurrent compiles exhaust memory. REMIX_PIPELINE_THREADS overrides.
@@ -199,9 +198,9 @@ namespace remix::metal {
     }
     // Background compiles run concurrently, bounded by the compile slots
     // (computePipeline): one at a time left a scene's variants minutes behind.
-    static dispatch_queue_t queue = dispatch_queue_create(
-        "OpenRemix Metal specializations",
-        dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_CONCURRENT, QOS_CLASS_UTILITY, 0));
+    static dispatch_queue_t queue =
+        dispatch_queue_create("OpenRemix Metal specializations",
+                              dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_CONCURRENT, QOS_CLASS_UTILITY, 0));
     dispatch_async(queue, ^{
       @autoreleasepool {
         // A failed specialization stays marked: the base pipeline remains in
@@ -233,8 +232,8 @@ namespace remix::metal {
     size_t pending = 0;
     for (const auto &key : cache().compiling)
       pending += !cache().computes.count(key);
-    std::string text = std::to_string(cache().computes.size()) + " compute pipelines compiled, " + std::to_string(pending) +
-                       " compiling in the background\n";
+    std::string text = std::to_string(cache().computes.size()) + " compute pipelines compiled, " +
+                       std::to_string(pending) + " compiling in the background\n";
     char line[160];
     for (const auto &[key, state] : cache().computes) {
       std::snprintf(line, sizeof(line), "%-40s constants 0x%x\n", library(shaders::Stage(std::get<1>(key))).function,

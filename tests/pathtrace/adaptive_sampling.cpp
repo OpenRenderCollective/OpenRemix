@@ -14,16 +14,14 @@
 #include <image/stb_image.h>
 
 namespace {
-void require(bool value, const char *message) {
+  void require(bool value, const char *message) {
   if (!value) {
     std::fprintf(stderr, "%s\n", message);
     std::exit(1);
   }
-}
-void ok(remixapi_ErrorCode code) {
-  require(code == REMIXAPI_ERROR_CODE_SUCCESS, "Adaptive sampling API failure");
-}
-using Image = std::vector<std::array<float, 3>>;
+  }
+  void ok(remixapi_ErrorCode code) { require(code == REMIXAPI_ERROR_CODE_SUCCESS, "Adaptive sampling API failure"); }
+  using Image = std::vector<std::array<float, 3>>;
 } // namespace
 int main(int argc, char **argv) {
   require(argc == 2, "Supply capture directory");
@@ -55,8 +53,7 @@ int main(int argc, char **argv) {
   ok(api.SetConfigVariable("rtx.native.backend", "pathtrace"));
   ok(api.SetConfigVariable("rtx.native.vsync", "0"));
   auto config = [&](const char *key, const char *value) {
-    ok(api.SetConfigVariable(
-        (std::string("rtx.native.pathtrace.") + key).c_str(), value));
+    ok(api.SetConfigVariable((std::string("rtx.native.pathtrace.") + key).c_str(), value));
   };
   config("sharc", "0");
   config("sky", "0");
@@ -81,8 +78,7 @@ int main(int argc, char **argv) {
     return result;
   };
   auto white = material({.8f, .8f, .8f}, 1);
-  auto quad = [&](int axis, float plane, float a0, float a1, float b0, float b1,
-                  remixapi_MaterialHandle material) {
+  auto quad = [&](int axis, float plane, float a0, float a1, float b0, float b1, remixapi_MaterialHandle material) {
     remixapi_HardcodedVertex v[4]{};
     uint32_t indices[] = {0, 1, 2, 0, 2, 3};
     for (int i = 0; i < 4; ++i) {
@@ -192,8 +188,7 @@ int main(int argc, char **argv) {
       value /= 64 * 64;
     return mean;
   };
-  for (auto key : {"bounces", "taa", "localDenoiser", "localGuiding",
-                   "accumulate"})
+  for (auto key : {"bounces", "taa", "localDenoiser", "localGuiding", "accumulate"})
     config(key, "0");
   config("denoiser", "off");
   config("adaptiveLocalSampling", "1");
@@ -211,11 +206,8 @@ int main(int argc, char **argv) {
   camera.view[3][2] = -191;
   auto update = [&](float scale, float perturbation) {
     for (unsigned i = 0; i < lights.size(); ++i) {
-      sphere.position = {i < 2 ? 184.f : 200.f,
-                         65 + (i < 2 ? 5.f : .1f) * ((i & 1) ? 1.f : -1.f),
-                         191};
-      float radiance =
-          1200 * scale * (i < 2 ? .1926836f * (1 + perturbation) : 1.f);
+      sphere.position = {i < 2 ? 184.f : 200.f, 65 + (i < 2 ? 5.f : .1f) * ((i & 1) ? 1.f : -1.f), 191};
+      float radiance = 1200 * scale * (i < 2 ? .1926836f * (1 + perturbation) : 1.f);
       light.radiance = {radiance, radiance, radiance};
       ok(api.UpdateLightDefinition(lights[i], &light));
     }
@@ -234,21 +226,18 @@ int main(int argc, char **argv) {
       float phase = float(pose) * 6.283185307f / 16;
       update(1, .02f * std::sin(phase));
       camera.view[3][0] = -192 + .004f * std::cos(phase);
-      auto mean =
-          capture(std::string(primary) + "-boundary-" + std::to_string(pose));
+      auto mean = capture(std::string(primary) + "-boundary-" + std::to_string(pose));
       minimum = std::min(minimum, mean[0]);
       maximum = std::max(maximum, mean[0]);
       std::fprintf(csv, "%s,%d,%.9f,%.9f\n", primary, pose, mean[0], mean[1]);
       std::fflush(csv);
     }
     std::printf("%s budget variation %.6f\n", primary, maximum - minimum);
-    require(maximum - minimum < .06,
-            "Small illumination/motion changes switched a whole surface's "
+    require(maximum - minimum < .06, "Small illumination/motion changes switched a whole surface's "
             "sampling budget");
     update(.001f, 0);
     auto dim = capture(std::string(primary) + "-dim");
-    require(std::abs(dim[0] - .25) < .01,
-            "Dim receivers lost the one-sample adaptive budget");
+    require(std::abs(dim[0] - .25) < .01, "Dim receivers lost the one-sample adaptive budget");
     update(10, 0);
     auto bright = capture(std::string(primary) + "-bright");
     require(bright[0] > .99, "Bright receivers did not receive four samples");

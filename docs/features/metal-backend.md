@@ -21,7 +21,7 @@ contains exactly one backend. macOS builds link no Vulkan.
 | `post.h`, `post.mm` | automatic exposure and bloom |
 | `timers.h`, `timers.mm` | GPU pass timers (counter sample buffers at encoder boundaries) |
 | `shaders.mm`, `gpu.h` | embedded libraries, pipelines (compiled now or in the background) and argument buffers |
-| `ui.mm`, `ui/*.cpp`, `ui/status.h` | Dear ImGui on Metal; Metal copies of the developer panel's tabs |
+| `ui.mm` | Dear ImGui on Metal, and the Metal runtime's answers to the panel's queries (`ui/status.h`) |
 | `diagnostics.h`, `host_passes.h` | the API layer's diagnostics and host passes, as Metal provides them |
 | `shaders/embedded.{h,bin}` | generated Metal libraries |
 
@@ -32,20 +32,41 @@ surface), settings and profiles, the panel, profile and mods UI, the path tracer
 sparse policies. The Metal host code ports the Vulkan renderer's passes; comments name the Vulkan
 function each mirrors.
 
-The developer panel's Rendering, Lighting, Post-processing, Diagnostics and Textures tabs read the
-Vulkan runtime directly, so Metal builds compile copies of them (`metal/ui/*.cpp`) that ask the
-same questions through `ui*` queries (`metal/ui/status.h`). Port upstream changes to `ui/*.cpp`
-there: applying the upstream diff to the copy usually works as is. `metal/ui/upstream.txt` records
-the upstream tabs the copies match; the test `Metal UI copies match the upstream tabs` fails once
-an upstream tab changes and prints the `git diff` to port. `scripts/macos/metal-ui.py --update`
-records the tabs after porting.
+The developer panel is shared: both builds compile the same tabs (`ui/*.cpp`). What differs
+between the backends (device, swapchain or drawables, reconstruction, frame generation, features
+one backend lacks) reaches the tabs only through the queries in `ui/status.h`, which the Vulkan
+runtime answers in `runtime/ui_status.cpp` and the Metal runtime in `metal/ui.mm`. A tab never
+reads a backend's members directly; a new control that needs backend state adds a query that both
+answer. Features the Metal backend does not have yet report unavailable, and the tabs hide or
+explain them.
+
+HDR10 output (`metal/hdr_output.mm`) follows `runtime/hdr_output.h`: while the display has
+extended dynamic range the layer is BT.2100 PQ with 10 bits, the frame draws into a float back
+buffer, the HUD and developer UI are scaled to their own brightness, and an encode pass writes PQ
+into the drawable (`HdrNits` is shared in `runtime/hdr_nits.h`). With frame generation the frame
+stays SDR. Screenshots and screenshot sets are `runtime/screenshot.cpp` itself, built with the
+Metal readback (`metal/screenshot.mm`), so the PNG, HDR PNG, JPEG XR and EXR files are the Vulkan
+backend's. The path inspector records the clicked pixel's paths as on Vulkan.
+
+The NUMOS sky is the Vulkan backend's `sky/renderer.cpp`, built a second time as Objective-C++
+(`metal/sky_renderer.mm`) over `metal/sky_bridge.h`, the same `sky::Bridge` interface on the Metal
+device; `sky/host.h` names the GPU objects the renderer takes on each backend. A sky change made
+for Vulkan reaches Metal without a port, and one that needs a bridge call Metal lacks fails the
+macOS build. The Slang passes are translated with the other shaders (stages `sky0` onward). Both
+the path tracer and the raster backend draw it (`metal/raster_sky.mm`, as `runtime/raster_sky.cpp`).
+
+Particle emitters (`metal/particles.mm`) run the particle shaders translated from the same SPIR-V,
+with `particles/renderer.cpp`'s pool, frame constants and passes: the light volume and SHELTER
+spawns trace the world TLAS, and the draws sample the captured scene depth. With frame generation
+they are drawn before the frame is taken (the UI pass clears depth), so they are interpolated.
+Light cookies take the frame's texture table as on Vulkan.
 
 ## Shaders
 
 The Metal backend runs the same shaders as the Vulkan one. The build generates the Vulkan SPIR-V
 and then, with `scripts/shaders/generate.py metal`, translates each stage with the pinned
-SPIRV-Cross fork (`toolchain.lock.json`, `spirv-cross-msl`, built by
-`scripts/shaders/toolchain.py --metal`) and compiles it with Xcode's `metal` into one
+upstream SPIRV-Cross (`toolchain.lock.json`, `spirv-cross-msl`) with OpenRemix's MSL fixes
+(`scripts/shaders/patches/spirv-cross-msl.patch`), built by `scripts/shaders/toolchain.py --metal`, and compiles it with Xcode's `metal` into one
 XZ-compressed library per stage, which `embedded_data.cpp` embeds. Path tracing stages are translated
 from glslang's SPIR-V before `spirv-opt -O`: Apple's compiler service fails on the fully inlined
 lighting kernels. Descriptor sets become argument buffers at `buffer(set)`; `embedded.h` maps
@@ -163,9 +184,26 @@ rendered frame.
 
 ## Not on Metal
 
-Not yet ported: host passes (reported off: `GetHostPassesEnabledEXT` answers false), split local
-lighting (and ReSTIR, which needs it), PBR lighting reuse, camera and light-visibility culling,
-low latency and asynchronous presentation, gradient-mapped albedo
-(`remixapi_MaterialGradientMapEXT`) and wound cuts (`remixapi_InstanceInfoWoundCutEXT`). Settings
-for them are accepted and reported as unavailable. ORCA cannot be translated: its 64-bit `atomicAdd` has no MSL equivalent. USD capture
+Split local lighting (torch and emissive families, the split direct pass and the split denoiser
+with its emissive NRD signal) and ReSTIR DI run as on Vulkan; with the MetalFX denoiser, as with
+Ray Reconstruction, the families are not denoised apart.
+
+Host passes (`remixapi_HostPassEXT`) are `runtime/host_passes.cpp`'s API side with the passes
+replayed in `metal/host_passes.mm`: a host's SPIR-V is translated to MSL when it is registered, by
+SPIRV-Cross built into the library (`third_party/spirv-cross`, the build-time translation's
+revision and patch), and passes draw, copy and clear directly into the frame's texture.
+
+Asynchronous presentation (`rtx.native.asyncPresent`) follows the Vulkan runtime: Present waits
+for the render thread's previous frame, builds the next on the caller's thread (settings, the frame
+capture with `NativeResources::publishFrame` into a second `metal::Raster` that holds the GPU state,
+particles, the developer UI, the published statistics) and hands it to the render thread, which
+records, commits and presents it from a copy of the frame's settings. While it works the
+statistics getters return the last completed frame's values.
+
+Gradient-mapped albedo (`remixapi_MaterialGradientMapEXT`) and wound cuts
+(`remixapi_InstanceInfoWoundCutEXT`) are path traced as on Vulkan (the wound vertices are
+evaluated by `vertex-wound.comp`); the raster backend does not draw them on Metal yet.
+
+Not ported: low latency (NVIDIA Reflex has no Metal counterpart); its setting is accepted and
+reported as unavailable. ORCA cannot be translated: its 64-bit `atomicAdd` has no MSL equivalent. USD capture
 and mods (`-Dusd=true`) are untested on macOS.

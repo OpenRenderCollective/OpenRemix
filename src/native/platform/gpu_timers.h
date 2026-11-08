@@ -230,8 +230,7 @@ namespace remix::gpu {
   // or in another command buffer (e.g. a secondary).
   class GpuScope {
   public:
-    GpuScope(VkCommandBuffer command, const char *name, uint32_t width = 0, uint32_t height = 0)
-        : m_command(command) {
+    GpuScope(VkCommandBuffer command, const char *name, uint32_t width = 0, uint32_t height = 0) : m_command(command) {
       if (auto *timers = currentTimers) {
         m_timers = timers;
         m_id = timers->begin(command, name, width, height);

@@ -4,20 +4,29 @@
 void frontGuides(Hit hit,ivec2 pixel) {
   if(temporal.translucency.x==0)return;
   bool valid=hit.t<1e30&&hit.blended;
-  float z=valid?abs((temporal.view*vec4(hit.p,1)).z):1e10;
+  // A sheet seen through ray portals: its virtual image's guides, as the
+  // opaque surfaces' there; none move while a pair passed moved.
+  vec3 position=hit.p,previousPosition=hit.previousPosition,normal=hit.n;
+  Screen screen=loadScreen(pixel);
+  bool still=true;
+  if(valid&&portalView(screen)) {
+    position=portalVirtualPoint(screen,position);previousPosition=portalVirtualPoint(screen,previousPosition);
+    normal=normalize(portalVirtualVector(screen,normal));still=!screenMoved(screen);
+  }
+  float z=valid?abs((temporal.view*vec4(position,1)).z):1e10;
   vec4 motion=vec4(0);
-  if(valid&&temporal.flags.x==0) {
-    vec4 clip=frame.camera*vec4(hit.p,1),previous=temporal.previousCamera*vec4(hit.previousPosition,1);
+  if(valid&&still&&temporal.flags.x==0) {
+    vec4 clip=frame.camera*vec4(position,1),previous=temporal.previousCamera*vec4(previousPosition,1);
     if(clip.w>0&&previous.w>0)
       motion=vec4((previous.xy/previous.w-clip.xy/clip.w)*.5*vec2(frame.target.xy),
-                  abs((temporal.previousView*vec4(hit.previousPosition,1)).z)-z,1);
+                  abs((temporal.previousView*vec4(previousPosition,1)).z)-z,1);
   }
   vec3 diffuseFactor=valid?max(hit.color.rgb,vec3(.001)):vec3(1),specularFactor=vec3(1);
   if(valid&&hit.pbr)
     NRD_MaterialFactors(hit.n,hit.wo,materialDiffuseAlbedo(hit),
       materialF0(hit),hit.rm.x,diffuseFactor,specularFactor);
   imageStore(frontDepth,pixel,vec4(z));
-  imageStore(frontNormal,pixel,NRD_FrontEnd_PackNormalAndRoughness(valid?hit.n:vec3(0,0,1),
+  imageStore(frontNormal,pixel,NRD_FrontEnd_PackNormalAndRoughness(valid?normal:vec3(0,0,1),
     valid&&hit.pbr?hit.rm.x:1,valid&&hit.pbr?(hit.rm.y>.5?2:1):0));
   imageStore(frontMotion,pixel,motion);
   imageStore(frontConfidence,pixel,vec4(motion.w));

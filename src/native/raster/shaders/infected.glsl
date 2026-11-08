@@ -13,11 +13,11 @@ layout(set=1,binding=3,std140) uniform Infected {
   vec4 projection[2]; // scale, bias
   vec4 cut[2];        // each half's scale-bias
   vec4 wound;         // mapping scale, second blend, threshold, flags (bits: 1 wound, 2 gradient, 4 detail,
-                      // 8 sRGB gradient, 16 burn, 32 sRGB burn)
-  vec4 rows;          // skin row, cloth row, burn strength
+                      // 8 sRGB gradient or ramp, 16 burn, 32 sRGB burn, 64 portal rim)
+  vec4 rows;          // skin row, cloth row, burn strength; a portal rim's colour scale, noise scroll
   vec4 sprite;        // sprite offset, blood range
   vec4 detail;        // detail U, detail V
-  vec4 blood;         // blood colour
+  vec4 blood;         // blood colour; a portal rim's emission
 } infected;
 vec4 woundVertex(vec3 p, out float h, out uint missing) {
   vec4 x = vec4(p, 1.0);
@@ -73,5 +73,36 @@ vec4 gradientAlbedo(vec2 uv, vec4 transform, float wound) {
     c = mix(c, burn.rgb, t);
   }
   return vec4(c, 1.0);
+}
+#endif
+#ifndef INFECTED_VERTEX_ONLY
+// remixapi_MaterialPortalRimEXT (flags bit 64), as the path tracer's
+// portalRim (pathtrace/shaders/scene.glsl): the noise is the draw's albedo
+// texture (as stored), the ramp in gradientMap. mesh: the mesh's texture
+// coordinate; vertex: the vertex colour as stored (the opening in red, the
+// static in green). Colour and coverage (source alpha over).
+vec4 portalRimColour(vec2 mesh, vec4 vertex) {
+  float open = clamp(vertex.r, 0.0, 1.0), stat = clamp(vertex.g, 0.0, 1.0);
+  vec2 c = mesh * 1.075 - 0.0375;
+  float d = length(2.0 * c - 1.0), k = open * open * (3.0 - 2.0 * open), r = k * k;
+  bool inside = d <= r;
+  float e = inside ? clamp((d - r + 0.3) / 0.3, 0.0, 1.0) : 1.0 - clamp((d - r) * 13.3333, 0.0, 1.0);
+  float edge = e * max(clamp(2.5 * k, 0.0, 1.0), stat);
+  float scale = 0.3 / clamp(open + 0.001, 0.0, 1.0), shift = infected.rows.y;
+  vec2 w = (mesh - 0.5) * scale + 0.15, a = w + vec2(shift, 0.0), b = w - vec2(shift, 0.0);
+  vec2 n1 = texture(albedo, a).rg;
+  vec2 n2 = texture(albedo, b.yx - 0.02 * n1).rg;
+  vec2 n3 = texture(albedo, a - 0.02 * n2).rg;
+  float h = 0.5 * (n2.g + n3.g);
+  float p = clamp((h - edge + 0.875) / 1.75, 0.0, 1.0);
+  p = 1.0 - p * p * (3.0 - 2.0 * p);
+  float q = clamp((1.0 - stat) / max(h, 1e-6), 0.0, 1.0);
+  q = 1.0 - q * q * (3.0 - 2.0 * q);
+  float level = clamp(edge * p + (inside ? q : 0.0), 0.0, 1.0);
+  float x = 1.5 * level * sqrt(p) * (0.8 * pow(abs(c.y), 1.5) + 0.2);
+  vec3 colour = textureLod(gradientMap, vec2(x, 0.5), 0.0).rgb;
+  if ((floatBitsToUint(infected.wound.w) & 8u) != 0u)
+    colour = pow(max(colour, vec3(0)), vec3(2.2));
+  return vec4(colour * infected.rows.x * infected.blood.rgb, clamp(1.5 * level, 0.0, 1.0));
 }
 #endif

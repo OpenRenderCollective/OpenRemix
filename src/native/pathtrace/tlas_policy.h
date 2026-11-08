@@ -39,8 +39,8 @@ namespace remix::trace {
   // which culls exactly the triangles whose front-face query would be false.
   inline uint32_t instanceFlags(const InstanceInput &input, bool hardwareFaceCulling) {
     const auto &m = input.model;
-    const float det = m[0] * (m[5] * m[10] - m[9] * m[6]) - m[4] * (m[1] * m[10] - m[9] * m[2]) +
-                      m[8] * (m[1] * m[6] - m[5] * m[2]);
+    const float det =
+        m[0] * (m[5] * m[10] - m[9] * m[6]) - m[4] * (m[1] * m[10] - m[9] * m[2]) + m[8] * (m[1] * m[6] - m[5] * m[2]);
     return (hardwareFaceCulling && input.oneSided ? 0u : instanceFacingCullDisable) |
            (det > 0 ? instanceFrontCounterClockwise : 0u) | (input.noOpaque ? instanceForceNoOpaque : 0u);
   }
@@ -68,8 +68,7 @@ namespace remix::trace {
   // Blended, decal, view-model and reflection-only instances lack it.
   constexpr uint8_t skyOccluderInstanceMask = 8;
   constexpr uint8_t allInstancesMask = 0xff & ~viewModelInstanceMask & ~reflectionOnlyInstanceMask,
-                    staticInstanceMask = 1, dynamicInstanceMask = 2,
-                    blendedInstanceMask = 4, decalInstanceMask = 32;
+                    staticInstanceMask = 1, dynamicInstanceMask = 2, blendedInstanceMask = 4, decalInstanceMask = 32;
   inline uint8_t instanceMask(bool combined, bool dynamic) {
     return !combined ? allInstancesMask
                      : (dynamic ? dynamicInstanceMask : staticInstanceMask) | skyOccluderInstanceMask;

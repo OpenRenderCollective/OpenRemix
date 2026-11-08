@@ -24,7 +24,8 @@ namespace remix::metal {
   }
   inline void check(id object, const char *what, NSError *error) {
     if (!object)
-      throw Error(std::string("Metal: ") + what + (error ? std::string(": ") + error.localizedDescription.UTF8String : ""));
+      throw Error(std::string("Metal: ") + what +
+                  (error ? std::string(": ") + error.localizedDescription.UTF8String : ""));
   }
 
   // The functions of the embedded libraries (scripts/shaders/metal.py),
@@ -92,10 +93,9 @@ namespace remix::metal {
 
   // Shared (unified memory) buffers: Apple GPUs need no staging copies.
   inline id<MTLBuffer> buffer(id<MTLDevice> device, const void *data, size_t size) {
-    id<MTLBuffer> result = data ? [device newBufferWithBytes:data length:std::max<size_t>(size, 16)
-                                                     options:MTLResourceStorageModeShared]
-                                : [device newBufferWithLength:std::max<size_t>(size, 16)
-                                                      options:MTLResourceStorageModeShared];
+    id<MTLBuffer> result =
+        data ? [device newBufferWithBytes:data length:std::max<size_t>(size, 16) options:MTLResourceStorageModeShared]
+             : [device newBufferWithLength:std::max<size_t>(size, 16) options:MTLResourceStorageModeShared];
     check(result, "buffer allocation");
     return result;
   }
@@ -103,9 +103,9 @@ namespace remix::metal {
                                   MTLTextureUsage usage, uint32_t levels = 1,
                                   MTLStorageMode storage = MTLStorageModePrivate) {
     auto *descriptor = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:format
-                                                                         width:std::max(1u, width)
-                                                                        height:std::max(1u, height)
-                                                                     mipmapped:NO];
+                                                                          width:std::max(1u, width)
+                                                                         height:std::max(1u, height)
+                                                                      mipmapped:NO];
     descriptor.mipmapLevelCount = std::max(1u, levels);
     descriptor.usage = usage;
     descriptor.storageMode = storage;

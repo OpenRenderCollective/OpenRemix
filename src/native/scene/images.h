@@ -8,6 +8,10 @@ namespace remix::scene {
   inline constexpr uint32_t maxTextureDimension = 32768;
   Pixels decodeTexture(const remixapi_TextureInfo &info);
   Pixels loadTexture(const std::filesystem::path &path);
+  // The file's largest level whose edges fit maxEdge, with the levels below it:
+  // of a mipped block-compressed DDS only those bytes are read. A smaller
+  // stand-in otherwise (its preview, or a decoded mip) from loading it whole.
+  Pixels loadTexturePreview(const std::filesystem::path &path, uint32_t maxEdge);
   // BC1/BC3/BC4/BC5/BC6H/BC7 formats that compressTexture accepts.
   bool isBlockCompressed(remixapi_Format format);
   // R16G16B16A16 or R32G32B32A32 SFLOAT: decoded into Pixels::hdrMips.
@@ -31,8 +35,7 @@ namespace remix::scene {
   void updateMips(Pixels &pixels, uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1);
   // The region of the next level whose texels read [x0, x1) x [y0, y1) of a
   // width x height level through generateMips' 2x2 box.
-  inline void nextMipRegion(uint32_t &x0, uint32_t &y0, uint32_t &x1, uint32_t &y1, uint32_t width,
-                            uint32_t height) {
+  inline void nextMipRegion(uint32_t &x0, uint32_t &y0, uint32_t &x1, uint32_t &y1, uint32_t width, uint32_t height) {
     const uint32_t w = width > 1 ? width / 2 : 1, h = height > 1 ? height / 2 : 1;
     x0 /= 2;
     y0 /= 2;

@@ -3,5 +3,6 @@
 metal_shaders = custom_target('metal-shaders',
   output : ['embedded.h', 'embedded.bin', 'embedded_data.cpp'],
   command : shader_generate + ['metal'], depfile : 'embedded.d',
-  depends : [raster_shaders, denoise_shaders, postfx_shaders, upscale_shaders, pathtrace_shaders],
+  depends : [raster_shaders, denoise_shaders, postfx_shaders, upscale_shaders, pathtrace_shaders, particles_shaders] +
+    (numos_enabled ? [sky_shaders] : []),
   depend_files : shader_generator_files, env : shader_env)

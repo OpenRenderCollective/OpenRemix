@@ -40,9 +40,8 @@ namespace remix {
                                                .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
                                                .finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR};
       const VkAttachmentReference color{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
-      const VkSubpassDescription subpass{.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                         .colorAttachmentCount = 1,
-                                         .pColorAttachments = &color};
+      const VkSubpassDescription subpass{
+          .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS, .colorAttachmentCount = 1, .pColorAttachments = &color};
       // After the image's acquisition (its semaphore waits at colour output)
       // and the frame's earlier uses of it (transfers, frame generation's
       // capture of the frame without HUD), and the back buffer's writes.
@@ -51,8 +50,8 @@ namespace remix {
           .dstSubpass = 0,
           .srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
           .dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-          .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_TRANSFER_READ_BIT |
-                           VK_ACCESS_TRANSFER_WRITE_BIT,
+          .srcAccessMask =
+              VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT,
           .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT};
       const VkRenderPassCreateInfo pass{.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
                                         .attachmentCount = 1,
@@ -84,9 +83,8 @@ namespace remix {
                                                  .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                                                  .descriptorCount = 1,
                                                  .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT};
-      const VkDescriptorSetLayoutCreateInfo setLayout{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-                                                      .bindingCount = 1,
-                                                      .pBindings = &binding};
+      const VkDescriptorSetLayoutCreateInfo setLayout{
+          .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, .bindingCount = 1, .pBindings = &binding};
       check(vkCreateDescriptorSetLayout(device, &setLayout, nullptr, &m_setLayout));
       const VkDescriptorPoolSize size{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, slots};
       const VkDescriptorPoolCreateInfo pool{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
@@ -171,9 +169,8 @@ namespace remix {
         const size_t sizes[] = {sizeof(upscale::vertShader), sizeof(upscale::hdr10Shader),
                                 sizeof(upscale::hdrUiShader)};
         for (unsigned i = 0; i < 3; ++i) {
-          const VkShaderModuleCreateInfo module{.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-                                                .codeSize = sizes[i],
-                                                .pCode = codes[i]};
+          const VkShaderModuleCreateInfo module{
+              .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, .codeSize = sizes[i], .pCode = codes[i]};
           check(vkCreateShaderModule(device, &module, nullptr, &modules[i]));
         }
         VkPipelineShaderStageCreateInfo stages[2]{};
@@ -189,8 +186,8 @@ namespace remix {
             .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST};
         const VkViewport viewport{0, 0, float(extent.width), float(extent.height), 0, 1};
         const VkRect2D scissor{{0, 0}, extent};
-        const VkPipelineViewportStateCreateInfo viewportState{
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+        const VkPipelineViewportStateCreateInfo viewportState{.sType =
+                                                                  VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
             .viewportCount = 1,
             .pViewports = &viewport,
             .scissorCount = 1,
@@ -200,12 +197,12 @@ namespace remix {
             .polygonMode = VK_POLYGON_MODE_FILL,
             .cullMode = VK_CULL_MODE_NONE,
             .lineWidth = 1};
-        const VkPipelineMultisampleStateCreateInfo samples{
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+        const VkPipelineMultisampleStateCreateInfo samples{.sType =
+                                                               VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
             .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT};
         const VkPipelineColorBlendAttachmentState blendAttachment{.colorWriteMask = 15};
-        const VkPipelineColorBlendStateCreateInfo blend{
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+        const VkPipelineColorBlendStateCreateInfo blend{.sType =
+                                                            VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
             .attachmentCount = 1,
             .pAttachments = &blendAttachment};
         const VkGraphicsPipelineCreateInfo info{.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
@@ -314,8 +311,8 @@ namespace remix {
       return;
     b.initialized = true;
     const VkImageMemoryBarrier barrier{.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-                                       .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
-                                                        VK_ACCESS_TRANSFER_WRITE_BIT,
+                                       .dstAccessMask =
+                                           VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT,
                                        .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
                                        .newLayout = VK_IMAGE_LAYOUT_GENERAL,
                                        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
@@ -339,8 +336,8 @@ namespace remix {
     const auto &b = m_backBuffers[slot];
     // The frame's draws and copies into the back buffer, then its reads here.
     const VkImageMemoryBarrier barrier{.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-                                       .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
-                                                        VK_ACCESS_TRANSFER_WRITE_BIT,
+                                       .srcAccessMask =
+                                           VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT,
                                        .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
                                        .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
                                        .newLayout = VK_IMAGE_LAYOUT_GENERAL,
@@ -365,8 +362,7 @@ namespace remix {
     const VkImageMemoryBarrier after{.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
                                      .srcAccessMask = VK_ACCESS_SHADER_READ_BIT,
                                      .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
-                                                      VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
-                                                      VK_ACCESS_TRANSFER_READ_BIT,
+                                                      VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT,
                                      .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
                                      .newLayout = VK_IMAGE_LAYOUT_GENERAL,
                                      .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,

@@ -1,5 +1,6 @@
 // Repeatable renderer benchmark built only on the public SDK.
-//   remix-bench LIBRARY FRAMES BACKEND [grid=N] [foliage=N] [textures=N] [size=N] [format=bc|rgba] [stats=0|1] [work=MS] [async=0|1] [churn=N] [churnTris=N]
+//   remix-bench LIBRARY FRAMES BACKEND [grid=N] [foliage=N] [textures=N] [size=N] [format=bc|rgba] [stats=0|1]
+//   [work=MS] [async=0|1] [churn=N] [churnTris=N]
 // Draws a grid of one-sided textured cubes and double-sided alpha-tested
 // foliage cards, then reports texture creation, first frame and steady Present
 // timings. Measurement starts once the requested backend reports GPU timings
@@ -54,13 +55,15 @@ namespace {
             uint8_t block[8] = {255, 0};
             uint64_t bits = 0;
             for (unsigned t = 0; t < 16; ++t) {
-              const float x = float((bx * 4 + t % 4) % cell) / cell - .5f, y = float((by * 4 + t / 4) % cell) / cell - .5f;
+              const float x = float((bx * 4 + t % 4) % cell) / cell - .5f,
+                          y = float((by * 4 + t / 4) % cell) / cell - .5f;
               bits |= uint64_t(x * x + y * y < .2f ? 0 : 1) << (t * 3);
             }
             std::memcpy(block + 2, &bits, 6);
             data.insert(data.end(), block, block + 8);
           }
-          const uint16_t c0 = rgb565(60 + seed * 37 % 160, 90 + seed * 53 % 140, 40 + (bx ^ by) % 2 * 60), c1 = rgb565(20, 30, 20);
+          const uint16_t c0 = rgb565(60 + seed * 37 % 160, 90 + seed * 53 % 140, 40 + (bx ^ by) % 2 * 60),
+                         c1 = rgb565(20, 30, 20);
           const uint32_t indices = (bx + by + seed) % 3 ? 0x00000000u : 0x55555555u;
           uint8_t color[8];
           std::memcpy(color, &c0, 2);
@@ -159,7 +162,10 @@ namespace {
 
 int main(int argc, char **argv) {
   if (argc < 4) {
-    std::fprintf(stderr, "usage: %s LIBRARY FRAMES BACKEND [grid=N] [foliage=N] [textures=N] [size=N] [format=bc|rgba] [stats=0|1] [work=MS] [async=0|1] [churn=N] [churnTris=N]\n", argv[0]);
+    std::fprintf(stderr,
+                 "usage: %s LIBRARY FRAMES BACKEND [grid=N] [foliage=N] [textures=N] [size=N] [format=bc|rgba] "
+                 "[stats=0|1] [work=MS] [async=0|1] [churn=N] [churnTris=N]\n",
+                 argv[0]);
     return 2;
   }
   Options options;
@@ -168,16 +174,26 @@ int main(int argc, char **argv) {
     const auto eq = arg.find('=');
     const std::string key = arg.substr(0, eq), value = eq == std::string::npos ? "" : arg.substr(eq + 1);
     const unsigned number = unsigned(std::strtoul(value.c_str(), nullptr, 10));
-    if (key == "grid") options.grid = number;
-    else if (key == "foliage") options.foliage = number;
-    else if (key == "textures") options.textures = std::max(1u, number);
-    else if (key == "size") options.size = std::max(4u, number);
-    else if (key == "format") options.compressed = value != "rgba";
-    else if (key == "stats") options.stats = value != "0";
-    else if (key == "work") options.work = number;
-    else if (key == "async") options.async = value != "0";
-    else if (key == "churn") options.churn = number;
-    else if (key == "churnTris") options.churnTris = std::max(2u, number);
+    if (key == "grid")
+      options.grid = number;
+    else if (key == "foliage")
+      options.foliage = number;
+    else if (key == "textures")
+      options.textures = std::max(1u, number);
+    else if (key == "size")
+      options.size = std::max(4u, number);
+    else if (key == "format")
+      options.compressed = value != "rgba";
+    else if (key == "stats")
+      options.stats = value != "0";
+    else if (key == "work")
+      options.work = number;
+    else if (key == "async")
+      options.async = value != "0";
+    else if (key == "churn")
+      options.churn = number;
+    else if (key == "churnTris")
+      options.churnTris = std::max(2u, number);
     else {
       std::fprintf(stderr, "unknown option %s\n", arg.c_str());
       return 2;
@@ -238,7 +254,8 @@ int main(int argc, char **argv) {
   const auto textureStart = Clock::now();
   for (unsigned t = 0; status == REMIXAPI_ERROR_CODE_SUCCESS && t <= options.textures; ++t) {
     const bool alpha = t == options.textures;
-    const auto data = options.compressed ? blockTexture(options.size, mips, t, alpha) : rgbaTexture(options.size, mips, t, alpha);
+    const auto data =
+        options.compressed ? blockTexture(options.size, mips, t, alpha) : rgbaTexture(options.size, mips, t, alpha);
     remixapi_TextureInfo info = {};
     info.sType = REMIXAPI_STRUCT_TYPE_TEXTURE_INFO;
     info.hash = 0x1000 + t;
@@ -392,7 +409,8 @@ int main(int argc, char **argv) {
 
   std::vector<double> presents, framesMs, gpuTrace, gpuBuild;
   // CPU phases of Present, as reported by the runtime.
-  const char *phaseNames[] = {"scene", "record", "geometry", "upload", "accel", "fence", "acquire", "submit", "queue_present"};
+  const char *phaseNames[] = {"scene", "record",  "geometry", "upload",       "accel",
+                              "fence", "acquire", "submit",   "queue_present"};
   std::vector<double> phases[9];
   double firstFrameMs = 0, readyMs = 0, longestMs = 0; // longest: any frame, including upload hitches
   auto previous = Clock::now();
@@ -487,9 +505,9 @@ int main(int argc, char **argv) {
       ++measured;
       presents.push_back(milliseconds(now - presentStart));
       framesMs.push_back(milliseconds(now - previous));
-      const double values[] = {perf.sceneMilliseconds, perf.recordMilliseconds, perf.geometryMilliseconds,
-                               perf.uploadMilliseconds, perf.accelerationMilliseconds, perf.fenceMilliseconds,
-                               perf.acquireMilliseconds, perf.submitMilliseconds, perf.queuePresentMilliseconds};
+      const double values[] = {perf.sceneMilliseconds,   perf.recordMilliseconds,       perf.geometryMilliseconds,
+                               perf.uploadMilliseconds,  perf.accelerationMilliseconds, perf.fenceMilliseconds,
+                               perf.acquireMilliseconds, perf.submitMilliseconds,       perf.queuePresentMilliseconds};
       for (unsigned i = 0; i < 9; ++i)
         phases[i].push_back(values[i]);
       static remixapi_GpuPassTimingsEXT passes;

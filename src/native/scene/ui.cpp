@@ -13,8 +13,8 @@ namespace remix {
   using namespace scene;
   using namespace scene::detail;
 
-  void NativeResources::registerUiTexture(uint64_t id, uint32_t width, uint32_t height,
-                                          remixapi_Format format, const void *pixels, uint64_t size) {
+  void NativeResources::registerUiTexture(uint64_t id, uint32_t width, uint32_t height, remixapi_Format format,
+                                          const void *pixels, uint64_t size) {
     if (!id || !width || !height || !pixels || uint64_t(width) * height > UINT64_MAX / 4 ||
         size != uint64_t(width) * height * 4 ||
         (format != REMIXAPI_FORMAT_R8G8B8A8_UNORM && format != REMIXAPI_FORMAT_R8G8B8A8_SRGB &&
@@ -93,10 +93,9 @@ namespace remix {
       m_uiDraws.clear();
       return;
     }
-    if (info->sType != REMIXAPI_STRUCT_TYPE_UI_DRAW_LIST || !info->pVertices || !info->pIndices ||
-        !info->pCommands || !info->displayWidth || !info->displayHeight ||
-        info->vertexCount > 8 * 1024 * 1024 || info->indexCount > 24 * 1024 * 1024 ||
-        info->commandCount > 65536) {
+    if (info->sType != REMIXAPI_STRUCT_TYPE_UI_DRAW_LIST || !info->pVertices || !info->pIndices || !info->pCommands ||
+        !info->displayWidth || !info->displayHeight || info->vertexCount > 8 * 1024 * 1024 ||
+        info->indexCount > 24 * 1024 * 1024 || info->commandCount > 65536) {
       throw invalid;
     }
     auto surface = std::make_shared<Surface>();
@@ -116,7 +115,8 @@ namespace remix {
       const auto &cmd = info->pCommands[i];
       const uint64_t end = uint64_t(cmd.indexOffset) + cmd.indexCount;
       constexpr uint32_t nativeFlags = 0xff1fu | REMIXAPI_UI_NATIVE_MASK_GROUP_BITS | REMIXAPI_UI_NATIVE_MASK_OUTSIDE;
-      const uint32_t maskGroup = (cmd.flags & REMIXAPI_UI_NATIVE_MASK_GROUP_BITS) >> REMIXAPI_UI_NATIVE_MASK_GROUP_SHIFT;
+      const uint32_t maskGroup =
+          (cmd.flags & REMIXAPI_UI_NATIVE_MASK_GROUP_BITS) >> REMIXAPI_UI_NATIVE_MASK_GROUP_SHIFT;
       const uint32_t sourceBlend = (cmd.flags >> REMIXAPI_UI_NATIVE_SRC_BLEND_SHIFT) & 15;
       const uint32_t destinationBlend = (cmd.flags >> REMIXAPI_UI_NATIVE_DST_BLEND_SHIFT) & 15;
       if ((cmd.flags & ~nativeFlags) || end > info->indexCount || cmd.indexCount % 3 || sourceBlend > 14 ||
@@ -198,8 +198,8 @@ namespace remix {
     // the whole draw), so the renderer neither decodes nor uploads it again.
     const auto *previous = m_overlay.empty() ? nullptr : &m_overlay.front();
     auto sameImage = [&](const Pixels &p, const uint8_t *bytes) {
-      return p.width == width && p.height == height && p.mips.size() == 1 && p.hdrMips.empty() &&
-             !p.compressed && p.srgb && std::memcmp(p.mips[0].data(), bytes, p.mips[0].size()) == 0;
+      return p.width == width && p.height == height && p.mips.size() == 1 && p.hdrMips.empty() && !p.compressed &&
+             p.srgb && std::memcmp(p.mips[0].data(), bytes, p.mips[0].size()) == 0;
     };
     std::shared_ptr<Texture> texture;
     const bool rgba = format == REMIXAPI_FORMAT_R8G8B8A8_UNORM || format == REMIXAPI_FORMAT_R8G8B8A8_SRGB;
@@ -215,8 +215,7 @@ namespace remix {
         texture->pixels = std::move(decoded);
       }
     }
-    if (previous && texture == previous->material->texture &&
-        previous->material->tint[3] == std::max(0.0f, opacity))
+    if (previous && texture == previous->material->texture && previous->material->tint[3] == std::max(0.0f, opacity))
       return;
     Draw draw;
     draw.ui = true;

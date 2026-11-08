@@ -88,9 +88,9 @@ namespace remix {
                  DrawOwner owner = {}); // After prior frame fence, outside render pass.
     // Layers: 0 sky, 1 world, 2 view model, 3 UI and overlays. part: with
     // masked overlays, the commands before (1) or from (2) the coverage passes.
-    void record(VkCommandBuffer command, bool skyOnly = false, bool skipSky = false,
-                const float *skyJitter = nullptr, VkExtent2D skyExtent = {}, int firstLayer = 0,
-                int lastLayer = 3, int part = 0); // Inside render pass, before ImGui.
+    void record(VkCommandBuffer command, bool skyOnly = false, bool skipSky = false, const float *skyJitter = nullptr,
+                VkExtent2D skyExtent = {}, int firstLayer = 0, int lastLayer = 3,
+                int part = 0); // Inside render pass, before ImGui.
 
     // Masked overlays (remixapi_InstanceInfoMaskEXT, masked UI commands).
     // maskRuns: coverage passes the last prepare() made; zero when the frame
@@ -153,13 +153,10 @@ namespace remix {
     // The target's depth attachment (depthView's image).
     VkImage depthImage() const;
 
-    VkDescriptorImageInfo sampledMaterial(const std::shared_ptr<scene::Material> &material,
-                                          VkCommandBuffer command);
-    VkDescriptorImageInfo sampledEmission(const std::shared_ptr<scene::Material> &material,
-                                          VkCommandBuffer command);
+    VkDescriptorImageInfo sampledMaterial(const std::shared_ptr<scene::Material> &material, VkCommandBuffer command);
+    VkDescriptorImageInfo sampledEmission(const std::shared_ptr<scene::Material> &material, VkCommandBuffer command);
     VkDescriptorImageInfo sampledTexture(const std::shared_ptr<scene::Material> &material,
-                                         const std::shared_ptr<scene::Texture> &texture,
-                                         VkCommandBuffer command);
+                                         const std::shared_ptr<scene::Texture> &texture, VkCommandBuffer command);
     VkImageView textureView(const scene::Texture *texture) const;
     // The texture's image holds sRGB-encoded texels (stored UNORM): shaders
     // sampling it as colour decode them with pow 2.2.

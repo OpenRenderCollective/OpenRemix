@@ -40,8 +40,7 @@ int main(int argc, char **argv) {
             "load two scenes");
     remixapi_USDDrawOptionsEXT draw{sizeof(draw), 1, false, 1};
     auto frame = [&] {
-      require(!remixapi_DrawUSDSceneEXT(first, &draw) && !remixapi_DrawUSDSceneEXT(second, &draw),
-              "draw two scenes");
+      require(!remixapi_DrawUSDSceneEXT(first, &draw) && !remixapi_DrawUSDSceneEXT(second, &draw), "draw two scenes");
       require(!api.Present(nullptr), "present");
     };
     frame();
@@ -67,8 +66,7 @@ int main(int argc, char **argv) {
         break;
       std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
-    require(*b.message && b.generation == 2,
-            "malformed reload keeps the working generation and reports failure");
+    require(*b.message && b.generation == 2, "malformed reload keeps the working generation and reports failure");
     require(!remixapi_DestroyUSDSceneEXT(first) && !remixapi_DestroyUSDSceneEXT(second), "destroy scenes");
     require(!api.Shutdown(), "shutdown");
     std::filesystem::remove_all(directory);

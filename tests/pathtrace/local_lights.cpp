@@ -13,15 +13,13 @@
 #include <image/stb_image.h>
 
 namespace {
-void require(bool value, const char *message) {
-  if (!value) {
-    std::fprintf(stderr, "%s\n", message);
-    std::exit(1);
+  void require(bool value, const char *message) {
+    if (!value) {
+      std::fprintf(stderr, "%s\n", message);
+      std::exit(1);
+    }
   }
-}
-void ok(remixapi_ErrorCode result) {
-  require(!result, "Environment test API failure");
-}
+  void ok(remixapi_ErrorCode result) { require(!result, "Environment test API failure"); }
 } // namespace
 int main(int argc, char **argv) {
   require(argc == 2, "Supply screenshot directory");
@@ -55,14 +53,12 @@ int main(int argc, char **argv) {
   // These radiometric checks decode the gamma 2.2 output.
   ok(api.SetConfigVariable("rtx.native.pathtrace.samples", "1"));
   ok(api.SetConfigVariable("rtx.native.pathtrace.bounces", "0"));
-  require(api.SetConfigVariable("rtx.native.pathtrace.sky", "2") ==
-              REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS,
+  require(api.SetConfigVariable("rtx.native.pathtrace.sky", "2") == REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS,
           "Invalid sky toggle accepted");
   ok(api.SetConfigVariable("rtx.native.vsync", "False"));
   ok(api.SetConfigVariable("rtx.native.pathtrace.sharc", "0"));
   uint64_t next = 100;
-  auto material = [&](remixapi_Float3D color, float alpha,
-                      bool cutout = false) {
+  auto material = [&](remixapi_Float3D color, float alpha, bool cutout = false) {
     remixapi_MaterialInfoOpaqueEXT opaque{};
     opaque.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
     opaque.albedoConstant = color;
@@ -78,10 +74,8 @@ int main(int argc, char **argv) {
     return handle;
   };
   const auto white = material({1, 1, 1}, 1), black = material({0, 0, 0}, 1);
-  const auto cutout = material({1, 1, 1}, 0, true),
-             tint = material({.1f, 1, .2f}, .5f);
-  auto quad = [&](int axis, float plane, float a0, float a1, float b0, float b1,
-                  remixapi_MaterialHandle mat) {
+  const auto cutout = material({1, 1, 1}, 0, true), tint = material({.1f, 1, .2f}, .5f);
+  auto quad = [&](int axis, float plane, float a0, float a1, float b0, float b1, remixapi_MaterialHandle mat) {
     remixapi_HardcodedVertex vertices[4]{};
     for (int i = 0; i < 4; ++i) {
       vertices[i].position[axis] = plane;
@@ -135,17 +129,14 @@ int main(int argc, char **argv) {
   std::vector<remixapi_MeshHandle> occluders;
   remixapi_MeshHandle dynamicOccluder{};
   auto config = [&](const char *key, const char *value) {
-    ok(api.SetConfigVariable(
-        (std::string("rtx.native.pathtrace.") + key).c_str(), value));
+    ok(api.SetConfigVariable((std::string("rtx.native.pathtrace.") + key).c_str(), value));
   };
   auto draw = [&](remixapi_MeshHandle mesh) {
     remixapi_InstanceIdentityEXT identity{};
     identity.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_IDENTITY_EXT;
     identity.instanceId = reinterpret_cast<uintptr_t>(mesh);
     identity.rasterVisible = 1;
-    identity.classification = mesh == dynamicOccluder
-                                  ? REMIXAPI_INSTANCE_DYNAMIC_EXT
-                                  : REMIXAPI_INSTANCE_STATIC_EXT;
+    identity.classification = mesh == dynamicOccluder ? REMIXAPI_INSTANCE_DYNAMIC_EXT : REMIXAPI_INSTANCE_STATIC_EXT;
     remixapi_InstanceInfoBlendEXT blend{};
     blend.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_BLEND_EXT;
     blend.pNext = &identity;
@@ -218,8 +209,7 @@ int main(int argc, char **argv) {
             redError += (linear - .1407) * (linear - .1407) / 64;
         }
     stbi_image_free(pixels);
-    std::printf("%s linear RGB: %.5f %.5f %.5f\n", name.c_str(), average[0],
-                average[1], average[2]);
+    std::printf("%s linear RGB: %.5f %.5f %.5f\n", name.c_str(), average[0], average[1], average[2]);
     std::fflush(stdout);
     return average;
   };
@@ -229,8 +219,8 @@ int main(int argc, char **argv) {
       frame();
     return readback(name);
   };
-  if (const char *fault = std::getenv("REMIX_TEST_FAULT"); fault &&
-      (std::string(fault) == "light-guiding-allocation" || std::string(fault) == "light-guiding-compute")) {
+  if (const char *fault = std::getenv("REMIX_TEST_FAULT");
+      fault && (std::string(fault) == "light-guiding-allocation" || std::string(fault) == "light-guiding-compute")) {
     config("accumulate", "0");
     light.radiance = {.01f, .01f, .01f};
     light.hash = next++;
@@ -238,8 +228,8 @@ int main(int argc, char **argv) {
     ok(api.CreateLight(&light, &extra));
     lights.push_back(extra);
     const auto value = capture("guiding-fallback", 48);
-    require(value[0] > .1f && !guiding().active && guiding().unavailableReason[0] &&
-                local().denoiserActive && temporal().activeTaa,
+    require(value[0] > .1f && !guiding().active && guiding().unavailableReason[0] && local().denoiserActive &&
+                temporal().activeTaa,
             "Guiding failure did not retain ordinary local lighting and denoising");
     ok(api.Shutdown());
     return 0;
@@ -248,12 +238,10 @@ int main(int argc, char **argv) {
     config("accumulate", "0");
     const auto value = capture("fallback", 48);
     const auto stats = local();
-    require(value[0] > .1f && !stats.denoiserActive &&
-                stats.unavailableReason[0],
+    require(value[0] > .1f && !stats.denoiserActive && stats.unavailableReason[0],
             "Failed local resources did not retain raw torch lighting with a "
             "reason");
-    require(temporal().activeDenoiser && temporal().activeTaa,
-            "Local fallback disabled established SH/TAA");
+    require(temporal().activeDenoiser && temporal().activeTaa, "Local fallback disabled established SH/TAA");
     ok(api.Shutdown());
     return 0;
   }
@@ -290,8 +278,7 @@ int main(int argc, char **argv) {
             const auto t = tracing();
             const auto l = local();
             const auto d = temporal();
-            require(t.gpuTimingsAvailable,
-                    "GPU timing unavailable for torch performance probe");
+            require(t.gpuTimingsAvailable, "GPU timing unavailable for torch performance probe");
             times.push_back(t.gpuTraceMilliseconds);
             filters.push_back(float(l.gpuDenoiseMilliseconds));
             confidence.push_back(d.gpuConfidenceMilliseconds);
@@ -307,13 +294,10 @@ int main(int argc, char **argv) {
         std::printf("PERF filtered=%u lights=%u samples=%u depth=%u "
                     "trace_ms=%.4f local_nrd_ms=%.4f confidence_ms=%.4f "
                     "indirect_nrd_ms=%.4f taa_ms=%.4f bvh_bytes=%llu\n",
-                    unsigned(filtered), count, l.samples, l.treeDepth,
-                    median(times), median(filters), median(confidence),
-                    median(indirect), median(taa),
-                    (unsigned long long)l.memoryBytes);
+                    unsigned(filtered), count, l.samples, l.treeDepth, median(times), median(filters),
+                    median(confidence), median(indirect), median(taa), (unsigned long long)l.memoryBytes);
         std::fflush(stdout);
-        readback(std::string(filtered ? "filtered-" : "raw-") +
-                 std::to_string(count));
+        readback(std::string(filtered ? "filtered-" : "raw-") + std::to_string(count));
       }
     }
     ok(api.Shutdown());
@@ -329,20 +313,18 @@ int main(int argc, char **argv) {
             "Invalid influence range accepted");
   require(api.SetConfigVariable("rtx.native.pathtrace.localGuiding", "2") == REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS,
           "Invalid guiding toggle accepted");
-  require(api.SetConfigVariable("rtx.native.pathtrace.adaptiveLocalSampling", "2") == REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS,
+  require(api.SetConfigVariable("rtx.native.pathtrace.adaptiveLocalSampling", "2") ==
+              REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS,
           "Invalid adaptive sampling toggle accepted");
-  require(remixapi_GetLocalLightStatisticsEXT(nullptr) ==
-                  REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS &&
-              remixapi_GetLocalLightStatisticsEXT(&invalid) ==
-                  REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS,
+  require(remixapi_GetLocalLightStatisticsEXT(nullptr) == REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS &&
+              remixapi_GetLocalLightStatisticsEXT(&invalid) == REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS,
           "Malformed local diagnostics accepted");
   for (const char *primary : {"raster", "ray"})
     for (bool filtered : {false, true}) {
       config("primaryVisibility", primary);
       config("accumulate", filtered ? "0" : "1");
       config("localSamples", "2");
-      const std::string prefix =
-          std::string(primary) + (filtered ? "-nrd-" : "-raw-");
+      const std::string prefix = std::string(primary) + (filtered ? "-nrd-" : "-raw-");
       const unsigned frames = filtered ? 48 : 32;
       light.radiance = {20, 10, 4};
       ok(api.UpdateLightDefinition(torch, &light));
@@ -350,22 +332,18 @@ int main(int argc, char **argv) {
       auto open = capture(prefix + "open", frames);
       const double d2 = .5 * .5 + .7 * .7;
       const double expected = 20 * .08 * .08 / d2 * .7 / std::sqrt(d2);
-      require(std::abs(open[0] - expected) < .018 &&
-                  std::abs(open[1] - open[0] * .5) < .008 &&
+      require(std::abs(open[0] - expected) < .018 && std::abs(open[1] - open[0] * .5) < .008 &&
                   std::abs(open[2] - open[0] * .2) < .008,
               "Analytic sphere energy or NRD color packing incorrect");
-      require(!filtered || local().denoiserActive,
-              "Local NRD did not activate");
+      require(!filtered || local().denoiserActive, "Local NRD did not activate");
       if (filtered) {
         config("localDenoiser", "0");
         const auto unfiltered = capture(prefix + "raw-local-sigma", 32);
         remixapi_ShadowStatisticsEXT shadows{};
         shadows.structSize = sizeof(shadows);
         ok(remixapi_GetShadowStatisticsEXT(&shadows));
-        require(
-            !local().denoiserActive && shadows.active &&
-                std::abs(unfiltered[0] - expected) < .018,
-            "Raw local radiance was lost or modulated by the sun's SIGMA mask");
+        require(!local().denoiserActive && shadows.active && std::abs(unfiltered[0] - expected) < .018,
+                "Raw local radiance was lost or modulated by the sun's SIGMA mask");
         config("localDenoiser", "1");
       }
       occluders = {blocker};
@@ -373,12 +351,10 @@ int main(int argc, char **argv) {
       require(closed[0] < .005f, "Opaque wall leaked torch light");
       occluders = {holes};
       auto cut = capture(prefix + "cutout", frames);
-      require(std::abs(cut[0] - open[0]) < .015,
-              "Alpha cutout blocked torch light");
+      require(std::abs(cut[0] - open[0]) < .015, "Alpha cutout blocked torch light");
       occluders = {glass};
       auto tinted = capture(prefix + "tinted", frames);
-      require(tinted[1] > .015 && tinted[1] < open[1] * .8 &&
-                  tinted[0] < tinted[1] * .3,
+      require(tinted[1] > .015 && tinted[1] < open[1] * .8 && tinted[0] < tinted[1] * .3,
               "Tinted transparent torch shadows lost color/attenuation");
       // Visibility may terminate at any opaque hit, but transmitting sheets
       // must still be visited in order across the static and dynamic TLASes.
@@ -386,8 +362,7 @@ int main(int argc, char **argv) {
         dynamicOccluder = moving;
         occluders = {glass, secondGlass};
         const auto layers = capture(prefix + (moving == glass ? "near-dynamic" : "far-dynamic"), frames);
-        require(std::abs(layers[1] - tinted[1] * .5) < .007 &&
-                    layers[0] < tinted[0],
+        require(std::abs(layers[1] - tinted[1] * .5) < .007 && layers[0] < tinted[0],
                 "Mixed static/dynamic transmission lost a sheet");
       }
       for (auto moving : {glass, farBlocker}) {
@@ -399,8 +374,7 @@ int main(int argc, char **argv) {
       dynamicOccluder = {};
       occluders = {beyond};
       auto behind = capture(prefix + "beyond-light", frames);
-      require(std::abs(behind[0] - open[0]) < .015,
-              "Geometry beyond the emitter blocked its shadow ray");
+      require(std::abs(behind[0] - open[0]) < .015, "Geometry beyond the emitter blocked its shadow ray");
       occluders.clear();
       config("localLights", "0");
       auto disabled = capture(prefix + "disabled", frames);
@@ -411,29 +385,23 @@ int main(int argc, char **argv) {
       const auto resets = temporal().historyResets, builds = local().builds;
       auto previous = tracing();
       for (int i = 0; i < 12; ++i) {
-        light.radiance =
-            i % 2 ? remixapi_Float3D{20, 10, 4} : remixapi_Float3D{};
+        light.radiance = i % 2 ? remixapi_Float3D{20, 10, 4} : remixapi_Float3D{};
         ok(api.UpdateLightDefinition(torch, &light));
         frame();
         const auto now = tracing();
-        require(now.sceneGeneration > previous.sceneGeneration,
-                "Torch toggle reused a cached frame");
+        require(now.sceneGeneration > previous.sceneGeneration, "Torch toggle reused a cached frame");
         if (filtered)
-          require(temporal().historyResets == resets,
-                  "Redstone toggle reset global temporal history");
+          require(temporal().historyResets == resets, "Redstone toggle reset global temporal history");
         else
-          require(now.accumulationCount == 1,
-                  "Torch change retained progressive accumulation");
-        require(local().builds == builds,
-                "Power toggle rebuilt LightBVH topology");
+          require(now.accumulationCount == 1, "Torch change retained progressive accumulation");
+        require(local().builds == builds, "Power toggle rebuilt LightBVH topology");
         previous = now;
       }
       light.radiance = {};
       ok(api.UpdateLightDefinition(torch, &light));
       for (int i = 0; i < 8; ++i)
         frame();
-      require(readback(prefix + "off")[0] < .005,
-              "Unlit redstone retained direct light");
+      require(readback(prefix + "off")[0] < .005, "Unlit redstone retained direct light");
       light.radiance = {20, 10, 4};
       ok(api.UpdateLightDefinition(torch, &light));
     }
@@ -461,13 +429,11 @@ int main(int argc, char **argv) {
   occluders = {partition, sideA, sideB, sideC};
   config("primaryVisibility", "raster");
   config("accumulate", "1");
-  require(capture("bounce-disabled", 16)[0] < .005,
-          "Zero-bounce partition admitted indirect local light");
+  require(capture("bounce-disabled", 16)[0] < .005, "Zero-bounce partition admitted indirect local light");
   config("bounces", "1");
   config("samples", "8");
   const auto bounced = capture("bounce-reference", 64);
-  require(bounced[0] > .005,
-          "Diffuse continuation did not receive torch lighting");
+  require(bounced[0] > .005, "Diffuse continuation did not receive torch lighting");
   config("accumulate", "0");
   config("samples", "2");
   config("sharc", "1");
@@ -477,19 +443,16 @@ int main(int argc, char **argv) {
   remixapi_SharcStatisticsEXT cache{};
   cache.structSize = sizeof(cache);
   ok(remixapi_GetSharcStatisticsEXT(&cache));
-  require(cache.active && cache.queryHits > 0,
-          "Torch scene did not exercise SHARC reuse");
-  require(cached[0] > .003 && std::abs(cached[0] - bounced[0]) <
-                                  std::max(.012f, bounced[0] * .4f),
+  require(cache.active && cache.queryHits > 0, "Torch scene did not exercise SHARC reuse");
+  require(cached[0] > .003 && std::abs(cached[0] - bounced[0]) < std::max(.012f, bounced[0] * .4f),
           "SHARC torch radiance disagrees with bounced reference");
   const auto resets = temporal().historyResets;
   light.radiance = {};
   ok(api.UpdateLightDefinition(torch, &light));
   for (int i = 0; i < 96; ++i)
     frame();
-  require(
-      readback("bounce-off")[0] < .005 && temporal().historyResets == resets,
-      "Torch extinction left cached light or reset global temporal history");
+  require(readback("bounce-off")[0] < .005 && temporal().historyResets == resets,
+          "Torch extinction left cached light or reset global temporal history");
   occluders.clear();
   config("bounces", "0");
   config("samples", "1");
@@ -521,8 +484,8 @@ int main(int argc, char **argv) {
           "Recent visibility did not guide any meaningful fraction of samples");
   require(std::abs(guided[0] - reference[0]) < .025 && std::abs(guided[1] - reference[1]) < .015,
           "Guided mixture PDF changed expected radiance");
-  std::printf("guiding: %u / %u sampled rays guided, %u visible\n", trained.sampledGuided,
-              trained.sampledQueries, trained.sampledVisible);
+  std::printf("guiding: %u / %u sampled rays guided, %u visible\n", trained.sampledGuided, trained.sampledQueries,
+              trained.sampledVisible);
   // Tiny camera motion restarts only progressive accumulation. It produces
   // independent one-sample images while retaining world-cell guide history.
   varyCamera = true;
@@ -580,22 +543,17 @@ int main(int argc, char **argv) {
       lights.push_back(handle);
     }
     const auto result = capture("many-" + std::to_string(count), 16);
-    require(std::abs(result[0] - .1407f) < .012,
-            "Many-light selection changed total energy");
+    require(std::abs(result[0] - .1407f) < .012, "Many-light selection changed total energy");
     const auto stats = local();
-    require(stats.lightCount == count && stats.nodeCount == count * 2 - 1 &&
-                stats.treeDepth <= 14,
+    require(stats.lightCount == count && stats.nodeCount == count * 2 - 1 && stats.treeDepth <= 14,
             "Large hierarchy count/depth is invalid");
-    std::printf(
-        "lights=%u nodes=%u depth=%u trace_ms=%.4f cpu_update_ms=%.4f\n", count,
-        stats.nodeCount, stats.treeDepth, tracing().gpuTraceMilliseconds,
-        stats.cpuUpdateMilliseconds);
+    std::printf("lights=%u nodes=%u depth=%u trace_ms=%.4f cpu_update_ms=%.4f\n", count, stats.nodeCount,
+                stats.treeDepth, tracing().gpuTraceMilliseconds, stats.cpuUpdateMilliseconds);
   }
   for (auto emitter : lights)
     ok(api.DestroyLight(emitter));
   lights.clear();
-  require(capture("unloaded", 4)[0] < .005,
-          "Unloaded lights survived renderer submission");
+  require(capture("unloaded", 4)[0] < .005, "Unloaded lights survived renderer submission");
   ok(api.Shutdown());
   std::puts("Analytic local lights, visibility, radiance NRD, temporal updates "
             "and 5000-light hierarchy passed");

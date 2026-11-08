@@ -13,12 +13,12 @@
 #include <remix/remix_native_ext.h>
 
 namespace {
-void require(bool value, const char *message) {
+  void require(bool value, const char *message) {
   if (!value) {
     std::fprintf(stderr, "%s\n", message);
     std::exit(1);
   }
-}
+  }
 } // namespace
 int main() {
   using namespace remix::scene;
@@ -61,8 +61,8 @@ int main() {
       rebuilt.update(lights);
       require(cached.active == rebuilt.active && cached.nodes().size() == rebuilt.nodes().size(),
               "Sparse light refit changed hierarchy membership");
-      require(std::memcmp(cached.nodes().data(), rebuilt.nodes().data(),
-                          cached.nodes().size() * sizeof(LightNode)) == 0,
+      require(std::memcmp(cached.nodes().data(), rebuilt.nodes().data(), cached.nodes().size() * sizeof(LightNode)) ==
+                  0,
               "Sparse light refit changed bounds or sampling power");
       require(std::memcmp(cached.emitters().data(), rebuilt.emitters().data(),
                           cached.emitters().size() * sizeof(LightEmitter)) == 0,
@@ -72,11 +72,10 @@ int main() {
       require(!cached.update(lights) && cached.generation == generation,
               "Reordered identical lights invalidated the hierarchy");
     }
-    require(cached.builds == 1 && cached.refits > 200,
-            "Radiance animation unnecessarily rebuilt the hierarchy");
+    require(cached.builds == 1 && cached.refits > 200, "Radiance animation unnecessarily rebuilt the hierarchy");
   }
-  require(LightBvh::falloff(1.e12, 0) == 1 && LightBvh::falloff(144, 16) == 1 &&
-              LightBvh::falloff(256, 16) == 0 && LightBvh::falloff(400, 16) == 0,
+  require(LightBvh::falloff(1.e12, 0) == 1 && LightBvh::falloff(144, 16) == 1 && LightBvh::falloff(256, 16) == 0 &&
+              LightBvh::falloff(400, 16) == 0,
           "Influence bound changed inner light or failed to reach black");
   double previousFalloff = 1;
   for (unsigned i = 0; i <= 1000; ++i) {
@@ -85,17 +84,19 @@ int main() {
     require(fade >= 0 && fade <= previousFalloff, "Influence fade is not monotonic");
     previousFalloff = fade;
   }
-  require(1 - LightBvh::falloff(12.001 * 12.001, 16) < 1.e-6 &&
-              LightBvh::falloff(15.999 * 15.999, 16) < 1.e-6,
+  require(1 - LightBvh::falloff(12.001 * 12.001, 16) < 1.e-6 && LightBvh::falloff(15.999 * 15.999, 16) < 1.e-6,
           "Influence fade has an endpoint discontinuity");
   {
     SphereLight live{}, unlit{};
-    live.id = 1; live.radius = .08f; live.radiance[0] = 1;
-    unlit.id = 2; unlit.radius = .08f; unlit.position[0] = 100;
+    live.id = 1;
+    live.radius = .08f;
+    live.radiance[0] = 1;
+    unlit.id = 2;
+    unlit.radius = .08f;
+    unlit.position[0] = 100;
     LightBvh bounds;
     bounds.update({live, unlit});
-    require(bounds.nodes()[0].maximum[0] < .1f,
-            "Unlit slots expanded the live influence bound");
+    require(bounds.nodes()[0].maximum[0] < .1f, "Unlit slots expanded the live influence bound");
     unlit.radiance[0] = 1;
     bounds.update({live, unlit});
     require(bounds.builds == 1 && bounds.refits == 1 && bounds.nodes()[0].maximum[0] > 100,
@@ -123,8 +124,7 @@ int main() {
     } catch (...) {
       failed = true;
     }
-    require(failed && resources.sphereLights() == accepted,
-            "Malformed sphere modified accepted state");
+    require(failed && resources.sphereLights() == accepted, "Malformed sphere modified accepted state");
   };
   sphere.radius = -.1f;
   rejected();
@@ -147,12 +147,10 @@ int main() {
   resources.updateLight(handle, info);
   require(resources.sphereLights() == accepted, "Finite-radius update did not restore the emitter");
   resources.finishFrame();
-  require(resources.sphereLights().empty(),
-          "Lights survived an absent submission");
+  require(resources.sphereLights().empty(), "Lights survived an absent submission");
   resources.drawLight(handle);
   resources.destroyLight(handle);
-  require(resources.sphereLights().empty(),
-          "Destroyed light survived draw selection");
+  require(resources.sphereLights().empty(), "Destroyed light survived draw selection");
 
   for (unsigned count : {1u, 100u, 1000u, 5000u}) {
     std::vector<SphereLight> lights;
@@ -172,12 +170,10 @@ int main() {
                 bvh.depth <= unsigned(std::ceil(std::log2(count))) + 1,
             "Unbounded BVH depth or wrong membership");
     std::reverse(lights.begin(), lights.end());
-    require(!bvh.update(lights) && bvh.builds == 1,
-            "Unchanged reordered lights rebuilt BVH");
+    require(!bvh.update(lights) && bvh.builds == 1, "Unchanged reordered lights rebuilt BVH");
     const float p[] = {0, 0, 0}, n[] = {0, 0, 1};
     std::vector<double> pdf(count);
-    std::function<void(uint32_t, double)> visit = [&](uint32_t node,
-                                                      double probability) {
+    std::function<void(uint32_t, double)> visit = [&](uint32_t node, double probability) {
       const auto &value = bvh.nodes()[node];
       if (value.links[3] == 1) {
         pdf[value.links[2]] = probability;
@@ -200,8 +196,7 @@ int main() {
         double d2 = 0;
         for (unsigned c = 0; c < 3; ++c)
           d2 += double(emitter.positionRadius[c]) * emitter.positionRadius[c];
-        require(LightBvh::falloff(d2, 16) == 0 || supported,
-                "Influence bounds culled a contributing emitter");
+        require(LightBvh::falloff(d2, 16) == 0 || supported, "Influence bounds culled a contributing emitter");
       } else {
         bounded(value.links[0], supported);
         bounded(value.links[1], supported);
@@ -210,28 +205,23 @@ int main() {
     bounded(0, true);
     double sum = 0;
     for (unsigned i = 0; i < count; ++i) {
-      require(pdf[i] > 0 && std::isfinite(pdf[i]),
-              "A contributing light has zero selection PDF");
+      require(pdf[i] > 0 && std::isfinite(pdf[i]), "A contributing light has zero selection PDF");
       sum += pdf[i];
     }
     require(std::abs(sum - 1) < 1.e-10, "BVH traversal did not reach every "
                                         "emitter with normalized probability");
     for (auto &light : lights)
       light.radiance[0] *= .5f;
-    require(bvh.update(lights) && bvh.refits == 1 && bvh.builds == 1,
-            "Power change rebuilt topology");
+    require(bvh.update(lights) && bvh.refits == 1 && bvh.builds == 1, "Power change rebuilt topology");
     for (auto &light : lights)
       light.position[0] += 128;
-    require(bvh.update(lights) && bvh.refits == 2,
-            "Origin shift did not refit bounds");
+    require(bvh.update(lights) && bvh.refits == 2, "Origin shift did not refit bounds");
     for (auto &light : lights)
       light.radiance[0] = 0;
     bvh.update(lights);
-    require(!bvh.active && bvh.nodes()[0].minimumPower[3] == 0,
-            "Zero-power slots still contribute");
+    require(!bvh.active && bvh.nodes()[0].minimumPower[3] == 0, "Zero-power slots still contribute");
     bvh.update({});
-    require(bvh.nodes().empty() && bvh.emitters().empty(),
-            "Unloaded lights remained in hierarchy");
+    require(bvh.nodes().empty() && bvh.emitters().empty(), "Unloaded lights remained in hierarchy");
     std::printf("%u lights: balanced build, exact PDF sum, power/origin refit, "
                 "removal passed\n",
                 count);
@@ -245,10 +235,13 @@ int main() {
     triangle.radius = 4;
     triangle.radiance[0] = 50;
     triangle.position[2] = -.1f;
-    triangle.corners[0][0] = -2; triangle.corners[0][1] = -2;
-    triangle.corners[1][0] = 2; triangle.corners[1][1] = -2;
+    triangle.corners[0][0] = -2;
+    triangle.corners[0][1] = -2;
+    triangle.corners[1][0] = 2;
+    triangle.corners[1][1] = -2;
     triangle.corners[2][1] = 2;
-    for (auto &corner : triangle.corners) corner[2] = -.1f;
+    for (auto &corner : triangle.corners)
+      corner[2] = -.1f;
     LightBvh bvh;
     bvh.update({triangle});
     const auto stable = bvh.lightingGeneration;
@@ -279,15 +272,16 @@ int main() {
     bvh.update({});
     require(bvh.lightingGeneration == stable + 4, "Removed light retained temporal membership");
     SphereLight dominant = triangle, animated = triangle;
-    dominant.id = 10; dominant.radiance[0] = 100;
-    animated.id = 11; animated.radiance[0] = 1;
+    dominant.id = 10;
+    dominant.radiance[0] = 100;
+    animated.id = 11;
+    animated.radiance[0] = 1;
     bvh.update({dominant, animated});
     const auto aggregate = bvh.lightingGeneration;
     for (int frame = 0; frame < 20; ++frame) {
       animated.radiance[0] = frame & 1 ? 2.f : 1.f;
       bvh.update({dominant, animated});
-      require(bvh.lightingGeneration == aggregate,
-              "One animated emitter shortened the whole scene's history");
+      require(bvh.lightingGeneration == aggregate, "One animated emitter shortened the whole scene's history");
     }
   }
   // A receiver inside a volume of lights must not almost exclusively sample
@@ -314,8 +308,7 @@ int main() {
     for (float offset : {0.f, .5f, 1.f, 2.f}) {
       const float p[] = {offset, 0, 0}, n[] = {0, 0, 1};
       std::vector<double> pdf(lights.size());
-      std::function<void(uint32_t, double)> visit = [&](uint32_t i,
-                                                        double probability) {
+      std::function<void(uint32_t, double)> visit = [&](uint32_t i, double probability) {
         const auto &node = bvh.nodes()[i];
         if (node.links[3] == 1) {
           pdf[node.links[2]] = probability;
@@ -323,26 +316,21 @@ int main() {
         }
         const double a = LightBvh::weight(bvh.nodes()[node.links[0]], p, n, 16);
         const double b = LightBvh::weight(bvh.nodes()[node.links[1]], p, n, 16);
-        const double split = a == 0 ? 0
-                             : b == 0
-                                 ? 1
-                                 : std::clamp(a / (a + b), 1.e-6, 1. - 1.e-6);
+        const double split = a == 0 ? 0 : b == 0 ? 1 : std::clamp(a / (a + b), 1.e-6, 1. - 1.e-6);
         visit(node.links[0], probability * split);
         visit(node.links[1], probability * (1 - split));
       };
       visit(0, 1);
-      double reference = 0, expectation = 0, secondMoment = 0, maximum = 0,
-             totalPdf = 0;
+      double reference = 0, expectation = 0, secondMoment = 0, maximum = 0, totalPdf = 0;
       for (size_t i = 0; i < lights.size(); ++i) {
         const auto &light = lights[i];
         double distance2 = 0;
         for (unsigned c = 0; c < 3; ++c)
           distance2 += std::pow(double(light.position[c]) - p[c], 2);
         // These spheres are entirely above or below the receiving plane.
-        const double contribution =
-            (.2126 * 200 + .7152 * 110 + .0722 * 44) * double(light.radius) *
-            light.radius * std::max(light.position[2], 0.f) /
-            std::pow(distance2, 1.5) * LightBvh::falloff(distance2, 16);
+        const double contribution = (.2126 * 200 + .7152 * 110 + .0722 * 44) * double(light.radius) * light.radius *
+                                    std::max(light.position[2], 0.f) / std::pow(distance2, 1.5) *
+                                    LightBvh::falloff(distance2, 16);
         totalPdf += pdf[i];
         reference += contribution;
         if (contribution == 0)
@@ -353,16 +341,13 @@ int main() {
         secondMoment += pdf[i] * estimate * estimate;
         maximum = std::max(maximum, estimate);
       }
-      require(std::abs(totalPdf - 1) < 1.e-10 &&
-                  std::abs(expectation - reference) < 1.e-10,
+      require(std::abs(totalPdf - 1) < 1.e-10 && std::abs(expectation - reference) < 1.e-10,
               "Interior light selection changed the sphere integral");
-      const double relativeDeviation =
-          std::sqrt(secondMoment - reference * reference) / reference;
+      const double relativeDeviation = std::sqrt(secondMoment - reference * reference) / reference;
       require(relativeDeviation < 4 && maximum / reference < 80,
               "Interior light cluster produced excessive inverse-PDF outliers");
     }
-    std::puts(
-        "1331 torches: interior receiver energy and selection variance passed");
+    std::puts("1331 torches: interior receiver energy and selection variance passed");
   }
   {
     VisibilityPartition p;
@@ -478,8 +463,7 @@ int main() {
     const auto checkTable = [&](const char *message) {
       const auto &nodes = bvh.nodes();
       const auto &table = *visibility.table();
-      require(visibility.tableNodes() == bvh.staticNodes() &&
-                  table.size() == 16 * size_t(visibility.rowWords()),
+      require(visibility.tableNodes() == bvh.staticNodes() && table.size() == 16 * size_t(visibility.rowWords()),
               "Visibility table does not cover the static nodes");
       std::vector<uint8_t> bits(nodes.size());
       for (int from = 0; from < 16; ++from) {
@@ -502,8 +486,8 @@ int main() {
       const bool changed = bvh.update(lights);
       visibility.update(partition, bvh, true, .1f);
       const auto &nodes = bvh.nodes();
-      require(nodes.empty() || (nodes.size() == 2 * bvh.emitters().size() - 1 &&
-                                nodes[0].links[3] == bvh.emitters().size()),
+      require(nodes.empty() ||
+                  (nodes.size() == 2 * bvh.emitters().size() - 1 && nodes[0].links[3] == bvh.emitters().size()),
               "Two-part hierarchy is not a full binary tree");
       uint32_t lit = 0;
       for (const auto &light : lights)
@@ -539,8 +523,7 @@ int main() {
       } else {
         require(bvh.builds == 2, "Dynamic-instance lights rebuilt the hierarchy");
         require(visibility.version() == tables, "Dynamic-instance lights remade the visibility table");
-        require(bvh.staticNodes() == staticNodes.size() + 3 &&
-                    std::memcmp(staticNodes.data(), bvh.nodes().data() + 3,
+        require(bvh.staticNodes() == staticNodes.size() + 3 && std::memcmp(staticNodes.data(), bvh.nodes().data() + 3,
                                 staticNodes.size() * sizeof(LightNode)) == 0,
                 "Dynamic-instance lights changed static nodes");
       }
@@ -652,9 +635,8 @@ int main() {
     bvh.update(back);
     require(bvh.builds == 3 && bvh.retiredSlots == 0 && bvh.dynamicLights == 0 && bvh.active == 401,
             "Lights back in view did not return to their slots");
-    for (uint64_t step = 0; step < LightBvh::kRetain + LightBvh::kBuildInterval + 1 &&
-                            bvh.lastBuildReason != LightBvh::Retired;
-         ++step)
+    for (uint64_t step = 0;
+         step < LightBvh::kRetain + LightBvh::kBuildInterval + 1 && bvh.lastBuildReason != LightBvh::Retired; ++step)
       bvh.update(withNew);
     require(bvh.lastBuildReason == LightBvh::Retired && bvh.retiredSlots == 0 && bvh.staticLights == 101,
             "Lights gone for good kept their slots");
@@ -777,8 +759,7 @@ int main() {
         });
         bvh.update(frame);
       }
-      require(bvh.changedSince(bvh.instance(), since, emitterRanges, nodeRanges),
-              "Refits asked for a whole upload");
+      require(bvh.changedSince(bvh.instance(), since, emitterRanges, nodeRanges), "Refits asked for a whole upload");
       require(emitters.size() == bvh.emitters().size() && nodes.size() == bvh.nodes().size(),
               "Refits changed the hierarchy's size");
       size_t patched = 0;

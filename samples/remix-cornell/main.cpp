@@ -13,8 +13,10 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <algorithm>
 #include <cstring>
 #include <filesystem>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -69,7 +71,7 @@ namespace {
         return Vec3{center.x + x * c - z * s, center.y + y, center.z + x * s + z * c};
       };
       const float w = width / 2, d = depth / 2;
-      const Vec3 p[8] = {at(-w, 0, -d), at(w, 0, -d), at(w, 0, d), at(-w, 0, d),
+      const Vec3 p[8] = {at(-w, 0, -d),      at(w, 0, -d),      at(w, 0, d),      at(-w, 0, d),
                          at(-w, height, -d), at(w, height, -d), at(w, height, d), at(-w, height, d)};
       quad(p[4], p[5], p[6], p[7]); // top
       quad(p[0], p[1], p[5], p[4]); // front
@@ -153,6 +155,19 @@ int main(int argc, char **argv) {
     api.SetConfigVariable("rtx.native.pathtrace.bounces", "4");
     api.SetConfigVariable("rtx.native.pathtrace.emissiveLights", "1");
     api.SetConfigVariable("rtx.native.pathtrace.overrideLight", "0");
+    // SETTINGS=key=value,...: settings for a test run, over the profile's (as remix-sponza).
+    if (const char *settings = std::getenv("SETTINGS")) {
+      std::string list = settings;
+      for (size_t begin = 0; begin < list.size();) {
+        const size_t end = std::min(list.find(',', begin), list.size());
+        const std::string pair = list.substr(begin, end - begin);
+        if (const size_t equals = pair.find('=');
+            equals != std::string::npos &&
+            api.SetConfigVariable(pair.substr(0, equals).c_str(), pair.substr(equals + 1).c_str()))
+          std::fprintf(stderr, "Setting rejected: %s\n", pair.c_str());
+        begin = end + 1;
+      }
+    }
   }
 
   // The box spans x -1..1, y -1..1, z 0..2, open towards the camera at z 0.
@@ -168,8 +183,8 @@ int main(int argc, char **argv) {
     walls.quad({-1, -1, 2}, {1, -1, 2}, {1, 1, 2}, {-1, 1, 2});   // back
     left.quad({-1, -1, 0}, {-1, -1, 2}, {-1, 1, 2}, {-1, 1, 0});
     right.quad({1, -1, 2}, {1, -1, 0}, {1, 1, 0}, {1, 1, 2});
-    blocks.block({-.33f, -1, 1.3f}, .6f, .6f, 1.2f, 17);  // tall
-    blocks.block({.35f, -1, .65f}, .6f, .6f, .6f, -18);   // short
+    blocks.block({-.33f, -1, 1.3f}, .6f, .6f, 1.2f, 17); // tall
+    blocks.block({.35f, -1, .65f}, .6f, .6f, .6f, -18);  // short
     // Just below the ceiling, so it never coincides with it.
     panel.quad({-.25f, .995f, .75f}, {.25f, .995f, .75f}, {.25f, .995f, 1.25f}, {-.25f, .995f, 1.25f});
     meshes = {{mesh(0xd0, walls, white), true},
@@ -179,7 +194,11 @@ int main(int argc, char **argv) {
               {mesh(0xd4, panel, light), true}};
   }
   if (!status)
+#if defined(__APPLE__)
+    std::fprintf(stderr, "Cmd+X: settings panel (the runtime's shortcut; set it in the panel's header)\n");
+#else
     std::fprintf(stderr, "Alt+X: settings panel (the runtime's shortcut; set it in the panel's header)\n");
+#endif
 
   // One frame: camera, instances and presentation (with the capture request).
   auto drawFrame = [&](const remixapi_WindowState &state, bool capture = false) {

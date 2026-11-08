@@ -264,8 +264,7 @@ namespace remix::scene {
     m_hasCommitted = false;
   }
 
-  void StaticScene::record(uint64_t id, uint32_t index, uint64_t serial,
-                           std::shared_ptr<const StaticUnitState> state) {
+  void StaticScene::record(uint64_t id, uint32_t index, uint64_t serial, std::shared_ptr<const StaticUnitState> state) {
     auto &timeline = m_timelines[{id, index}];
     const bool unused = !state;
     if (!timeline.empty() && timeline.back().first == serial)
@@ -407,8 +406,8 @@ namespace remix::scene {
     if (!units)
       resources.expandStatic();
     costs.local += ms(synced, now());
-    auto frame = prepareTraceFrame(resources.draws(), seconds, filterEmission, emissionCache,
-                                   units ? statics : nullptr);
+    auto frame =
+        prepareTraceFrame(resources.draws(), seconds, filterEmission, emissionCache, units ? statics : nullptr);
     frame.staticUnits = units;
     // Coverage proof is CPU-only and can overlap the previous GPU submission.
     // Keep the result on this immutable frame, alongside its animated UVs.

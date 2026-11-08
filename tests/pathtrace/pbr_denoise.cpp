@@ -14,19 +14,19 @@
 #include <image/stb_image.h>
 
 namespace {
-void require(bool value, const char *why) {
-  if (!value) {
-    std::fprintf(stderr, "%s\n", why);
-    std::exit(1);
+  void require(bool value, const char *why) {
+    if (!value) {
+      std::fprintf(stderr, "%s\n", why);
+      std::exit(1);
+    }
   }
-}
-void ok(remixapi_ErrorCode code) {
-  if (code) {
-    std::fprintf(stderr, "PBR denoising API error %x\n", unsigned(code));
-    std::exit(1);
+  void ok(remixapi_ErrorCode code) {
+    if (code) {
+      std::fprintf(stderr, "PBR denoising API error %x\n", unsigned(code));
+      std::exit(1);
+    }
   }
-}
-using Image = std::vector<std::array<double, 3>>;
+  using Image = std::vector<std::array<double, 3>>;
 } // namespace
 int main(int argc, char **argv) {
   require(argc == 2, "Supply capture directory");
@@ -83,10 +83,13 @@ int main(int argc, char **argv) {
   for (int i = 0; i < 4; ++i)
     camera.view[i][i] = camera.projection[i][i] = 1;
   if (rrTest) {
-    for (int i=0;i<4;++i) for (int j=0;j<4;++j) camera.projection[i][j]=0;
-    camera.projection[0][0]=camera.projection[1][1]=1;
-    camera.projection[2][2]=100.f/99.95f; camera.projection[2][3]=1;
-    camera.projection[3][2]=-5.f/99.95f;
+    for (int i = 0; i < 4; ++i)
+      for (int j = 0; j < 4; ++j)
+        camera.projection[i][j] = 0;
+    camera.projection[0][0] = camera.projection[1][1] = 1;
+    camera.projection[2][2] = 100.f / 99.95f;
+    camera.projection[2][3] = 1;
+    camera.projection[3][2] = -5.f / 99.95f;
   }
   remixapi_MaterialInfoOpaqueEXT opaque{};
   opaque.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
@@ -132,8 +135,10 @@ int main(int argc, char **argv) {
   blend.alphaBlendEnabled = 1;
   blend.srcColorBlendFactor = blend.srcAlphaBlendFactor = 6;
   blend.dstColorBlendFactor = blend.dstAlphaBlendFactor = 7;
-  if (std::getenv("REMIX_TEST_OPAQUE_BLEND")) identity.pNext = &blend;
-  if (std::getenv("REMIX_TEST_RAY_PRIMARY")) config("primaryVisibility", "ray");
+  if (std::getenv("REMIX_TEST_OPAQUE_BLEND"))
+    identity.pNext = &blend;
+  if (std::getenv("REMIX_TEST_RAY_PRIMARY"))
+    config("primaryVisibility", "ray");
   remixapi_InstanceInfo instance{};
   instance.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO;
   instance.pNext = &identity;
@@ -200,9 +205,13 @@ int main(int argc, char **argv) {
     // SDK discovery is deferred until reconstruction is requested.
     config("upscaler", "dlss");
     frame();
-    remixapi_ReconstructionDiagnosticsEXT d{}; d.structSize = sizeof(d);
+    remixapi_ReconstructionDiagnosticsEXT d{};
+    d.structSize = sizeof(d);
     ok(remixapi_GetReconstructionDiagnosticsEXT(&d));
-    if (!(d.capabilities & 4)) { ok(api.Shutdown()); return 77; }
+    if (!(d.capabilities & 4)) {
+      ok(api.Shutdown());
+      return 77;
+    }
     config("upscaler", "off");
   }
   int width = 0, height = 0;
@@ -253,8 +262,8 @@ int main(int argc, char **argv) {
       for (unsigned x = 0; x < 8; ++x) {
         bool alternate = (x + y) % 2;
         std::array<uint8_t, 4> color =
-            map == 0   ? (alternate ? std::array<uint8_t, 4>{180, 80, 40, 255}
-                                    : std::array<uint8_t, 4>{60, 120, 200, 255})
+            map == 0
+                ? (alternate ? std::array<uint8_t, 4>{180, 80, 40, 255} : std::array<uint8_t, 4>{60, 120, 200, 255})
             : map == 1 ? std::array<uint8_t, 4>{uint8_t(alternate ? 128 : 204), 0, 0, 255}
                        : std::array<uint8_t, 4>{uint8_t(alternate ? 150 : 106), 128, 253, 255};
         std::copy(color.begin(), color.end(), pixels.begin() + 4 * (y * 8 + x));
@@ -299,7 +308,8 @@ int main(int argc, char **argv) {
     auto raw = capture(name + "-raw");
     auto rawNext = capture(name + "-raw-next");
     config("denoiser", "reblur-sh");
-    if (rrTest) config("upscaler", "dlss");
+    if (rrTest)
+      config("upscaler", "dlss");
     for (int i = 0; i < 96; ++i)
       frame();
     auto filtered = capture(name + "-filtered");
@@ -308,15 +318,17 @@ int main(int argc, char **argv) {
     stats.structSize = sizeof(stats);
     ok(remixapi_GetDenoisingStatisticsEXT(&stats));
     if (rrTest) {
-      remixapi_ReconstructionDiagnosticsEXT d{};d.structSize=sizeof(d);
+      remixapi_ReconstructionDiagnosticsEXT d{};
+      d.structSize = sizeof(d);
       ok(remixapi_GetReconstructionDiagnosticsEXT(&d));
-      require(d.activeBackend==3 && d.evaluatedFrames>0, "RR PBR fallback");
+      require(d.activeBackend == 3 && d.evaluatedFrames > 0, "RR PBR fallback");
       require(!stats.activeDenoiser && !stats.activeTaa, "RR PBR ran NRD/TAA");
-    } else require(stats.activeDenoiser, "PBR denoiser silently fell back to raw");
+    } else
+      require(stats.activeDenoiser, "PBR denoiser silently fell back to raw");
     const double rawError = error(raw, reference), filteredError = error(filtered, reference);
     const double rawVariance = error(raw, rawNext), filteredVariance = error(filtered, filteredNext);
-    std::printf("%s: error %.7f -> %.7f; temporal variance %.7f -> %.7f; energy %.5f -> %.5f\n", name.c_str(),
-                rawError, filteredError, rawVariance, filteredVariance, energy(reference), energy(filtered));
+    std::printf("%s: error %.7f -> %.7f; temporal variance %.7f -> %.7f; energy %.5f -> %.5f\n", name.c_str(), rawError,
+                filteredError, rawVariance, filteredVariance, energy(reference), energy(filtered));
     require(filteredError < rawError * .7, "PBR filtering did not reduce reference error");
     require(filteredVariance < rawVariance * .5, "PBR filtering did not reduce temporal noise");
     require(std::abs(energy(filtered) - energy(reference)) < .2 * energy(reference) + .003,

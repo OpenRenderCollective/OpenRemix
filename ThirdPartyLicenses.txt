@@ -10,6 +10,10 @@ Dear ImGui v1.92.9b (core, SDL3 backend, Vulkan backend)
 Copyright (c) 2014-2026 Omar Cornut and Dear ImGui contributors
 MIT license; full notice: third_party/imgui/LICENSE.txt (included in packages).
 
+Inter 4.1 (Regular), the settings panel's font
+Copyright (c) 2016 The Inter Project Authors
+SIL Open Font License 1.1; full notice: third_party/inter/LICENSE.txt (included in packages as Inter.txt).
+
 SDL3 3.4.14
 Copyright (C) 1997-2026 Sam Lantinga and SDL contributors
 zlib license; full notice: SDL source LICENSE.txt (included in packages).
@@ -44,6 +48,11 @@ jxrlib 1.1 (JPEG XR encoder for HDR screenshots), commit f7521879862b9085318e814
 Copyright (c) Microsoft Corp.
 BSD 2-Clause license: third_party/jxrlib/LICENSE; distributed as jxrlib.txt.
 Source and provenance: third_party/jxrlib/README.remix.md.
+
+SPIRV-Cross (MSL backend for host passes; macOS builds), commit 57e4efcc84112abcd426dc5ec248b5339bee04f2
+Copyright 2015-2021 Arm Limited and the SPIRV-Cross contributors.
+Apache License 2.0: third_party/spirv-cross/LICENSE; distributed as SPIRV-Cross.txt.
+Source and provenance (with OpenRemix's MSL fixes): third_party/spirv-cross/README.remix.md.
 
 AMD FidelityFX Super Resolution 3.1.4 (upscaler and frame generation, FidelityFX SDK v1.1.4;
 Linux builds)

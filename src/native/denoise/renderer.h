@@ -45,16 +45,30 @@ namespace remix::denoise {
     PbrDiffuseOutput,
     PbrSpecularOutput,
     PbrSpecularFactor,
-    RrDiffuse, RrSpecular, RrNormal, RrHitDistance,
-    FrontNormal, FrontDepth, FrontMotion, FrontAlbedo, FrontSpecularFactor,
-    FrontDiffuse, FrontSpecular, FrontDiffuseOutput, FrontSpecularOutput, FrontConfidence,
+    RrDiffuse,
+    RrSpecular,
+    RrNormal,
+    RrHitDistance,
+    FrontNormal,
+    FrontDepth,
+    FrontMotion,
+    FrontAlbedo,
+    FrontSpecularFactor,
+    FrontDiffuse,
+    FrontSpecular,
+    FrontDiffuseOutput,
+    FrontSpecularOutput,
+    FrontConfidence,
     LocalConfidence, // local-light history confidence (lights that moved)
     PsrMirror,       // primary surface replacement: mirror plane and reflectance
     // SH directions of the PBR pass (REBLUR_DIFFUSE_SPECULAR_SH). Its SH0
     // images are Sh0, PbrSpecularInput, PbrDiffuseOutput and PbrSpecularOutput.
-    PbrSpecularSh1, PbrDiffuseOutputSh1, PbrSpecularOutputSh1,
+    PbrSpecularSh1,
+    PbrDiffuseOutputSh1,
+    PbrSpecularOutputSh1,
     // Gradient tiles of surfaces that move on their own (see inputs.glsl).
-    MovingA, MovingB,
+    MovingA,
+    MovingB,
     // Motion vectors of the local-light passes: the guide's, pointed off
     // screen where an occluder moved (localOcclusionConfidence), which makes
     // REBLUR restart those pixels. History confidence alone keeps about half
@@ -75,7 +89,7 @@ namespace remix::denoise {
     float timing[4] = {};    // frame milliseconds, validation, world changed, reserved
     float sun[4] = {};       // direction toward sun, SIGMA active
     uint32_t shadow[4] = {}; // SIGMA reset, debug view, PBR receivers, legacy receivers
-    uint32_t local[4] = {}; // denoise, active lights, responsive frames, reserved
+    uint32_t local[4] = {};  // denoise, active lights, responsive frames, reserved
     // foreground NRD, opaque lighting reuse, PSR mirrors, PBR lobe selection (set by Renderer::begin)
     uint32_t translucency[4] = {};
     uint32_t families[4] = {}; // torch/emissive counts, torch/emissive response frames
@@ -93,7 +107,8 @@ namespace remix::denoise {
     // y: native TAA's current-frame weight where history is resampled half a texel off.
     float motionNoise[4] = {.5f, .15f, 0, 0};
   };
-  static_assert(sizeof(Frame) == 528 && offsetof(Frame, families) == 464 && offsetof(Frame, local) == 432 && offsetof(Frame, sun) == 400 && offsetof(Frame, shadow) == 416);
+  static_assert(sizeof(Frame) == 528 && offsetof(Frame, families) == 464 && offsetof(Frame, local) == 432 &&
+                offsetof(Frame, sun) == 400 && offsetof(Frame, shadow) == 416);
   // Local-light pass tuning (see trace::Options::localAntilag*).
   struct LocalTuning {
     float antilagSigma = 2, antilagSensitivity = 3;
@@ -107,18 +122,17 @@ namespace remix::denoise {
   public:
     Renderer();
     ~Renderer();
-    void initialize(VkPhysicalDevice physical, VkDevice device,
-                    VkExtent2D extent, bool reblur, uint32_t queueFamily,
-                    bool sigma = false, bool local = false,
-                    bool localDenoise = false, bool split = false,
-                    bool rayReconstruction = false, bool validation = false,
-                    bool localReconstruction = false, bool foregroundDenoise = false);
+    void initialize(VkPhysicalDevice physical, VkDevice device, VkExtent2D extent, bool reblur, uint32_t queueFamily,
+                    bool sigma = false, bool local = false, bool localDenoise = false, bool split = false,
+                    bool rayReconstruction = false, bool validation = false, bool localReconstruction = false,
+                    bool foregroundDenoise = false);
     VkDescriptorSetLayout inputLayout() const;
     VkDescriptorSet inputs() const;
     void selectFrame(uint32_t slot);
     upscale::Input image(ImageSlot slot) const;
     void begin(VkCommandBuffer command, const Frame &frame, const scene::Matrix &projection,
-               const scene::Matrix &previousProjection, VkImageView world, VkImageView sky, bool localFireflyFilter = false);
+               const scene::Matrix &previousProjection, VkImageView world, VkImageView sky,
+               bool localFireflyFilter = false);
     void beginConfidence(VkCommandBuffer command);
     void setLocalTuning(const LocalTuning &tuning);
     void recordOpaque(VkCommandBuffer command);

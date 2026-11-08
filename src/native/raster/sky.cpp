@@ -36,9 +36,8 @@ namespace remix {
     if (s.multiply && s.add)
       return true;
     if (!s.layout) {
-      const VkPipelineLayoutCreateInfo info = {.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-                                               .setLayoutCount = 1,
-                                               .pSetLayouts = &setLayout};
+      const VkPipelineLayoutCreateInfo info = {
+          .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, .setLayoutCount = 1, .pSetLayouts = &setLayout};
       check(pipeline::createPipelineLayout(device, &info, nullptr, &s.layout));
     }
     const auto module = [&](VkShaderModule &out, const uint32_t *code, size_t bytes) {
@@ -71,9 +70,9 @@ namespace remix {
         .cullMode = VK_CULL_MODE_NONE,
         .frontFace = VK_FRONT_FACE_CLOCKWISE,
         .lineWidth = 1};
-    const VkPipelineMultisampleStateCreateInfo samples = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-        .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT};
+    const VkPipelineMultisampleStateCreateInfo samples = {.sType =
+                                                              VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+                                                          .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT};
     const VkPipelineDepthStencilStateCreateInfo noDepth = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
     const VkDynamicState dynamicStates[2] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};

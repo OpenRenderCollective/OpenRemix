@@ -12,10 +12,13 @@
 
 namespace {
   void require(bool value, const char *message) {
-    if (!value) { std::fprintf(stderr, "%s\n", message); std::exit(1); }
+    if (!value) {
+      std::fprintf(stderr, "%s\n", message);
+      std::exit(1);
+    }
   }
   void ok(remixapi_ErrorCode code) { require(!code, "NRD motion API failure"); }
-}
+} // namespace
 
 int main(int argc, char **argv) {
   require(argc == 2, "Supply screenshot directory");
@@ -38,7 +41,10 @@ int main(int argc, char **argv) {
   remixapi_DenoisingCapabilitiesEXT caps{};
   caps.structSize = sizeof(caps);
   ok(remixapi_GetDenoisingCapabilitiesEXT(&caps));
-  if (!caps.reblurShSupported) { ok(api.Shutdown()); return 77; }
+  if (!caps.reblurShSupported) {
+    ok(api.Shutdown());
+    return 77;
+  }
   ok(api.SetConfigVariable("rtx.native.backend", "pathtrace"));
   // Captures are read right after the frame that writes them.
   ok(api.SetConfigVariable("rtx.native.asyncPresent", "0"));
@@ -48,7 +54,8 @@ int main(int argc, char **argv) {
   };
   config("upscaler", "off");
   config("denoiser", "reblur-sh");
-  for (const auto *key : {"taa", "sigma", "sharc", "localLights"}) config(key, "0");
+  for (const auto *key : {"taa", "sigma", "sharc", "localLights"})
+    config(key, "0");
   config("bounces", "1");
   config("validation", "1");
   remixapi_MaterialInfoPbrEXT pbr{};
@@ -76,24 +83,33 @@ int main(int argc, char **argv) {
   }
   uint32_t indices[] = {0, 2, 1, 0, 3, 2};
   remixapi_MeshInfoSurfaceTriangles surface{};
-  surface.vertices_values = vertices; surface.vertices_count = 4;
-  surface.indices_values = indices; surface.indices_count = 6;
+  surface.vertices_values = vertices;
+  surface.vertices_count = 4;
+  surface.indices_values = indices;
+  surface.indices_count = 6;
   surface.material = materialHandle;
   remixapi_MeshInfo mesh{};
   mesh.sType = REMIXAPI_STRUCT_TYPE_MESH_INFO;
-  mesh.hash = 2; mesh.surfaces_values = &surface; mesh.surfaces_count = 1;
+  mesh.hash = 2;
+  mesh.surfaces_values = &surface;
+  mesh.surfaces_count = 1;
   remixapi_MeshHandle meshHandle{};
   ok(api.CreateMesh(&mesh, &meshHandle));
   remixapi_InstanceIdentityEXT identity{};
   identity.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_IDENTITY_EXT;
-  identity.instanceId = 1; identity.rasterVisible = 1;
+  identity.instanceId = 1;
+  identity.rasterVisible = 1;
   remixapi_InstanceInfo instance{};
   instance.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO;
-  instance.pNext = &identity; instance.mesh = meshHandle; instance.doubleSided = 1;
-  for (int i = 0; i < 3; ++i) instance.transform.matrix[i][i] = 1;
+  instance.pNext = &identity;
+  instance.mesh = meshHandle;
+  instance.doubleSided = 1;
+  for (int i = 0; i < 3; ++i)
+    instance.transform.matrix[i][i] = 1;
   remixapi_CameraEnvironmentEXT environment{};
   environment.sType = REMIXAPI_STRUCT_TYPE_CAMERA_ENVIRONMENT_EXT;
-  environment.enabled = 1; environment.radiance = {.2f, .2f, .2f};
+  environment.enabled = 1;
+  environment.radiance = {.2f, .2f, .2f};
   remixapi_CameraInfo camera{};
   camera.sType = REMIXAPI_STRUCT_TYPE_CAMERA_INFO;
   camera.pNext = &environment;
@@ -117,49 +133,55 @@ int main(int argc, char **argv) {
     ok(api.Present(nullptr));
   });
   unsigned failures = 0;
-  for (bool rightHanded : {false, true}) for (const auto *primary : {"raster", "ray"}) {
-    handedness = rightHanded ? -1.f : 1.f;
-    camera.projection[2][2] = handedness * 512.f / 511.95f;
-    camera.projection[2][3] = handedness;
-    const std::string label = std::string(rightHanded ? "rh-" : "lh-") + primary;
-    config("primaryVisibility", primary);
-    for (unsigned i = 0; i < 24; ++i) frame(0, .3f);
-    for (unsigned pose = 0; pose < 3; ++pose) {
-      const auto path = (directory / (label + "-" + std::to_string(pose) + ".png")).string();
-      for (unsigned i = 0; i < 24; ++i) {
-        const unsigned step = pose * 24 + i;
-        if (i == 22) ok(api.RequestPresentedScreenshot(path.c_str()));
-        frame(.04f * float(step), .3f + .002f * float(step));
+  for (bool rightHanded : {false, true})
+    for (const auto *primary : {"raster", "ray"}) {
+      handedness = rightHanded ? -1.f : 1.f;
+      camera.projection[2][2] = handedness * 512.f / 511.95f;
+      camera.projection[2][3] = handedness;
+      const std::string label = std::string(rightHanded ? "rh-" : "lh-") + primary;
+      config("primaryVisibility", primary);
+      for (unsigned i = 0; i < 24; ++i)
+        frame(0, .3f);
+      for (unsigned pose = 0; pose < 3; ++pose) {
+        const auto path = (directory / (label + "-" + std::to_string(pose) + ".png")).string();
+        for (unsigned i = 0; i < 24; ++i) {
+          const unsigned step = pose * 24 + i;
+          if (i == 22)
+            ok(api.RequestPresentedScreenshot(path.c_str()));
+          frame(.04f * float(step), .3f + .002f * float(step));
+        }
+        int width, height, channels;
+        auto *pixels = stbi_load(path.c_str(), &width, &height, &channels, 4);
+        require(pixels && width == 256 && height == 256, "Missing NRD validation capture");
+        // In NRD's MV tile, static geometry must agree with camera-derived
+        // reprojection even while translating and rotating. Exclude labels,
+        // sky, and viewport edges; red/green encode error in pixels.
+        unsigned bad = 0, count = 0;
+        double error = 0;
+        for (int y = 30; y < 58; ++y)
+          for (int x = 204; x < 244; ++x) {
+            const auto *p = pixels + (y * width + x) * 4;
+            error += (p[0] + p[1]) / 510.;
+            bad += p[0] > 12 || p[1] > 12;
+            ++count;
+          }
+        // The Units tile reconstructs camera-relative world position. Ground Y
+        // is constant (-1.5), so its fractional green channel must stay uniform.
+        // Stay below the jitter/rotator mini-viewports at the top of the tile.
+        unsigned minGreen = 255, maxGreen = 0;
+        for (int y = 36; y < 58; ++y)
+          for (int x = 12; x < 52; ++x) {
+            const unsigned green = pixels[(y * width + x) * 4 + 1];
+            minGreen = std::min(minGreen, green);
+            maxGreen = std::max(maxGreen, green);
+          }
+        stbi_image_free(pixels);
+        std::printf("%s pose=%u motion disagreement=%u/%u mean=%g unitsY=%u..%u\n", label.c_str(), pose, bad, count,
+                    error / count, minGreen, maxGreen);
+        failures += bad > count / 100;
+        failures += maxGreen - minGreen > 3 || minGreen < 160 || maxGreen > 210;
       }
-      int width, height, channels;
-      auto *pixels = stbi_load(path.c_str(), &width, &height, &channels, 4);
-      require(pixels && width == 256 && height == 256, "Missing NRD validation capture");
-      // In NRD's MV tile, static geometry must agree with camera-derived
-      // reprojection even while translating and rotating. Exclude labels,
-      // sky, and viewport edges; red/green encode error in pixels.
-      unsigned bad = 0, count = 0;
-      double error = 0;
-      for (int y = 30; y < 58; ++y) for (int x = 204; x < 244; ++x) {
-        const auto *p = pixels + (y * width + x) * 4;
-        error += (p[0] + p[1]) / 510.;
-        bad += p[0] > 12 || p[1] > 12;
-        ++count;
-      }
-      // The Units tile reconstructs camera-relative world position. Ground Y
-      // is constant (-1.5), so its fractional green channel must stay uniform.
-      // Stay below the jitter/rotator mini-viewports at the top of the tile.
-      unsigned minGreen = 255, maxGreen = 0;
-      for (int y = 36; y < 58; ++y) for (int x = 12; x < 52; ++x) {
-        const unsigned green = pixels[(y * width + x) * 4 + 1];
-        minGreen = std::min(minGreen, green); maxGreen = std::max(maxGreen, green);
-      }
-      stbi_image_free(pixels);
-      std::printf("%s pose=%u motion disagreement=%u/%u mean=%g unitsY=%u..%u\n",
-                  label.c_str(), pose, bad, count, error / count, minGreen, maxGreen);
-      failures += bad > count / 100;
-      failures += maxGreen - minGreen > 3 || minGreen < 160 || maxGreen > 210;
     }
-  }
   ok(api.Shutdown());
   require(!failures, "NRD reconstructed camera motion disagrees with static ground guides");
   std::puts("NRD camera reconstruction agrees with motion guides in raster and ray visibility");

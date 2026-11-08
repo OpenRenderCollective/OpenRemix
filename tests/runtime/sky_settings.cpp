@@ -3,12 +3,12 @@
 #include <cstdlib>
 
 namespace {
-void require(bool value, const char *message) {
-  if (!value) {
-    std::fprintf(stderr, "%s\n", message);
-    std::exit(1);
+  void require(bool value, const char *message) {
+    if (!value) {
+      std::fprintf(stderr, "%s\n", message);
+      std::exit(1);
+    }
   }
-}
 } // namespace
 
 int main() {

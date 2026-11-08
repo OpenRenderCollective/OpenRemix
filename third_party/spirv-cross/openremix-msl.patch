@@ -1,0 +1,102 @@
+OpenRemix's MSL fixes on upstream SPIRV-Cross (toolchain.lock.json spirv-cross-msl), applied by
+toolchain.py after fetching. From cr's fork (sambow23/SPIRV-Cross 9f9991c5), rebased on main:
+- A physical pointer member is copied as a value, not through its pointee (struct copies holding
+  buffer references: no viable overloaded '=').
+- Atomics on one lane of a vector take the vector's address plus the lane (MSL has no lane addresses).
+- 'ray' is reserved: GLSL names collide with Metal's ray tracing namespace.
+
+diff --git a/spirv_glsl.cpp b/spirv_glsl.cpp
+index c99d3e48..393f86e9 100644
+--- a/spirv_glsl.cpp
++++ b/spirv_glsl.cpp
+@@ -20429,7 +20429,16 @@ void CompilerGLSL::emit_copy_logical_type(uint32_t lhs_id, uint32_t lhs_type_id,
+ 	// when a struct points back to itself.
+ 	bool is_pointer = is_physical_pointer(lhs_type);
+ 
+-	if (!lhs_type.array.empty() && !is_pointer)
++	if (lhs_type.pointer)
++	{
++		// A physical pointer is a value, not an inline copy of its pointee.
++		auto lhs = access_chain_internal(lhs_id, chain.data(), uint32_t(chain.size()),
++		                                 ACCESS_CHAIN_INDEX_IS_LITERAL_BIT, nullptr, nullptr);
++		auto rhs = access_chain_internal(rhs_id, chain.data(), uint32_t(chain.size()),
++		                                 ACCESS_CHAIN_INDEX_IS_LITERAL_BIT, nullptr, nullptr);
++		statement(lhs, " = ", rhs, ";");
++	}
++	else if (!lhs_type.array.empty() && !is_pointer)
+ 	{
+ 		// Could use a loop here to support specialization constants, but it gets rather complicated with nested array types,
+ 		// and this is a rather obscure opcode anyways, keep it simple unless we are forced to.
+diff --git a/spirv_msl.cpp b/spirv_msl.cpp
+index 2d555f8b..16744ff3 100644
+--- a/spirv_msl.cpp
++++ b/spirv_msl.cpp
+@@ -10489,6 +10489,26 @@ void CompilerMSL::emit_instruction(const Instruction &instruction)
+ 		else
+ 			CompilerGLSL::emit_instruction(instruction);
+ 		fix_up_interpolant_access_chain(ops, instruction.length);
++		if (opcode != OpPtrAccessChain && instruction.length >= 4)
++		{
++			const SPIRType *parent = &get_pointee_type(expression_type(ops[2]));
++			for (uint32_t i = 3; i + 1 < instruction.length; ++i)
++			{
++				if (!parent->array.empty() || parent->columns > 1)
++					parent = &get<SPIRType>(parent->parent_type);
++				else if (parent->basetype == SPIRType::Struct)
++					parent = &get<SPIRType>(parent->member_types[get<SPIRConstant>(ops[i]).scalar()]);
++				else
++					break;
++			}
++			if (parent->vecsize > 1 && parent->columns == 1 && parent->array.empty())
++			{
++				// MSL permits the address of a vector, but not one of its lanes.
++				vector_atomic_pointers[ops[1]] = {
++					access_chain_internal(ops[2], ops + 3, instruction.length - 4, 0, nullptr, nullptr),
++					to_expression(ops[instruction.length - 1])};
++			}
++		}
+ 		break;
+ 
+ 	case OpStore:
+@@ -11838,7 +11858,11 @@ void CompilerMSL::emit_atomic_func_op(uint32_t result_type, uint32_t result_id,
+ 		// There is no other way, since C++ does not have explicit signage for atomics.
+ 		exp += type_to_glsl(remapped_type);
+ 		exp += "*)";
+-		exp += to_enclosed_pointer_expression(obj);
++		auto vector_pointer = vector_atomic_pointers.find(obj);
++		if (vector_pointer != vector_atomic_pointers.end())
++			exp += join("&(", vector_pointer->second.first, ") + (", vector_pointer->second.second, ")");
++		else
++			exp += to_enclosed_pointer_expression(obj);
+ 	}
+ 
+ 	if (is_atomic_compare_exchange_strong)
+@@ -16972,6 +16996,7 @@ string CompilerMSL::ensure_valid_name(string name, string pfx)
+ const std::unordered_set<std::string> &CompilerMSL::get_reserved_keyword_set()
+ {
+ 	static const unordered_set<string> keywords = {
++		"ray",
+ 		"kernel",
+ 		"vertex",
+ 		"fragment",
+@@ -17139,6 +17164,7 @@ const std::unordered_set<std::string> &CompilerMSL::get_reserved_keyword_set()
+ const std::unordered_set<std::string> &CompilerMSL::get_illegal_func_names()
+ {
+ 	static const unordered_set<string> illegal_func_names = {
++		"ray",
+ 		"main",
+ 		"fragment",
+ 		"vertex",
+diff --git a/spirv_msl.hpp b/spirv_msl.hpp
+index 7b01f879..b398f819 100644
+--- a/spirv_msl.hpp
++++ b/spirv_msl.hpp
+@@ -1171,6 +1171,8 @@ protected:
+ 	std::string get_tess_factor_struct_name();
+ 	SPIRType &get_uint_type();
+ 	uint32_t get_uint_type_id();
++	std::unordered_map<uint32_t, std::pair<std::string, std::string>> vector_atomic_pointers;
++
+ 	void emit_atomic_func_op(uint32_t result_type, uint32_t result_id, const char *op, Op opcode,
+ 	                         uint32_t mem_order_1, uint32_t mem_order_2, bool has_mem_order_2, uint32_t op0, uint32_t op1 = 0,
+ 	                         bool op1_is_pointer = false, bool op1_is_literal = false, uint32_t op2 = 0);

@@ -26,9 +26,8 @@ namespace remix::trace {
     if (refits >= 300)
       return REMIXAPI_REBUILD_REFIT_LIMIT_EXT;
     for (size_t i = 0; i < inputs.size(); ++i) {
-      float distance =
-          std::hypot(inputs[i].model[12] - built[i].model[12], inputs[i].model[13] - built[i].model[13],
-                     inputs[i].model[14] - built[i].model[14]);
+      float distance = std::hypot(inputs[i].model[12] - built[i].model[12], inputs[i].model[13] - built[i].model[13],
+                                  inputs[i].model[14] - built[i].model[14]);
       if (distance > std::max(16.f, 4 * inputs[i].diagonal))
         return REMIXAPI_REBUILD_DISPLACEMENT_EXT;
     }

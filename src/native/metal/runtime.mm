@@ -120,6 +120,8 @@ namespace remix {
                 m_traceSupported ? "supported" : "unsupported");
         applySettings();
         m_raster.initializeGpu((__bridge void *)g.device);
+        m_hostPasses.initialize((__bridge void *)g.device);
+        g.particles = std::make_unique<metal::Particles>(g.device, m_traceSupported);
         if (!initializeUi())
           return finish(REMIXAPI_ERROR_CODE_GENERAL_FAILURE);
         m_initialized = true;
@@ -167,6 +169,11 @@ namespace remix {
   void RemixNativeRuntime::destroyMetal() {
     if (!m_gpu)
       return;
+    // The render thread's frame first; then the GPU state back with the API's scene.
+    waitRenderThread();
+    m_renderThread.stop();
+    if (m_asyncActive)
+      switchPresentation(false);
     @autoreleasepool {
       auto &g = *m_gpu;
       // Every submitted frame completes before its resources are released,
@@ -196,6 +203,7 @@ namespace remix {
       m_pathTracer.reset();
       m_localSourcesSeen = m_loading = false;
       m_failedConfiguration.reset();
+      m_hostPasses.destroy();
       m_raster.shutdownGpu();
       m_gpu.reset();
     }
@@ -210,6 +218,7 @@ namespace remix {
     destroyMetal();
     m_window.shutdown();
     m_raster.reset();
+    m_frameScene.reset();
     m_initialized = false;
     m_frameStarted = false;
     m_failed = false;
@@ -247,7 +256,10 @@ namespace remix {
       return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
     m_raster.setKeepCompressedTextures(m_profiles.current().compressedTextures);
     scene::retainCompressedUploads = kCaptures && m_profiles.current().captureRetainTextureData;
+    scene::sceneUpAxis = m_profiles.current().zUp ? 2 : 1;
     m_raster.setRefreshGeometry(m_profiles.current().refreshGeometry);
+    // The host's next submission already sees it (else from the next frame).
+    m_hostPasses.setEnabled(m_profiles.current().hostPasses);
     return REMIXAPI_ERROR_CODE_SUCCESS;
   }
 
@@ -264,6 +276,7 @@ namespace remix {
     }
     m_raster.setKeepCompressedTextures(m_profiles.current().compressedTextures);
     scene::retainCompressedUploads = kCaptures && m_profiles.current().captureRetainTextureData;
+    scene::sceneUpAxis = m_profiles.current().zUp ? 2 : 1;
     m_raster.setRefreshGeometry(m_profiles.current().refreshGeometry);
     m_hostPasses.setEnabled(m_profiles.current().hostPasses);
     return REMIXAPI_ERROR_CODE_SUCCESS;
@@ -288,15 +301,17 @@ namespace remix {
     const auto &settings = m_profiles.current();
     m_raster.setKeepCompressedTextures(settings.compressedTextures);
     scene::retainCompressedUploads = kCaptures && settings.captureRetainTextureData;
+    scene::sceneUpAxis = settings.zUp ? 2 : 1;
     m_raster.setRefreshGeometry(settings.refreshGeometry);
+    m_hostPasses.setEnabled(settings.hostPasses);
     m_vsync = settings.vsync;
   }
 
-
   bool RemixNativeRuntime::preparationPending() const { return bool(m_preparation); }
   double RemixNativeRuntime::preparationSeconds() const {
-    return m_preparation ? std::chrono::duration<double>(std::chrono::steady_clock::now() - m_preparation->started).count()
-                         : 0;
+    return m_preparation
+               ? std::chrono::duration<double>(std::chrono::steady_clock::now() - m_preparation->started).count()
+               : 0;
   }
 
   // runtime/configuration.cpp prepareSettings: a configuration change prepares
@@ -306,12 +321,11 @@ namespace remix {
     auto &g = *m_gpu;
     // The sticky local-light contract: temporary culling must not rebuild
     // denoisers or discard their histories.
-    const bool detectedLocal =
-        m_raster.hasSphereLights() || m_raster.staticEmissiveCount() ||
-        std::any_of(m_raster.draws().begin(), m_raster.draws().end(), [](const auto &draw) {
-          const auto &e = draw.material->emission;
-          return draw.traced() && (e[0] > 0 || e[1] > 0 || e[2] > 0);
-        });
+    const bool detectedLocal = m_raster.hasSphereLights() || m_raster.staticEmissiveCount() ||
+                               std::any_of(m_raster.draws().begin(), m_raster.draws().end(), [](const auto &draw) {
+                                 const auto &e = draw.material->emission;
+                                 return draw.traced() && (e[0] > 0 || e[1] > 0 || e[2] > 0);
+                               });
     m_localSourcesSeen = settings.backend && (m_localSourcesSeen || detectedLocal);
     const bool local = m_localSourcesSeen || (settings.trace.sigma && settings.trace.localLights);
     std::erase_if(m_obsoletePreparations, [](const auto &preparation) { return preparation->done.load(); });
@@ -330,9 +344,9 @@ namespace remix {
       m_failedConfiguration.reset();
     } else {
       const bool perspective = m_raster.cameraValid() && metal::reconstruction::supportsCamera(m_raster.projection());
-      const auto desired = metal::PathTracer::Configuration::of(
-          (__bridge void *)g.device, settings.trace, settings.frameGeneration, local, perspective, width, height,
-          uint32_t(g.format));
+      const auto desired =
+          metal::PathTracer::Configuration::of((__bridge void *)g.device, settings.trace, settings.frameGeneration,
+                                               local, perspective, width, height, uint32_t(g.format));
       if (m_pathTracer && m_pathTracer->configuration() == desired)
         retire();
       else {
@@ -376,11 +390,11 @@ namespace remix {
             m_pathTracer = std::move(prepared->tracer);
             m_traceUnavailable.clear();
             const auto &c = m_pathTracer->configuration();
-            SDL_Log("OpenRemix Metal path tracer ready in %.1f ms (%ux%u, REBLUR %d, TAA %d, SIGMA %d, local %d, "
-                    "SHARC %d)",
-                    std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - prepared->started)
-                        .count(),
-                    c.width, c.height, c.reblur, c.taa, c.sigma, c.localDenoise, c.sharc);
+            SDL_Log(
+                "OpenRemix Metal path tracer ready in %.1f ms (%ux%u, REBLUR %d, TAA %d, SIGMA %d, local %d, "
+                "SHARC %d)",
+                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - prepared->started).count(),
+                c.width, c.height, c.reblur, c.taa, c.sigma, c.localDenoise, c.sharc);
           }
         }
       }
@@ -397,6 +411,8 @@ namespace remix {
   }
 
   metal::ReconstructionStatistics RemixNativeRuntime::reconstructionStatistics() const {
+    if (const auto *busy = busyState())
+      return busy->reconstruction;
     metal::ReconstructionStatistics result;
     result.requested = m_profiles.current().trace.upscaler;
     std::string reason;
@@ -416,6 +432,26 @@ namespace remix {
     return result;
   }
 
+  // runtime/configuration.cpp publishState: what the getters return while
+  // the render thread works, taken at the handoff (render thread idle).
+  void RemixNativeRuntime::publishState() {
+    auto &s = m_published;
+    s.performance = m_framePerformance;
+    s.breakdown = m_frameBreakdown;
+    s.tracing = tracingStatistics();
+    s.sharc = sharcStatistics();
+    s.shadow = shadowStatistics();
+    s.localLight = localLightStatistics();
+    s.localLightSet = localLightSetStatistics();
+    s.cameraCulling = cameraCullingStatistics();
+    s.guiding = localLightGuidingStatistics();
+    s.denoising = denoisingStatistics();
+    s.reconstruction = reconstructionStatistics();
+    s.memory = m_profiles.current().vramStatistics ? renderer().memoryStatistics() : metal::Raster::MemoryStatistics{};
+    s.vramStatus = vramStatistics(s.vram);
+    s.gpuTimings = m_gpuTimings;
+  }
+
   remixapi_BackendCapabilitiesEXT RemixNativeRuntime::backendCapabilities() const {
     remixapi_BackendCapabilitiesEXT result = {.structSize = sizeof(result),
                                               .supportedBackends = m_traceSupported ? 3u : 1u,
@@ -426,44 +462,57 @@ namespace remix {
   }
 
   remixapi_TracingStatisticsEXT RemixNativeRuntime::tracingStatistics() const {
+    if (const auto *busy = busyState())
+      return busy->tracing;
     auto result = m_pathTracer ? m_pathTracer->statistics()
                                : remixapi_TracingStatisticsEXT{.structSize = sizeof(remixapi_TracingStatisticsEXT)};
     const bool denoiserWarming = m_pathTracer && m_pathTracer->denoisingStatistics().redrawRequested;
-    result.redrawRequested = preparationPending() ||
-                             (m_backend && (result.redrawRequested || denoiserWarming ||
-                                            m_profiles.current().trace.accumulate)) ||
-                             m_profiles.current() != m_appliedSettings;
+    result.redrawRequested =
+        preparationPending() ||
+        (m_backend && (result.redrawRequested || denoiserWarming || m_profiles.current().trace.accumulate)) ||
+        m_profiles.current() != m_appliedSettings;
     return result;
   }
 
   remixapi_SharcStatisticsEXT RemixNativeRuntime::sharcStatistics() const {
+    if (const auto *busy = busyState())
+      return busy->sharc;
     auto result = m_pathTracer ? m_pathTracer->sharcStatistics()
                                : remixapi_SharcStatisticsEXT{.structSize = sizeof(remixapi_SharcStatisticsEXT)};
     result.requested = m_profiles.current().trace.sharc;
     if (!m_pathTracer)
-      std::strncpy(result.unavailableReason, REMIX_HAS_SHARC ? "Path tracing is inactive" : "SHARC was disabled at build time",
+      std::strncpy(result.unavailableReason,
+                   REMIX_HAS_SHARC ? "Path tracing is inactive" : "SHARC was disabled at build time",
                    sizeof(result.unavailableReason) - 1);
     return result;
   }
 
   remixapi_LocalLightGuidingStatisticsEXT RemixNativeRuntime::localLightGuidingStatistics() const {
+    if (const auto *busy = busyState())
+      return busy->guiding;
     remixapi_LocalLightGuidingStatisticsEXT result =
-        m_pathTracer && m_backend ? m_pathTracer->localLightGuidingStatistics()
-                                  : remixapi_LocalLightGuidingStatisticsEXT{.structSize = sizeof(remixapi_LocalLightGuidingStatisticsEXT)};
+        m_pathTracer && m_backend
+            ? m_pathTracer->localLightGuidingStatistics()
+            : remixapi_LocalLightGuidingStatisticsEXT{.structSize = sizeof(remixapi_LocalLightGuidingStatisticsEXT)};
     result.requested = m_profiles.current().trace.localGuiding;
     result.influenceRange = m_profiles.current().trace.localRange;
     return result;
   }
 
   remixapi_LocalLightStatisticsEXT RemixNativeRuntime::localLightStatistics() const {
-    auto result = m_pathTracer ? m_pathTracer->localLightStatistics()
-                               : remixapi_LocalLightStatisticsEXT{.structSize = sizeof(remixapi_LocalLightStatisticsEXT)};
+    if (const auto *busy = busyState())
+      return busy->localLight;
+    auto result = m_pathTracer
+                      ? m_pathTracer->localLightStatistics()
+                      : remixapi_LocalLightStatisticsEXT{.structSize = sizeof(remixapi_LocalLightStatisticsEXT)};
     result.enabled = m_profiles.current().trace.localLights;
     result.samples = m_profiles.current().trace.localSamples;
     return result;
   }
 
   remixapi_ShadowStatisticsEXT RemixNativeRuntime::shadowStatistics() const {
+    if (const auto *busy = busyState())
+      return busy->shadow;
     auto result = m_pathTracer ? m_pathTracer->shadowStatistics()
                                : remixapi_ShadowStatisticsEXT{.structSize = sizeof(remixapi_ShadowStatisticsEXT)};
     result.requested = m_profiles.current().trace.sigma;
@@ -471,6 +520,8 @@ namespace remix {
   }
 
   remixapi_DenoisingStatisticsEXT RemixNativeRuntime::denoisingStatistics() const {
+    if (const auto *busy = busyState())
+      return busy->denoising;
     auto result = m_pathTracer ? m_pathTracer->denoisingStatistics()
                                : remixapi_DenoisingStatisticsEXT{.structSize = sizeof(remixapi_DenoisingStatisticsEXT)};
     result.requestedDenoiser = m_profiles.current().trace.denoiser;
@@ -484,14 +535,18 @@ namespace remix {
       return REMIXAPI_ERROR_CODE_NOT_INITIALIZED;
     if (!m_profiles.current().vramStatistics)
       return REMIXAPI_ERROR_CODE_FEATURE_UNAVAILABLE;
-    const auto raster = m_raster.memoryStatistics();
+    if (const auto *busy = busyState()) {
+      stats = busy->vram;
+      return busy->vramStatus;
+    }
+    const auto raster = renderer().memoryStatistics();
     stats.usedMaterialTextureBytes = raster.textureBytes;
     stats.forkTextureCacheCount = raster.textureCount;
     stats.usedBufferBytes = raster.geometryBytes;
     if (m_pathTracer)
       stats.usedAccelerationStructureBytes = m_pathTracer->statistics().accelerationBytes;
-    stats.totalUsedBytes = stats.usedMaterialTextureBytes + stats.usedBufferBytes +
-                           stats.usedAccelerationStructureBytes;
+    stats.totalUsedBytes =
+        stats.usedMaterialTextureBytes + stats.usedBufferBytes + stats.usedAccelerationStructureBytes;
     stats.totalAllocatedBytes = stats.totalUsedBytes;
     @autoreleasepool {
       // Unified memory: the process's GPU allocations and the working set the

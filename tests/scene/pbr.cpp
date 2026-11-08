@@ -34,26 +34,18 @@ int main(int argc, char **argv) {
   auto draw = instance(mesh);
   resources.drawInstance(draw);
   auto original = resources.draws().back().material;
-  require(original->pbr && original->roughness == .7f &&
-              original->metallic == .3f,
-          "PBR constants missing");
-  require(original->texture->pixels.srgb &&
-              original->emissionTexture->pixels.srgb,
+  require(original->pbr && original->roughness == .7f && original->metallic == .3f, "PBR constants missing");
+  require(original->texture->pixels.srgb && original->emissionTexture->pixels.srgb,
           "PBR altered color-space of colors");
-  require(!original->normalTexture->pixels.srgb &&
-              original->normalTexture->pixels.mips[0][0] == 128,
+  require(!original->normalTexture->pixels.srgb && original->normalTexture->pixels.mips[0][0] == 128,
           "Normal map was gamma converted");
-  require(original->normalTexture == original->roughnessTexture &&
-              original->normalTexture == original->metallicTexture,
+  require(original->normalTexture == original->roughnessTexture && original->normalTexture == original->metallicTexture,
           "Data views not shared");
   resources.createMaterial(info, materialHandle);
   resources.drawInstance(draw);
-  require(resources.draws().back().material == original,
-          "Identical PBR material lost identity");
-  auto signature = remix::scene::TemporalHistory::materialSignature(
-      resources.draws().back());
-  for (float bad : {-1.f, 1.1f, std::numeric_limits<float>::quiet_NaN(),
-                    std::numeric_limits<float>::infinity()}) {
+  require(resources.draws().back().material == original, "Identical PBR material lost identity");
+  auto signature = remix::scene::TemporalHistory::materialSignature(resources.draws().back());
+  for (float bad : {-1.f, 1.1f, std::numeric_limits<float>::quiet_NaN(), std::numeric_limits<float>::infinity()}) {
     opaque.roughnessConstant = bad;
     rejected([&] { resources.createMaterial(info, materialHandle); });
     opaque.roughnessConstant = .7f;
@@ -62,8 +54,7 @@ int main(int argc, char **argv) {
     opaque.metallicConstant = .3f;
   }
   resources.drawInstance(draw);
-  require(resources.draws().back().material == original,
-          "Rejected PBR edit replaced material");
+  require(resources.draws().back().material == original, "Rejected PBR edit replaced material");
   pixel[0] = 200;
   resources.createTexture(texture, th);
   resources.createMaterial(info, materialHandle);
@@ -72,24 +63,21 @@ int main(int argc, char **argv) {
   require(changed.material->roughnessTexture->pixels.mips[0][0] == 200 &&
               original->roughnessTexture->pixels.mips[0][0] == 128,
           "PBR upload lifetime");
-  require(remix::scene::TemporalHistory::materialSignature(changed) !=
-              signature,
+  require(remix::scene::TemporalHistory::materialSignature(changed) != signature,
           "PBR texture change absent from history signature");
   opaque.roughnessTexture = opaque.metallicTexture = nullptr;
   info.normalTexture = nullptr;
   opaque.roughnessConstant = opaque.metallicConstant = 0;
   resources.createMaterial(info, materialHandle);
   resources.drawInstance(draw);
-  require(!resources.draws().back().material->pbr,
-          "Legacy material became specular");
+  require(!resources.draws().back().material->pbr, "Legacy material became specular");
   remixapi_MaterialInfoPbrEXT pbr{};
   pbr.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_PBR_EXT;
   pbr.enabled = 1;
   opaque.pNext = &pbr;
   resources.createMaterial(info, materialHandle);
   resources.drawInstance(draw);
-  require(resources.draws().back().material->pbr,
-          "Smooth dielectric override missing");
+  require(resources.draws().back().material->pbr, "Smooth dielectric override missing");
   pbr.enabled = 0;
   opaque.roughnessConstant = 1;
   resources.createMaterial(info, materialHandle);
@@ -102,8 +90,7 @@ int main(int argc, char **argv) {
     unsigned count = 0;
     opaque.pNext = nullptr;
     opaque.roughnessConstant = 1;
-    for (const auto &entry :
-         std::filesystem::recursive_directory_iterator(argv[1])) {
+    for (const auto &entry : std::filesystem::recursive_directory_iterator(argv[1])) {
       if (!entry.is_regular_file() || entry.path().extension() != ".dds")
         continue;
       const auto stem = entry.path().stem().string();
@@ -125,8 +112,7 @@ int main(int argc, char **argv) {
       const auto first = resources.draws().back().material;
       resources.createMaterial(info, materialHandle);
       resources.drawInstance(draw);
-      require(first == resources.draws().back().material,
-              "File-backed map reload lost material identity");
+      require(first == resources.draws().back().material, "File-backed map reload lost material identity");
       resources.finishFrame();
       ++count;
     }

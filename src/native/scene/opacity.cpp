@@ -84,8 +84,7 @@ namespace remix::scene {
       else if (wrap == 3)
         return P::TextureBoundary;
       else if (wrap == 0) {
-        out[0] = {uint32_t(std::clamp(first, 0.f, float(size - 1))),
-                  uint32_t(std::clamp(last, 0.f, float(size - 1)))};
+        out[0] = {uint32_t(std::clamp(first, 0.f, float(size - 1))), uint32_t(std::clamp(last, 0.f, float(size - 1)))};
       } else if (last - first >= size - 1 || std::max(std::abs(first), std::abs(last)) > 16777216.f) {
         // Long or numerically uncertain footprints include the complete axis.
         out[0] = {0, size - 1};
@@ -170,8 +169,7 @@ namespace remix::scene {
     return true;
   }
 
-  std::shared_ptr<const OpacityPartition> OpacityCache::find(const Draw &draw,
-                                                             const std::array<float, 4> &uv) const {
+  std::shared_ptr<const OpacityPartition> OpacityCache::find(const Draw &draw, const std::array<float, 4> &uv) const {
     Key key;
     std::array<uint32_t, 2> dimensions;
     if (!this->key(draw, uv, key, dimensions))
@@ -185,8 +183,7 @@ namespace remix::scene {
     return found->second.partition;
   }
 
-  std::shared_ptr<const OpacityPartition> OpacityCache::partition(const Draw &draw,
-                                                                  const std::array<float, 4> &uv) {
+  std::shared_ptr<const OpacityPartition> OpacityCache::partition(const Draw &draw, const std::array<float, 4> &uv) {
     using P = OpacityPartition;
     if (profile)
       ++statistics.lookups;
@@ -245,9 +242,9 @@ namespace remix::scene {
     // With oneSidedOpaque, facing is rejected by traversal (see opacity.h), so
     // a one-sided surface needs the same coverage proof as a double-sided one.
     P::Reason uniform = !draw.doubleSided && !oneSidedOpaque ? P::OneSided
-                        : b.enabled       ? P::Blended
-                        : m.transmission  ? P::Transmission
-                                          : P::Solid;
+                        : b.enabled                          ? P::Blended
+                        : m.transmission                     ? P::Transmission
+                                                             : P::Solid;
     if (uniform != P::Solid || compare == 7 || compare == 0 || compare == 2 || compare == 5) {
       if (uniform == P::Solid && compare != 7)
         uniform = P::AlphaTest;
@@ -263,8 +260,7 @@ namespace remix::scene {
         const float values[] = {a[0] * b[0], a[0] * b[1], a[1] * b[0], a[1] * b[1]};
         return {*std::min_element(values, values + 4), *std::max_element(values, values + 4)};
       };
-      const bool usesTexture =
-          (b.alphaOpTexture != 2 && b.alpha1 == 1) || (b.alphaOpTexture != 1 && b.alpha2 == 1);
+      const bool usesTexture = (b.alphaOpTexture != 2 && b.alpha1 == 1) || (b.alphaOpTexture != 1 && b.alpha2 == 1);
       if (usesTexture)
         getPixels();
       for (uint32_t triangle = 0; triangle < result->triangles; ++triangle) {
@@ -276,16 +272,13 @@ namespace remix::scene {
           vertex[0] = std::min(vertex[0], alpha);
           vertex[1] = std::max(vertex[1], alpha);
         }
-        auto reason = !usesTexture       ? P::Solid
+        auto reason = !usesTexture           ? P::Solid
                       : draw.texcoordMoves() ? P::Scrolling
-                                         : opaqueTexels(draw, uv, triangle, pixels, regions);
+                                             : opaqueTexels(draw, uv, triangle, pixels, regions);
         const Range texture = usesTexture && reason == P::Solid ? Range{1, 1} : Range{0, 1};
         auto arg = [&](uint32_t index) -> Range {
           const float factor = (b.factor >> 24) / 255.f;
-          return index == 1   ? texture
-                 : index == 2 ? vertex
-                 : index == 3 ? Range{factor, factor}
-                              : Range{1, 1};
+          return index == 1 ? texture : index == 2 ? vertex : index == 3 ? Range{factor, factor} : Range{1, 1};
         };
         auto alpha = b.alphaOpTexture == 1   ? arg(b.alpha1)
                      : b.alphaOpTexture == 2 ? arg(b.alpha2)

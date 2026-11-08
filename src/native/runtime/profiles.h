@@ -7,17 +7,27 @@
 #include <vector>
 
 namespace remix::config {
+  // The panel's and the screenshot shortcut's default modifier: Cmd on macOS,
+  // whose keyboards have Option rather than Alt; Alt elsewhere.
+#if defined(__APPLE__)
+  inline constexpr uint32_t defaultShortcutModifiers = 8;
+#else
+  inline constexpr uint32_t defaultShortcutModifiers = 1;
+#endif
   struct PanelState {
     bool right = false;
     float width = 520;
     int tab = 0;
     // The panel's shortcut (RemixSdlWindow::setMenuShortcut): a key and exactly
-    // the modifiers held with it (1 Alt, 2 Ctrl, 4 Shift, 8 Cmd/Win). Alt+X.
-    uint32_t menuKey = REMIXAPI_KEY_X, menuModifiers = 1;
+    // the modifiers held with it (1 Alt, 2 Ctrl, 4 Shift, 8 Cmd/Win). Alt+X
+    // (Cmd+X on macOS).
+    uint32_t menuKey = REMIXAPI_KEY_X, menuModifiers = defaultShortcutModifiers;
     // The USD scene capture shortcut, kept the same way (key 0: none).
     uint32_t sceneCaptureKey = 0, sceneCaptureModifiers = 0;
-    // The screenshot shortcut, the same way. Alt+F12.
-    uint32_t screenshotKey = REMIXAPI_KEY_F12, screenshotModifiers = 1;
+    // The screenshot shortcut, the same way. Alt+F12 (Cmd+F12 on macOS).
+    uint32_t screenshotKey = REMIXAPI_KEY_F12, screenshotModifiers = defaultShortcutModifiers;
+    // The panel's background and accent colors, 0xRRGGBB (ui::theme::setColors).
+    uint32_t background = 0x303030, accent = 0x4772b3;
     bool operator==(const PanelState &) const = default;
   };
 
@@ -68,7 +78,7 @@ namespace remix::config {
     void remember();
     Settings m_current, m_saved;
     UnknownSettings m_unknown;
-    std::set<std::string> m_listed; // the keys the active profile's file has
+    std::set<std::string> m_listed;                              // the keys the active profile's file has
     std::vector<std::pair<std::string, std::string>> m_defaults; // the host's, in order
     std::filesystem::path m_directory, m_folder;
     std::vector<std::string> m_files;

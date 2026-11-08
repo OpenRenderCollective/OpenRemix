@@ -27,7 +27,8 @@ namespace remix {
 
     ERR closeFile(WMPStream **stream) {
       auto *s = fileStream(*stream);
-      if (s->file && std::fclose(s->file) != 0) s->failed = true;
+      if (s->file && std::fclose(s->file) != 0)
+        s->failed = true;
       s->file = nullptr;
       return WMP_errSuccess;
     }
@@ -62,14 +63,15 @@ namespace remix {
 #else
       const off_t p = ftello(fileStream(stream)->file);
 #endif
-      if (p < 0) return WMP_errFileIO;
+      if (p < 0)
+        return WMP_errFileIO;
       *offset = static_cast<size_t>(p);
       return WMP_errSuccess;
     }
   } // namespace
 
-  bool writeJxrScRgb(const std::filesystem::path &path, uint32_t width, uint32_t height,
-    const uint16_t *rgbaHalf, std::string &error) {
+  bool writeJxrScRgb(const std::filesystem::path &path, uint32_t width, uint32_t height, const uint16_t *rgbaHalf,
+                     std::string &error) {
     constexpr uint64_t stride = 8; // bytes per RGBA half pixel
     if (!width || !height || !rgbaHalf || width > uint32_t(std::numeric_limits<I32>::max()) ||
         height > uint32_t(std::numeric_limits<I32>::max()) || uint64_t(width) * stride > UINT32_MAX) {
@@ -109,13 +111,16 @@ namespace remix {
       params.uiDefaultQPIndexAlpha = 1;
       err = encoder->Initialize(encoder, &file.stream, &params, sizeof(params));
     }
-    if (err >= 0) err = encoder->SetPixelFormat(encoder, GUID_PKPixelFormat64bppRGBAHalf);
-    if (err >= 0) err = encoder->SetSize(encoder, I32(width), I32(height));
-    if (err >= 0) err = encoder->SetResolution(encoder, 96.f, 96.f);
+    if (err >= 0)
+      err = encoder->SetPixelFormat(encoder, GUID_PKPixelFormat64bppRGBAHalf);
+    if (err >= 0)
+      err = encoder->SetSize(encoder, I32(width), I32(height));
+    if (err >= 0)
+      err = encoder->SetResolution(encoder, 96.f, 96.f);
     // The encoder only reads the pixels.
     if (err >= 0)
-      err = encoder->WritePixels(encoder, height,
-        reinterpret_cast<U8 *>(const_cast<uint16_t *>(rgbaHalf)), U32(width * stride));
+      err = encoder->WritePixels(encoder, height, reinterpret_cast<U8 *>(const_cast<uint16_t *>(rgbaHalf)),
+                                 U32(width * stride));
     if (encoder) {
       // Release closes the stream.
       encoder->pStream = &file.stream;

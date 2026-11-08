@@ -96,6 +96,8 @@ namespace remix::metal {
 
   void Raster::shutdownGpu() { m_gpu.reset(); }
 
+  void Raster::adoptGpu(Raster &other) { m_gpu = std::move(other.m_gpu); }
+
   void Raster::selectFrame(uint32_t slot) {
     auto &g = *m_gpu;
     g.frameIndex = slot % gpuFrameCount;
@@ -193,14 +195,17 @@ namespace remix::metal {
     const uint32_t x0 = updates.dirty[0], y0 = updates.dirty[1], x1 = updates.dirty[2], y1 = updates.dirty[3];
     std::fill_n(updates.dirty, 4, 0u);
     const auto &p = source.pixels;
-    // Region updates cover plain RGBA8 images at full size. One with mips
-    // (generated again by every update, raster/resources.cpp refreshLevels)
-    // is uploaded whole, every level.
-    if (x1 <= x0 || y1 <= y0 || !value.texture || p.compressed || !p.hdrMips.empty() || p.mips.empty() ||
+    // Region updates cover plain RGBA8 or RGBA32F (hdrMips, one level) images
+    // at full size. One with mips (generated again by every update,
+    // raster/resources.cpp refreshLevels) is uploaded whole, every level.
+    const bool hdr = p.hdrMips.size() == 1;
+    if (x1 <= x0 || y1 <= y0 || !value.texture || p.compressed || p.hdrMips.size() > 1 || p.mips.empty() ||
         value.texture.width != p.width || value.texture.height != p.height || x1 > p.width || y1 > p.height)
       return;
+    const size_t texel = hdr ? 16 : 4;
+    const auto *texels = hdr ? reinterpret_cast<const uint8_t *>(p.hdrMips[0].data()) : p.mips[0].data();
     dynamicTextureUploads += source.dynamic;
-    if (p.mips.size() > 1) {
+    if (p.mips.size() > 1 && !hdr) {
       const uint32_t levels = std::min<uint32_t>(uint32_t(p.mips.size()), uint32_t(value.texture.mipmapLevelCount));
       for (uint32_t level = 0; level < levels; ++level) {
         const uint32_t w = std::max(1u, p.width >> level), h = std::max(1u, p.height >> level);
@@ -217,8 +222,8 @@ namespace remix::metal {
     // new texels of this region.
     [value.texture replaceRegion:MTLRegionMake2D(x0, y0, x1 - x0, y1 - y0)
                      mipmapLevel:0
-                       withBytes:p.mips[0].data() + (size_t(y0) * p.width + x0) * 4
-                     bytesPerRow:size_t(p.width) * 4];
+                       withBytes:texels + (size_t(y0) * p.width + x0) * texel
+                     bytesPerRow:size_t(p.width) * texel];
   }
 
   uint64_t Raster::dynamicTextureGeneration() const { return m_gpu ? m_gpu->dynamicTextureUploads : 0; }
@@ -229,8 +234,8 @@ namespace remix::metal {
     const auto format = !p.hdrMips.empty() ? MTLPixelFormatRGBA32Float : MTLPixelFormatRGBA8Unorm;
     const size_t texel = !p.hdrMips.empty() ? 16 : 4;
     // Unified memory: shared textures are written directly, as host-visible staging would be.
-    TextureGpu value{owner, texture2d(device, format, p.width, p.height, MTLTextureUsageShaderRead, levels,
-                                      MTLStorageModeShared)};
+    TextureGpu value{
+        owner, texture2d(device, format, p.width, p.height, MTLTextureUsageShaderRead, levels, MTLStorageModeShared)};
     value.srgb = p.srgb && p.hdrMips.empty();
     uint32_t width = std::max(1u, p.width), height = std::max(1u, p.height);
     for (uint32_t i = 0; i < levels; ++i) {
@@ -280,9 +285,9 @@ namespace remix::metal {
       return textures.emplace(source.get(), std::move(value)).first->second;
     }
     auto *descriptor = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:block.format
-                                                                         width:p.width
-                                                                        height:p.height
-                                                                     mipmapped:NO];
+                                                                          width:p.width
+                                                                         height:p.height
+                                                                      mipmapped:NO];
     descriptor.mipmapLevelCount = c.levels;
     descriptor.usage = MTLTextureUsageShaderRead;
     descriptor.storageMode = MTLStorageModeShared;
@@ -353,11 +358,11 @@ namespace remix::metal {
     // skybox's geometry occludes itself.
     const bool depth = draw.depth || (target == Target::Sky && draw.camera == REMIXAPI_CAMERA_TYPE_SKY);
     return uint64_t(b.src) | uint64_t(b.dst) << 4 | uint64_t(b.op) << 8 | uint64_t(b.srcAlpha) << 11 |
-           uint64_t(b.dstAlpha) << 15 | uint64_t(b.alphaOp) << 19 | uint64_t(b.mask) << 22 |
-           uint64_t(b.enabled) << 26 | uint64_t(draw.doubleSided) << 27 | uint64_t(depth) << 28 |
+           uint64_t(b.dstAlpha) << 15 | uint64_t(b.alphaOp) << 19 | uint64_t(b.mask) << 22 | uint64_t(b.enabled) << 26 |
+           uint64_t(draw.doubleSided) << 27 | uint64_t(depth) << 28 |
            uint64_t(depth && (draw.depthWriteOverride ? draw.depthWrite : (!b.enabled || draw.ui))) << 29 |
-           uint64_t(draw.depthCompare) << 30 | uint64_t(draw.depthBias) << 33 |
-           (target == Target::Sky ? skyBit : 0) | (draw.wireframe ? wireframeBit : 0);
+           uint64_t(draw.depthCompare) << 30 | uint64_t(draw.depthBias) << 33 | (target == Target::Sky ? skyBit : 0) |
+           (draw.wireframe ? wireframeBit : 0);
   }
 
   id<MTLRenderPipelineState> Raster::Gpu::pipeline(uint64_t key) {
@@ -475,10 +480,7 @@ namespace remix::metal {
     for (auto it = m_paths.begin(); it != m_paths.end();)
       it = it->second.expired() ? m_paths.erase(it) : std::next(it);
     auto layer = [](const Draw &d) {
-      return d.ui                                          ? 3
-             : d.camera == REMIXAPI_CAMERA_TYPE_SKY        ? 0
-             : d.camera == REMIXAPI_CAMERA_TYPE_VIEW_MODEL ? 2
-                                                           : 1;
+      return d.ui ? 3 : d.camera == REMIXAPI_CAMERA_TYPE_SKY ? 0 : d.camera == REMIXAPI_CAMERA_TYPE_VIEW_MODEL ? 2 : 1;
     };
     auto distance = [&](const Draw &d) {
       const auto mvp = multiply(m_cameras[d.camera], d.model);
@@ -555,6 +557,7 @@ namespace remix::metal {
     std::vector<Vertex> skinned;
     const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - g.epoch).count();
     g.sprite.soft = 0;
+    g.sprite.requested = false;
     g.sprite.captured = false;
     // A halo or mask source: drawn as a silhouette into a coverage target
     // instead of the frame.
@@ -616,8 +619,8 @@ namespace remix::metal {
         if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(w))
           return false;
         const float edge = w + .01f * std::abs(w);
-        outside &= uint32_t(x < -edge) | uint32_t(x > edge) << 1 | uint32_t(y < -edge) << 2 |
-                   uint32_t(y > edge) << 3 | uint32_t(w <= 0) << 4;
+        outside &= uint32_t(x < -edge) | uint32_t(x > edge) << 1 | uint32_t(y < -edge) << 2 | uint32_t(y > edge) << 3 |
+                   uint32_t(w <= 0) << 4;
       }
       return outside != 0;
     };
@@ -651,8 +654,8 @@ namespace remix::metal {
       }
       out.tested = silhouette && silhouette->depthTest && draw.camera == REMIXAPI_CAMERA_TYPE_WORLD;
       // A sprite overlay (raster/sprite.cpp): a blended draw that is not masked.
-      const bool sprite = !silhouette && draw.spriteFlags && draw.blend.enabled && !draw.maskGroup &&
-                          !draw.cutGroup && !draw.ui;
+      const bool sprite =
+          !silhouette && draw.spriteFlags && draw.blend.enabled && !draw.maskGroup && !draw.cutGroup && !draw.ui;
       auto &material = g.material(draw.material);
       out.material = material.set.current();
       out.texture = g.textures.at(draw.material->texture.get()).texture;
@@ -676,11 +679,11 @@ namespace remix::metal {
         out.spriteParameters[3] = blend.src == 4 && blend.dst == 2 ? 2.f : 1.f;
       }
       // The captured depth is the world camera's.
-      const uint32_t spriteFlags =
-          !sprite ? 0u
-                  : draw.spriteFlags & (draw.camera == REMIXAPI_CAMERA_TYPE_WORLD
-                                            ? 0x1ffu
-                                            : 0x1ffu & ~uint32_t(REMIXAPI_SPRITE_SOFT_DEPTH_EXT));
+      const uint32_t spriteFlags = !sprite
+                                       ? 0u
+                                       : draw.spriteFlags & (draw.camera == REMIXAPI_CAMERA_TYPE_WORLD
+                                                                 ? 0x1ffu
+                                                                 : 0x1ffu & ~uint32_t(REMIXAPI_SPRITE_SOFT_DEPTH_EXT));
       g.sprite.soft += (spriteFlags & REMIXAPI_SPRITE_SOFT_DEPTH_EXT) != 0;
       out.firstIndex = draw.firstIndex;
       out.count = draw.indexCount ? draw.indexCount : uint32_t(draw.surface->indices.size());
@@ -704,9 +707,9 @@ namespace remix::metal {
             const size_t index = v * draw.surface->bonesPerVertex + b;
             const auto &m = (*draw.bones)[draw.surface->bones[index]];
             for (int r = 0; r < 3; ++r) {
-              vertex.position[r] += draw.surface->weights[index] *
-                                    (m[r] * original.position[0] + m[4 + r] * original.position[1] +
-                                     m[8 + r] * original.position[2] + m[12 + r]);
+              vertex.position[r] +=
+                  draw.surface->weights[index] * (m[r] * original.position[0] + m[4 + r] * original.position[1] +
+                                                  m[8 + r] * original.position[2] + m[12 + r]);
             }
           }
           skinned.push_back(vertex);
@@ -723,9 +726,8 @@ namespace remix::metal {
       const auto texcoord = scene::surfaceTexcoord(draw, seconds, frame);
       std::copy_n(texcoord.data(), 4, out.push.uv);
       const auto &b = draw.blend;
-      out.push.state[0] = (b.colorOp & 3u) | (b.colorOp & 4u) << 10 | (b.alphaOpTexture & 4u) << 11 |
-                          b.color1 << 2 | b.color2 << 4 | (b.alphaOpTexture & 3u) << 6 | b.alpha1 << 8 |
-                          b.alpha2 << 10;
+      out.push.state[0] = (b.colorOp & 3u) | (b.colorOp & 4u) << 10 | (b.alphaOpTexture & 4u) << 11 | b.color1 << 2 |
+                          b.color2 << 4 | (b.alphaOpTexture & 3u) << 6 | b.alpha1 << 8 | b.alpha2 << 10;
       out.push.state[1] = draw.ignoreAlpha ? 7 : draw.alphaOverride ? draw.compare : mat.compare;
       const float reference = draw.alphaOverride ? draw.reference : mat.reference;
       std::memcpy(&out.push.state[2], &reference, sizeof(reference));
@@ -968,9 +970,8 @@ namespace remix::metal {
   // full-screen triangle at the far plane that writes only depth.
   void Raster::Gpu::clearDepth(id<MTLRenderCommandEncoder> encoder) {
     if (!clearGeometry) {
-      const Vertex vertices[3] = {{{-1, -1, 1}, {0, 0}, {1, 1, 1, 1}},
-                                  {{3, -1, 1}, {0, 0}, {1, 1, 1, 1}},
-                                  {{-1, 3, 1}, {0, 0}, {1, 1, 1, 1}}};
+      const Vertex vertices[3] = {
+          {{-1, -1, 1}, {0, 0}, {1, 1, 1, 1}}, {{3, -1, 1}, {0, 0}, {1, 1, 1, 1}}, {{-1, 3, 1}, {0, 0}, {1, 1, 1, 1}}};
       clearGeometry = buffer(device, vertices, sizeof(vertices));
     }
     Draw clear;

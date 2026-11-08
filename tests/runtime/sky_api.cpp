@@ -38,16 +38,18 @@ int main(int argc, char **argv) {
   const auto symbol = [&](const char *name) { return dlsym(library, name); };
 #endif
   const auto setTime = reinterpret_cast<PFN_remixapi_SetSkyTimeEXT>(symbol("remixapi_SetSkyTimeEXT"));
-  const auto setPreset = reinterpret_cast<PFN_remixapi_SetSkyWeatherPresetEXT>(symbol("remixapi_SetSkyWeatherPresetEXT"));
+  const auto setPreset =
+      reinterpret_cast<PFN_remixapi_SetSkyWeatherPresetEXT>(symbol("remixapi_SetSkyWeatherPresetEXT"));
   const auto setField = reinterpret_cast<PFN_remixapi_SetSkyWeatherFieldEXT>(symbol("remixapi_SetSkyWeatherFieldEXT"));
   const auto clearWeather = reinterpret_cast<PFN_remixapi_ClearSkyWeatherEXT>(symbol("remixapi_ClearSkyWeatherEXT"));
-  const auto lightning = reinterpret_cast<PFN_remixapi_TriggerSkyLightningEXT>(symbol("remixapi_TriggerSkyLightningEXT"));
+  const auto lightning =
+      reinterpret_cast<PFN_remixapi_TriggerSkyLightningEXT>(symbol("remixapi_TriggerSkyLightningEXT"));
   const auto getState = reinterpret_cast<PFN_remixapi_GetSkyStateEXT>(symbol("remixapi_GetSkyStateEXT"));
   require(setTime && setPreset && setField && clearWeather && lightning && getState, "Sky exports");
 
   constexpr auto invalid = REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS, early = REMIXAPI_ERROR_CODE_NOT_INITIALIZED;
-  remixapi_SkyTimeEXT time{.structSize = sizeof(time), .version = 1, .timeOfDayHours = 22, .dayOfYear = 0,
-                           .dayLengthMinutes = 0};
+  remixapi_SkyTimeEXT time{
+      .structSize = sizeof(time), .version = 1, .timeOfDayHours = 22, .dayOfYear = 0, .dayLengthMinutes = 0};
   require(setTime(&time) == early && setTime(nullptr) == early, "Time before startup");
   time.structSize = 4;
   require(setTime(&time) == invalid, "Time struct size");

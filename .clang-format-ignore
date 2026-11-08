@@ -1,0 +1,20 @@
+# Sources clang-format leaves alone (read by clang-format and by Meson's clang-format target).
+# Vendored code.
+third_party/**
+subprojects/**
+include/vulkan/**
+public/include/remix/remix.h
+public/include/remix/remix_c.h
+src/native/upscale/nvsdk_ngx_defs_dlssnr.h
+# Generated shader and table headers.
+src/native/pathtrace/shaders/blue_noise_data.h
+src/native/upscale/shaders/fsr31.h
+src/native/upscale/shaders/neural_uplift_prep.h
+src/native/upscale/shaders/blit_frag.h
+src/native/denoise/shaders/nrd_embedded.h
+# ABI offsets recorded from the 0.1003 SDK, one assertion per line.
+tests/abi/posix_layout.h
+tests/abi/windows_layout.h
+# Local outputs and references.
+_work/**
+ref/**

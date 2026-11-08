@@ -18,7 +18,7 @@ A performance-focused, multi-platform alternative to [dxvk-remix](https://github
 
 ## Projects Using OpenRemix
 - [BetaRT](https://github.com/sambow23/BetaRT/tree/openremix)
-- [garrys-mod-rtx-remixed-2](https://github.com/sambow23/garrys-mod-rtx-remixed-2)
+- [SourcePT](https://github.com/sambow23/SourcePT)
 - [UnityRTX](https://github.com/Veitaserum4/UnityRTX/tree/unity-bridge-openremix)
 - [XashOpenremix](https://github.com/Veitaserum4/xash3d-fwgs-openremix)
 

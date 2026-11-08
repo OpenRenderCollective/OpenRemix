@@ -23,12 +23,12 @@
 #include "api/state.h"
 #include "api/entrypoints.h"
 #include "pathtrace/volume_policy.h"
+#include "scene/portals.h"
 
 namespace remix::api {
   remixapi_ErrorCode REMIXAPI_CALL requireRenderer() {
     std::lock_guard lock(g_apiMutex);
-    return g_runtime.isInitialized() ? REMIXAPI_ERROR_CODE_FEATURE_UNAVAILABLE
-                                     : REMIXAPI_ERROR_CODE_NOT_INITIALIZED;
+    return g_runtime.isInitialized() ? REMIXAPI_ERROR_CODE_FEATURE_UNAVAILABLE : REMIXAPI_ERROR_CODE_NOT_INITIALIZED;
   }
 
   remixapi_ErrorCode REMIXAPI_CALL setCameraMediumMaterial(const remixapi_CameraMediumInfo *info) {
@@ -52,17 +52,17 @@ namespace remix::api {
     return ignoredEffect();
   }
 
-  remixapi_ErrorCode REMIXAPI_CALL
-  requestObjectPicking(const remixapi_Rect2D *pixelRegion,
-                       PFN_remixapi_pick_RequestObjectPickingUserCallback callback, void *) {
+  remixapi_ErrorCode REMIXAPI_CALL requestObjectPicking(const remixapi_Rect2D *pixelRegion,
+                                                        PFN_remixapi_pick_RequestObjectPickingUserCallback callback,
+                                                        void *) {
     if (pixelRegion == nullptr || callback == nullptr) {
       return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
     }
     return requireRenderer();
   }
 
-  remixapi_ErrorCode REMIXAPI_CALL highlightObjects(const uint32_t *values, uint32_t valueCount, uint8_t,
-                                                    uint8_t, uint8_t) {
+  remixapi_ErrorCode REMIXAPI_CALL highlightObjects(const uint32_t *values, uint32_t valueCount, uint8_t, uint8_t,
+                                                    uint8_t) {
     if (valueCount != 0 && values == nullptr) {
       return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
     }
@@ -126,8 +126,7 @@ namespace remix::api {
     return requireRenderer();
   }
 
-  remixapi_ErrorCode REMIXAPI_CALL copyOutput(IDirect3DSurface9 *target,
-                                              remixapi_dxvk_CopyRenderingOutputType type) {
+  remixapi_ErrorCode REMIXAPI_CALL copyOutput(IDirect3DSurface9 *target, remixapi_dxvk_CopyRenderingOutputType type) {
     if (!target || type < 0 || type > REMIXAPI_DXVK_COPY_RENDERING_OUTPUT_TYPE_GUI) {
       return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
     }
@@ -198,4 +197,16 @@ REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_SetFogState(const remixapi_Fo
 
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_AutoInstancePersistentLights() { return ignoredEffect(); }
 
+// remixapi_MaterialInfoPortalEXT indices 0..count-1, paired as i and i ^ 1
+// (scene/portals.h). Portals open on surfaces only: there are no portal volumes.
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetRayPortalCapabilities(uint32_t *out_maxActivePortalSurfaces,
+                                                                            uint32_t *out_maxDedicatedPortalVolumes) {
+  if (!out_maxActivePortalSurfaces && !out_maxDedicatedPortalVolumes)
+    return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
+  if (out_maxActivePortalSurfaces)
+    *out_maxActivePortalSurfaces = remix::scene::rayPortalSlots;
+  if (out_maxDedicatedPortalVolumes)
+    *out_maxDedicatedPortalVolumes = 0;
+  return REMIXAPI_ERROR_CODE_SUCCESS;
+}
 }

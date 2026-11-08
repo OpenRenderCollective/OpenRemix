@@ -13,39 +13,33 @@
 #include <vector>
 
 namespace {
-void require(bool condition, const char *message) {
+  void require(bool condition, const char *message) {
   if (!condition) {
     std::fprintf(stderr, "%s\n", message);
     std::exit(1);
   }
-}
-void ok(remixapi_ErrorCode error,
-        std::source_location where = std::source_location::current()) {
+  }
+  void ok(remixapi_ErrorCode error, std::source_location where = std::source_location::current()) {
   if (error) {
-    std::fprintf(stderr, "Translucency API %x at line %u\n", unsigned(error),
-                 where.line());
+      std::fprintf(stderr, "Translucency API %x at line %u\n", unsigned(error), where.line());
     std::exit(1);
   }
-}
-using Image = std::vector<float>;
-Image load(const std::filesystem::path &path, unsigned &width, unsigned &height,
-           bool signedValues = false) {
+  }
+  using Image = std::vector<float>;
+  Image load(const std::filesystem::path &path, unsigned &width, unsigned &height, bool signedValues = false) {
   std::ifstream input(path, std::ios::binary);
   std::string magic;
   float scale;
   input >> magic >> width >> height >> scale;
   input.get();
-  require(input.good() && magic == "PF" && scale == -1,
-          "Missing linear translucency capture");
+    require(input.good() && magic == "PF" && scale == -1, "Missing linear translucency capture");
   Image pixels(size_t(width) * height * 3);
-  input.read(reinterpret_cast<char *>(pixels.data()),
-             pixels.size() * sizeof(float));
+    input.read(reinterpret_cast<char *>(pixels.data()), pixels.size() * sizeof(float));
   require(input.good(), "Incomplete translucency capture");
   for (float value : pixels)
-    require(std::isfinite(value) && (signedValues || value >= 0),
-            "Invalid translucent radiance");
+      require(std::isfinite(value) && (signedValues || value >= 0), "Invalid translucent radiance");
   return pixels;
-}
+  }
 } // namespace
 
 int main(int argc, char **argv) {
@@ -53,8 +47,7 @@ int main(int argc, char **argv) {
   auto directory = std::filesystem::absolute(argv[1]);
   std::filesystem::create_directories(directory);
   SDL_setenv_unsafe("REMIX_PROFILE_EVERY_FRAME", "1", 1);
-  const bool reuseTest =
-      std::getenv("REMIX_TEST_TRANSLUCENCY_REUSE") != nullptr;
+  const bool reuseTest = std::getenv("REMIX_TEST_TRANSLUCENCY_REUSE") != nullptr;
   const auto profile = directory / "rays.csv";
   if (reuseTest) {
     std::filesystem::remove(profile);
@@ -82,20 +75,16 @@ int main(int argc, char **argv) {
   ok(api.SetConfigVariable("rtx.native.backend", "pathtrace"));
   ok(api.SetConfigVariable("rtx.native.vsync", "0"));
   auto config = [&](const char *key, const char *value) {
-    ok(api.SetConfigVariable(
-        (std::string("rtx.native.pathtrace.") + key).c_str(), value));
+    ok(api.SetConfigVariable((std::string("rtx.native.pathtrace.") + key).c_str(), value));
   };
-  for (const char *key :
-       {"autoExposure", "bloom", "taa", "sigma", "sharc",
-        "adaptiveLocalSampling", "blueNoiseLocalLights", "waterIndirectReuse",
-        "translucencyReuse"})
+  for (const char *key : {"autoExposure", "bloom", "taa", "sigma", "sharc", "adaptiveLocalSampling",
+                          "blueNoiseLocalLights", "waterIndirectReuse", "translucencyReuse"})
     config(key, "0");
   config("upscaler", "off");
   config("denoiser", "off");
   config("bounces", "1");
   config("localSamples", "1");
-  config("primaryVisibility",
-         std::getenv("REMIX_TEST_RAY_PRIMARY") ? "ray" : "raster");
+  config("primaryVisibility", std::getenv("REMIX_TEST_RAY_PRIMARY") ? "ray" : "raster");
   uint64_t id = 100;
   auto material = [&](remixapi_Float3D color, float alpha, float roughness) {
     remixapi_MaterialInfoOpaqueEXT opaque{};
@@ -136,12 +125,8 @@ int main(int argc, char **argv) {
     ok(api.CreateMesh(&info, &handle));
     return handle;
   };
-  auto background = mesh(
-      material(reuseTest ? remixapi_Float3D{.4f, .4f, .4f} : remixapi_Float3D{},
-               1, 0),
-      2);
-  auto water = mesh(material({.15f, .55f, .8f}, .6f, reuseTest ? 0 : .75f), .8f,
-                    reuseTest ? 1.5f : 0);
+  auto background = mesh(material(reuseTest ? remixapi_Float3D{.4f, .4f, .4f} : remixapi_Float3D{}, 1, 0), 2);
+  auto water = mesh(material({.15f, .55f, .8f}, .6f, reuseTest ? 0 : .75f), .8f, reuseTest ? 1.5f : 0);
   std::array<remixapi_LightHandle, 3> lights{};
   for (unsigned i = 0; i < lights.size(); ++i) {
     remixapi_LightInfoSphereEXT sphere{};
@@ -152,8 +137,7 @@ int main(int argc, char **argv) {
     info.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
     info.pNext = &sphere;
     info.hash = id++;
-    info.radiance = {i == 0 ? 8.f : 1.f, i == 1 ? 8.f : 1.f,
-                     i == 2 ? 8.f : 1.f};
+    info.radiance = {i == 0 ? 8.f : 1.f, i == 1 ? 8.f : 1.f, i == 2 ? 8.f : 1.f};
     ok(api.CreateLight(&info, &lights[i]));
   }
   remixapi_LightInfoDistantEXT distant{};
@@ -181,8 +165,7 @@ int main(int argc, char **argv) {
   float shift = 0;
   unsigned layers = 1;
   bool lit = true;
-  auto draw = [&](remixapi_MeshHandle geometry, uint64_t identity, float x,
-                  float z) {
+  auto draw = [&](remixapi_MeshHandle geometry, uint64_t identity, float x, float z) {
     remixapi_InstanceIdentityEXT stable{};
     stable.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_IDENTITY_EXT;
     stable.instanceId = identity;
@@ -254,8 +237,7 @@ int main(int argc, char **argv) {
     config("samples", "1");
     config("denoiser", "reblur-sh");
     auto now = [] {
-      return std::chrono::duration_cast<std::chrono::milliseconds>(
-                 std::chrono::system_clock::now().time_since_epoch())
+      return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
           .count();
     };
     std::array<double, 2> rays{}, energy{}, error{};
@@ -267,8 +249,7 @@ int main(int argc, char **argv) {
       warm(64);
       const auto end = now();
       for (unsigned i = 0; i < 12; ++i) {
-        auto image = capture("reuse-" + std::to_string(enabled) + "-" +
-                             std::to_string(i));
+        auto image = capture("reuse-" + std::to_string(enabled) + "-" + std::to_string(i));
         energy[enabled] += mean(image) / 12;
         error[enabled] += mse(image, reference) / 12;
       }
@@ -283,8 +264,7 @@ int main(int argc, char **argv) {
       std::string line;
       std::getline(input, line);
       auto header = split(line);
-      auto query =
-          std::find(header.begin(), header.end(), "transparency_local_queries");
+      auto query = std::find(header.begin(), header.end(), "transparency_local_queries");
       require(query != header.end(), "Missing translucency ray profile");
       const auto column = size_t(query - header.begin());
       unsigned frames = 0;
@@ -303,14 +283,10 @@ int main(int argc, char **argv) {
     }
     std::printf("opaque reuse rays off=%.3f on=%.3f energy off=%.6f on=%.6f "
                 "reference=%.6f mse off=%.9f on=%.9f\n",
-                rays[0], rays[1], energy[0], energy[1], mean(reference),
-                error[0], error[1]);
-    require(rays[0] > 0 && rays[1] < rays[0] * .98,
-            "Checked opaque reuse did not avoid endpoint lighting rays");
-    require(std::abs(energy[1] / mean(reference) - 1) < .15,
-            "Checked opaque reuse changed reference lighting energy");
-    require(error[1] < error[0] * 1.5 + .00001,
-            "Checked opaque reuse increased reference error excessively");
+                rays[0], rays[1], energy[0], energy[1], mean(reference), error[0], error[1]);
+    require(rays[0] > 0 && rays[1] < rays[0] * .98, "Checked opaque reuse did not avoid endpoint lighting rays");
+    require(std::abs(energy[1] / mean(reference) - 1) < .15, "Checked opaque reuse changed reference lighting energy");
+    require(error[1] < error[0] * 1.5 + .00001, "Checked opaque reuse increased reference error excessively");
     ok(api.Shutdown());
     return 0;
   }
@@ -335,8 +311,7 @@ int main(int argc, char **argv) {
   remixapi_DenoisingStatisticsEXT after{};
   after.structSize = sizeof(after);
   ok(remixapi_GetDenoisingStatisticsEXT(&after));
-  require(after.historyResets == before.historyResets,
-          "Foreground toggle reset opaque history");
+  require(after.historyResets == before.historyResets, "Foreground toggle reset opaque history");
   double filteredError = 0, filteredMean = 0;
   for (unsigned i = 0; i < 12; ++i) {
     auto image = capture("filtered-" + std::to_string(i));
@@ -346,14 +321,10 @@ int main(int argc, char **argv) {
   std::printf("foreground raw_mse=%.9f filtered_mse=%.9f reference_mean=%.6f "
               "filtered_mean=%.6f\n",
               rawError, filteredError, mean(reference), filteredMean);
-  require(filteredError < rawError * .5,
-          "Foreground denoising did not reduce error");
-  require(std::abs(filteredMean / mean(reference) - 1) < .15,
-          "Foreground denoising changed lighting energy");
+  require(filteredError < rawError * .5, "Foreground denoising did not reduce error");
+  require(std::abs(filteredMean / mean(reference) - 1) < .15, "Foreground denoising changed lighting energy");
   if (std::getenv("REMIX_TEST_FOREGROUND_SIGNALS")) {
-    for (const char *signal :
-         {"front-diffuse", "front-specular", "front-diffuse-output",
-          "front-specular-output"}) {
+    for (const char *signal : {"front-diffuse", "front-specular", "front-diffuse-output", "front-specular-output"}) {
       auto image = capture(signal, signal);
       std::printf("foreground signal %s mean %.9f\n", signal, mean(image));
     }
@@ -361,8 +332,7 @@ int main(int argc, char **argv) {
   shift += .02f;
   auto motion = capture("front-motion", "front-motion");
   const size_t center = ((height / 2) * width + width / 2) * 3;
-  require(std::abs(motion[center] + float(width) * .01f) < .03f &&
-              std::abs(motion[center + 1]) < .001f,
+  require(std::abs(motion[center] + float(width) * .01f) < .03f && std::abs(motion[center + 1]) < .001f,
           "Foreground motion followed the opaque receiver");
   // Motion changes the foreground position while the opaque receiver stays
   // fixed.
@@ -379,14 +349,12 @@ int main(int argc, char **argv) {
         trail += moving[(y * width + x) * 3 + c];
         ++count;
       }
-  require(trail / count < mean(reference) * .02,
-          "Water left a disocclusion trail");
+  require(trail / count < mean(reference) * .02, "Water left a disocclusion trail");
   // Explicit reset and a disappearance must not preserve foreground radiance.
   ++epoch.worldEpoch;
   layers = 0;
   warm(3);
-  require(mean(capture("removed")) < .00001,
-          "Removed water retained foreground history");
+  require(mean(capture("removed")) < .00001, "Removed water retained foreground history");
   layers = 2;
   shift = 0;
   warm(16);
@@ -396,7 +364,6 @@ int main(int argc, char **argv) {
   sky.radiance = {0, 0, 0};
   ++epoch.worldEpoch;
   warm(4);
-  require(mean(capture("reset-dark")) < .00001,
-          "World reset retained old water lighting");
+  require(mean(capture("reset-dark")) < .00001, "World reset retained old water lighting");
   ok(api.Shutdown());
 }

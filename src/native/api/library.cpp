@@ -42,13 +42,12 @@ namespace {
 
 extern "C" {
 
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL
-remixapi_InitializeLibrary(const remixapi_InitializeLibraryInfo *info, remixapi_Interface *outResult) {
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_InitializeLibrary(const remixapi_InitializeLibraryInfo *info,
+                                                                     remixapi_Interface *outResult) {
   if (outResult) {
     *outResult = {};
   }
-  if (info == nullptr || outResult == nullptr ||
-      info->sType != REMIXAPI_STRUCT_TYPE_INITIALIZE_LIBRARY_INFO) {
+  if (info == nullptr || outResult == nullptr || info->sType != REMIXAPI_STRUCT_TYPE_INITIALIZE_LIBRARY_INFO) {
     return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
   }
   if (!isVersionCompatible(info->version)) {

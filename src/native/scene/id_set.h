@@ -23,9 +23,7 @@ namespace remix::scene {
       ++m_count;
       return true;
     }
-    size_t count(uint64_t id) const {
-      return id ? !m_slots.empty() && m_slots[locate(id)] == id : m_zero;
-    }
+    size_t count(uint64_t id) const { return id ? !m_slots.empty() && m_slots[locate(id)] == id : m_zero; }
     size_t size() const { return m_count + m_zero; }
     void clear() {
       if (m_count)

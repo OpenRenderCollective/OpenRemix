@@ -17,5 +17,6 @@ runtime_sources = files(
   'jxr_writer.cpp',
   'screenshot.cpp',
   'swapchain.cpp',
+  'ui_status.cpp',
 )
 shell_deps += [jxrlib_dep]

@@ -35,7 +35,7 @@ typedef struct remixapi_SkyStateEXT {
   float cloudCoverage;     // the weather's cloud coverage, 0 to 1
   float precipitation;     // the precipitation intensity in force, 0 to 1
   float reserved;
-  char weatherPreset[32];  // the game's weather preset, or empty
+  char weatherPreset[32]; // the game's weather preset, or empty
 } remixapi_SkyStateEXT;
 
 #ifdef __cplusplus
@@ -50,8 +50,7 @@ REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_SetSkyTimeEXT(const remixapi_
 // 1, is the rain and snow intensity particles follow; negative takes the
 // preset's own (Storm 1, Drizzle 0.35, the others 0). A new preset clears
 // the fields set before it.
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_SetSkyWeatherPresetEXT(const char *preset,
-                                                                          float transitionSeconds,
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_SetSkyWeatherPresetEXT(const char *preset, float transitionSeconds,
                                                                           float precipitation);
 // Sets one weather field over the preset, eased in over transitionSeconds.
 // The fields are NUMOS's weather fields, named as their rtx.atmosphere.*
@@ -71,12 +70,12 @@ REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetSkyStateEXT(remixapi_SkySt
 }
 #endif
 
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_SetSkyTimeEXT)(const remixapi_SkyTimeEXT *time);
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_SetSkyWeatherPresetEXT)(const char *preset,
-                                                                            float transitionSeconds,
-                                                                            float precipitation);
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_SetSkyWeatherFieldEXT)(const char *field, float value,
-                                                                           float transitionSeconds);
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_ClearSkyWeatherEXT)(float transitionSeconds);
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_TriggerSkyLightningEXT)(const float *position);
-typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_GetSkyStateEXT)(remixapi_SkyStateEXT *state);
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_SetSkyTimeEXT)(const remixapi_SkyTimeEXT *time);
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_SetSkyWeatherPresetEXT)(const char *preset,
+                                                                              float transitionSeconds,
+                                                                              float precipitation);
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_SetSkyWeatherFieldEXT)(const char *field, float value,
+                                                                             float transitionSeconds);
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_ClearSkyWeatherEXT)(float transitionSeconds);
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_TriggerSkyLightningEXT)(const float *position);
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_GetSkyStateEXT)(remixapi_SkyStateEXT *state);

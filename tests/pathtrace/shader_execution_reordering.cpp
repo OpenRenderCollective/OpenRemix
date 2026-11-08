@@ -157,7 +157,8 @@ int main(int argc, char **argv) {
     opaque.alphaTestType = 7;
     // REMIX_TEST_SER_MATERIALS: pbr (default), legacy, or mixed (alternating).
     const char *classes = std::getenv("REMIX_TEST_SER_MATERIALS");
-    const bool legacy = classes && (std::strcmp(classes, "legacy") == 0 || (std::strcmp(classes, "mixed") == 0 && m % 2));
+    const bool legacy =
+        classes && (std::strcmp(classes, "legacy") == 0 || (std::strcmp(classes, "mixed") == 0 && m % 2));
     remixapi_MaterialInfoPbrEXT pbr{};
     pbr.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_PBR_EXT;
     pbr.enabled = legacy ? 0 : 1;
@@ -248,7 +249,8 @@ int main(int argc, char **argv) {
       instance.pNext = &identity;
       instance.mesh = mesh;
       instance.doubleSided = 1;
-      for (int i = 0; i < 3; ++i) instance.transform.matrix[i][i] = 1;
+      for (int i = 0; i < 3; ++i)
+        instance.transform.matrix[i][i] = 1;
       ok(api.DrawInstance(&instance));
     }
     ok(api.Present(nullptr));

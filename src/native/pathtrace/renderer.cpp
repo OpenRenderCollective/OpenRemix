@@ -78,17 +78,15 @@ namespace remix {
       check(vkAllocateDescriptorSets(device, &allocate, &set));
     }
     if (!timestamps && timestampBits && properties.limits.timestampComputeAndGraphics) {
-      const VkQueryPoolCreateInfo query{.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
-                                        .queryType = VK_QUERY_TYPE_TIMESTAMP,
-                                        .queryCount = 12};
+      const VkQueryPoolCreateInfo query{
+          .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO, .queryType = VK_QUERY_TYPE_TIMESTAMP, .queryCount = 12};
       check(vkCreateQueryPool(device, &query, nullptr, &timestamps));
     }
     if (sharc.hash && !sharc.readback) {
       sharc.readback = buffer(16, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true);
       if (timestampBits) {
-        const VkQueryPoolCreateInfo query{.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
-                                          .queryType = VK_QUERY_TYPE_TIMESTAMP,
-                                          .queryCount = 4};
+        const VkQueryPoolCreateInfo query{
+            .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO, .queryType = VK_QUERY_TYPE_TIMESTAMP, .queryCount = 4};
         check(vkCreateQueryPool(device, &query, nullptr, &sharc.timestamps));
       }
     }
@@ -236,7 +234,8 @@ namespace remix {
   }
 
   std::unique_ptr<Image> PathTracer::Gpu::image(bool colorAttachment, VkFormat format, VkExtent2D size) {
-    if (!size.width) size = extent;
+    if (!size.width)
+      size = extent;
     auto out = std::make_unique<Image>();
     out->device = device;
     VkImageCreateInfo info = {.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
@@ -247,16 +246,17 @@ namespace remix {
                               .arrayLayers = 1,
                               .samples = VK_SAMPLE_COUNT_1_BIT,
                               .tiling = VK_IMAGE_TILING_OPTIMAL,
-                              .usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                              .usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT |
+                                       VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
                                        (colorAttachment ? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT : 0u),
                               .sharingMode = VK_SHARING_MODE_EXCLUSIVE};
     check(vkCreateImage(device, &info, nullptr, &out->handle));
     VkMemoryRequirements requirements;
     vkGetImageMemoryRequirements(device, out->handle, &requirements);
-    VkMemoryAllocateInfo allocate = {
-        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+    VkMemoryAllocateInfo allocate = {.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
         .allocationSize = requirements.size,
-        .memoryTypeIndex = memoryType(requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
+                                     .memoryTypeIndex =
+                                         memoryType(requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
     check(vkAllocateMemory(device, &allocate, nullptr, &out->memory));
     check(vkBindImageMemory(device, out->handle, out->memory, 0));
     VkImageViewCreateInfo view = {.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -269,7 +269,8 @@ namespace remix {
   }
 
   std::unique_ptr<Image> PathTracer::Gpu::depthImage(VkFormat format, VkExtent2D size) {
-    if (!size.width) size = displayExtent;
+    if (!size.width)
+      size = displayExtent;
     auto out = std::make_unique<Image>();
     out->device = device;
     VkImageCreateInfo info = {.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
@@ -285,10 +286,10 @@ namespace remix {
     check(vkCreateImage(device, &info, nullptr, &out->handle));
     VkMemoryRequirements requirements;
     vkGetImageMemoryRequirements(device, out->handle, &requirements);
-    VkMemoryAllocateInfo allocate = {
-        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+    VkMemoryAllocateInfo allocate = {.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
         .allocationSize = requirements.size,
-        .memoryTypeIndex = memoryType(requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
+                                     .memoryTypeIndex =
+                                         memoryType(requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
     check(vkAllocateMemory(device, &allocate, nullptr, &out->memory));
     check(vkBindImageMemory(device, out->handle, out->memory, 0));
     VkImageViewCreateInfo view = {.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -338,8 +339,7 @@ namespace remix {
     tonemapTarget = image(true, VK_FORMAT_R16G16B16A16_SFLOAT, displayExtent);
     tonemapDepth = depthImage(depthFormat, displayExtent);
 
-    VkAttachmentDescription attachments[] = {
-        {.format = VK_FORMAT_R16G16B16A16_SFLOAT,
+    VkAttachmentDescription attachments[] = {{.format = VK_FORMAT_R16G16B16A16_SFLOAT,
          .samples = VK_SAMPLE_COUNT_1_BIT,
          .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
          .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
@@ -365,15 +365,12 @@ namespace remix {
         {.srcSubpass = VK_SUBPASS_EXTERNAL,
          .dstSubpass = 0,
          .srcStageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-         .dstStageMask =
-             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+         .dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
          .srcAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
-         .dstAccessMask =
-             VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT},
+         .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT},
         {.srcSubpass = 0,
          .dstSubpass = VK_SUBPASS_EXTERNAL,
-         .srcStageMask =
-             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+         .srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
          .dstStageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
          .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
          .dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT}};
@@ -400,9 +397,8 @@ namespace remix {
         {0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
         {1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
         {2, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr}};
-    VkDescriptorSetLayoutCreateInfo bsi{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-                                        .bindingCount = 3,
-                                        .pBindings = blitBindings};
+    VkDescriptorSetLayoutCreateInfo bsi{
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, .bindingCount = 3, .pBindings = blitBindings};
     check(pipeline::createDescriptorSetLayout(device, &bsi, nullptr, &blitSetLayout));
 
     VkDescriptorPoolSize blitPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 3};
@@ -418,8 +414,7 @@ namespace remix {
                                     .pSetLayouts = &blitSetLayout};
     check(vkAllocateDescriptorSets(device, &bai, &blitSet));
 
-    VkDescriptorImageInfo blitImages[] = {
-        {VK_NULL_HANDLE, tonemapTarget->view, VK_IMAGE_LAYOUT_GENERAL},
+    VkDescriptorImageInfo blitImages[] = {{VK_NULL_HANDLE, tonemapTarget->view, VK_IMAGE_LAYOUT_GENERAL},
         {VK_NULL_HANDLE, primary[4]->view, VK_IMAGE_LAYOUT_GENERAL},
         {VK_NULL_HANDLE, world->view, VK_IMAGE_LAYOUT_GENERAL}};
     VkWriteDescriptorSet blitWrites[3]{};
@@ -445,8 +440,7 @@ namespace remix {
                                 .pCode = upscale::blitFragShader};
     check(pipeline::createShaderModule(device, &mi, nullptr, &blitFragModule));
 
-    VkPipelineShaderStageCreateInfo blitStages[] = {
-        {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+    VkPipelineShaderStageCreateInfo blitStages[] = {{.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
          .stage = VK_SHADER_STAGE_VERTEX_BIT,
          .module = shaders[1],
          .pName = "main"},
@@ -456,11 +450,11 @@ namespace remix {
          .pName = "main"}};
 
     VkPipelineVertexInputStateCreateInfo vertex{.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
-    VkPipelineInputAssemblyStateCreateInfo assembly{.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+    VkPipelineInputAssemblyStateCreateInfo assembly{.sType =
+                                                        VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
                                                     .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST};
-    VkPipelineViewportStateCreateInfo viewport{.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
-                                               .viewportCount = 1,
-                                               .scissorCount = 1};
+    VkPipelineViewportStateCreateInfo viewport{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO, .viewportCount = 1, .scissorCount = 1};
     VkPipelineRasterizationStateCreateInfo raster{.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
                                                   .polygonMode = VK_POLYGON_MODE_FILL,
                                                   .cullMode = VK_CULL_MODE_NONE,
@@ -498,7 +492,8 @@ namespace remix {
 
   void PathTracer::Gpu::destroyTarget() {
     destroyTonemapAndBlit();
-    for (auto &buffer : pbrReuse.history) buffer.reset();
+    for (auto &buffer : pbrReuse.history)
+      buffer.reset();
     pbrReuse.valid = pbrReuse.active = pbrReuse.failed = false;
     if (upscaler) {
       reconstructedFrames += upscaler->statistics().frames;
@@ -542,8 +537,7 @@ namespace remix {
 
   PathTracer::~PathTracer() = default;
 
-  void PathTracer::initialize(VkPhysicalDevice physical, VkDevice device,
-                              uint32_t queueFamily, bool preparing,
+  void PathTracer::initialize(VkPhysicalDevice physical, VkDevice device, uint32_t queueFamily, bool preparing,
                               bool rasterPrimary, std::shared_ptr<postfx::State> exposureState) {
     m_gpu = std::make_unique<Gpu>();
     auto &g = *m_gpu;
@@ -563,7 +557,8 @@ namespace remix {
     g.localCapable[1] = denoise::localSupported(physical, true);
     vkGetPhysicalDeviceMemoryProperties(physical, &g.memory);
     vkGetPhysicalDeviceProperties(physical, &g.properties);
-    g.opacityCache = scene::OpacityCache(g.properties.limits.subTexelPrecisionBits, std::getenv("REMIX_OPACITY_PROFILE") != nullptr);
+    g.opacityCache =
+        scene::OpacityCache(g.properties.limits.subTexelPrecisionBits, std::getenv("REMIX_OPACITY_PROFILE") != nullptr);
     VkPhysicalDeviceProperties2 properties = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
                                               .pNext = &g.asProperties};
     vkGetPhysicalDeviceProperties2(physical, &properties);
@@ -586,8 +581,7 @@ namespace remix {
     for (unsigned i = 0; i < 16; ++i) {
       bindings[i] = {.binding = i,
                      .descriptorCount = i == 6 ? textureLimit : 1u,
-                     .stageFlags =
-                         VK_SHADER_STAGE_COMPUTE_BIT |
+                     .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT |
                          ((i == 2 || i == 3) ? VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT
                           : (i == 4 || i == 5 || i == 6) ? VK_SHADER_STAGE_FRAGMENT_BIT
                                                          : 0u)};
@@ -597,11 +591,9 @@ namespace remix {
                                    : i != 6 ? VK_DESCRIPTOR_TYPE_STORAGE_IMAGE
                                             : VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     }
-    VkDescriptorSetLayoutCreateInfo setLayout = {.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-                                                 .bindingCount = 16,
-                                                 .pBindings = bindings};
-    check(pipeline::createDescriptorSetLayout(device, &setLayout, nullptr,
-                                              &g.setLayout));
+    VkDescriptorSetLayoutCreateInfo setLayout = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, .bindingCount = 16, .pBindings = bindings};
+    check(pipeline::createDescriptorSetLayout(device, &setLayout, nullptr, &g.setLayout));
     VkDescriptorPoolSize poolSizes[] = {{VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 2},
                                         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1},
                                         {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1},
@@ -631,8 +623,7 @@ namespace remix {
     for (unsigned i = 0; i < 3; ++i) {
       VkShaderModuleCreateInfo info = {
           .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, .codeSize = codes[i].bytes, .pCode = codes[i].code};
-      check(
-          pipeline::createShaderModule(device, &info, nullptr, &g.shaders[i]));
+      check(pipeline::createShaderModule(device, &info, nullptr, &g.shaders[i]));
     }
     // Small, and needed by the first deforming update (else full uploads until ready).
     g.createAssemblePipeline();
@@ -643,9 +634,7 @@ namespace remix {
     g.timestampBits = families.at(queueFamily).timestampValidBits;
     if (g.timestampBits && g.properties.limits.timestampComputeAndGraphics) {
       VkQueryPoolCreateInfo query = {
-          .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
-          .queryType = VK_QUERY_TYPE_TIMESTAMP,
-          .queryCount = 12};
+          .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO, .queryType = VK_QUERY_TYPE_TIMESTAMP, .queryCount = 12};
       check(vkCreateQueryPool(device, &query, nullptr, &g.timestamps));
     }
   }
@@ -668,8 +657,7 @@ namespace remix {
     awaitLightingPipelines(requests);
   }
 
-  void PathTracer::configureTarget(VkRenderPass pass, VkExtent2D extent, VkFormat depthFormat,
-                                   VkImageView depthView) {
+  void PathTracer::configureTarget(VkRenderPass pass, VkExtent2D extent, VkFormat depthFormat, VkImageView depthView) {
     auto &g = *m_gpu;
     g.displayPass = pass;
     g.displayExtent = extent;
@@ -694,8 +682,8 @@ namespace remix {
           rrModelNote.clear();
           ngx->useRayReconstructionModel(rrCnnRequested, rrModelNote);
           const bool cnn = ngx->capabilities().rrCnn;
-          const bool own = cnn ? rrPresetRequested >= 1 && rrPresetRequested <= 3
-                               : rrPresetRequested >= 4 && rrPresetRequested <= 6;
+          const bool own =
+              cnn ? rrPresetRequested >= 1 && rrPresetRequested <= 3 : rrPresetRequested >= 4 && rrPresetRequested <= 6;
           // Defaults: C (CNN), E (transformer); D where the CNN model's library
           // stayed loaded for a transformer request (it has no E).
           if (own && rrCnnRequested == cnn)
@@ -714,9 +702,11 @@ namespace remix {
       } catch (VkResult result) {
         if (preparing)
           throw;
-        if (result == VK_ERROR_DEVICE_LOST) throw;
-        fsrFailure = std::string(upscale::name(backend)) + " initialization failed (Vulkan " + std::to_string(result) + ")";
-      } catch (const std::exception& e) {
+        if (result == VK_ERROR_DEVICE_LOST)
+          throw;
+        fsrFailure =
+            std::string(upscale::name(backend)) + " initialization failed (Vulkan " + std::to_string(result) + ")";
+      } catch (const std::exception &e) {
         if (preparing)
           throw;
         fsrFailure = e.what();
@@ -725,7 +715,7 @@ namespace remix {
       ++reconstructionFailures;
       extent = displayExtent;
     }
-    auto& g = *this;
+    auto &g = *this;
     const auto pass = displayPass;
     const auto depthFormat = displayDepthFormat;
     const auto depthView = displayDepth;
@@ -736,11 +726,13 @@ namespace remix {
     g.createTonemapAndBlit(pass, depthFormat);
     if (g.upscaler) {
       std::string failure;
-      try { g.upscaler->configureComposite(pass, g.primary[4]->view, g.tonemapPass); }
-      catch (VkResult result) {
+      try {
+        g.upscaler->configureComposite(pass, g.primary[4]->view, g.tonemapPass);
+      } catch (VkResult result) {
         if (preparing)
           throw;
-        if (result == VK_ERROR_DEVICE_LOST) throw;
+        if (result == VK_ERROR_DEVICE_LOST)
+          throw;
         failure = "Reconstruction compositor initialization failed (Vulkan " + std::to_string(result) + ")";
       }
       if (!failure.empty()) {
@@ -751,8 +743,7 @@ namespace remix {
         return;
       }
     }
-    VkAttachmentDescription attachments[] = {
-        {.format = VK_FORMAT_R32G32B32A32_SFLOAT,
+    VkAttachmentDescription attachments[] = {{.format = VK_FORMAT_R32G32B32A32_SFLOAT,
          .samples = VK_SAMPLE_COUNT_1_BIT,
          .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
          .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
@@ -778,15 +769,12 @@ namespace remix {
         {.srcSubpass = VK_SUBPASS_EXTERNAL,
          .dstSubpass = 0,
          .srcStageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-         .dstStageMask =
-             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+         .dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
          .srcAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
-         .dstAccessMask =
-             VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT},
+         .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT},
         {.srcSubpass = 0,
          .dstSubpass = VK_SUBPASS_EXTERNAL,
-         .srcStageMask =
-             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+         .srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
          .dstStageMask = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
          .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
          .dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT}};
@@ -815,26 +803,21 @@ namespace remix {
                                                  .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
                                                  .module = g.shaders[2],
                                                  .pName = "main"}};
-    VkPipelineVertexInputStateCreateInfo vertex = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
-    VkPipelineInputAssemblyStateCreateInfo assembly = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+    VkPipelineVertexInputStateCreateInfo vertex = {.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+    VkPipelineInputAssemblyStateCreateInfo assembly = {.sType =
+                                                           VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
         .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST};
-    VkPipelineViewportStateCreateInfo viewport = {.sType =
-                                                      VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
-                                                  .viewportCount = 1,
-                                                  .scissorCount = 1};
-    VkPipelineRasterizationStateCreateInfo raster = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+    VkPipelineViewportStateCreateInfo viewport = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO, .viewportCount = 1, .scissorCount = 1};
+    VkPipelineRasterizationStateCreateInfo raster = {.sType =
+                                                         VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
         .polygonMode = VK_POLYGON_MODE_FILL,
         .cullMode = VK_CULL_MODE_NONE,
         .frontFace = VK_FRONT_FACE_CLOCKWISE,
         .lineWidth = 1};
-    VkPipelineMultisampleStateCreateInfo samples = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+    VkPipelineMultisampleStateCreateInfo samples = {.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
         .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT};
-    VkPipelineDepthStencilStateCreateInfo depth = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+    VkPipelineDepthStencilStateCreateInfo depth = {.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
         .depthTestEnable = VK_TRUE,
         .depthWriteEnable = VK_TRUE,
         .depthCompareOp = VK_COMPARE_OP_ALWAYS,
@@ -856,8 +839,7 @@ namespace remix {
           .alphaBlendOp = VK_BLEND_OP_ADD,
           .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT |
                             VK_COLOR_COMPONENT_A_BIT};
-      VkPipelineColorBlendStateCreateInfo blending = {
-          .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+      VkPipelineColorBlendStateCreateInfo blending = {.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
           .attachmentCount = 1,
           .pAttachments = &attachment};
       depth.depthWriteEnable = !i;
@@ -874,12 +856,11 @@ namespace remix {
                                                .pDynamicState = &dynamic,
                                                .layout = g.layout,
                                                .renderPass = pass};
-      check(pipeline::createGraphicsPipelines(
-          g.device, VK_NULL_HANDLE, 1, &pipeline, nullptr, &g.composite[i]));
+      check(pipeline::createGraphicsPipelines(g.device, VK_NULL_HANDLE, 1, &pipeline, nullptr, &g.composite[i]));
       if (g.tonemapPass) {
         pipeline.renderPass = g.tonemapPass;
-        check(pipeline::createGraphicsPipelines(
-            g.device, VK_NULL_HANDLE, 1, &pipeline, nullptr, &g.tonemapComposite[i]));
+        check(
+            pipeline::createGraphicsPipelines(g.device, VK_NULL_HANDLE, 1, &pipeline, nullptr, &g.tonemapComposite[i]));
       }
     }
   }
@@ -891,7 +872,8 @@ namespace remix {
 
   remixapi_TracingStatisticsEXT PathTracer::statistics() const {
     auto result = m_gpu->stats;
-    result.redrawRequested = result.accumulationEnabled ||
+    result.redrawRequested =
+        result.accumulationEnabled ||
         ((m_gpu->upscaler || m_gpu->currentTraceOptions.neuralUplift) && m_gpu->reconstructionWarmFrames < 128) ||
         (m_gpu->sharc.stats.active && m_gpu->sharc.hasReceivers && m_gpu->sharc.warmFrames < m_gpu->sharc.warmTarget);
     return result;

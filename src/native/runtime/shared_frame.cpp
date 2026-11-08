@@ -55,8 +55,7 @@ namespace remix {
       VkPhysicalDeviceMemoryProperties memory;
       vkGetPhysicalDeviceMemoryProperties(physical, &memory);
       for (uint32_t type = 0; type < memory.memoryTypeCount; ++type)
-        if ((bits & (1u << type)) &&
-            (memory.memoryTypes[type].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT))
+        if ((bits & (1u << type)) && (memory.memoryTypes[type].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT))
           return type;
       throw VK_ERROR_FEATURE_NOT_PRESENT;
     }
@@ -69,8 +68,8 @@ namespace remix {
       VkDeviceSize size = 0;
     };
 
-    ExportedImage createExported(VkPhysicalDevice physical, VkDevice device, VkFormat format,
-                                 VkImageUsageFlags usage, VkExtent2D extent) {
+    ExportedImage createExported(VkPhysicalDevice physical, VkDevice device, VkFormat format, VkImageUsageFlags usage,
+                                 VkExtent2D extent) {
       VkPhysicalDeviceExternalImageFormatInfo externalFormat{
           VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO};
       externalFormat.handleType = kMemoryHandleType;
@@ -128,8 +127,8 @@ namespace remix {
     Handle exportMemory(VkDevice device, VkDeviceMemory memory) {
       Handle handle = kNoHandle;
 #if defined(_WIN32)
-      auto get = reinterpret_cast<PFN_vkGetMemoryWin32HandleKHR>(
-          vkGetDeviceProcAddr(device, "vkGetMemoryWin32HandleKHR"));
+      auto get =
+          reinterpret_cast<PFN_vkGetMemoryWin32HandleKHR>(vkGetDeviceProcAddr(device, "vkGetMemoryWin32HandleKHR"));
       if (!get)
         throw VK_ERROR_EXTENSION_NOT_PRESENT;
       VkMemoryGetWin32HandleInfoKHR info{VK_STRUCTURE_TYPE_MEMORY_GET_WIN32_HANDLE_INFO_KHR};
@@ -201,12 +200,10 @@ namespace remix {
       destroySharedFrame();
     }
     try {
-      const auto usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT |
-                         VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-                         VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+      const auto usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
+                         VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
       const VkExtent2D extent{frame.width, frame.height};
-      const ExportedImage colour =
-          createExported(m_physicalDevice, m_device, VK_FORMAT_R8G8B8A8_UNORM, usage, extent);
+      const ExportedImage colour = createExported(m_physicalDevice, m_device, VK_FORMAT_R8G8B8A8_UNORM, usage, extent);
       m_sharedImage = colour.image;
       m_sharedMemory = colour.memory;
       VkExportSemaphoreCreateInfo exportSemaphoreInfo{VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO};
@@ -219,12 +216,9 @@ namespace remix {
       m_swapchainFormat = VK_FORMAT_R8G8B8A8_UNORM;
       m_swapchainExtent = extent;
       VkFormatProperties imageProperties{};
-      vkGetPhysicalDeviceFormatProperties(m_physicalDevice, m_swapchainFormat,
-                                          &imageProperties);
-      const auto blit =
-          VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT;
-      m_snapshotSupported =
-          (imageProperties.optimalTilingFeatures & blit) == blit;
+      vkGetPhysicalDeviceFormatProperties(m_physicalDevice, m_swapchainFormat, &imageProperties);
+      const auto blit = VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT;
+      m_snapshotSupported = (imageProperties.optimalTilingFeatures & blit) == blit;
       if (createAttachments() != REMIXAPI_ERROR_CODE_SUCCESS || (m_gui && !initializeUiVulkan()))
         throw VK_ERROR_INITIALIZATION_FAILED;
       // The depth attachment's texels go to the shared R32 image through a
@@ -232,8 +226,7 @@ namespace remix {
       if (withDepth && renderer().depthFormat() == VK_FORMAT_D32_SFLOAT) {
         const ExportedImage depth = createExported(
             m_physicalDevice, m_device, VK_FORMAT_R32_SFLOAT,
-            VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-            extent);
+            VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, extent);
         m_sharedDepthImage = depth.image;
         m_sharedDepthMemory = depth.memory;
         VkBufferCreateInfo buffer{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
@@ -256,8 +249,7 @@ namespace remix {
       if (withUi && m_gui) {
         const ExportedImage ui = createExported(
             m_physicalDevice, m_device, VK_FORMAT_R8G8B8A8_UNORM,
-            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
-            extent);
+            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, extent);
         m_sharedUiImage = ui.image;
         m_sharedUiMemory = ui.memory;
         VkImageViewCreateInfo view{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
@@ -289,13 +281,13 @@ namespace remix {
                                               .colorAttachmentCount = 1,
                                               .pColorAttachments = &colourRef,
                                               .pDepthStencilAttachment = &depthRef};
-        const VkSubpassDependency dependency = {
-            .srcSubpass = VK_SUBPASS_EXTERNAL,
-            .dstSubpass = 0,
-            .srcStageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-            .dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-            .srcAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
-            .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT};
+        const VkSubpassDependency dependency = {.srcSubpass = VK_SUBPASS_EXTERNAL,
+                                                .dstSubpass = 0,
+                                                .srcStageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                                                .dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                                                .srcAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
+                                                .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
+                                                                 VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT};
         VkRenderPassCreateInfo pass{VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
         pass.attachmentCount = 2;
         pass.pAttachments = attachments;
@@ -369,17 +361,12 @@ namespace remix {
       barrier.dstQueueFamilyIndex = acquire ? m_queueFamily : VK_QUEUE_FAMILY_EXTERNAL;
       if (acquire && !m_sharedPresented)
         barrier.srcQueueFamilyIndex = barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-      barrier.srcAccessMask =
-          acquire ? 0 : VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
-      barrier.dstAccessMask =
-          acquire ? VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT : 0;
+      barrier.srcAccessMask = acquire ? 0 : VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+      barrier.dstAccessMask = acquire ? VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT : 0;
     }
-    vkCmdPipelineBarrier(command,
-                         acquire ? VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT
-                                 : VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-                         acquire ? VK_PIPELINE_STAGE_ALL_COMMANDS_BIT
-                                 : VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-                         0, 0, nullptr, 0, nullptr, count, barriers);
+    vkCmdPipelineBarrier(command, acquire ? VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT : VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                         acquire ? VK_PIPELINE_STAGE_ALL_COMMANDS_BIT : VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0,
+                         nullptr, 0, nullptr, count, barriers);
   }
 
   void RemixNativeRuntime::copySharedDepth(VkCommandBuffer command) {
@@ -410,8 +397,7 @@ namespace remix {
                          VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 1, &reuse, 1, &toCopy);
     const VkBufferImageCopy depthRegion = {.imageSubresource = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 0, 1},
                                            .imageExtent = {m_swapchainExtent.width, m_swapchainExtent.height, 1}};
-    vkCmdCopyImageToBuffer(command, depth, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, m_sharedDepthBuffer, 1,
-                           &depthRegion);
+    vkCmdCopyImageToBuffer(command, depth, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, m_sharedDepthBuffer, 1, &depthRegion);
     VkImageMemoryBarrier back = toCopy;
     back.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
     back.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
@@ -427,8 +413,7 @@ namespace remix {
     // The shared image stays GENERAL (sharedBarrier) for the consumer.
     const VkBufferImageCopy colourRegion = {.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
                                             .imageExtent = {m_swapchainExtent.width, m_swapchainExtent.height, 1}};
-    vkCmdCopyBufferToImage(command, m_sharedDepthBuffer, m_sharedDepthImage, VK_IMAGE_LAYOUT_GENERAL, 1,
-                           &colourRegion);
+    vkCmdCopyBufferToImage(command, m_sharedDepthBuffer, m_sharedDepthImage, VK_IMAGE_LAYOUT_GENERAL, 1, &colourRegion);
   }
 
   void RemixNativeRuntime::destroySharedFrame() {

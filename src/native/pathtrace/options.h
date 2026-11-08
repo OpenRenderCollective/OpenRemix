@@ -270,12 +270,12 @@ namespace remix {
     // skyGuideShare, the rest by the BRDF. Diffuse and legacy surfaces only.
     bool skyGuiding = true;
     float skyGuideCellSize = 2, skyGuideShare = .5f;
-    uint32_t restirCandidates = 32;     // initial light-tree candidates per pixel
+    uint32_t restirCandidates = 32; // initial light-tree candidates per pixel
     // Neighbor reservoirs per pixel, and where the temporal history is short
     // (a disocclusion: M under a quarter of the cap) the boosted count
     // (RTXDI: 1 and 8). Fewer neighbors correlate the signal less.
     uint32_t restirSpatialSamples = 1, restirDisocclusionSamples = 8;
-    float restirSpatialRadius = 30;    // pixels
+    float restirSpatialRadius = 30; // pixels
     // Temporal M cap in multiples of the current M. Longer histories correlate
     // the signal over time, which NRD cannot filter (frozen noise); RTXDI
     // uses 20, dxvk-remix 4.
@@ -288,7 +288,7 @@ namespace remix {
     // shuffled neighbor (2x2 block), decorrelating reused samples.
     bool restirPermutation = true;
     bool restirInitialVisibility = true; // shadow-test the initial winner before reuse
-    bool lightVisibilityCulling = true; // opt-in: ~3 ms on L4D2 c1m1, no gain where the PVS is broad
+    bool lightVisibilityCulling = true;  // opt-in: ~3 ms on L4D2 c1m1, no gain where the PVS is broad
     // remixapi_InstanceInfoCameraCullingEXT: honour the instances' flags.
     // Camera rays only; lighting is the same either way.
     bool cameraBackFaceCulling = true, cameraVisibilityCulling = true;
@@ -299,6 +299,15 @@ namespace remix {
     uint32_t debugView = 0;        // display diagnostics; never selects an integrator
     float sunAngularDiameter = -1; // -1 inherits the distant light's diameter.
     bool rasterPrimary = true;
+    // remixapi_MaterialInfoPortalEXT: how many portals one camera ray passes
+    // (0..8). Past them, and at a portal's back or without its partner, the
+    // portal's surface shows its own material. Camera rays only: the primary
+    // surface replacement pass (raster primary with a denoiser) traces them.
+    uint32_t rayPortalTeleports = 4;
+    // World units in front of the partner's opening where a teleported ray
+    // starts: past the partner's own mesh (which may stand off its wall) so
+    // its first hit is not the partner portal.
+    float rayPortalExitOffset = .25f;
     bool waterIndirectReuse = true;
     // Caustics: light through translucent surfaces with normal maps (water,
     // bumpy glass) focused by their waves or bumps. Strength scales the

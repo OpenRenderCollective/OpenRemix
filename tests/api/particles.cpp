@@ -3,12 +3,12 @@
 #include <cstdlib>
 
 namespace {
-void require(bool value, const char *message) {
-  if (!value) {
-    std::fprintf(stderr, "%s\n", message);
-    std::exit(1);
+  void require(bool value, const char *message) {
+    if (!value) {
+      std::fprintf(stderr, "%s\n", message);
+      std::exit(1);
+    }
   }
-}
 } // namespace
 
 // The particle exports before Startup: arguments are checked first, then
@@ -33,8 +33,7 @@ int main() {
   require(remixapi_BurstParticleEmitterEXT(1, 10) == REMIXAPI_ERROR_CODE_NOT_INITIALIZED, "Burst before startup");
   require(remixapi_ClearParticleEmitterEXT(1) == REMIXAPI_ERROR_CODE_NOT_INITIALIZED, "Clear before startup");
   require(remixapi_DestroyParticleEmitterEXT(1) == REMIXAPI_ERROR_CODE_NOT_INITIALIZED, "Destroy before startup");
-  require(remixapi_SetParticleBudgetEXT(65536, 8192) == REMIXAPI_ERROR_CODE_NOT_INITIALIZED,
-          "Budget before startup");
+  require(remixapi_SetParticleBudgetEXT(65536, 8192) == REMIXAPI_ERROR_CODE_NOT_INITIALIZED, "Budget before startup");
   remixapi_ParticleStatisticsEXT statistics{};
   require(remixapi_GetParticleStatisticsEXT(&statistics) == REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS,
           "Statistics without a structure size were accepted");

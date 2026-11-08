@@ -2,9 +2,14 @@
 // Objective-C++ only: the Metal path tracer's GPU state (pathtrace/gpu.h's
 // counterpart). The frame tables, opacity proofs, light hierarchies, static
 // set and temporal history are the shared CPU implementations.
+#include "scene/up_axis.h"
 #include "metal/denoise.h"
+#if REMIX_HAS_NUMOS
+#include "sky/renderer.h"
+#endif
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
 #include "metal/post.h"
 #include "metal/reconstruction.h"
 #include "metal/raster_gpu.h"
@@ -122,9 +127,9 @@ namespace remix::metal {
       shaders::Stage stage{};
       ArgumentSet set0, set1;
       bool supportsGuiding = false, supportsRoulette = true;
-      bool variants = true;             // selected by the scene's variant and features (else base, defaults)
+      bool variants = true;              // selected by the scene's variant and features (else base, defaults)
       bool baseSeparateIndirect = false; // the base consumes the separate indirect pass
-      uint32_t base = 0;                // the base pipeline's constants
+      uint32_t base = 0;                 // the base pipeline's constants
       explicit operator bool() const { return bool(set0); }
     };
     struct LightingFlags {
@@ -134,14 +139,29 @@ namespace remix::metal {
     // The configuration's passes (pathtrace/renderer.cpp createRawPipelines,
     // temporal.cpp beginFrame): every lighting stage queries SHARC itself
     // (lightingStage), gated per frame by frame.sharcConfig.
-    Lighting opaque, indirect, transparency, singleTransparency, sheet, frontGuides, psr, confidence;
+    Lighting opaque, indirect, transparency, singleTransparency, sheet, frontGuides, psr, confidence, splitDirect;
+    Lighting restirInitial, restirSpatial;
     Lighting sharcUpdate, sharcResolve, regirPresample, volumeUpdate, sparseCompact, sparseArgs;
     // ORCA (orca.glsl) is not on Metal: its cache sums radiance with 64-bit
     // atomic adds, which Metal (and SPIRV-Cross's MSL) does not have.
-    Lighting *lightingPasses[14] = {&opaque,        &indirect,     &transparency,   &singleTransparency,
-                                    &sheet,         &frontGuides,  &psr,            &confidence,
-                                    &sharcUpdate,   &sharcResolve, &regirPresample, &volumeUpdate,
-                                    &sparseCompact, &sparseArgs};
+    Lighting *lightingPasses[17] = {&opaque,         &indirect,     &transparency,  &singleTransparency, &sheet,
+                                    &frontGuides,    &psr,          &confidence,    &sharcUpdate,        &sharcResolve,
+                                    &regirPresample, &volumeUpdate, &sparseCompact, &sparseArgs,         &splitDirect,
+                                    &restirInitial,  &restirSpatial};
+    // ReSTIR DI (pathtrace/restir.cpp): this frame's reservoirs and the kept history.
+    struct Restir {
+      std::shared_ptr<Buffer> current, history[2], remap;
+      uint32_t width = 0, height = 0, writeIndex = 0;
+      bool active = false, historyValid = false;
+      std::vector<std::pair<uint64_t, uint32_t>> keys; // the history's emitters (id, triangle)
+    } restir;
+    void configureRestir(Frame &frame, const TraceOptions &options);
+    // Split local lighting runs this frame (pathtrace/rendering.cpp splitLightingActive).
+    bool splitLightingActive = false;
+    std::shared_ptr<Buffer> torchNodes, torchEmitters, emissiveNodes, emissiveEmitters;
+    uint64_t torchGeneration = 0, emissiveGeneration = 0;
+    uint64_t previousFamilyGeneration[2] = {};
+    uint32_t familyResponsive[2] = {};
     // Sparse rendering (pathtrace/sparse.cpp): this frame's selected pixels,
     // listed by a compaction pass for the indirect launch of the opaque pass.
     struct Sparse {
@@ -168,7 +188,8 @@ namespace remix::metal {
     // selectLightingPipeline's inputs).
     struct LightingState {
       bool local = false, guided = false, smallSet = false, resampling = false, angular = false;
-      bool firstHit = false, roulette = false, decals = true, earlyOut = false, profile = false;
+      bool firstHit = false, roulette = false, decals = true, earlyOut = false, profile = false, pbrReuse = false;
+      bool split = false;
     } lightingState;
     // A selected pipeline and its per-dispatch switches (pathtrace.comp
     // `features`, pushed at offset 28).
@@ -180,7 +201,9 @@ namespace remix::metal {
     // for this frame's state, compiled in the background (the base meanwhile).
     // A role without a fallback (a sparse launch, an indirect-pass consumer
     // whose base is not one) selects nil until its variant has compiled.
-    Selected select(const Lighting &pass, bool separateIndirect = false, uint32_t sparse = 0);
+    // combinedDirect: split lighting's mode 3 (the direct pass runs unsplit).
+    Selected select(const Lighting &pass, bool separateIndirect = false, uint32_t sparse = 0,
+                    bool combinedDirect = false);
     static shaders::Stage lightingStage(shaders::Stage uncached);
     // The separate indirect pass (pathtrace/temporal.cpp configureIndirect):
     // bounces traced in their own dispatch, consumed by the opaque pass.
@@ -231,6 +254,43 @@ namespace remix::metal {
       float cellSize = 0;
     } skyGuiding;
     void configureSkyGuiding(Frame &frame, const TraceOptions &options);
+    // The split local pass's occlusion probes (pathtrace/restir.cpp
+    // configureLocalProbes): each pixel's share of its local light that its
+    // shadow rays let through, compared the next frame to restart local
+    // history where an occluder moved. Two banks, read last frame's.
+    struct LocalProbes {
+      std::shared_ptr<Buffer> buffers[2];
+      uint32_t width = 0, height = 0, writeIndex = 0;
+      bool valid = false;
+    } localProbes;
+    void configureLocalProbes(Frame &frame, const TraceOptions &options);
+    // The world's up axis for volumetricUpAxis Auto (pathtrace/gpu.h): the
+    // camera's, learned over frames.
+    scene::UpAxisDetector upAxis;
+    // The NUMOS sky (sky/renderer.h; pathtrace/gpu.h), created when first
+    // enabled. skyReady: it has outputs from an earlier frame; skyApplied:
+    // this frame's sky and sun are NUMOS's; skyActive: its work for this frame
+    // is recorded. skyFailure: the error that stopped it (it stays off until
+    // its settings change).
+#if REMIX_HAS_NUMOS
+    std::shared_ptr<sky::Renderer> numosSky;
+    sky::MetalScene skyScene; // what the sky traces, refreshed each frame
+#endif
+    config::SkySettings skySettings;
+    config::SkyControl skyControl;
+    mutable std::mutex skyStateMutex;
+    config::SkyState skyState;
+    std::string skyUnavailable, skyReason, skyFailure;
+    bool skyReady = false, skyApplied = false, skyActive = false;
+    // What overlayLighting() reports (pathtrace/gpu.h overlay): this frame's
+    // sun and sky, and the images it samples.
+    PathTracer::OverlayLighting overlay;
+    scene::DisplayOutput display; // setDisplayOutput
+    struct OverlayImages {
+      id<MTLTexture> environment = nil, cloudShadow = nil;
+      id<MTLSamplerState> environmentSampler = nil, cloudShadowSampler = nil;
+    } overlayImages;
+    ScreenCameras lastScreenCameras = {}; // the previous traced frame's (Frame::screenCameras flag 2)
     void beginSkyGuiding(id<MTLCommandBuffer> command);
     // pathtrace/ray_profile.cpp (REMIX_RAY_PROFILE=file): structural ray
     // counters from one pixel in 64, appended to a CSV per completed frame.
@@ -239,6 +299,47 @@ namespace remix::metal {
       const char *path = std::getenv("REMIX_RAY_PROFILE");
       std::shared_ptr<Buffer> counters; // 3 passes x 64 words
     } rayProfile;
+    // remixapi_InstanceInfoCameraCullingEXT (pathtrace/gpu.h): the partition's
+    // nodes and the leaves the camera sees (a bit per leaf), replaced when the
+    // partition or the camera's cluster changes.
+    struct CameraCulling {
+      std::shared_ptr<Buffer> nodes, leaves;
+      uint64_t nodesVersion = 0, leavesVersion = 0;    // partition versions held (0: none)
+      int32_t leavesClusters[2] = {-1, -1};            // the clusters whose united set `leaves` holds
+      uint64_t lastVersion = 0;                        // previous traced frame: partition and
+      int32_t lastCluster = -1;                        // camera cluster
+      uint32_t visibleClusters = 0, visibleLeaves = 0; // of `leaves`
+      remixapi_CameraCullingStatisticsEXT statistics{.structSize = sizeof(remixapi_CameraCullingStatisticsEXT)};
+    } cameraCulling;
+    void configureCameraCulling(Frame &frame, const TraceOptions &options, const Raster &resources);
+    uint64_t prepareWounds();
+    void recordWounds(id<MTLCommandBuffer> command);
+    // The path inspector (pathtrace/ray_profile.cpp): the inspected pixel's
+    // path records (a count, then 64-byte records), copied at the frame's end
+    // into the frame slot's readback.
+    struct PathInspector {
+      static constexpr uint32_t capacity = 256;
+      std::shared_ptr<Buffer> records;
+      int x = -1, y = -1;
+      mutable std::mutex mutex;
+      PathInspection last; // guarded by mutex
+    } pathInspector;
+    void beginPathInspector(id<MTLCommandBuffer> command, Frame &frame);
+    // PBR local reuse (pathtrace/pbr_reuse.cpp): the opaque pass's local
+    // lighting histories, written and read alternately.
+    struct PbrReuse {
+      std::shared_ptr<Buffer> history[2];
+      uint32_t writeIndex = 0;
+      uint64_t signature = 0;
+      bool active = false, valid = false;
+      const char *diagnostics = std::getenv("REMIX_PBR_REUSE_DIAGNOSTICS");
+    } pbrReuse;
+    void configurePbrReuse(id<MTLCommandBuffer> command, Frame &frame, const TraceOptions &options, uint64_t signature,
+                           bool stable);
+    void finishPbrReuse(id<MTLCommandBuffer> command);
+    void readPbrReuse();
+    void finishPathInspector(id<MTLCommandBuffer> command);
+    void readPathInspector();
     void beginRayProfile(id<MTLCommandBuffer> command, Frame &frame);
     void finishRayProfile(id<MTLCommandBuffer> command);
     void readRayProfile();
@@ -321,8 +422,8 @@ namespace remix::metal {
     std::vector<InstanceView> instanceViews;
     std::vector<const scene::OpacityPartition *> partitionStorage;
     std::vector<size_t> partitionOffsets;
-    MeshView &meshView(const scene::Draw &draw, const scene::OpacityPartition *const *partitions,
-                       size_t partitionCount, MeshConversion &conversion, bool &convert);
+    MeshView &meshView(const scene::Draw &draw, const scene::OpacityPartition *const *partitions, size_t partitionCount,
+                       MeshConversion &conversion, bool &convert);
     MeshView *findView(const scene::Draw &draw, const scene::OpacityPartition *const *partitions,
                        size_t partitionCount);
     static void convertMesh(MeshConversion &conversion);
@@ -359,7 +460,7 @@ namespace remix::metal {
       id<MTLBuffer> instances = nil;
       std::vector<id<MTLAccelerationStructure>> blas;
       remix::trace::TlasPolicy policy;
-    } tlas[2]; // static, dynamic
+    } tlas[2];                                                 // static, dynamic
     std::unordered_map<uint64_t, std::weak_ptr<Accel>> accels; // address -> BLAS
     id<MTLBuffer> scratch = nil;
     id<MTLAccelerationStructure> emptyTlas = nil;
@@ -371,6 +472,10 @@ namespace remix::metal {
 
     // Lighting and per-frame buffers.
     scene::LightBvh lightBvh, torchBvh, emissiveBvh;
+    // The potentially visible light table (pathtrace/gpu.h), uploaded when it changes.
+    scene::LightVisibility lightVisibility;
+    std::shared_ptr<Buffer> visibilityNodes, visibilityLeaves, visibilityTable;
+    uint64_t visibilityPartitionVersion = 0, visibilityTableVersion = 0, visibilityTableUploads = 0;
     scene::EmissionHistory emissionHistory;
     std::shared_ptr<Buffer> lightNodes, lightEmitters, blueNoise;
     uint64_t lightBufferGeneration = 0;
@@ -392,11 +497,19 @@ namespace remix::metal {
 
     struct FrameResources {
       std::shared_ptr<Buffer> table, uniform;
-      std::shared_ptr<Buffer> movedLights; // scene::MovedLight pairs read by this frame
-      id<MTLBuffer> guideCounters = nil;   // light guiding's training counters, copied at the frame's end
+      std::shared_ptr<Buffer> movedLights;   // scene::MovedLight pairs read by this frame
+      std::shared_ptr<Buffer> lightCookies;  // the cookie table (Frame::lightCookies)
+      std::shared_ptr<Buffer> woundVertices; // remixapi_InstanceInfoWoundCutEXT (Frame::woundVertices)
+      id<MTLBuffer> guideCounters = nil;     // light guiding's training counters, copied at the frame's end
       bool guidePending = false;
       id<MTLBuffer> rayCounts = nil; // the ray profile's counters, copied at the frame's end
       bool rayPending = false;
+      // The path inspector's records of this frame and what they were traced with.
+      id<MTLBuffer> pathRecords = nil;
+      id<MTLBuffer> reuseCounts = nil; // PBR reuse diagnostics
+      bool reusePending = false;
+      bool pathPending = false;
+      PathInspection pathFrame;
       std::vector<id> retired;
       std::vector<std::shared_ptr<Geometry>> retiredGeometry;
       std::vector<std::shared_ptr<Buffer>> retiredBuffers;

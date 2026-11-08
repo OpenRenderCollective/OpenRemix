@@ -94,6 +94,54 @@ lights/light_<HASH>.ies         IES profiles, as the host gave them
 - **Loading lights.** Loading a capture (or a mod) reads both back. A mod's
   light override keeps the overridden light's profile and cookie.
 
+## Loading mods
+
+A mod in `rtx-remix/mods` is composed once, without the geometry of its mesh
+replacements. Each replacement (`mesh_<HASH>` and what it references) is
+composed, its textures decoded, and its meshes created the first time the game
+draws the mesh it replaces, off the Present thread (`Submission::OnDemand`).
+The game's mesh draws until then. Memory follows what the game has drawn, not
+the size of the mod. Composing every replacement of HL2 RTX's demo mod at once
+holds about 50 million vertices, more than 10 GB.
+
+A game light's replacement (`light_<HASH>`) overrides the game light with what
+it authors. The lights defined under it are created the same way, the first
+time the game light is drawn. As in RTX Remix, they sit in the game light's
+frame: at its position, with their -Z along its direction (spot and distant
+lights). They are placed as authored when the replacement has a transform of
+its own.
+
+A mesh replacement's instance that the host gives no identity takes the one of
+the last frame's instance of that mesh at the same transform, else of the
+nearest within 3 m, else a hash of its transform (so an instance back in view is
+the one it was). What it authors therefore stays the same instances and lights
+while it moves. With the hash alone, a moving instance made new lights each
+frame, which rebuilt the light tree and lost the visibility guide (HL2 RTX's
+flashlight faded while walking). A skinned draw's instances can share a
+transform, so its last bone counts as its place.
+
+As in RTX Remix, a skinned replacement's joint indices name the bones of the
+draw it replaces, whatever skeleton it binds, and its points are the bind pose
+they apply to. Bones past those the draw names stay at identity, so a draw
+without bones leaves it in the bind pose. A replacement takes on the categories
+of the draw it replaces, the view model among them.
+
+As in RTX Remix, a light attribute with no `inputs:` opinion reads the name USD
+lights had before it (`intensity`, `color`, ...), which older mods author.
+
+A mod's light scale multiplies the intensity of the lights it authors: lights
+under its replacements, and the intensities its light overrides set. Lights
+made for RTX Remix read brighter here, mostly from exposure: the light math is
+the same (color × intensity × 2^exposure). The scale is the root layer's
+`customLayerData` value `openremix:lightScale` (a double, default 1). **Mods →
+(mod) → Light scale** changes it for the session, and **Save** writes it into
+the mod's `mod.usda`, which USD reformats.
+
+As in RTX Remix, a texture that is missing or does not decode is left out of
+its material, with a warning. The mod still loads, and the Mods tab counts the
+textures it is missing. Loading a capture or a USD scene
+(`remixapi_LoadUSDSceneEXT`) still fails on a missing texture.
+
 ## Textures
 
 Textures are named by hash, so a file that already exists is not written again.

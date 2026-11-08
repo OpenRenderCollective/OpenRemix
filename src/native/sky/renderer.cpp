@@ -1,5 +1,9 @@
 #include "sky/renderer.h"
+#if defined(REMIX_METAL)
+#include "metal/sky_bridge.h"
+#else
 #include "sky/bridge.h"
+#endif
 #include "upscale/camera.h"
 #include <numos/renderer.h>
 #include <numos/settings.h>
@@ -15,12 +19,12 @@ namespace remix::sky {
   namespace {
     // The adapters' binding table (scripts/shaders/sky.py), one entry per Stage.
     const numos::PassBindingInfo adapterBindings[] = {
-#define NUMOS_PASS_BINDING(slot, set, kind, dim, format, variable)                                            \
+#define NUMOS_PASS_BINDING(slot, set, kind, dim, format, variable)                                                     \
   {slot, set, numos::BindingKind::kind, numos::BindingDim::dim, format, variable},
 #include "sky/shaders/adapter_passes.inc"
     };
     const numos::PassInfo adapterPasses[] = {
-#define NUMOS_PASS(name, file, hash, x, y, z, push, first, count)                                             \
+#define NUMOS_PASS(name, file, hash, x, y, z, push, first, count)                                                      \
   {#name, file, hash, {x, y, z}, push, adapterBindings + first, count},
 #include "sky/shaders/adapter_passes.inc"
     };
@@ -86,15 +90,15 @@ namespace remix::sky {
     // The raster renderer's linear depth and composite images.
     numos::GpuHandle rasterDepth = 0, rasterAddition = 0, rasterTransmittance = 0;
     uint32_t rasterWidth = 0, rasterHeight = 0;
-    VkImageView depthView = VK_NULL_HANDLE;
-    VkAccelerationStructureKHR scene = VK_NULL_HANDLE;
+    ImageView depthView{};
+    AccelerationStructure scene{};
     uint32_t renderWidth = 0, renderHeight = 0, missWidth = 0, missHeight = 0;
     uint32_t frameIndex = 0, lastCut = 0;
     numos::Camera camera{};
     bool zUp = true, clouds = false, rayQuery = true;
     std::chrono::steady_clock::time_point last{};
     bool begun = false;
-    State(VkPhysicalDevice physical, VkDevice device) : bridge(physical, device, hostPasses()) {}
+    State(PhysicalDevice physical, Device device) : bridge(physical, device, hostPasses()) {}
 
     // Dispatches an adapter, binding NUMOS outputs and the host's resources by
     // the shader variables' names.
@@ -138,7 +142,7 @@ namespace remix::sky {
     }
   };
 
-  Renderer::Renderer(VkPhysicalDevice physical, VkDevice device, bool rayQuery)
+  Renderer::Renderer(PhysicalDevice physical, Device device, bool rayQuery)
       : m(std::make_unique<State>(physical, device)) {
     m->rayQuery = rayQuery;
     // NUMOS copies the night sky and streams it to the GPU over the next frames.
@@ -190,7 +194,7 @@ namespace remix::sky {
     m->configured = true;
   }
 
-  bool Renderer::record(VkCommandBuffer command, const FrameDescription &frame) {
+  bool Renderer::record(CommandBuffer command, const FrameDescription &frame) {
     m->begun = false;
     if (frame.upAxis > 2 || frame.upAxis == 0) {
       m_status = "The sky needs a Y-up or Z-up world (Lighting: volumetric up axis).";
@@ -199,7 +203,7 @@ namespace remix::sky {
     uint32_t ready = 0, total = 0;
     // Of the screen cloud pass's variants, only the one the settings select.
     const auto &settings = m->numos.settings();
-    const auto cloud = settings.cloudProfilingMode == 9           ? numos::PassId::cloud_render_reference
+    const auto cloud = settings.cloudProfilingMode == 9       ? numos::PassId::cloud_render_reference
                        : settings.cloudPerformancePreset == 1 ? numos::PassId::cloud_render_fast
                                                               : numos::PassId::cloud_render;
     const auto needed = [&](uint32_t pass) {
@@ -246,10 +250,10 @@ namespace remix::sky {
     // NUMOS's jitter is a clip-space translation after the projection, so a
     // pixel sees the direction projected to its centre minus the jitter. The
     // tracer's pixel samples its centre plus the jitter, y down.
-    inputs.camera = numos::makeCamera(frame.view.data(), projection.data(), frame.previousView.data(),
-                                      previousProjection.data(), -2 * frame.jitter[0] / width,
-                                      2 * frame.jitter[1] / height, frame.renderWidth, frame.renderHeight,
-                                      range.nearPlane, rightHanded);
+    inputs.camera =
+        numos::makeCamera(frame.view.data(), projection.data(), frame.previousView.data(), previousProjection.data(),
+                          -2 * frame.jitter[0] / width, 2 * frame.jitter[1] / height, frame.renderWidth,
+                          frame.renderHeight, range.nearPlane, rightHanded);
     const auto viewToWorld = scene::inverse(frame.view), projectionToView = scene::inverse(projection);
     std::copy_n(viewToWorld.data(), 16, inputs.viewToWorld);
     std::copy_n(projectionToView.data(), 16, inputs.projectionToView);
@@ -257,7 +261,8 @@ namespace remix::sky {
     // The view's forward axis in the world: +z for a left-handed view, -z for a right-handed one.
     const float sign = rightHanded ? -1.f : 1.f;
     numos::Vector3 forward{sign * viewToWorld[8], sign * viewToWorld[9], sign * viewToWorld[10]};
-    const float length = std::max(std::sqrt(forward.x * forward.x + forward.y * forward.y + forward.z * forward.z), 1e-6f);
+    const float length =
+        std::max(std::sqrt(forward.x * forward.x + forward.y * forward.y + forward.z * forward.z), 1e-6f);
     inputs.cameraForward = {forward.x / length, forward.y / length, forward.z / length};
     inputs.zUp = zUp;
     inputs.hostUnitsPerMeter = 1.f / std::max(frame.metersPerUnit, 1e-6f);
@@ -330,8 +335,8 @@ namespace remix::sky {
     const float zUpRows[3][3] = {{1, 0, 0}, {0, 0, 1}, {0, -1, 0}};
     const float yUpRows[3][3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
     const auto &rows = zUp ? zUpRows : yUpRows;
-    EnvironmentPush push{.width = environmentWidth, .height = environmentHeight, .frameIndex = m->frameIndex,
-                         .zUp = zUp};
+    EnvironmentPush push{
+        .width = environmentWidth, .height = environmentHeight, .frameIndex = m->frameIndex, .zUp = zUp};
     for (int r = 0; r < 3; ++r)
       for (int c = 0; c < 3; ++c) {
         m_domeTransform[r][c] = rows[r][c];
@@ -356,7 +361,9 @@ namespace remix::sky {
     const float texel = boxWidth / cloudShadowSize, step = boxHeight / (cloudShadowSlices - 1);
     const float axes[3][3] = {{1, 0, 0}, {0, float(zUp), float(!zUp)}, {0, float(!zUp), float(zUp)}};
     const float eye[3] = {inputs.cameraPosition.x, inputs.cameraPosition.y, inputs.cameraPosition.z};
-    const auto along = [&](int axis) { return axes[axis][0] * eye[0] + axes[axis][1] * eye[1] + axes[axis][2] * eye[2]; };
+    const auto along = [&](int axis) {
+      return axes[axis][0] * eye[0] + axes[axis][1] * eye[1] + axes[axis][2] * eye[2];
+    };
     const float corner[3] = {std::floor((along(0) - boxWidth / 2) / texel) * texel,
                              std::floor((along(1) - boxWidth / 2) / texel) * texel,
                              std::floor((along(2) - boxHeight / 2) / step) * step};
@@ -412,14 +419,13 @@ namespace remix::sky {
       candidate.radiance[2] = light.radiance.z * scale;
       candidate.angularDiameterDegrees = halfAngle * 2 * 57.2957795f;
       const float sine = std::sin(halfAngle);
-      const float illuminance = (.2126f * candidate.radiance[0] + .7152f * candidate.radiance[1] +
-                                 .0722f * candidate.radiance[2]) * sine * sine;
+      const float illuminance =
+          (.2126f * candidate.radiance[0] + .7152f * candidate.radiance[1] + .0722f * candidate.radiance[2]) * sine *
+          sine;
       if (illuminance > brightest) {
         brightest = illuminance;
         m_sun = candidate;
-        kind = index == numos::FrameOutputs::kSunLight         ? 1
-               : index == numos::FrameOutputs::kLightningLight ? 3
-                                                               : 2;
+        kind = index == numos::FrameOutputs::kSunLight ? 1 : index == numos::FrameOutputs::kLightningLight ? 3 : 2;
       }
     }
 
@@ -438,12 +444,14 @@ namespace remix::sky {
       precipitation = control.precipitation;
     else if (numos::WeatherPreset preset;
              m->weatherWanted && numos::weatherPresetFromName(control.preset.c_str(), preset))
-      precipitation = preset == numos::WeatherPreset::Storm ? 1.f : preset == numos::WeatherPreset::Drizzle ? .35f : 0.f;
+      precipitation = preset == numos::WeatherPreset::Storm     ? 1.f
+                      : preset == numos::WeatherPreset::Drizzle ? .35f
+                                                                : 0.f;
     state.precipitation = precipitation;
     return true;
   }
 
-  void Renderer::recordPostDepth(VkCommandBuffer command, VkImage depthImage, VkImageView depthView) {
+  void Renderer::recordPostDepth(CommandBuffer command, Image depthImage, ImageView depthView) {
     if (!m->begun)
       return;
     m->begun = false;
@@ -451,11 +459,11 @@ namespace remix::sky {
     if (depthView != m->depthView) {
       if (m->depthImport)
         m->bridge.forget(m->depthImport);
-      m->depthImport = depthView ? m->bridge.importTexture(depthImage, depthView,
-                                                           {.format = numos::Format::R32Float,
-                                                            .width = m->renderWidth,
-                                                            .height = m->renderHeight})
-                                 : 0;
+      m->depthImport =
+          depthView ? m->bridge.importTexture(
+                          depthImage, depthView,
+                          {.format = numos::Format::R32Float, .width = m->renderWidth, .height = m->renderHeight})
+                    : 0;
       m->depthView = depthView;
     }
     auto depth = m->depthImport;
@@ -480,23 +488,21 @@ namespace remix::sky {
     m->clouds = true;
   }
 
-  void Renderer::recordComposite(VkCommandBuffer command, VkImage colorImage, VkImageView colorView,
-                                 VkImage depthImage, VkImageView depthView, float scale,
-                                 config::SkySettings::GameSky gameSky) {
+  void Renderer::recordComposite(CommandBuffer command, Image colorImage, ImageView colorView, Image depthImage,
+                                 ImageView depthView, float scale, config::SkySettings::GameSky gameSky) {
     if (!m->clouds || !colorView || !depthView)
       return;
     m->clouds = false;
     m->bridge.begin(command);
-    const numos::TextureDesc colorDesc{.format = numos::Format::RGBA16Float,
-                                       .width = m->renderWidth,
-                                       .height = m->renderHeight};
+    const numos::TextureDesc colorDesc{
+        .format = numos::Format::RGBA16Float, .width = m->renderWidth, .height = m->renderHeight};
     const auto color = m->bridge.importTexture(colorImage, colorView, colorDesc);
-    const auto depth = m->depthView == depthView
-                           ? m->depthImport
-                           : m->bridge.importTexture(depthImage, depthView,
-                                                     {.format = numos::Format::R32Float,
-                                                      .width = m->renderWidth,
-                                                      .height = m->renderHeight});
+    const auto depth =
+        m->depthView == depthView
+            ? m->depthImport
+            : m->bridge.importTexture(
+                  depthImage, depthView,
+                  {.format = numos::Format::R32Float, .width = m->renderWidth, .height = m->renderHeight});
     const auto &out = m->numos.outputs();
     auto named = m->outputs();
     const auto camera = m->bridge.uploadConstants(&m->camera, sizeof(m->camera));
@@ -529,7 +535,7 @@ namespace remix::sky {
 
   const config::SkyState &Renderer::state() const { return m->state; }
 
-  void Renderer::recordRasterPostDepth(VkCommandBuffer command, VkImage depthImage, VkImageView depthView,
+  void Renderer::recordRasterPostDepth(CommandBuffer command, Image depthImage, ImageView depthView,
                                        const scene::Matrix &projection, float clearDepth) {
     if (!m->begun)
       return;
@@ -555,8 +561,8 @@ namespace remix::sky {
         depthImage, depthView, {.format = numos::Format::R32Float, .width = m->renderWidth, .height = m->renderHeight});
     // The inverse projection's z and w rows (column-major).
     const auto inverse = scene::inverse(projection);
-    RasterDepthPush push{.width = m->renderWidth, .height = m->renderHeight, .clearDepth = clearDepth,
-                         .missDepth = missDepth};
+    RasterDepthPush push{
+        .width = m->renderWidth, .height = m->renderHeight, .clearDepth = clearDepth, .missDepth = missDepth};
     for (int c = 0; c < 4; ++c) {
       push.inverseZ[c] = inverse[c * 4 + 2];
       push.inverseW[c] = inverse[c * 4 + 3];
@@ -570,8 +576,7 @@ namespace remix::sky {
     m->clouds = true;
   }
 
-  bool Renderer::recordRasterComposite(VkCommandBuffer command, float exposure,
-                                       config::SkySettings::GameSky gameSky) {
+  bool Renderer::recordRasterComposite(CommandBuffer command, float exposure, config::SkySettings::GameSky gameSky) {
     if (!m->clouds || !m->rasterDepth)
       return false;
     m->clouds = false;
@@ -607,31 +612,31 @@ namespace remix::sky {
     return true;
   }
 
-  VkDescriptorImageInfo Renderer::rasterAddition() const {
+  SampledImage Renderer::rasterAddition() const {
     if (!m->rasterAddition)
       return {};
-    return {m->bridge.sampler(m->numos.outputs().linearClampSampler), m->bridge.sampledView(m->rasterAddition),
-            VK_IMAGE_LAYOUT_GENERAL};
+    return sampledImage(m->bridge.sampler(m->numos.outputs().linearClampSampler),
+                        m->bridge.sampledView(m->rasterAddition));
   }
 
-  VkDescriptorImageInfo Renderer::rasterTransmittance() const {
+  SampledImage Renderer::rasterTransmittance() const {
     if (!m->rasterTransmittance)
       return {};
-    return {m->bridge.sampler(m->numos.outputs().linearClampSampler), m->bridge.sampledView(m->rasterTransmittance),
-            VK_IMAGE_LAYOUT_GENERAL};
+    return sampledImage(m->bridge.sampler(m->numos.outputs().linearClampSampler),
+                        m->bridge.sampledView(m->rasterTransmittance));
   }
 
-  VkDescriptorImageInfo Renderer::cloudShadow() const {
+  SampledImage Renderer::cloudShadow() const {
     if (!m->cloudShadow)
       return {};
-    return {m->bridge.sampler(m->numos.outputs().linearClampSampler), m->bridge.sampledView(m->cloudShadow),
-            VK_IMAGE_LAYOUT_GENERAL};
+    return sampledImage(m->bridge.sampler(m->numos.outputs().linearClampSampler),
+                        m->bridge.sampledView(m->cloudShadow));
   }
 
-  VkDescriptorImageInfo Renderer::environment() const {
+  SampledImage Renderer::environment() const {
     if (!m->environment)
       return {};
-    return {m->bridge.sampler(m->numos.outputs().linearClampSampler), m->bridge.sampledView(m->environment),
-            VK_IMAGE_LAYOUT_GENERAL};
+    return sampledImage(m->bridge.sampler(m->numos.outputs().linearClampSampler),
+                        m->bridge.sampledView(m->environment));
   }
 } // namespace remix::sky

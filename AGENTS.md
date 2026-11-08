@@ -26,7 +26,9 @@ XeSS Super Resolution is Windows only, like FSR 4: it loads Intel's signed `libx
 XeSS SDK 3.0.2 submodule `third_party/xess/xess`, pinned in `third_party/xess/upstream.json` and
 required by Windows builds (`git submodule update --init third_party/xess/xess`; `upscale/xess.h`).
 Use two-space indentation and attached braces;
-`.clang-format` covers maintained first-party C/C++ only.
+`.clang-format` covers maintained first-party C/C++ only (`.clang-format-ignore` lists the
+vendored, generated and recorded sources it skips). Format with
+`meson compile -C _work/build/native clang-format`; `clang-format-check` reports unformatted files.
 
 Build: `CC=clang CXX=clang++ meson setup _work/build/native && meson compile -C _work/build/native`.
 Test: `meson test -C _work/build/native --print-errorlogs`.
@@ -39,8 +41,8 @@ source/cache under `subprojects`; `SDL3.wrap` is tracked.
 Readable shaders live in each renderer's `shaders` folder. The build generates their SPIR-V
 (and the Metal libraries) into the build directory with `scripts/shaders/generate.py`; never commit
 generated `embedded.h`, `embedded.bin` or `embedded_data.cpp`. The tools are glslang and
-SPIRV-Tools (and for Metal the SPIRV-Cross fork) at the revisions in `toolchain.lock.json`, which
-`scripts/shaders/toolchain.py` builds once per machine into `_work/tools/shader-toolchain`
+SPIRV-Tools (and for Metal upstream SPIRV-Cross with `scripts/shaders/patches`) at the revisions in
+`toolchain.lock.json`, which `scripts/shaders/toolchain.py` builds once per machine into `_work/tools/shader-toolchain`
 (`-Dshader_tools=` moves the cache). With NUMOS, it also fetches the pinned slangc release;
 `scripts/shaders/sky.py` compiles the NUMOS passes and `src/native/sky/shaders/*.comp.slang` and
 checks them against NUMOS's pass table and struct layouts (not its SPIR-V hashes, which come from
@@ -55,6 +57,8 @@ Standalone driver probes in `tools/vulkan-probes` require `-Dvulkan_probes=true`
 macOS builds the native Metal backend in `src/native/metal` instead of the Vulkan runtime
 (see `docs/features/metal-backend.md`). The build generates its libraries from the
 same shaders (`scripts/shaders/generate.py metal`).
+The developer panel's tabs (`src/native/ui`) are shared by both backends: they read backend state
+only through the `ui/status.h` queries, answered by `runtime/ui_status.cpp` and `metal/ui.mm`.
 
 Preserve `ref/`, Git history, linked worktrees, and archived evidence. Do not discard ignored
 artifacts without an explicit cleanup scope from the user. Track architecture and feature docs only;

@@ -53,8 +53,7 @@ int main(int argc, char **argv) {
   ok(api.SetConfigVariable("rtx.native.backend", "pathtrace"));
   ok(api.SetConfigVariable("rtx.native.vsync", "0"));
   auto config = [&](const char *key, const char *value) {
-    ok(api.SetConfigVariable(
-        (std::string("rtx.native.pathtrace.") + key).c_str(), value));
+    ok(api.SetConfigVariable((std::string("rtx.native.pathtrace.") + key).c_str(), value));
   };
   for (const char *key : {"taa", "sharc", "sigma"})
     config(key, "0");
@@ -97,8 +96,7 @@ int main(int argc, char **argv) {
   texture(12, {128, 128, 255, 255});
   texture(13, {255, 0, 0, 255});
   auto path = [](const char *name) { return std::filesystem::path(name); };
-  const auto roughness = path("0xa"), metallic = path("0xb"),
-             normal = path("0xc"), emissive = path("0xd");
+  const auto roughness = path("0xa"), metallic = path("0xb"), normal = path("0xc"), emissive = path("0xd");
   remixapi_MaterialInfoOpaqueEXT opaque{};
   opaque.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
   opaque.albedoConstant = {.7f, .3f, .1f};
@@ -182,30 +180,25 @@ int main(int argc, char **argv) {
   opaque.metallicTexture = metallic.c_str();
   auto maps = capture("maps");
   for (int c = 0; c < 3; ++c)
-    require(std::abs(constants[c] - maps[c]) < .012,
-            "PBR maps differ from linear constants");
+    require(std::abs(constants[c] - maps[c]) < .012, "PBR maps differ from linear constants");
   material.normalTexture = normal.c_str();
   auto flat = capture("flat-normal");
   for (int c = 0; c < 3; ++c)
-    require(std::abs(maps[c] - flat[c]) < .012,
-            "Flat normal changed material frame");
+    require(std::abs(maps[c] - flat[c]) < .012, "Flat normal changed material frame");
   texture(12, {218, 128, 218, 255});
   auto tilted = capture("tilted-normal");
-  require(std::abs(tilted[0] - flat[0]) > .015,
-          "Normal map has no shading effect");
+  require(std::abs(tilted[0] - flat[0]) > .015, "Normal map has no shading effect");
   config("primaryVisibility", "ray");
   auto ray = capture("ray-normal");
   for (int c = 0; c < 3; ++c)
-    require(std::abs(ray[c] - tilted[c]) < .02,
-            "Raster/ray PBR evaluation disagrees");
+    require(std::abs(ray[c] - tilted[c]) < .02, "Raster/ray PBR evaluation disagrees");
   config("primaryVisibility", "raster");
   material.normalTexture = nullptr;
   material.emissiveTexture = emissive.c_str();
   material.emissiveColorConstant = {1, 1, 1};
   material.emissiveIntensity = .1f;
   auto emission = capture("emission");
-  require(emission[0] > maps[0] + .075 &&
-              std::abs(emission[1] - maps[1]) < .015,
+  require(emission[0] > maps[0] + .075 && std::abs(emission[1] - maps[1]) < .015,
           "Emissive map not added in linear space");
   material.emissiveIntensity = 0;
   opaque.roughnessTexture = nullptr;
@@ -213,8 +206,7 @@ int main(int argc, char **argv) {
   opaque.roughnessConstant = 0;
   opaque.metallicConstant = 1;
   auto smooth = capture("smooth-metal");
-  require(smooth[0] > .06 && smooth[2] > .01,
-          "Smooth metal lost reflected sky");
+  require(smooth[0] > .06 && smooth[2] > .01, "Smooth metal lost reflected sky");
   config("accumulate", "0");
   config("denoiser", "reblur-sh");
   config("taa", "1");

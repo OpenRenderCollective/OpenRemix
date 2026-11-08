@@ -45,22 +45,21 @@
 
 namespace {
   remix::RasterRenderer::DrawOwner forwardDrawOwner(const remix::forward::Renderer *renderer) {
-    if (!renderer) return {};
+    if (!renderer)
+      return {};
     return [renderer](const remix::scene::Draw &draw) { return renderer->owns(draw); };
   }
-}
+} // namespace
 
 namespace remix {
-void RemixNativeRuntime::presented() {
-  const auto now = std::chrono::steady_clock::now();
-  if (m_lastPresentation != std::chrono::steady_clock::time_point{})
-    m_longestPresentationGap = std::max(
-        m_longestPresentationGap,
-        std::chrono::duration<double, std::milli>(now - m_lastPresentation)
-            .count());
-  m_lastPresentation = now;
-  ++m_presentationCount;
-}
+  void RemixNativeRuntime::presented() {
+    const auto now = std::chrono::steady_clock::now();
+    if (m_lastPresentation != std::chrono::steady_clock::time_point{})
+      m_longestPresentationGap = std::max(m_longestPresentationGap,
+                                          std::chrono::duration<double, std::milli>(now - m_lastPresentation).count());
+    m_lastPresentation = now;
+    ++m_presentationCount;
+  }
   namespace {
     // A prepared frame that ends up not traced (presentation skipped, or an
     // error on the way) gives its lighting state back to the tracer that
@@ -102,13 +101,13 @@ void RemixNativeRuntime::presented() {
         frame.rasterSkinnedVertices = r.skinnedVertices;
         frame.rasterUploadBytes = r.uploadBytes;
         frame.rasterCulledDraws = r.culledDraws;
-        const double covered =
-            frame.rasterPrepareMilliseconds + frame.traceBeginMilliseconds + frame.traceSetupMilliseconds +
-            frame.traceSurfacesMilliseconds + frame.retireMilliseconds + frame.traceAccelerationMilliseconds +
-            frame.tableMilliseconds + frame.lightingMilliseconds + frame.sharcMilliseconds +
-            frame.signatureMilliseconds + frame.descriptorMilliseconds + frame.primaryMilliseconds +
-            frame.passesMilliseconds + frame.postMilliseconds + frame.compositeMilliseconds +
-            frame.uiMilliseconds + frame.snapshotMilliseconds;
+        const double covered = frame.rasterPrepareMilliseconds + frame.traceBeginMilliseconds +
+                               frame.traceSetupMilliseconds + frame.traceSurfacesMilliseconds +
+                               frame.retireMilliseconds + frame.traceAccelerationMilliseconds +
+                               frame.tableMilliseconds + frame.lightingMilliseconds + frame.sharcMilliseconds +
+                               frame.signatureMilliseconds + frame.descriptorMilliseconds + frame.primaryMilliseconds +
+                               frame.passesMilliseconds + frame.postMilliseconds + frame.compositeMilliseconds +
+                               frame.uiMilliseconds + frame.snapshotMilliseconds;
         frame.otherMilliseconds = std::max(0.0, out.recordMilliseconds - covered);
         breakdown = frame;
         statics = tracer ? tracer->staticStatistics() : PathTracer::StaticStatistics{};
@@ -184,17 +183,17 @@ void RemixNativeRuntime::presented() {
     status += " | setting " + std::to_string(int(settings.frameGeneration)) + ", frames " +
               std::to_string(settings.frameGenerationFrames) + ", asked " + std::to_string(m_frameGenerationRequested) +
               ", swapchain made for " + std::to_string(m_presenterFrameGeneration) + ", generating " +
-              std::to_string(m_generateCount) + ", ready " + std::to_string(int(m_frameGenerationReady)) +
-              ", failed " + std::to_string(int(m_frameGenerationFailed)) + ", async present " +
-              std::to_string(int(m_asyncActive)) + ", low latency " + std::to_string(int(m_lowLatencyActive));
+              std::to_string(m_generateCount) + ", ready " + std::to_string(int(m_frameGenerationReady)) + ", failed " +
+              std::to_string(int(m_frameGenerationFailed)) + ", async present " + std::to_string(int(m_asyncActive)) +
+              ", low latency " + std::to_string(int(m_lowLatencyActive));
     if (status != m_loggedFrameGenerationStatus) {
       m_loggedFrameGenerationStatus = status;
       std::string detail;
       if (m_ngx) {
         const auto ngx = m_ngx->capabilities();
         detail += " | NGX: sdk " + std::to_string(int(ngx.sdk)) + ", initialized " +
-                  std::to_string(int(ngx.initializationComplete)) + ", frame generation " + std::to_string(int(ngx.fg)) +
-                  " (up to " + std::to_string(ngx.fgMultiFrameMax) + " generated)" +
+                  std::to_string(int(ngx.initializationComplete)) + ", frame generation " +
+                  std::to_string(int(ngx.fg)) + " (up to " + std::to_string(ngx.fgMultiFrameMax) + " generated)" +
                   (ngx.fgReason.empty() ? "" : ", reason: " + ngx.fgReason);
       }
       if (m_pathTracer) {
@@ -227,28 +226,27 @@ void RemixNativeRuntime::presented() {
     const double renderedShown =
         double(m_renderedShownMicroseconds.exchange(0)) / 1000.0 / std::max(renderedShownCount, 1u);
     if (seconds > 0 && generated != m_loggedGenerated)
-      logFrameGeneration("  timing, min/average/max ~change from one to the next, ms: generated frame on screen %s | rendered frame on screen %s | "
+      logFrameGeneration("  timing, min/average/max ~change from one to the next, ms: generated frame on screen %s | "
+                         "rendered frame on screen %s | "
                          "host's rendered frames apart %s | GPU, submission to completion (waits for the frame "
                          "before it included) %s | host waiting for the previous frame's images %s",
                          m_logGenerated.take().c_str(), m_logRendered.take().c_str(), m_logHost.take().c_str(),
                          m_logGpu.take().c_str(), m_logWait.take().c_str());
     if (seconds > 0)
-      logFrameGeneration("last %.1f s: rendered frames presented %llu (%.1f per second) | generated %llu (%.1f per "
-                         "second), shown twice instead %llu, short of generated ones %llu | rendered interval %.2f ms | "
-                         "latest present late by at most %.2f ms | on screen for, on average: generated frames %.2f "
-                         "ms, rendered frames %.2f ms | last failed acquire result %d | totals: generated "
-                         "%llu, shown twice %llu, short %llu | paced by the driver (present metering) %u frames, "
-                         "refused %u",
-                         seconds, (unsigned long long)(presentations - m_loggedPresentations),
-                         double(presentations - m_loggedPresentations) / seconds,
-                         (unsigned long long)(generated - m_loggedGenerated),
-                         double(generated - m_loggedGenerated) / seconds,
-                         (unsigned long long)(duplicated - m_loggedDuplicated),
-                         (unsigned long long)(short_ - m_loggedUngenerated), m_renderedInterval,
-                         double(m_presentLateMicroseconds.exchange(0)) / 1000.0, generatedShown, renderedShown,
-                         m_lastGeneratedAcquire,
-                         (unsigned long long)generated, (unsigned long long)duplicated, (unsigned long long)short_,
-                         m_meteredFrames.exchange(0), m_meteringRefused.exchange(0));
+      logFrameGeneration(
+          "last %.1f s: rendered frames presented %llu (%.1f per second) | generated %llu (%.1f per "
+          "second), shown twice instead %llu, short of generated ones %llu | rendered interval %.2f ms | "
+          "latest present late by at most %.2f ms | on screen for, on average: generated frames %.2f "
+          "ms, rendered frames %.2f ms | last failed acquire result %d | totals: generated "
+          "%llu, shown twice %llu, short %llu | paced by the driver (present metering) %u frames, "
+          "refused %u",
+          seconds, (unsigned long long)(presentations - m_loggedPresentations),
+          double(presentations - m_loggedPresentations) / seconds, (unsigned long long)(generated - m_loggedGenerated),
+          double(generated - m_loggedGenerated) / seconds, (unsigned long long)(duplicated - m_loggedDuplicated),
+          (unsigned long long)(short_ - m_loggedUngenerated), m_renderedInterval,
+          double(m_presentLateMicroseconds.exchange(0)) / 1000.0, generatedShown, renderedShown, m_lastGeneratedAcquire,
+          (unsigned long long)generated, (unsigned long long)duplicated, (unsigned long long)short_,
+          m_meteredFrames.exchange(0), m_meteringRefused.exchange(0));
     m_loggedGenerated = generated;
     m_loggedDuplicated = duplicated;
     m_loggedUngenerated = short_;
@@ -287,9 +285,8 @@ void RemixNativeRuntime::presented() {
     // Those frames go unmarked.
     if (m_latencySleeper.sleeping.load(std::memory_order_relaxed))
       return;
-    const VkSetLatencyMarkerInfoNV info = {.sType = VK_STRUCTURE_TYPE_SET_LATENCY_MARKER_INFO_NV,
-                                           .presentID = frame,
-                                           .marker = marker};
+    const VkSetLatencyMarkerInfoNV info = {
+        .sType = VK_STRUCTURE_TYPE_SET_LATENCY_MARKER_INFO_NV, .presentID = frame, .marker = marker};
     m_setLatencyMarker(m_device, m_swapchain, &info);
   }
 
@@ -361,9 +358,8 @@ void RemixNativeRuntime::presented() {
     const uint64_t value = ++m_latencyValue;
     m_latencySleeper.run(
         [this, value] {
-          const VkLatencySleepInfoNV sleep = {.sType = VK_STRUCTURE_TYPE_LATENCY_SLEEP_INFO_NV,
-                                              .signalSemaphore = m_latencySemaphore,
-                                              .value = value};
+          const VkLatencySleepInfoNV sleep = {
+              .sType = VK_STRUCTURE_TYPE_LATENCY_SLEEP_INFO_NV, .signalSemaphore = m_latencySemaphore, .value = value};
           if (m_latencySleep(m_device, m_swapchain, &sleep) == VK_SUCCESS) {
             // Bounded: a driver that never signals must not hold the thread.
             const VkSemaphoreWaitInfo wait = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
@@ -408,9 +404,12 @@ void RemixNativeRuntime::presented() {
     // the previous one before this Present touches anything it owns.
     const auto start = std::chrono::steady_clock::now();
     const double waited = waitRenderThread();
-    m_waitedFrame = {m_asyncRender.renderMilliseconds,       m_framePerformance.presentMilliseconds,
-                     m_framePerformance.recordMilliseconds,  m_framePerformance.fenceMilliseconds,
-                     m_framePerformance.acquireMilliseconds, m_framePerformance.submitMilliseconds,
+    m_waitedFrame = {m_asyncRender.renderMilliseconds,
+                     m_framePerformance.presentMilliseconds,
+                     m_framePerformance.recordMilliseconds,
+                     m_framePerformance.fenceMilliseconds,
+                     m_framePerformance.acquireMilliseconds,
+                     m_framePerformance.submitMilliseconds,
                      m_framePerformance.queuePresentMilliseconds,
                      m_frameBreakdown.presentReleaseMilliseconds,
                      m_framePerformance.sceneMilliseconds,
@@ -474,8 +473,7 @@ void RemixNativeRuntime::presented() {
   }
 
   remixapi_ErrorCode RemixNativeRuntime::presentAsync(const remixapi_PresentInfo *info,
-                                                      std::chrono::steady_clock::time_point start,
-                                                      double waited) {
+                                                      std::chrono::steady_clock::time_point start, double waited) {
     // The render thread's last frame is complete: Diagnostics shows it, and
     // the getters return it while the next one renders.
     m_previousPerformance = m_framePerformance;
@@ -556,7 +554,8 @@ void RemixNativeRuntime::presented() {
       prepareSettings();
       {
         const auto &settings = m_profiles.current();
-        const bool traceStatic = m_pathTracer && m_targetBackend && m_backend == config::Backend::PathTrace && !m_loading;
+        const bool traceStatic =
+            m_pathTracer && m_targetBackend && m_backend == config::Backend::PathTrace && !m_loading;
         if (!traceStatic)
           frame.expandStatic();
         // From the next replay on; the tracer reads the setting this frame.
@@ -568,9 +567,12 @@ void RemixNativeRuntime::presented() {
       if (m_pathTracer)
         m_pathTracer->setSky(m_profiles.current().sky, m_skyControl, m_skyUnavailable);
       frame.setSkyTarget(m_pathTracer ? m_pathTracer->skyPass() : VK_NULL_HANDLE);
-      m_rasterPreparing = !frame.preparePipelines(m_backend == config::Backend::PathTrace, m_backend == config::Backend::ForwardPlus, forwardDrawOwner(m_forward.get()));
+      m_rasterPreparing =
+          !frame.preparePipelines(m_backend == config::Backend::PathTrace, m_backend == config::Backend::ForwardPlus,
+                                  forwardDrawOwner(m_forward.get()));
       m_loading |= m_rasterPreparing;
-      if (m_loading && m_postProcessing) m_postProcessing->freeze();
+      if (m_loading && m_postProcessing)
+        m_postProcessing->freeze();
       prepareFrameGeneration();
       // The developer UI reads and edits settings and statistics, and SDL
       // input capture belongs to this thread: build its frame here. The
@@ -621,15 +623,17 @@ void RemixNativeRuntime::presented() {
     p.presentMilliseconds = m_handoff.callerMilliseconds;
     m_frameBreakdown.presentSetupMilliseconds = m_handoff.callerMilliseconds;
     // Destroyed after presentTime, so recordMilliseconds is final.
-    CompletePerformance completePerformance{p,        m_frameBreakdown, m_staticStatistics,
-                                            m_pathTracer, frame,          m_presentationCount};
+    CompletePerformance completePerformance{p,     m_frameBreakdown,   m_staticStatistics, m_pathTracer,
+                                            frame, m_presentationCount};
     ScopedMilliseconds presentTime{p.presentMilliseconds};
     if (m_pathTracer)
       m_pathTracer->resetPerformance();
     struct EndFrame {
       RasterRenderer &raster;
       double &release;
-      ~EndFrame() { measured(release, [&] { raster.finishFrame(); }); }
+      ~EndFrame() {
+        measured(release, [&] { raster.finishFrame(); });
+      }
     } endFrame{frame, m_frameBreakdown.presentReleaseMilliseconds};
     Stopwatch setupTime{m_frameBreakdown.presentSetupMilliseconds};
     try {
@@ -669,17 +673,19 @@ void RemixNativeRuntime::presented() {
       setupTime.start();
       m_frames[m_frameIndex].snapshot.reset();
       frame.selectFrame(m_frameIndex);
-      if (m_forward) m_forward->selectFrame(m_frameIndex);
-      if (m_particles) m_particles->selectFrame(m_frameIndex);
-      if (m_postProcessing) m_postProcessing->selectFrame(m_frameIndex);
+      if (m_forward)
+        m_forward->selectFrame(m_frameIndex);
+      if (m_particles)
+        m_particles->selectFrame(m_frameIndex);
+      if (m_postProcessing)
+        m_postProcessing->selectFrame(m_frameIndex);
       if (m_pathTracer)
         m_pathTracer->selectFrame(m_frameIndex);
       uint32_t imageIndex = 0;
       m_screenshot.complete(m_device, true);
       setupTime.stop();
-      result = measured(p.acquireMilliseconds, [&] {
-        return acquireImage(m_frames[m_frameIndex].imageAvailable, 1000000000, imageIndex);
-      });
+      result = measured(p.acquireMilliseconds,
+                        [&] { return acquireImage(m_frames[m_frameIndex].imageAvailable, 1000000000, imageIndex); });
       if (result == VK_TIMEOUT || result == VK_NOT_READY)
         return;
       if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_ERROR_SURFACE_LOST_KHR) {
@@ -747,8 +753,7 @@ void RemixNativeRuntime::presented() {
         presented();
         ++m_asyncRender.rendered;
       }
-      if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR ||
-          result == VK_ERROR_SURFACE_LOST_KHR) {
+      if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || result == VK_ERROR_SURFACE_LOST_KHR) {
         m_rebuild = true;
         m_recreateSurface |= result == VK_ERROR_SURFACE_LOST_KHR;
         return;
@@ -781,8 +786,8 @@ void RemixNativeRuntime::presented() {
     p = {.structSize = sizeof(p), .attempts = p.attempts + 1, .presentations = m_presentationCount};
     m_frameBreakdown = {.structSize = sizeof(m_frameBreakdown)};
     // Destroyed after presentTime, so recordMilliseconds is final.
-    CompletePerformance completePerformance{p,        m_frameBreakdown, m_staticStatistics,
-                                            m_pathTracer, m_raster,       m_presentationCount};
+    CompletePerformance completePerformance{p,        m_frameBreakdown,   m_staticStatistics, m_pathTracer,
+                                            m_raster, m_presentationCount};
     ScopedMilliseconds presentTime{p.presentMilliseconds};
     if (m_pathTracer)
       m_pathTracer->resetPerformance();
@@ -808,7 +813,9 @@ void RemixNativeRuntime::presented() {
     struct EndFrame {
       RasterRenderer &raster;
       double &release;
-      ~EndFrame() { measured(release, [&] { raster.finishFrame(); }); }
+      ~EndFrame() {
+        measured(release, [&] { raster.finishFrame(); });
+      }
     } endFrame{m_raster, m_frameBreakdown.presentReleaseMilliseconds};
     Stopwatch setupTime{m_frameBreakdown.presentSetupMilliseconds};
     if (!m_headless && !m_window.isVulkanSurfaceCurrent()) {
@@ -822,10 +829,10 @@ void RemixNativeRuntime::presented() {
       // Held during the setup and while the frame is recorded and submitted
       // (see presentImages); released for the waits in between.
       std::unique_lock queueLock(m_queueMutex, std::defer_lock);
-      if (!m_headless && (m_recreateSurface || m_rebuild || !m_swapchain || m_vsync != m_presenterVsync ||
-                          m_frameGenerationRequested != m_presenterFrameGeneration ||
-                          wantsHdr10() != m_hdr10Requested || state.drawableWidth != m_swapchainExtent.width ||
-                          state.drawableHeight != m_swapchainExtent.height)) {
+      if (!m_headless &&
+          (m_recreateSurface || m_rebuild || !m_swapchain || m_vsync != m_presenterVsync ||
+           m_frameGenerationRequested != m_presenterFrameGeneration || wantsHdr10() != m_hdr10Requested ||
+           state.drawableWidth != m_swapchainExtent.width || state.drawableHeight != m_swapchainExtent.height)) {
         status = recreateSwapchain();
         if (status != REMIXAPI_ERROR_CODE_SUCCESS) {
           return fail();
@@ -844,7 +851,8 @@ void RemixNativeRuntime::presented() {
         // Any other consumer of this frame (raster rendering, a frame without
         // the tracer) takes the set into the draw list, as without it.
         const auto &settings = m_profiles.current();
-        const bool traceStatic = m_pathTracer && m_targetBackend && m_backend == config::Backend::PathTrace && !m_loading;
+        const bool traceStatic =
+            m_pathTracer && m_targetBackend && m_backend == config::Backend::PathTrace && !m_loading;
         if (!traceStatic)
           m_raster.expandStatic();
         // From the next replay on.
@@ -854,11 +862,13 @@ void RemixNativeRuntime::presented() {
       }
       if (m_pathTracer)
         m_pathTracer->setSky(m_profiles.current().sky, m_skyControl, m_skyUnavailable);
-      m_raster.setSkyTarget(m_pathTracer ? m_pathTracer->skyPass()
-                                         : VK_NULL_HANDLE);
-      m_rasterPreparing = !m_raster.preparePipelines(m_backend == config::Backend::PathTrace, m_backend == config::Backend::ForwardPlus, forwardDrawOwner(m_forward.get()));
+      m_raster.setSkyTarget(m_pathTracer ? m_pathTracer->skyPass() : VK_NULL_HANDLE);
+      m_rasterPreparing =
+          !m_raster.preparePipelines(m_backend == config::Backend::PathTrace, m_backend == config::Backend::ForwardPlus,
+                                     forwardDrawOwner(m_forward.get()));
       m_loading |= m_rasterPreparing;
-      if (m_loading && m_postProcessing) m_postProcessing->freeze();
+      if (m_loading && m_postProcessing)
+        m_postProcessing->freeze();
       prepareFrameGeneration();
       // Scene snapshots, emission reduction and staged light hierarchies use
       // no GPU resources. Prepare while submitted frames run; commit lighting,
@@ -884,8 +894,8 @@ void RemixNativeRuntime::presented() {
       setupTime.stop();
       queueLock.unlock();
       if (m_pathTracer && m_targetBackend && !m_loading)
-        traceScene = measured(p.sceneMilliseconds,
-                              [&] { return m_pathTracer->prepareScene(m_raster, m_traceOptions); });
+        traceScene =
+            measured(p.sceneMilliseconds, [&] { return m_pathTracer->prepareScene(m_raster, m_traceOptions); });
       LightingReturn lightingReturn{m_pathTracer};
       if (traceScene)
         lightingReturn.frame = &*traceScene;
@@ -902,9 +912,12 @@ void RemixNativeRuntime::presented() {
       setupTime.start();
       m_frames[m_frameIndex].snapshot.reset();
       m_raster.selectFrame(m_frameIndex);
-      if (m_forward) m_forward->selectFrame(m_frameIndex);
-      if (m_particles) m_particles->selectFrame(m_frameIndex);
-      if (m_postProcessing) m_postProcessing->selectFrame(m_frameIndex);
+      if (m_forward)
+        m_forward->selectFrame(m_frameIndex);
+      if (m_particles)
+        m_particles->selectFrame(m_frameIndex);
+      if (m_postProcessing)
+        m_postProcessing->selectFrame(m_frameIndex);
       if (m_pathTracer)
         m_pathTracer->selectFrame(m_frameIndex);
       uint32_t imageIndex = 0;
@@ -933,9 +946,8 @@ void RemixNativeRuntime::presented() {
       latencyMarker(VK_LATENCY_MARKER_RENDERSUBMIT_START_NV, m_latencyRenderFrame);
       queueLock.lock();
       const GeneratedImages generated = m_headless ? GeneratedImages{} : acquireGenerated();
-      status = measured(p.recordMilliseconds, [&] {
-        return recordFrame(imageIndex, traceScene ? &*traceScene : nullptr, generated);
-      });
+      status = measured(p.recordMilliseconds,
+                        [&] { return recordFrame(imageIndex, traceScene ? &*traceScene : nullptr, generated); });
       if (status != REMIXAPI_ERROR_CODE_SUCCESS) {
         return fail();
       }
@@ -945,8 +957,7 @@ void RemixNativeRuntime::presented() {
       }
       const VkPipelineStageFlags waitStage =
           m_headless ? VK_PIPELINE_STAGE_ALL_COMMANDS_BIT
-                     : VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
-                           VK_PIPELINE_STAGE_TRANSFER_BIT;
+                     : VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT;
       // With generated frames: every acquired image, and a semaphore for each present.
       VkSemaphore waits[1 + FrameGeneration::maxGenerated] = {m_headless ? m_sharedReleased
                                                                          : m_frames[m_frameIndex].imageAvailable};
@@ -993,8 +1004,7 @@ void RemixNativeRuntime::presented() {
       m_frameIndex = (m_frameIndex + 1) % m_frameCount;
       if (result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR)
         presented();
-      if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR ||
-          result == VK_ERROR_SURFACE_LOST_KHR) {
+      if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || result == VK_ERROR_SURFACE_LOST_KHR) {
         m_rebuild = true;
         m_recreateSurface |= result == VK_ERROR_SURFACE_LOST_KHR;
         return REMIXAPI_ERROR_CODE_SUCCESS;
@@ -1085,10 +1095,11 @@ void RemixNativeRuntime::presented() {
         m_ngx->initializeDevice();
         capabilities = m_ngx->capabilities();
       }
-      const auto backend = mode == Mode::Fsr31 || (mode == Mode::Auto && !capabilities.fg) ? Backend::Fsr31
-                                                                                           : Backend::Dlss;
+      const auto backend =
+          mode == Mode::Fsr31 || (mode == Mode::Auto && !capabilities.fg) ? Backend::Fsr31 : Backend::Dlss;
       if (backend == Backend::Dlss && !capabilities.fg) {
-        m_frameGenerationStatus = capabilities.fgReason.empty() ? "DLSS Frame Generation unavailable" : capabilities.fgReason;
+        m_frameGenerationStatus =
+            capabilities.fgReason.empty() ? "DLSS Frame Generation unavailable" : capabilities.fgReason;
         return;
       }
       const auto upscaling = m_pathTracer->upscalingStatistics();
@@ -1100,8 +1111,8 @@ void RemixNativeRuntime::presented() {
       // DLSS's and XeSS's (upscale::FrameGenerationInputs::depthInverted). FSR frame
       // generation's shaders are chosen for one of them.
       const bool depthInverted = upscaling.backend == upscale::Backend::Fsr31;
-      if (m_frameGeneration && !m_frameGeneration->matches(backend, m_swapchainExtent, m_swapchainFormat,
-                                                           upscaling.render, depthInverted)) {
+      if (m_frameGeneration &&
+          !m_frameGeneration->matches(backend, m_swapchainExtent, m_swapchainFormat, upscaling.render, depthInverted)) {
         // Its images may still be in use by frames in flight: the next
         // Present recreates the swapchain, which waits for the device.
         m_rebuild = true;
@@ -1145,19 +1156,18 @@ void RemixNativeRuntime::presented() {
         m_obsoleteFrameGeneration.push_back(std::move(m_frameGenerationPreparation));
       }
       if (!m_frameGeneration)
-        m_frameGeneration = std::make_unique<FrameGeneration>(Backend::Dlss, m_ngx, m_physicalDevice, m_device,
-                                                              m_queueFamily, m_swapchainExtent, m_swapchainFormat,
-                                                              upscaling.render, depthInverted);
+        m_frameGeneration =
+            std::make_unique<FrameGeneration>(Backend::Dlss, m_ngx, m_physicalDevice, m_device, m_queueFamily,
+                                              m_swapchainExtent, m_swapchainFormat, upscaling.render, depthInverted);
       m_frameGenerationReady = m_frameGeneration->ready(m_queue);
       // The swapchain has an image for every frame asked for; a backend that
       // makes fewer leaves the others unused.
-      m_generateCount = std::min(m_presenterFrameGeneration,
-                                 backend == Backend::Dlss ? std::max(capabilities.fgMultiFrameMax, 1u)
-                                                          : FrameGeneration::maxGeneratedBy(backend));
-      m_frameGenerationStatus = !m_frameGenerationReady
-                                    ? "starting"
-                                    : std::string("active (") + m_frameGeneration->name() +
-                                          ", " + std::to_string(m_generateCount + 1) + "x)";
+      m_generateCount =
+          std::min(m_presenterFrameGeneration, backend == Backend::Dlss ? std::max(capabilities.fgMultiFrameMax, 1u)
+                                                                        : FrameGeneration::maxGeneratedBy(backend));
+      m_frameGenerationStatus = !m_frameGenerationReady ? "starting"
+                                                        : std::string("active (") + m_frameGeneration->name() + ", " +
+                                                              std::to_string(m_generateCount + 1) + "x)";
     } catch (const std::exception &e) {
       m_frameGenerationFailed = true;
       m_frameGenerationStatus = e.what();
@@ -1201,8 +1211,8 @@ void RemixNativeRuntime::presented() {
     VkImage images[FrameGeneration::maxGenerated] = {};
     for (uint32_t i = 0; i < generated.count; ++i)
       images[i] = m_swapchainImages[generated.index[i]];
-    const auto inputs = m_pathTracer && !m_loading ? m_pathTracer->frameGeneration()
-                                                   : PathTracer::FrameGenerationInputs{};
+    const auto inputs =
+        m_pathTracer && !m_loading ? m_pathTracer->frameGeneration() : PathTracer::FrameGenerationInputs{};
     if (inputs.valid) {
       try {
         m_frameGeneration->record(command, real, images, generated.count, inputs);
@@ -1220,8 +1230,7 @@ void RemixNativeRuntime::presented() {
     m_duplicatedFrames += generated.count;
   }
 
-  VkResult RemixNativeRuntime::acquireImage(VkSemaphore semaphore, uint64_t timeoutNanoseconds,
-                                            uint32_t &imageIndex) {
+  VkResult RemixNativeRuntime::acquireImage(VkSemaphore semaphore, uint64_t timeoutNanoseconds, uint32_t &imageIndex) {
     // Polled: an acquire that waited inside the driver would hold the
     // swapchain against the presenter, whose presents are what frees images.
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::nanoseconds(timeoutNanoseconds);
@@ -1260,8 +1269,7 @@ void RemixNativeRuntime::presented() {
       if (elapsed < 250) {
         m_renderedInterval = m_renderedInterval > 0 ? m_renderedInterval * 0.9 + elapsed * 0.1 : elapsed;
         m_logHost.add(int64_t(elapsed * 1000));
-      }
-      else
+      } else
         m_renderedInterval = 0; // a pause: no pacing from before it
     }
     m_lastRenderedPresent = now;
@@ -1346,13 +1354,11 @@ void RemixNativeRuntime::presented() {
         if (left > 0)
           SDL_DelayPrecise(Uint64(left));
         // How far past its time this present starts (the log's worst case).
-        const auto late =
-            std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - deadline).count();
+        const auto late = std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - deadline).count();
         for (auto worstLate = m_presentLateMicroseconds.load();
              late > worstLate && !m_presentLateMicroseconds.compare_exchange_weak(worstLate, late);) {
         }
-        VkSetPresentConfigNV batch = {.sType = presentConfigType,
-                                      .numFramesPerBatch = generated.count + 1};
+        VkSetPresentConfigNV batch = {.sType = presentConfigType, .numFramesPerBatch = generated.count + 1};
         const VkResult result =
             presentOne(i < generated.count ? generated.index[i] : realIndex, metered && !i ? &batch : nullptr);
         if (metered && !i) {
@@ -1433,10 +1439,9 @@ void RemixNativeRuntime::presented() {
       sharedBarrier(buffer, true);
     // GPU-only targets, histories and acceleration structures stay ordered on
     // the queue. The CPU may record ahead using its completed submission slot.
-    const VkMemoryBarrier previousFrame{
-        .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
-        .srcAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
-        .dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT};
+    const VkMemoryBarrier previousFrame{.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+                                        .srcAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
+                                        .dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT};
     vkCmdPipelineBarrier(buffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 1,
                          &previousFrame, 0, nullptr, 0, nullptr);
     auto &breakdown = m_frameBreakdown;
@@ -1452,7 +1457,8 @@ void RemixNativeRuntime::presented() {
     raster.setSkyTarget(m_pathTracer ? m_pathTracer->skyPass() : VK_NULL_HANDLE);
     if (!m_loading) {
       gpu::GpuScope scope(buffer, "Raster uploads and skinning");
-      raster.prepare(buffer, m_backend == config::Backend::PathTrace, m_backend == config::Backend::ForwardPlus, forwardDrawOwner(m_forward.get()));
+      raster.prepare(buffer, m_backend == config::Backend::PathTrace, m_backend == config::Backend::ForwardPlus,
+                     forwardDrawOwner(m_forward.get()));
       breakdown.rasterPrepareMilliseconds = 1; // Replaced by the raster profile.
     }
     if (m_pathTracer && !m_loading) {
@@ -1490,8 +1496,7 @@ void RemixNativeRuntime::presented() {
     const bool hdr = m_hdrOutput.active();
     const auto target = hdr ? m_hdrOutput.backBuffer(m_frameIndex) : image;
     const auto targetFormat = hdr ? HdrOutput::backBufferFormat : m_swapchainFormat;
-    const auto layout =
-        m_headless || hdr ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    const auto layout = m_headless || hdr ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
     const auto &settings = m_profiles.current();
     const HdrNits nits{settings.hdrPeakNits, settings.hdrPaperWhiteNits, settings.hdrUiNits};
     // The HUD layer and the developer UI at their own brightness
@@ -1506,19 +1511,16 @@ void RemixNativeRuntime::presented() {
     };
     if (hdr)
       m_hdrOutput.prepare(buffer, m_frameIndex);
-    bool capture =
-        !m_loading && m_snapshotSupported && !m_snapshotAllocationFailed;
+    bool capture = !m_loading && m_snapshotSupported && !m_snapshotAllocationFailed;
     auto lapStart = std::chrono::steady_clock::now();
     auto lap = [&](double &phase) {
       const auto now = std::chrono::steady_clock::now();
       phase += std::chrono::duration<double, std::milli>(now - lapStart).count();
       lapStart = now;
     };
-    if (capture && (!m_lastFrame || !m_lastFrame->matches(targetFormat,
-                                                          m_swapchainExtent))) {
+    if (capture && (!m_lastFrame || !m_lastFrame->matches(targetFormat, m_swapchainExtent))) {
       try {
-        m_lastFrame = FrameSnapshot::create(
-            m_physicalDevice, m_device, targetFormat, m_swapchainExtent);
+        m_lastFrame = FrameSnapshot::create(m_physicalDevice, m_device, targetFormat, m_swapchainExtent);
       } catch (VkResult error) {
         if (error == VK_ERROR_DEVICE_LOST)
           throw;
@@ -1556,8 +1558,7 @@ void RemixNativeRuntime::presented() {
     lap(breakdown.uiMilliseconds);
     // The raster backend's NUMOS sky records its frame outside the pass.
     const bool rasterSky = !m_loading && !m_pathTracer && !m_forward && recordRasterSky(buffer, raster);
-    const bool rasterSkyHides =
-        rasterSky && m_profiles.current().sky.gameSky == config::SkySettings::GameSky::Hide;
+    const bool rasterSkyHides = rasterSky && m_profiles.current().sky.gameSky == config::SkySettings::GameSky::Hide;
     {
       // Includes the swapchain pass's clear and, when the GPU runs ahead of
       // presentation, its wait for the acquired image.

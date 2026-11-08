@@ -15,7 +15,7 @@ namespace {
     auto mesh = quad(r, 2, red);
     auto draw = instance(mesh);
     for (uint32_t category : {0u, uint32_t(REMIXAPI_INSTANCE_CATEGORY_BIT_THIRD_PERSON_PLAYER_MODEL),
-                                   uint32_t(REMIXAPI_INSTANCE_CATEGORY_BIT_THIRD_PERSON_PLAYER_BODY)}) {
+                              uint32_t(REMIXAPI_INSTANCE_CATEGORY_BIT_THIRD_PERSON_PLAYER_BODY)}) {
       auto player = draw;
       player.categoryFlags = category;
       r.drawInstance(player);
@@ -23,10 +23,9 @@ namespace {
               "Third-person player categories preserve reflection-only scene metadata");
       r.finishFrame();
     }
-    for (auto category : {REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_STATIC,
-                           REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_DYNAMIC,
-                           REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_SINGLE_OFFSET,
-                           REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_NO_OFFSET}) {
+    for (auto category :
+         {REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_STATIC, REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_DYNAMIC,
+          REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_SINGLE_OFFSET, REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_NO_OFFSET}) {
       auto decal = draw;
       decal.categoryFlags = category;
       r.drawInstance(decal);
@@ -54,12 +53,12 @@ namespace {
                   firstSurface == secondMesh->surfaces.front(),
               "Identical recreated geometry did not share payload independently of mesh lifetime");
       const auto changed = quad(r, 4, red, 0xff112233);
-      require(r.findMesh(4)->surfaces.front() != firstSurface,
-              "Changed vertex colours aliased an immutable surface");
+      require(r.findMesh(4)->surfaces.front() != firstSurface, "Changed vertex colours aliased an immutable surface");
       const auto skinned = quad(r, 5, red, 0xffffffff, true);
-      require(r.findMesh(5)->surfaces.front() != firstSurface,
-              "Changed skinning payload aliased rigid geometry");
-      r.destroyMesh(recreated); r.destroyMesh(changed); r.destroyMesh(skinned);
+      require(r.findMesh(5)->surfaces.front() != firstSurface, "Changed skinning payload aliased rigid geometry");
+      r.destroyMesh(recreated);
+      r.destroyMesh(changed);
+      r.destroyMesh(skinned);
       mesh = quad(r, 2, red);
     }
     remixapi_MeshInfo bad = {};
@@ -73,68 +72,103 @@ namespace {
     // carries storage lineage; destruction, disabling, or index changes end it.
     {
       remixapi_HardcodedVertex v[3]{};
-      v[1].position[0] = 1; v[2].position[1] = 1;
+      v[1].position[0] = 1;
+      v[2].position[1] = 1;
       v[0].normal[2] = 2;
       v[2].normal[0] = std::numeric_limits<float>::quiet_NaN();
-      uint32_t indices[]{0,1,2};
+      uint32_t indices[]{0, 1, 2};
       remixapi_MeshInfoSurfaceTriangles surface{};
-      surface.vertices_values = v; surface.vertices_count = 3;
-      surface.indices_values = indices; surface.indices_count = 3;
+      surface.vertices_values = v;
+      surface.vertices_count = 3;
+      surface.indices_values = indices;
+      surface.indices_count = 3;
       remixapi_MeshInfoUpdateEXT update{};
-      update.sType = REMIXAPI_STRUCT_TYPE_MESH_UPDATE_EXT; update.enabled = 1;
-      remixapi_MeshInfo info{}; info.sType = REMIXAPI_STRUCT_TYPE_MESH_INFO;
-      info.hash = 900; info.pNext = &update; info.surfaces_count = 1; info.surfaces_values = &surface;
+      update.sType = REMIXAPI_STRUCT_TYPE_MESH_UPDATE_EXT;
+      update.enabled = 1;
+      remixapi_MeshInfo info{};
+      info.sType = REMIXAPI_STRUCT_TYPE_MESH_INFO;
+      info.hash = 900;
+      info.pNext = &update;
+      info.surfaces_count = 1;
+      info.surfaces_values = &surface;
       remixapi_MeshHandle handle;
-      auto submit = [&] { r.createMesh(info,handle); r.drawInstance(instance(handle)); return r.draws().back().mesh; };
-      auto original = submit(); require(bool(original->updateStream), "Missing mesh update lineage");
-      require(original->surfaces[0]->vertices[0].normal[2] == 1 &&
-                  original->surfaces[0]->vertices[1].normal[2] == 0 &&
+      auto submit = [&] {
+        r.createMesh(info, handle);
+        r.drawInstance(instance(handle));
+        return r.draws().back().mesh;
+      };
+      auto original = submit();
+      require(bool(original->updateStream), "Missing mesh update lineage");
+      require(original->surfaces[0]->vertices[0].normal[2] == 1 && original->surfaces[0]->vertices[1].normal[2] == 0 &&
                   original->surfaces[0]->vertices[2].normal[0] == 0,
               "Authored normals were lost or legacy/invalid normals lost geometric fallback");
-      v[0].position[0] = .01f; auto next = submit();
+      v[0].position[0] = .01f;
+      auto next = submit();
       require(original != next && original->updateStream == next->updateStream &&
-              original->surfaces[0]->vertices[0].position[0] == 0, "Replacement mutated queued mesh or lost compatible lineage");
-      update.enabled = 2; rejected([&] { r.createMesh(info,handle); });
-      update.enabled = 1; require(submit() == next, "Invalid metadata changed current mesh");
-      std::swap(indices[1],indices[2]); auto topology = submit();
+                  original->surfaces[0]->vertices[0].position[0] == 0,
+              "Replacement mutated queued mesh or lost compatible lineage");
+      update.enabled = 2;
+      rejected([&] { r.createMesh(info, handle); });
+      update.enabled = 1;
+      require(submit() == next, "Invalid metadata changed current mesh");
+      std::swap(indices[1], indices[2]);
+      auto topology = submit();
       require(topology->updateStream != next->updateStream, "Index edit retained update lineage");
-      r.destroyMesh(handle); auto recreated = submit();
+      r.destroyMesh(handle);
+      auto recreated = submit();
       require(recreated->updateStream != topology->updateStream, "Destroyed hash retained update lineage");
-      update.enabled = 0; require(!submit()->updateStream, "Disabled update retained lineage");
+      update.enabled = 0;
+      require(!submit()->updateStream, "Disabled update retained lineage");
       remixapi_MeshInfoMotionEXT motion{};
-      motion.sType = REMIXAPI_STRUCT_TYPE_MESH_MOTION_EXT; motion.enabled = 1;
+      motion.sType = REMIXAPI_STRUCT_TYPE_MESH_MOTION_EXT;
+      motion.enabled = 1;
       update.pNext = &motion;
-      rejected([&] { r.createMesh(info,handle); }); // Motion needs storage lineage.
-      update.enabled = 1; motion.enabled = 2;
-      rejected([&] { r.createMesh(info,handle); });
+      rejected([&] { r.createMesh(info, handle); }); // Motion needs storage lineage.
+      update.enabled = 1;
+      motion.enabled = 2;
+      rejected([&] { r.createMesh(info, handle); });
       motion.enabled = 1;
       auto firstMotion = submit();
-      auto previousDraw = r.draws().back(); previousDraw.instanceId = 71;
+      auto previousDraw = r.draws().back();
+      previousDraw.instanceId = 71;
       remix::scene::TemporalHistory history;
-      history.begin({1,1},1,480,270); history.stage(previousDraw); history.commit();
-      history.begin({1,1},1,480,270);
-      v[0].position[0] = .2f; auto moved = submit();
-      auto movedDraw = r.draws().back(); movedDraw.instanceId = 71;
+      history.begin({1, 1}, 1, 480, 270);
+      history.stage(previousDraw);
+      history.commit();
+      history.begin({1, 1}, 1, 480, 270);
+      v[0].position[0] = .2f;
+      auto moved = submit();
+      auto movedDraw = r.draws().back();
+      movedDraw.instanceId = 71;
       require(moved != firstMotion && history.previousGeometry(movedDraw) &&
                   history.previousGeometry(movedDraw)->draw.surface->vertices[0].position[0] == .01f,
               "Explicit motion did not preserve last submitted immutable vertices");
       history.stage(movedDraw); // A discarded submission must not replace history.
-      history.begin({1,1},1,480,270);
+      history.begin({1, 1}, 1, 480, 270);
       require(history.previousGeometry(movedDraw)->draw.mesh == firstMotion,
               "Unsubmitted streamed update advanced history");
-      motion.enabled = 0; submit();
-      auto untracked = r.draws().back(); untracked.instanceId = 71;
+      motion.enabled = 0;
+      submit();
+      auto untracked = r.draws().back();
+      untracked.instanceId = 71;
       require(!history.previousGeometry(untracked), "Storage hint alone gained motion correspondence");
       motion.enabled = 1;
-      submit(); auto reenabled = r.draws().back(); reenabled.instanceId = 71;
+      submit();
+      auto reenabled = r.draws().back();
+      reenabled.instanceId = 71;
       require(!history.previousGeometry(reenabled), "Reenabled motion retained a disabled lifetime");
-      std::swap(indices[1],indices[2]); submit();
-      auto changedTopology = r.draws().back(); changedTopology.instanceId = 71;
+      std::swap(indices[1], indices[2]);
+      submit();
+      auto changedTopology = r.draws().back();
+      changedTopology.instanceId = 71;
       require(!history.previousGeometry(changedTopology), "Topology edit retained motion correspondence");
-      r.destroyMesh(handle); submit();
-      auto newLifetime = r.draws().back(); newLifetime.instanceId = 71;
+      r.destroyMesh(handle);
+      submit();
+      auto newLifetime = r.draws().back();
+      newLifetime.instanceId = 71;
       require(!history.previousGeometry(newLifetime), "Recreated hash retained motion correspondence");
-      r.destroyMesh(handle); r.finishFrame();
+      r.destroyMesh(handle);
+      r.finishFrame();
     }
     remixapi_CameraInfoParameterizedEXT params = {};
     params.sType = REMIXAPI_STRUCT_TYPE_CAMERA_INFO_PARAMETERIZED_EXT;
@@ -177,9 +211,7 @@ namespace {
     auto invalidEnvironment = [&] {
       rejected([&] { r.setupCamera(cam); });
       require(r.camera() == accepted && r.view() == acceptedView && r.projection() == acceptedProjection &&
-                  r.reverseDepth() == acceptedDepth &&
-                  r.skyRadiance() == acceptedSky &&
-                  r.temporalEpoch().world == 7,
+                  r.reverseDepth() == acceptedDepth && r.skyRadiance() == acceptedSky && r.temporalEpoch().world == 7,
               "Invalid environment changed accepted camera state");
     };
     for (float bad : {-1.f, std::numeric_limits<float>::infinity(), std::numeric_limits<float>::quiet_NaN()}) {
@@ -221,7 +253,10 @@ namespace {
       moving.sType = REMIXAPI_STRUCT_TYPE_CAMERA_INFO;
       remixapi_CameraInfoParameterizedEXT p{};
       p.sType = REMIXAPI_STRUCT_TYPE_CAMERA_INFO_PARAMETERIZED_EXT;
-      p.aspect = 16.f / 9; p.nearPlane = .01f; p.farPlane = 100000; p.fovYInDegrees = 60;
+      p.aspect = 16.f / 9;
+      p.nearPlane = .01f;
+      p.farPlane = 100000;
+      p.fovYInDegrees = 60;
       const float scale = 1 / std::tan(p.fovYInDegrees * .00872664625997165f);
       moving.projection[0][0] = scale / p.aspect;
       moving.projection[1][1] = scale;
@@ -235,9 +270,14 @@ namespace {
       for (unsigned frame = 0; frame < 128; ++frame) {
         const float angle = .01f * frame, c = std::cos(angle), s = std::sin(angle);
         p.position = {1024 + .3f * frame, -8192 + .7f * frame, 4096 - .1f * frame};
-        p.right = {c, 0, -s}; p.up = {0, 1, 0}; p.forward = {s, 0, c};
+        p.right = {c, 0, -s};
+        p.up = {0, 1, 0};
+        p.forward = {s, 0, c};
         auto view = remix::scene::identity();
-        view[0] = c; view[2] = s; view[8] = -s; view[10] = c;
+        view[0] = c;
+        view[2] = s;
+        view[8] = -s;
+        view[10] = c;
         view[12] = -c * p.position.x + s * p.position.z;
         view[13] = -p.position.y;
         view[14] = -s * p.position.x - c * p.position.z;
@@ -246,7 +286,8 @@ namespace {
         require(r.projection() == expected, "Camera motion changed the submitted projection");
       }
       moving.type = REMIXAPI_CAMERA_TYPE_SKY;
-      p.fovYInDegrees = 90; moving.projection[0][0] = .5f;
+      p.fovYInDegrees = 90;
+      moving.projection[0][0] = .5f;
       r.setupCamera(moving);
       require(r.projection() == expected, "Sky camera replaced the world projection");
       require(r.projection(REMIXAPI_CAMERA_TYPE_SKY) != expected, "Sky projection was not stored separately");
@@ -259,10 +300,15 @@ namespace {
       remixapi_CameraInfoParameterizedEXT depthParameters{};
       depthParameters.sType = REMIXAPI_STRUCT_TYPE_CAMERA_INFO_PARAMETERIZED_EXT;
       depthParameters.position = {0, 0, 4096};
-      depthParameters.right = {1, 0, 0}; depthParameters.up = {0, 1, 0};
-      depthParameters.forward = {0, 0, 1}; depthParameters.fovYInDegrees = 90;
-      depthParameters.aspect = 1; depthParameters.nearPlane = .05f; depthParameters.farPlane = 512;
-      for (int i = 0; i < 4; ++i) depthCamera.view[i][i] = 1;
+      depthParameters.right = {1, 0, 0};
+      depthParameters.up = {0, 1, 0};
+      depthParameters.forward = {0, 0, 1};
+      depthParameters.fovYInDegrees = 90;
+      depthParameters.aspect = 1;
+      depthParameters.nearPlane = .05f;
+      depthParameters.farPlane = 512;
+      for (int i = 0; i < 4; ++i)
+        depthCamera.view[i][i] = 1;
       depthCamera.view[3][2] = -4096;
       depthCamera.projection[0][0] = depthCamera.projection[1][1] = 1;
       depthCamera.projection[2][2] = 512.f / 511.95f;
@@ -281,22 +327,27 @@ namespace {
     r.reset();
     remixapi_LightInfoDistantEXT distant{};
     distant.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DISTANT_EXT;
-    distant.direction = {0, -1, 0}; distant.angularDiameterDegrees = .533f;
+    distant.direction = {0, -1, 0};
+    distant.angularDiameterDegrees = .533f;
     remixapi_LightInfo sunlight{};
-    sunlight.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO; sunlight.pNext = &distant;
-    sunlight.hash = 789; sunlight.radiance = {1, 1, 1};
+    sunlight.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
+    sunlight.pNext = &distant;
+    sunlight.hash = 789;
+    sunlight.radiance = {1, 1, 1};
     remixapi_LightHandle sun{};
-    r.createLight(sunlight, sun); r.drawLight(sun);
+    r.createLight(sunlight, sun);
+    r.drawLight(sun);
     const auto acceptedSun = r.light();
-    for (float invalidDiameter : {-1.f, 180.f, std::numeric_limits<float>::infinity(),
-                                   std::numeric_limits<float>::quiet_NaN()}) {
+    for (float invalidDiameter :
+         {-1.f, 180.f, std::numeric_limits<float>::infinity(), std::numeric_limits<float>::quiet_NaN()}) {
       distant.angularDiameterDegrees = invalidDiameter;
       rejected([&] { r.updateLight(sun, sunlight); });
       r.drawLight(sun);
       require(r.light() == acceptedSun, "Invalid sun diameter changed accepted light");
     }
     distant.angularDiameterDegrees = 0;
-    r.updateLight(sun, sunlight); r.drawLight(sun);
+    r.updateLight(sun, sunlight);
+    r.drawLight(sun);
     require(r.light().angularDiameterDegrees == 0, "Zero sun diameter did not retain hard shadows");
     remixapi_TextureInfo texture = {};
     texture.width = texture.height = 1;
@@ -335,8 +386,7 @@ namespace {
     texture.format = REMIXAPI_FORMAT_R16G16B16A16_SFLOAT_EXT;
     texture.data = halfHdr;
     texture.dataSize = sizeof(halfHdr);
-    require(remix::scene::decodeTexture(texture).hdrMips == linearHdr.hdrMips,
-            "Half and float HDR uploads agree");
+    require(remix::scene::decodeTexture(texture).hdrMips == linearHdr.hdrMips, "Half and float HDR uploads agree");
     texture.data = nullptr;
     rejected([&] { remix::scene::decodeTexture(texture); });
     // Tiny valid DDS fixtures cover channel masks, BC1/2/3, odd dimensions and truncation.
@@ -383,8 +433,7 @@ namespace {
       rejected([&] { remix::scene::loadTexture(path); });
     }
     const auto png = remix::scene::loadTexture(directory.parent_path() / "raster-colors.png");
-    require(png.width == 2 && png.height == 1 &&
-                png.mips[0] == std::vector<uint8_t>({255, 0, 0, 255, 0, 255, 0, 128}),
+    require(png.width == 2 && png.height == 1 && png.mips[0] == std::vector<uint8_t>({255, 0, 0, 255, 0, 255, 0, 128}),
             "PNG decoding");
     uint32_t pixel = 0xffffffff;
     r.registerUiTexture(77, 1, 1, REMIXAPI_FORMAT_R8G8B8A8_UNORM, &pixel, 4);
@@ -415,7 +464,7 @@ namespace {
     std::puts("Raster resource validation, lifetime, cameras and DDS decoding passed");
   }
 
-}
+} // namespace
 int main(int argc, char **argv) {
   require(argc == 2, "Supply scratch directory");
   const std::filesystem::path directory(argv[1]);

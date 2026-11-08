@@ -171,8 +171,7 @@ int main(int argc, char **argv) {
     ok(api.SetupCamera(&camera));
     ok(api.DrawLightInstance(sunlight));
     for (auto mesh : {background, foreground})
-      for (unsigned layer = 0; layer < (mesh == background ? 1u : layers);
-           ++layer) {
+      for (unsigned layer = 0; layer < (mesh == background ? 1u : layers); ++layer) {
         remixapi_InstanceIdentityEXT identity{};
         identity.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_IDENTITY_EXT;
         identity.instanceId = mesh == background ? 1 : 2 + layer;
@@ -187,9 +186,7 @@ int main(int argc, char **argv) {
         instance.doubleSided = 1;
         for (int i = 0; i < 3; ++i)
           instance.transform.matrix[i][i] = 1;
-        instance.transform.matrix[2][3] =
-            worldOffset +
-            (mesh == foreground ? foregroundOffset - .02f * layer : 0);
+        instance.transform.matrix[2][3] = worldOffset + (mesh == foreground ? foregroundOffset - .02f * layer : 0);
         ok(api.DrawInstance(&instance));
       }
     if (feedback) {
@@ -220,26 +217,30 @@ int main(int argc, char **argv) {
     for (const char *primary : {"raster", "ray"}) {
       config("primaryVisibility", primary);
       for (int alpha : {0, 128, 255}) {
-        for (unsigned i = 0; i < 4; ++i) pixels[4 * i + 3] = uint8_t(alpha);
+        for (unsigned i = 0; i < 4; ++i)
+          pixels[4 * i + 3] = uint8_t(alpha);
         ok(api.CreateTexture(&texture, &textureHandle));
         material(3, true, false);
-        for (unsigned count : {1u, 8u}) for (float position : {-4.f, 1.6f}) {
-          layers = count;
-          parameters.position.z = position;
-          for (unsigned i = 0; i < 12; ++i) frame();
-          std::vector<float> times;
-          for (unsigned i = 0; i < 40; ++i) {
-            frame();
-            remixapi_TracingStatisticsEXT stats{}; stats.structSize = sizeof(stats);
-            ok(remixapi_GetTracingStatisticsEXT(&stats));
-            require(stats.gpuTimingsAvailable, "Alpha benchmark requires GPU timestamps");
-            times.push_back(stats.gpuTraceMilliseconds);
+        for (unsigned count : {1u, 8u})
+          for (float position : {-4.f, 1.6f}) {
+            layers = count;
+            parameters.position.z = position;
+            for (unsigned i = 0; i < 12; ++i)
+              frame();
+            std::vector<float> times;
+            for (unsigned i = 0; i < 40; ++i) {
+              frame();
+              remixapi_TracingStatisticsEXT stats{};
+              stats.structSize = sizeof(stats);
+              ok(remixapi_GetTracingStatisticsEXT(&stats));
+              require(stats.gpuTimingsAvailable, "Alpha benchmark requires GPU timestamps");
+              times.push_back(stats.gpuTraceMilliseconds);
+            }
+            std::sort(times.begin(), times.end());
+            std::printf("%s,%d,%u,%g,%.6f,%.6f\n", primary, alpha, layers, position, times[times.size() / 2],
+                        times[size_t(times.size() * .95)]);
+            std::fflush(stdout);
           }
-          std::sort(times.begin(), times.end());
-          std::printf("%s,%d,%u,%g,%.6f,%.6f\n", primary, alpha, layers, position,
-                      times[times.size()/2], times[size_t(times.size()*.95)]);
-          std::fflush(stdout);
-        }
       }
     }
     ok(api.Shutdown());
@@ -268,16 +269,18 @@ int main(int argc, char **argv) {
       remixapi_ReconstructionDiagnosticsEXT d{};
       d.structSize = sizeof(d);
       ok(remixapi_GetReconstructionDiagnosticsEXT(&d));
-      require(d.activeBackend == (std::string(mode) == "dlss" ? 3u : 1u),
-              "Alpha test reconstruction fell back");
+      require(d.activeBackend == (std::string(mode) == "dlss" ? 3u : 1u), "Alpha test reconstruction fell back");
     }
-    std::printf("%s: black hole %.3f %.3f %.3f, colored hole %.3f %.3f %.3f, half %.3f %.3f %.3f, opaque %.3f %.3f %.3f\n",
-                label.c_str(), result[0][0], result[0][1], result[0][2], result[1][0], result[1][1],
-                result[1][2], result[2][0], result[2][1], result[2][2], result[3][0], result[3][1], result[3][2]);
+    std::printf(
+        "%s: black hole %.3f %.3f %.3f, colored hole %.3f %.3f %.3f, half %.3f %.3f %.3f, opaque %.3f %.3f %.3f\n",
+        label.c_str(), result[0][0], result[0][1], result[0][2], result[1][0], result[1][1], result[1][2], result[2][0],
+        result[2][1], result[2][2], result[3][0], result[3][1], result[3][2]);
     return result;
   };
   for (const char *primary : {"ray", "raster"}) {
-    pixels[3] = pixels[7] = 0; pixels[11] = 128; pixels[15] = 255;
+    pixels[3] = pixels[7] = 0;
+    pixels[11] = 128;
+    pixels[15] = 255;
     ok(api.CreateTexture(&texture, &textureHandle));
     layers = 1;
     config("primaryVisibility", primary);
@@ -289,13 +292,12 @@ int main(int argc, char **argv) {
     for (unsigned hole : {0u, 1u})
       for (float c : samples[hole])
         require(c > .95f, "Transparent decal RGB darkened the background");
-    require(samples[2][0] > .95f && std::abs(samples[2][1] - .734f) < .08f &&
-                std::abs(samples[2][2] - .734f) < .08f,
+    require(samples[2][0] > .95f && std::abs(samples[2][1] - .734f) < .08f && std::abs(samples[2][2] - .734f) < .08f,
             "Partial alpha does not follow source-over coverage");
-    require(samples[3][0] > .95f && samples[3][1] < .04f && samples[3][2] < .04f,
-            "Opaque decal lost foreground color");
+    require(samples[3][0] > .95f && samples[3][1] < .04f && samples[3][2] < .04f, "Opaque decal lost foreground color");
     if (paint && mode) {
-      for (unsigned i = 0; i < 160; ++i) frame();
+      for (unsigned i = 0; i < 160; ++i)
+        frame();
       remixapi_TracingStatisticsEXT stats{};
       stats.structSize = sizeof(stats);
       ok(remixapi_GetTracingStatisticsEXT(&stats));
@@ -304,7 +306,9 @@ int main(int argc, char **argv) {
     if (paint) {
       const auto originalPixels = std::to_array(pixels);
       for (unsigned i = 0; i < 4; ++i) {
-        pixels[4*i] = 255; pixels[4*i+1] = pixels[4*i+2] = 0; pixels[4*i+3] = 128;
+        pixels[4 * i] = 255;
+        pixels[4 * i + 1] = pixels[4 * i + 2] = 0;
+        pixels[4 * i + 3] = 128;
       }
       ok(api.CreateTexture(&texture, &textureHandle));
       material(3, true, true);
@@ -325,8 +329,7 @@ int main(int argc, char **argv) {
     blend.textureAlphaArg2Source = 3;
     blend.tFactor = 0x80ffffff;
     samples = capture(std::string(primary) + "-factor-alpha");
-    require(samples[3][0] > .95f && std::abs(samples[3][1] - .734f) < .08f &&
-                std::abs(samples[3][2] - .734f) < .08f,
+    require(samples[3][0] > .95f && std::abs(samples[3][1] - .734f) < .08f && std::abs(samples[3][2] - .734f) < .08f,
             "Texture-factor opacity was promoted to opaque");
     blend.textureAlphaOperation = 0;
     blend.textureAlphaArg1Source = blend.textureAlphaArg2Source = 0;
@@ -335,15 +338,16 @@ int main(int argc, char **argv) {
     blend.alphaTestCompareOp = 4;
     blend.alphaTestReferenceValue = 192;
     samples = capture(std::string(primary) + "-cutout");
-    for (unsigned hole : {0u, 1u, 2u}) for (float c : samples[hole])
-      require(c > .95f, "Blended cutout did not preserve its alpha comparison");
-    require(samples[3][0] > .95f && samples[3][1] < .04f && samples[3][2] < .04f,
-            "Cutout removed the opaque texel");
+    for (unsigned hole : {0u, 1u, 2u})
+      for (float c : samples[hole])
+        require(c > .95f, "Blended cutout did not preserve its alpha comparison");
+    require(samples[3][0] > .95f && samples[3][1] < .04f && samples[3][2] < .04f, "Cutout removed the opaque texel");
     blend.alphaTestEnabled = 0;
     feedback = true;
     samples = capture(std::string(primary) + "-feedback");
-    for (const auto &sample : samples) for (float c : sample)
-      require(c > .95f, "Blended draw incorrectly occluded raster feedback");
+    for (const auto &sample : samples)
+      for (float c : sample)
+        require(c > .95f, "Blended draw incorrectly occluded raster feedback");
     feedback = false;
     material(2, false, false);
     material(3, true, false);
@@ -359,21 +363,24 @@ int main(int argc, char **argv) {
     material(3, true, false, 0.f);
     samples = capture(std::string(primary) + "-zero-opacity-tint");
     if (paint) {
-      for (const auto &sample : samples) for (float c : sample)
-        require(c > .95f, "Zero-opacity paint tinted its receiver");
+      for (const auto &sample : samples)
+        for (float c : sample)
+          require(c > .95f, "Zero-opacity paint tinted its receiver");
     } else {
-    require(samples[0][0] < .04f && samples[0][1] < .04f && samples[0][2] < .04f,
-            "Zero-opacity black tinted sheet was incorrectly skipped");
-    require(samples[1][0] < .04f && samples[1][1] > .95f && samples[1][2] < .04f,
-            "Zero-opacity colored sheet lost its transmission tint");
+      require(samples[0][0] < .04f && samples[0][1] < .04f && samples[0][2] < .04f,
+              "Zero-opacity black tinted sheet was incorrectly skipped");
+      require(samples[1][0] < .04f && samples[1][1] > .95f && samples[1][2] < .04f,
+              "Zero-opacity colored sheet lost its transmission tint");
     }
-    for (unsigned i = 0; i < 4; ++i) pixels[4 * i + 3] = 0;
+    for (unsigned i = 0; i < 4; ++i)
+      pixels[4 * i + 3] = 0;
     ok(api.CreateTexture(&texture, &textureHandle));
     material(3, true, false);
     layers = 40;
     samples = capture(std::string(primary) + "-empty-stack");
-    for (const auto &sample : samples) for (float c : sample)
-      require(c > .95f, "Empty alpha layers consumed the transparent traversal budget");
+    for (const auto &sample : samples)
+      for (float c : sample)
+        require(c > .95f, "Empty alpha layers consumed the transparent traversal budget");
   }
   ok(api.Shutdown());
   std::puts("Alpha coverage preserves black/colored holes, partial opacity and shadow transmission");

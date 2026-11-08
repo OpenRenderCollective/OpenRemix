@@ -101,8 +101,7 @@ namespace remix::usd {
              (mask && mask->role != REMIXAPI_INSTANCE_MASK_CUT_EXT);
     }
 
-    void record(const scene::InstanceDescription &d, const std::vector<scene::Matrix> &locals,
-                const float *origin) {
+    void record(const scene::InstanceDescription &d, const std::vector<scene::Matrix> &locals, const float *origin) {
       CaptureScene::Instance instance;
       instance.mesh = d.mesh;
       instance.materialOverride = d.materialOverride;

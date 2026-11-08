@@ -33,8 +33,7 @@ namespace remix::usd {
         {"beam", "rtx.beamTextures", REMIXAPI_INSTANCE_CATEGORY_BIT_BEAM},
         {"decal_Static", "rtx.decalTextures", REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_STATIC},
         {"decal_dynamic", "rtx.dynamicDecalTextures", REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_DYNAMIC},
-        {"decal_single_offset", "rtx.singleOffsetDecalTextures",
-         REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_SINGLE_OFFSET},
+        {"decal_single_offset", "rtx.singleOffsetDecalTextures", REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_SINGLE_OFFSET},
         {"decal_no_offset", "rtx.nonOffsetDecalTextures", REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_NO_OFFSET},
         {"alpha_blend_to_cutout", "rtx.cutoutTextures", REMIXAPI_INSTANCE_CATEGORY_BIT_ALPHA_BLEND_TO_CUTOUT},
         {"terrain", "rtx.terrainTextures", REMIXAPI_INSTANCE_CATEGORY_BIT_TERRAIN},
@@ -45,8 +44,7 @@ namespace remix::usd {
          REMIXAPI_INSTANCE_CATEGORY_BIT_THIRD_PERSON_PLAYER_BODY},
         {"ignore_baked_lighting", "rtx.ignoreBakedLightingTextures",
          REMIXAPI_INSTANCE_CATEGORY_BIT_IGNORE_BAKED_LIGHTING},
-        {"ignore_alpha_channel", "rtx.ignoreAlphaOnTextures",
-         REMIXAPI_INSTANCE_CATEGORY_BIT_IGNORE_ALPHA_CHANNEL},
+        {"ignore_alpha_channel", "rtx.ignoreAlphaOnTextures", REMIXAPI_INSTANCE_CATEGORY_BIT_IGNORE_ALPHA_CHANNEL},
         {"ignore_transparency_layer", "rtx.ignoreTransparencyLayerTextures",
          REMIXAPI_INSTANCE_CATEGORY_BIT_IGNORE_TRANSPARENCY_LAYER},
         {"particle_emitter", "rtx.particleEmitterTextures", REMIXAPI_INSTANCE_CATEGORY_BIT_PARTICLE_EMITTER},
@@ -194,8 +192,7 @@ namespace remix::usd {
     for (const auto &layer : stage->GetLayerStack(false)) {
       const auto data = layer->GetCustomLayerData();
       auto kind = data.find("lightspeed_layer_type");
-      if (kind == data.end() || !kind->second.IsHolding<std::string>() ||
-          kind->second.Get<std::string>() != "capture")
+      if (kind == data.end() || !kind->second.IsHolding<std::string>() || kind->second.Get<std::string>() != "capture")
         continue;
       auto name = data.find("lightspeed_exe_name");
       if (name != data.end() && name->second.IsHolding<std::string>())

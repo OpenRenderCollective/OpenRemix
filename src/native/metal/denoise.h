@@ -17,10 +17,10 @@ namespace remix::metal::denoise {
   public:
     Renderer();
     ~Renderer();
-    // As denoise::Renderer::initialize (no split local lighting on Metal).
+    // As denoise::Renderer::initialize.
     // rayReconstruction: the MetalFX denoiser's guides (RR images) at full size.
     void initialize(id<MTLDevice> device, uint32_t width, uint32_t height, bool reblur, bool sigma, bool local,
-                    bool localDenoise, bool validation, bool localReconstruction, bool foregroundDenoise,
+                    bool localDenoise, bool split, bool validation, bool localReconstruction, bool foregroundDenoise,
                     bool rayReconstruction = false);
     void selectFrame(uint32_t slot);
     id<MTLTexture> image(ImageSlot slot) const;

@@ -129,8 +129,7 @@ int main(int argc, char **argv) {
     ok(api.CreateMaterial(&info, &result));
     return result;
   };
-  auto quad = [&](uint64_t hash, remixapi_MaterialHandle material, float x0, float x1, float y0, float y1,
-                  float z) {
+  auto quad = [&](uint64_t hash, remixapi_MaterialHandle material, float x0, float x1, float y0, float y1, float z) {
     remixapi_HardcodedVertex vertices[4]{};
     for (unsigned i = 0; i < 4; ++i) {
       vertices[i].position[0] = i == 0 || i == 3 ? x0 : x1;

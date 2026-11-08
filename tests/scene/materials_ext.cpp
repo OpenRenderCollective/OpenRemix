@@ -231,8 +231,7 @@ namespace {
     const uint64_t retained = r.createRetained(info);
     r.finishFrame();
     r.drawRetained(nullptr);
-    require(r.draws().size() == 2 && r.draws()[0].material == otherMaterial &&
-                r.draws()[1].material == otherMaterial,
+    require(r.draws().size() == 2 && r.draws()[0].material == otherMaterial && r.draws()[1].material == otherMaterial,
             "Retained and immediate overrides disagree");
     r.destroyRetained(&retained, 1);
     // A null handle keeps the mesh's own material.
@@ -471,8 +470,7 @@ namespace {
     const auto made = drawn(r, quad(r, 0x62, handle));
     const auto &rough = made->remap[0];
     require(made->normalEncoding == 4 && rough.channel == 3 && rough.invert && rough.curve == 1 &&
-                rough.exponent == 2 && rough.bias == 1 && rough.scale == 149 && made->remap[1].identity() &&
-                made->pbr,
+                rough.exponent == 2 && rough.bias == 1 && rough.scale == 149 && made->remap[1].identity() && made->pbr,
             "PBR remap fields");
     remap.roughness.channel = 4;
     rejected([&] { r.createMaterial(info, handle); });
@@ -851,8 +849,7 @@ namespace {
     remixapi_MaterialHandle handle{};
     r.createMaterial(m, handle);
     const auto material = drawn(r, quad(r, 0x95, handle));
-    require(material->gradient && material->gradient->gradient && material->gradient->detail,
-            "Gradient map: parsed");
+    require(material->gradient && material->gradient->gradient && material->gradient->detail, "Gradient map: parsed");
     const auto &map = *material->gradient;
     require(!material->texture->pixels.srgb && material->texture->hash == 0x91,
             "Gradient map: the albedo is not read as stored");
@@ -862,8 +859,7 @@ namespace {
     require(map.gradientSampler->texture == map.gradient && map.gradientSampler->filter == 1 &&
                 map.gradientSampler->wrapU == 0 && map.gradientSampler->wrapV == 0,
             "Gradient map: gradient sampler");
-    require(map.detailSampler->texture == map.detail && map.detailSampler->wrapU == 1,
-            "Gradient map: detail sampler");
+    require(map.detailSampler->texture == map.detail && map.detailSampler->wrapU == 1, "Gradient map: detail sampler");
     // The burn is read as an albedo texture is (sRGB-decoded), with the
     // material's filter, repeating.
     require(map.burn && map.burn->hash == 0x96 && map.burn->pixels.srgb && map.burnStrength == .25f,
@@ -891,8 +887,7 @@ namespace {
     // Without a burn texture: none (its strength still validated).
     g.burnTexture = name("");
     r.createMaterial(m, handle);
-    require(!drawn(r, quad(r, 0x95, handle))->gradient->burn &&
-                !drawn(r, quad(r, 0x95, handle))->gradient->burnSampler,
+    require(!drawn(r, quad(r, 0x95, handle))->gradient->burn && !drawn(r, quad(r, 0x95, handle))->gradient->burnSampler,
             "Gradient map: empty burn");
     g.burnTexture = nullptr;
     r.createMaterial(m, handle);
@@ -1065,7 +1060,8 @@ namespace {
     // A zero-initialized colour is no colour under a profile.
     sss.subsurfaceTransmittanceColor = {0, 0, 0};
     r.createMaterial(info, handle);
-    require(drawn(r, quad(r, 0xb3, handle))->subsurface.transmittance[1] == 1, "A profile's unset colour keeps the albedo");
+    require(drawn(r, quad(r, 0xb3, handle))->subsurface.transmittance[1] == 1,
+            "A profile's unset colour keeps the albedo");
     sss.subsurfaceTransmittanceColor = {1, 1, 1};
     // OpenRemix's weight.
     remixapi_MaterialSubsurfaceWeightEXT weight{};
@@ -1112,16 +1108,18 @@ namespace {
     info.albedoTexture = name("0xb9");
     sss.subsurfaceTransmittanceTexture = name("0xb9");
     r.createMaterial(info, handle);
-    require(!drawn(r, quad(r, 0xbb, handle))->subsurface.transmittanceTexture, "The albedo map as the transmittance map");
+    require(!drawn(r, quad(r, 0xbb, handle))->subsurface.transmittanceTexture,
+            "The albedo map as the transmittance map");
     sss.subsurfaceTransmittanceTexture = name("0xba");
     r.createMaterial(info, handle);
-    require(drawn(r, quad(r, 0xbc, handle))->subsurface.transmittanceTexture != nullptr, "A transmittance map of its own");
+    require(drawn(r, quad(r, 0xbc, handle))->subsurface.transmittanceTexture != nullptr,
+            "A transmittance map of its own");
   }
 } // namespace
 
-  // A dynamic texture with generated mips: an update makes each level again
-  // only where it reads the changed texels, and the region stays level 0's.
-  void scopedMipUpdate() {
+// A dynamic texture with generated mips: an update makes each level again
+// only where it reads the changed texels, and the region stays level 0's.
+void scopedMipUpdate() {
     remix::NativeResources r;
     remixapi_TextureInfoGenerateMipsEXT mips{};
     mips.sType = REMIXAPI_STRUCT_TYPE_TEXTURE_GENERATE_MIPS_EXT;
@@ -1170,10 +1168,10 @@ namespace {
     require(u.dirty[0] == 0 && u.dirty[1] == 0 && u.dirty[2] == 1 && u.dirty[3] == 1, "Scoped mips: level 0 region");
     require(p.mips[1][0] == 64 && p.mips[1][4] == 0 && p.mips[1][12] == 0, "Scoped mips: level 1 texels");
     require(p.mips[2][0] == 16, "Scoped mips: level 2 texel");
-  }
+}
 
-  // A float dynamic texture (an HDR sky): RGBA32F texels updated from halves.
-  void floatDynamicTexture() {
+// A float dynamic texture (an HDR sky): RGBA32F texels updated from halves.
+void floatDynamicTexture() {
     remix::NativeResources r;
     remixapi_TextureInfoDynamicEXT dynamic{};
     dynamic.sType = REMIXAPI_STRUCT_TYPE_TEXTURE_DYNAMIC_EXT;
@@ -1208,8 +1206,8 @@ namespace {
     remixapi_MaterialHandle mh{};
     r.createMaterial(m, mh);
     const auto t = drawn(r, quad(r, 0x73, mh))->texture;
-    require(t->dynamic && t->pixels.hdrMips.size() == 1 && t->pixels.hdrMips[0][0] == 4 &&
-                t->pixels.mips[0][0] == 255 && t->pixels.mips[0][1] == 127,
+  require(t->dynamic && t->pixels.hdrMips.size() == 1 && t->pixels.hdrMips[0][0] == 4 && t->pixels.mips[0][0] == 255 &&
+              t->pixels.mips[0][1] == 127,
             "Float dynamic texture");
     // The second texel turns to (0.25, 2, 0, 1) in halves.
     const uint16_t halves[4] = {0x3400, 0x4000, 0x0000, 0x3c00};
@@ -1232,7 +1230,7 @@ namespace {
     remixapi_TextureHandle plain{};
     r.createTexture(info, plain);
     rejected([&] { r.updateTexture(plain, 0, 0, 1, 1, REMIXAPI_FORMAT_R16G16B16A16_SFLOAT_EXT, halves, 8); });
-  }
+}
 
 int main() {
   reflectionBinding();

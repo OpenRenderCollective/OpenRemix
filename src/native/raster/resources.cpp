@@ -119,8 +119,7 @@ namespace remix {
       std::memcpy(data.data() + spriteOffset, source->sprite.data(), source->sprite.size() * sizeof(SpriteVertex));
     MeshGpu value{source,
                   geometryBuffer(data.data(), data.size(),
-                                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-                                 command),
+                                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, command),
                   offset, spriteOffset};
     return meshes.emplace(source.get(), std::move(value)).first->second;
   }
@@ -165,8 +164,8 @@ namespace remix {
     // at full size. One with mips (generated again by every update) is
     // uploaded whole, every level.
     const bool hdr = p.hdrMips.size() == 1;
-    if (x1 <= x0 || y1 <= y0 || !value.data || p.compressed || p.hdrMips.size() > 1 ||
-        value.data->width != p.width || value.data->height != p.height || x1 > p.width || y1 > p.height)
+    if (x1 <= x0 || y1 <= y0 || !value.data || p.compressed || p.hdrMips.size() > 1 || value.data->width != p.width ||
+        value.data->height != p.height || x1 > p.width || y1 > p.height)
       return;
     const uint32_t texel = hdr ? 16 : 4;
     const auto *texels = hdr ? reinterpret_cast<const uint8_t *>(p.hdrMips[0].data()) : p.mips[0].data();
@@ -200,8 +199,8 @@ namespace remix {
     const VkBufferImageCopy copy = {.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
                                     .imageOffset = {int32_t(x0), int32_t(y0), 0},
                                     .imageExtent = {width, height, 1}};
-    vkCmdCopyBufferToImage(command, uploads.back()->buffer, value.data->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                           1, &copy);
+    vkCmdCopyBufferToImage(command, uploads.back()->buffer, value.data->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
+                           &copy);
     barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
     barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
     barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
@@ -224,7 +223,7 @@ namespace remix {
     for (uint32_t level = 0; level < levels; ++level) {
       if (level)
         scene::nextMipRegion(x0, y0, x1, y1, width, height), width = std::max(1u, width / 2),
-            height = std::max(1u, height / 2);
+                                                             height = std::max(1u, height / 2);
       regions.push_back({x0, y0, x1, y1, width});
       total += size_t(x1 - x0) * (y1 - y0) * 4;
     }
@@ -375,16 +374,16 @@ namespace remix {
                                     .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                                     .image = image,
                                     .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, levels, 0, 1}};
-    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0,
-                         nullptr, 0, nullptr, 1, &barrier);
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0,
+                         nullptr, 1, &barrier);
     vkCmdCopyBufferToImage(command, uploads.back()->buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, levels,
                            copies.data());
     barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
     barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
     barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
     barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0,
-                         nullptr, 0, nullptr, 1, &barrier);
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0,
+                         nullptr, 1, &barrier);
   }
 
   RasterRenderer::Gpu::TextureGpu &RasterRenderer::Gpu::compressedTexture(const std::shared_ptr<Texture> &source,
@@ -421,10 +420,10 @@ namespace remix {
       return textures.emplace(source.get(), std::move(value)).first->second;
     }
     // BC4 is sampled as (r, 0, 0, 1); the decoded path replicates r into rgb.
-    const VkComponentMapping components =
-        c.block == 4 ? VkComponentMapping{VK_COMPONENT_SWIZZLE_R, VK_COMPONENT_SWIZZLE_R, VK_COMPONENT_SWIZZLE_R,
-                                          VK_COMPONENT_SWIZZLE_ONE}
-                     : VkComponentMapping{};
+    const VkComponentMapping components = c.block == 4
+                                              ? VkComponentMapping{VK_COMPONENT_SWIZZLE_R, VK_COMPONENT_SWIZZLE_R,
+                                                                   VK_COMPONENT_SWIZZLE_R, VK_COMPONENT_SWIZZLE_ONE}
+                                              : VkComponentMapping{};
     const VkDeviceSize blockSize = (c.block == 1 || c.block == 4) ? 8 : 16;
     auto levelBytes = [&](uint32_t level) {
       const uint32_t w = std::max(1u, p.width >> level), h = std::max(1u, p.height >> level);
@@ -441,8 +440,8 @@ namespace remix {
     std::unique_ptr<Image> allocated;
     for (;;) {
       try {
-        allocated = image(std::max(1u, p.width >> skip), std::max(1u, p.height >> skip), c.levels - skip, format,
-                          false, flags, components);
+        allocated = image(std::max(1u, p.width >> skip), std::max(1u, p.height >> skip), c.levels - skip, format, false,
+                          flags, components);
         break;
       } catch (VkResult result) {
         if (!outOfMemory(result))
@@ -480,8 +479,7 @@ namespace remix {
     return textures.emplace(source.get(), std::move(value)).first->second;
   }
 
-  VkDescriptorSet RasterRenderer::Gpu::material(const std::shared_ptr<Material> &source,
-                                                VkCommandBuffer command) {
+  VkDescriptorSet RasterRenderer::Gpu::material(const std::shared_ptr<Material> &source, VkCommandBuffer command) {
     if (auto it = materials.find(source.get()); it != materials.end()) {
       return it->second->set;
     }
@@ -556,8 +554,7 @@ namespace remix {
   }
 
   VkDescriptorImageInfo RasterRenderer::sampledTexture(const std::shared_ptr<Material> &source,
-                                                       const std::shared_ptr<Texture> &image,
-                                                       VkCommandBuffer command) {
+                                                       const std::shared_ptr<Texture> &image, VkCommandBuffer command) {
     m_gpu->material(source, command);
     auto &texture = m_gpu->texture(image, command);
     return {m_gpu->materials.at(source.get())->sampler, texture.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};

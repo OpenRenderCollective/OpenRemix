@@ -45,8 +45,7 @@ namespace remix::trace::detail {
     if (!material.normalTexture || material.normalEncoding != 5)
       return false;
     const unsigned count = material.scrollLayers == 3 ? 6 : 2;
-    return std::any_of(material.scroll, material.scroll + count,
-                       [](float rate) { return rate != 0; });
+    return std::any_of(material.scroll, material.scroll + count, [](float rate) { return rate != 0; });
   }
   inline bool hasScrollingTint(const scene::Material &material) {
     return material.texture && scene::measuredSheet(material).has_value() &&
@@ -131,17 +130,19 @@ namespace remix::trace::detail {
     }
     if (material.normalEncoding == 5) {
       for (unsigned i = 0; i < 3; ++i)
-        decodeOut[1 + i] = detail::halfBits(material.scroll[2 * i]) | detail::halfBits(material.scroll[2 * i + 1]) << 16;
+        decodeOut[1 + i] = detail::halfBits(material.scroll[2 * i]) | detail::halfBits(material.scroll[2 * i + 1])
+                                                                          << 16;
       // Two-channel maps (BC5) reconstruct Z here too (bit 0), as other encodings do:
       // without it Z read 0 and the water's normals lay flat along its surface.
       normal = (material.scrollLayers == 3 ? 48 : 16) |
                uint32_t(material.normalTexture && material.normalTexture->pixels.twoChannel);
       return;
     }
-    normal = material.normalEncoding == 1   ? 2
-             : material.normalEncoding == 4 ? 8
-                                            : (material.normalEncoding == 3 ? 4 : 0) |
-                                                  uint32_t(material.normalTexture && material.normalTexture->pixels.twoChannel);
+    normal = material.normalEncoding == 1 ? 2
+             : material.normalEncoding == 4
+                 ? 8
+                 : (material.normalEncoding == 3 ? 4 : 0) |
+                       uint32_t(material.normalTexture && material.normalTexture->pixels.twoChannel);
   }
   // A material's thin film (scene::Material::iridescence), but for its
   // thickness map's descriptor (filmMaps[3] bits 0-30, set by assign).
@@ -181,6 +182,35 @@ namespace remix::trace::detail {
     maps[3] = halfBits(g.detailV[0]) | halfBits(g.detailV[1]) << 16;
     const uint32_t strength = halfBits(std::clamp(g.burnStrength, 0.f, 1.f));
     burnOut = burn && strength ? burn | strength << 16 : 0;
+  }
+  // remixapi_MaterialPortalRimEXT (MaterialDecode::portalRim) in the film's
+  // fields, which such a material lacks (film[0] stays 0): film[1] the colour
+  // scale; maps[0] the ramp's texture slot. The noise is the albedo texture
+  // (scene.glsl portalRim).
+  inline void portalRimFields(const scene::PortalRim &rim, uint32_t ramp, float film[4], uint32_t maps[4]) {
+    film[0] = 0;
+    film[1] = rim.colorScale;
+    film[2] = film[3] = 0;
+    maps[0] = ramp;
+    maps[1] = maps[2] = maps[3] = 0;
+  }
+  // remixapi_MaterialSolidEnergyEXT (MaterialDecode::solidEnergy) in the
+  // film's fields, which such a material lacks (film[0] stays 0), as half
+  // floats: film[1] the intensity and the sway's period, film[2] the base's
+  // scroll, film[3] detail 1's; maps[0] and maps[1] the details' texture
+  // slots, maps[2] detail 2's scroll, maps[3] the sway's amplitude
+  // (scene.glsl solidEnergy).
+  inline void solidEnergyFields(const scene::SolidEnergy &e, uint32_t detail1, uint32_t detail2, float film[4],
+                                uint32_t maps[4]) {
+    auto pair = [](float a, float b) { return halfBits(a) | halfBits(b) << 16; };
+    const uint32_t words[3] = {pair(e.intensity, e.detail1Sway[1]), pair(e.baseScroll[0], e.baseScroll[1]),
+                               pair(e.detail1Scroll[0], e.detail1Scroll[1])};
+    film[0] = 0;
+    std::memcpy(&film[1], words, sizeof(words));
+    maps[0] = detail1;
+    maps[1] = detail2;
+    maps[2] = pair(e.detail2Scroll[0], e.detail2Scroll[1]);
+    maps[3] = pair(e.detail1Sway[0], 0);
   }
   // remixapi_InstanceInfoWoundCutEXT: a surface's wound record, an entry of
   // the surface table after the frame's surfaces that no instance points to
@@ -222,10 +252,12 @@ namespace remix::trace::detail {
   template <class View> uint64_t bindPose(const View &view, const scene::Draw &draw) {
     if (!draw.surface->bonesPerVertex || !draw.bones)
       return view.vertices.at(draw.surfaceIndex)->address;
-    if constexpr (requires { view.skinSource; view.skinMesh; }) {
+    if constexpr (requires {
+                    view.skinSource;
+                    view.skinMesh;
+                  }) {
       if (draw.surfaceIndex < view.skinSource.size() && view.skinSource[draw.surfaceIndex] &&
-          !view.skinMesh.owner_before(draw.mesh) && !draw.mesh.owner_before(view.skinMesh) &&
-          !view.skinMesh.expired())
+          !view.skinMesh.owner_before(draw.mesh) && !draw.mesh.owner_before(view.skinMesh) && !view.skinMesh.expired())
         return view.skinSource[draw.surfaceIndex]->address;
     }
     return 0;
@@ -296,7 +328,7 @@ namespace remix::trace {
     scene::Matrix model;
     uint32_t surfaceIndex = 0, count = 0;
     bool blended = false;
-    bool viewModel = false; // drawn after the scene, in front of it (recordPrimary)
+    bool viewModel = false;      // drawn after the scene, in front of it (recordPrimary)
     bool reflectionOnly = false; // not in the G-buffer (Draw::reflectionOnly)
   };
   // Per-material surface fields; the texture slots are frame indices.
@@ -364,8 +396,7 @@ namespace remix::trace {
         std::vector<Segment> segments;
         size_t segment = 0, record = 0, offset = 0, position = 0;
         void normalize() {
-          while (segment < segments.size() &&
-                 (record >= segments[segment].count || !segments[segment].width)) {
+          while (segment < segments.size() && (record >= segments[segment].count || !segments[segment].width)) {
             ++segment;
             record = offset = 0;
           }
@@ -675,7 +706,8 @@ namespace remix::trace {
         const auto optical = sheetMaterial(*entry.material);
         if (optical.parameters[1] <= 0)
           continue;
-        if (result.empty()) result.resize(requestCount());
+        if (result.empty())
+          result.resize(requestCount());
         result[i] = optical;
       }
       return result;
@@ -736,17 +768,17 @@ namespace remix::trace {
       bool built = false, traced = false;
       const View *view = nullptr;
       const void *geometry = nullptr;
-      std::vector<TraceSurface> surfaces;                      // one per geometry group
-      std::vector<uint16_t> material;                          // local material of each entry
-      std::vector<uint16_t> source;                            // unit surface of each entry
-      std::vector<PrimaryDraw> primary;                        // surfaceIndex relative to the unit
-      InstanceInput input;                                     // customIndex relative to the unit
+      std::vector<TraceSurface> surfaces; // one per geometry group
+      std::vector<uint16_t> material;     // local material of each entry
+      std::vector<uint16_t> source;       // unit surface of each entry
+      std::vector<PrimaryDraw> primary;   // surfaceIndex relative to the unit
+      InstanceInput input;                // customIndex relative to the unit
       std::vector<uint8_t> staticBytes;
       uint8_t scene[sceneInstanceBytes] = {};
       std::vector<std::shared_ptr<scene::Material>> materials; // distinct, in first-use order
       Flags flags;
       uint64_t contentDigest = 0;
-      std::shared_ptr<const scene::StaticUnitState> state;     // recorded for its history
+      std::shared_ptr<const scene::StaticUnitState> state; // recorded for its history
       // Temporal fields are the steady ones: the committed frame traced this
       // very state, so they change only with the unit or the history.
       bool temporalFinal = false;
@@ -767,8 +799,8 @@ namespace remix::trace {
       f.decal = surface.decal;
       // Unused textures/layers do not advance the procedural material clock.
       f.usesAnimationTime = detail::hasScrollingNormals(material) || detail::hasScrollingTint(material);
-      const bool rough = !material.pbr || material.roughnessTexture ||
-                         material.roughness >= REMIX_SHARC_PBR_MIN_ROUGHNESS;
+      const bool rough =
+          !material.pbr || material.roughnessTexture || material.roughness >= REMIX_SHARC_PBR_MIN_ROUGHNESS;
       const bool opaque = !surface.blend.enabled, fixed = surface.classification == 0;
       f.receivers = fixed && opaque && rough;
       f.sharpReceivers = fixed && opaque && !rough;
@@ -783,7 +815,8 @@ namespace remix::trace {
       detail::materialFields(material, entry.pbr, entry.decode, entry.maps[3]);
       entry.sheet = sheetMaterial(material);
       detail::filmFields(material, entry.film, entry.filmMaps);
-      detail::subsurfaceFields(material, entry.subsurface, entry.subsurfaceColor, entry.subsurfaceThin, entry.subsurfaceMaps);
+      detail::subsurfaceFields(material, entry.subsurface, entry.subsurfaceColor, entry.subsurfaceThin,
+                               entry.subsurfaceMaps);
       const auto decode = scene::materialDecode(material);
       std::copy_n(material.emission, 3, entry.emission);
       entry.emission[3] = decode.selfIlluminationScale;
@@ -817,17 +850,22 @@ namespace remix::trace {
       if (optical.parameters[1] > 0)
         append(&optical, sizeof(optical));
       detail::filmFields(material, value.film, value.filmMaps);
-      detail::subsurfaceFields(material, value.subsurface, value.subsurfaceColor, value.subsurfaceThin, value.subsurfaceMaps);
+      detail::subsurfaceFields(material, value.subsurface, value.subsurfaceColor, value.subsurfaceThin,
+                               value.subsurfaceMaps);
       const auto decode = scene::materialDecode(material);
       // The roughness, metallic and normal maps, the film's thickness map, then
       // the subsurface maps.
       const auto &sss = material.subsurface;
-      const std::shared_ptr<scene::Texture> *textures[] = {
-          &material.roughnessTexture, &material.metallicTexture, &material.normalTexture,
-          &material.iridescence.thicknessTexture, &sss.transmittanceTexture, &sss.thicknessTexture,
-          sss.diffusionProfile ? &sss.radiusTexture : &sss.singleScatteringAlbedoTexture};
+      const std::shared_ptr<scene::Texture> *textures[] = {&material.roughnessTexture,
+                                                           &material.metallicTexture,
+                                                           &material.normalTexture,
+                                                           &material.iridescence.thicknessTexture,
+                                                           &sss.transmittanceTexture,
+                                                           &sss.thicknessTexture,
+                                                           sss.diffusionProfile ? &sss.radiusTexture
+                                                                                : &sss.singleScatteringAlbedoTexture};
       uint32_t filmMap = 0;
-      uint32_t *slotsOut[] = {&value.pbrTextures[0], &value.pbrTextures[1], &value.pbrTextures[2], &filmMap,
+      uint32_t *slotsOut[] = {&value.pbrTextures[0],    &value.pbrTextures[1],    &value.pbrTextures[2],   &filmMap,
                               &value.subsurfaceMaps[0], &value.subsurfaceMaps[1], &value.subsurfaceMaps[2]};
       for (unsigned i = 0; i < 7; ++i) {
         const auto &map = *textures[i];
@@ -850,19 +888,27 @@ namespace remix::trace {
         *slotsOut[i] = index->second + 1;
       }
       value.filmMaps[3] |= filmMap;
-      // A gradient map's textures, each through its own sampler (a sampler
-      // material's albedo descriptor), in the film's fields.
+      // A gradient map's or portal rim's textures, each through its own
+      // sampler (a sampler material's albedo descriptor), in the film's fields.
+      auto sampled = [&](const std::shared_ptr<scene::Material> &sampler) {
+        if (count() >= limit)
+          env.tooManyObjects();
+        const auto index = uint32_t(count());
+        requests.push_back({sampler, nullptr, DescriptorRequest::Albedo});
+        const auto samplerFingerprint = sampler->texture->fingerprint();
+        append(&samplerFingerprint, sizeof(samplerFingerprint));
+        return index;
+      };
+      if (material.portalRim)
+        detail::portalRimFields(*material.portalRim, sampled(material.portalRim->rampSampler), value.film,
+                                value.filmMaps);
+      if (material.solidEnergy) {
+        const auto &e = *material.solidEnergy;
+        const uint32_t detail1 = sampled(e.detail1Sampler), detail2 = sampled(e.detail2Sampler);
+        detail::solidEnergyFields(e, detail1, detail2, value.film, value.filmMaps);
+      }
       if (material.gradient) {
         const auto &g = *material.gradient;
-        auto sampled = [&](const std::shared_ptr<scene::Material> &sampler) {
-          if (count() >= limit)
-            env.tooManyObjects();
-          const auto index = uint32_t(count());
-          requests.push_back({sampler, nullptr, DescriptorRequest::Albedo});
-          const auto samplerFingerprint = sampler->texture->fingerprint();
-          append(&samplerFingerprint, sizeof(samplerFingerprint));
-          return index;
-        };
         const uint32_t gradient = sampled(g.gradientSampler);
         const uint32_t detail = g.detailSampler ? sampled(g.detailSampler) + 1 : 0;
         const uint32_t burn = g.burnSampler && g.burnStrength > 0 ? sampled(g.burnSampler) + 1 : 0;
@@ -939,11 +985,11 @@ namespace remix::trace {
     // record per surface (recordIndex: the first's table index; cut: the
     // cut texture's slot; woundVertex: its first wound vertex); null leaves
     // it uncut.
-    void fill(const Inputs &in, Span instance, const View &view, uint64_t temporalId,
-              const MaterialSlots *const *slots, TraceSurface *surfaceOut, size_t surfaceBase,
-              PrimaryDraw *primaryOut, InstanceInput &input, uint8_t *staticCursor, uint8_t *dynamicCursor,
-              uint8_t *sceneCursor, FactorCache &factor, TraceSurface *recordOut = nullptr, size_t recordIndex = 0,
-              uint32_t cut = 0, size_t woundVertex = 0) const {
+    void fill(const Inputs &in, Span instance, const View &view, uint64_t temporalId, const MaterialSlots *const *slots,
+              TraceSurface *surfaceOut, size_t surfaceBase, PrimaryDraw *primaryOut, InstanceInput &input,
+              uint8_t *staticCursor, uint8_t *dynamicCursor, uint8_t *sceneCursor, FactorCache &factor,
+              TraceSurface *recordOut = nullptr, size_t recordIndex = 0, uint32_t cut = 0,
+              size_t woundVertex = 0) const {
       const auto &draw = instance[0].draw;
       const auto &geometry = *view.geometry;
       const auto &model = draw.model;
@@ -970,21 +1016,20 @@ namespace remix::trace {
       float scale = 0;
       for (int c = 0; c < 3; ++c)
         scale = std::max(scale, std::hypot(model[c * 4], model[c * 4 + 1], model[c * 4 + 2]));
-      input = {draw.instanceId, geometry.accel->address, draw.instanceIndex, uint32_t(surfaceBase), model,
-               geometry.diagonal * scale, geometry.revision,
-               std::none_of(instance.begin(), instance.end(),
-                            [](const auto &surface) { return surface.draw.doubleSided; }),
-               // Wholly blended instances may be left out of shadow and bounce rays
-               // (skipBlendedSecondaryRays); surfaces drawing caustics stay in them, the
-               // light through them carrying the caustics.
-               std::all_of(instance.begin(), instance.end(),
-                           [](const auto &surface) {
-                             return surface.draw.blend.enabled && !surface.draw.decal &&
-                                    !surface.draw.material->caustics;
-                           })};
+      input = {
+          draw.instanceId, geometry.accel->address, draw.instanceIndex, uint32_t(surfaceBase), model,
+          geometry.diagonal * scale, geometry.revision,
+          std::none_of(instance.begin(), instance.end(), [](const auto &surface) { return surface.draw.doubleSided; }),
+          // Wholly blended instances may be left out of shadow and bounce rays
+          // (skipBlendedSecondaryRays); surfaces drawing caustics stay in them, the
+          // light through them carrying the caustics.
+          std::all_of(instance.begin(), instance.end(), [](const auto &surface) {
+            return surface.draw.blend.enabled && !surface.draw.decal && !surface.draw.material->caustics;
+          })};
       input.viewModel = draw.viewModel;
       input.reflectionOnly = draw.reflectionOnly;
-      input.decal = std::all_of(instance.begin(), instance.end(), [](const auto &surface) { return surface.draw.decal; });
+      input.decal =
+          std::all_of(instance.begin(), instance.end(), [](const auto &surface) { return surface.draw.decal; });
       // A wound cut is tested at every candidate: never opaque in traversal.
       const bool wounded = recordOut && draw.wound;
       input.noOpaque = wounded;
@@ -1017,8 +1062,8 @@ namespace remix::trace {
         if (wounded) {
           value.textureState[1] = uint32_t(recordIndex);
           const auto vertices = uint32_t(surface.surface->vertices.size());
-          *recordOut++ = detail::woundFields(*draw.wound, detail::bindPose(view, surface), cut, vertices,
-                                             uint32_t(woundVertex));
+          *recordOut++ =
+              detail::woundFields(*draw.wound, detail::bindPose(view, surface), cut, vertices, uint32_t(woundVertex));
           ++recordIndex;
           woundVertex += vertices;
         }
@@ -1047,15 +1092,14 @@ namespace remix::trace {
         // alpha arguments naming the texture (1) read 1 instead (0), and
         // candidate tests sample nothing for them.
         const auto alphaArg = [&](uint32_t arg) { return material.gradient && arg == 1 ? 0u : arg; };
-        value.state[0] = (b.colorOp & 3u) | (b.colorOp & 4u) << 10 | (b.alphaOpTexture & 4u) << 11 |
-                         b.color1 << 2 | b.color2 << 4 | (b.alphaOpTexture & 3u) << 6 | alphaArg(b.alpha1) << 8 |
+        value.state[0] = (b.colorOp & 3u) | (b.colorOp & 4u) << 10 | (b.alphaOpTexture & 4u) << 11 | b.color1 << 2 |
+                         b.color2 << 4 | (b.alphaOpTexture & 3u) << 6 | alphaArg(b.alpha1) << 8 |
                          alphaArg(b.alpha2) << 10;
         value.state[1] = surface.ignoreAlpha ? 7 : surface.alphaOverride ? surface.compare : material.compare;
         const float reference = surface.alphaOverride ? surface.reference : material.reference;
         std::memcpy(&value.state[2], &reference, 4);
-        value.state[3] = uint32_t(surface.ignoreAlpha) | uint32_t(b.enabled) << 1 |
-                         uint32_t(surface.doubleSided) << 2 | uint32_t(material.transmission) << 3 |
-                         uint32_t(draw.classification == 0) << 4 |
+        value.state[3] = uint32_t(surface.ignoreAlpha) | uint32_t(b.enabled) << 1 | uint32_t(surface.doubleSided) << 2 |
+                         uint32_t(material.transmission) << 3 | uint32_t(draw.classification == 0) << 4 |
                          uint32_t(material.translucent && !surface.decal) << 5 | uint32_t(surface.decal) << 6 |
                          (surface.decal ? detail::decalMode(b) : 0u) << 7 |
                          // Bit 11: light through it draws caustics.
@@ -1068,6 +1112,9 @@ namespace remix::trace {
                          // remixapi_InstanceInfoMaskEXT CUT: the group (bits 16-21) whose
                          // coverage hides the surface from camera rays.
                          uint32_t(surface.cutGroup) << 16 |
+                         // Bits 22-25: the ray portal index + 1 it opens (0: none;
+                         // scene/portals.h).
+                         uint32_t(material.rayPortal) << 22 |
                          // remixapi_InstanceInfoCameraCullingEXT (bits 9-10): camera rays
                          // skip its back faces / its parts in clusters the camera cannot see.
                          uint32_t(surface.cameraCull & 3u) << 9;
@@ -1078,8 +1125,8 @@ namespace remix::trace {
           write(staticCursor, value.material, sizeof(value.material));
           write(staticCursor, &entry.sheet, sizeof(entry.sheet));
         }
-        *primaryOut++ = {model, uint32_t(next), uint32_t(surface.surface->indices.size()), b.enabled, draw.viewModel,
-                         draw.reflectionOnly};
+        *primaryOut++ = {model,     uint32_t(next), uint32_t(surface.surface->indices.size()),
+                         b.enabled, draw.viewModel, draw.reflectionOnly};
         do {
           const auto &group = geometry.groups.at(groupIndex++);
           value.triangleMap = group.triangleMap ? geometry.input->address + group.triangleMap : 0;
@@ -1255,8 +1302,7 @@ namespace remix::trace {
         if (slot >= m_units.size() || slot >= units.size() || !units[slot].live)
           continue;
         auto &unit = m_units[slot];
-        if (!unit.built || !unit.traced || unit.generation != units[slot].generation ||
-            (unit.temporalFinal && !all))
+        if (!unit.built || !unit.traced || unit.generation != units[slot].generation || (unit.temporalFinal && !all))
           continue;
         const auto &source = units[slot];
         TraceSurface *kept = patch && slot < m_current->first.size() && m_current->first[slot] != ~0u
@@ -1265,15 +1311,16 @@ namespace remix::trace {
         for (size_t i = 0; i < unit.surfaces.size(); ++i) {
           auto &value = unit.surfaces[i];
           temporal(in, source.surfaces[unit.source[i]].draw, source.id, value);
-          if (kept && (kept[i].previousVertices != value.previousVertices ||
-                       kept[i].previousModel != value.previousModel)) {
+          if (kept &&
+              (kept[i].previousVertices != value.previousVertices || kept[i].previousModel != value.previousModel)) {
             kept[i].previousVertices = value.previousVertices;
             kept[i].previousModel = value.previousModel;
             patched = true;
           }
         }
         m_statistics.temporalSurfaces += unit.surfaces.size();
-        unit.temporalFinal = steady && unit.state && statics.committedState(source.id, source.index) == unit.state.get();
+        unit.temporalFinal =
+            steady && unit.state && statics.committedState(source.id, source.index) == unit.state.get();
         if (!unit.temporalFinal)
           m_temporalPending.push_back(slot);
       }
@@ -1449,8 +1496,8 @@ namespace remix::trace {
           if (!entry) {
             auto [slots, firstUse] = m_tailMaterials.try_emplace(surface.material.get());
             if (firstUse)
-              slots->second = assign(surface.material, t.requests, t.materialBytes, m_tailMaps, base,
-                                     in.textureLimit, env, p ? &p->maps : nullptr);
+              slots->second = assign(surface.material, t.requests, t.materialBytes, m_tailMaps, base, in.textureLimit,
+                                     env, p ? &p->maps : nullptr);
             entry = &slots->second;
           }
           m_surfaceSlots[slot++] = entry;
@@ -1461,16 +1508,16 @@ namespace remix::trace {
         if (const auto &wound = instance[0].draw.wound) {
           auto [slots, firstUse] = m_tailMaterials.try_emplace(wound->sampler.get());
           if (firstUse)
-            slots->second = assign(wound->sampler, t.requests, t.materialBytes, m_tailMaps, base, in.textureLimit,
-                                   env, p ? &p->maps : nullptr);
+            slots->second = assign(wound->sampler, t.requests, t.materialBytes, m_tailMaps, base, in.textureLimit, env,
+                                   p ? &p->maps : nullptr);
           m_woundSlots[index] = slots->second.albedo;
           const auto *bytes = reinterpret_cast<const uint8_t *>(wound->ellipsoids);
           t.materialBytes.insert(t.materialBytes.end(), bytes, bytes + sizeof(wound->ellipsoids));
           const float scalars[] = {wound->mappingScale, wound->secondBlend, wound->threshold};
           bytes = reinterpret_cast<const uint8_t *>(scalars);
           t.materialBytes.insert(t.materialBytes.end(), bytes, bytes + sizeof(scalars));
-          for (const float *values : {wound->projectionScale, wound->projectionBias, wound->cutScaleBias[0],
-                                      wound->cutScaleBias[1]}) {
+          for (const float *values :
+               {wound->projectionScale, wound->projectionBias, wound->cutScaleBias[0], wound->cutScaleBias[1]}) {
             bytes = reinterpret_cast<const uint8_t *>(values);
             t.materialBytes.insert(t.materialBytes.end(), bytes, bytes + 4 * sizeof(float));
           }
@@ -1491,8 +1538,9 @@ namespace remix::trace {
           m_geometryDigest = scene::hashBytes(&view.contentDigest, sizeof(view.contentDigest), m_geometryDigest);
         if (surfaceCount > 0xffffffu)
           env.tooManyObjects();
-        m_layouts[index] = {surfaceCount, primaryCount, inputCount[draw.classification]++, staticBytes,
-                            dynamicBytes, slot, recordCount, woundVertices};
+        m_layouts[index] = {surfaceCount, primaryCount, inputCount[draw.classification]++,
+                            staticBytes,  dynamicBytes, slot,
+                            recordCount,  woundVertices};
         if (draw.wound) {
           recordCount += instance.size();
           for (const auto &preparedSurface : instance)
@@ -1583,7 +1631,7 @@ namespace remix::trace {
     size_t m_tailInstances = 0;
     std::vector<const View *> m_views, m_tailViews;
     std::vector<const MaterialSlots *> m_surfaceSlots;
-    std::vector<uint32_t> m_woundSlots; // per tail instance: its cut texture's slot
+    std::vector<uint32_t> m_woundSlots;    // per tail instance: its cut texture's slot
     std::pair<size_t, size_t> m_records{}; // the frame's wound records: first table index, count
     size_t m_woundVertices = 0;
     std::vector<Layout> m_layouts;

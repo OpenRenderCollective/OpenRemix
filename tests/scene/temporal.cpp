@@ -23,8 +23,7 @@ int main() {
   a.model[12] = 10;
   history.begin({1, 1}, 7, 1920, 1080);
   require(!history.reset(), "Rigid motion reset history");
-  require(history.previous(a) && history.previous(a)->draw.model[12] == 0,
-          "Previous submitted transform was lost");
+  require(history.previous(a) && history.previous(a)->draw.model[12] == 0, "Previous submitted transform was lost");
   history.stage(a);
   auto unsubmitted = a;
   unsubmitted.model[12] = 20;

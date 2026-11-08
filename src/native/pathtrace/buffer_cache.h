@@ -18,50 +18,57 @@ namespace remix::trace::detail {
     VkDeviceSize size = 0;
     uint32_t type = 0;
     void *mapped = nullptr;
-    std::vector<std::pair<VkDeviceSize,VkDeviceSize>> free;
+    std::vector<std::pair<VkDeviceSize, VkDeviceSize>> free;
     size_t liveRanges = 0;
     ~BufferMemory() {
       const auto began = std::chrono::steady_clock::now();
-      MemoryRelease::free(device,memory); // (its mapping with it)
-      remix::trace::g_slowestBlockFree = std::max(remix::trace::g_slowestBlockFree,
-          std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - began).count());
+      MemoryRelease::free(device, memory); // (its mapping with it)
+      remix::trace::g_slowestBlockFree =
+          std::max(remix::trace::g_slowestBlockFree,
+                   std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - began).count());
     }
     std::optional<VkDeviceSize> take(VkDeviceSize bytes, VkDeviceSize alignment) {
       for (size_t i = 0; i < free.size(); ++i) {
-        const auto begin = free[i].first, end = begin+free[i].second;
-        const auto offset = (begin+alignment-1)&~(alignment-1);
-        if (offset > end || bytes > end-offset) continue;
+        const auto begin = free[i].first, end = begin + free[i].second;
+        const auto offset = (begin + alignment - 1) & ~(alignment - 1);
+        if (offset > end || bytes > end - offset)
+          continue;
         // Reserve at allocation time so releasing a live range cannot allocate
         // or throw, including from a Buffer destructor during error cleanup.
-        const auto capacity = free.size()+liveRanges+2;
-        if (free.capacity() < capacity) free.reserve(std::max(capacity,free.capacity()*2));
-        const auto after = offset+bytes;
+        const auto capacity = free.size() + liveRanges + 2;
+        if (free.capacity() < capacity)
+          free.reserve(std::max(capacity, free.capacity() * 2));
+        const auto after = offset + bytes;
         if (offset > begin) {
-          free[i].second = offset-begin;
-          if (after < end) free.insert(free.begin()+i+1,{after,end-after});
-        } else if (after < end) free[i] = {after,end-after};
-        else free.erase(free.begin()+i);
+          free[i].second = offset - begin;
+          if (after < end)
+            free.insert(free.begin() + i + 1, {after, end - after});
+        } else if (after < end)
+          free[i] = {after, end - after};
+        else
+          free.erase(free.begin() + i);
         ++liveRanges;
         return offset;
       }
       return {};
     }
     void release(VkDeviceSize offset, VkDeviceSize bytes) noexcept {
-      auto next = std::lower_bound(free.begin(),free.end(),offset,
-          [](const auto &range, VkDeviceSize at) { return range.first < at; });
-      if (next != free.begin() && std::prev(next)->first+std::prev(next)->second == offset) {
+      auto next = std::lower_bound(free.begin(), free.end(), offset,
+                                   [](const auto &range, VkDeviceSize at) { return range.first < at; });
+      if (next != free.begin() && std::prev(next)->first + std::prev(next)->second == offset) {
         auto previous = std::prev(next);
         previous->second += bytes;
-        if (next != free.end() && offset+bytes == next->first) {
+        if (next != free.end() && offset + bytes == next->first) {
           previous->second += next->second;
           free.erase(next);
         }
-      } else if (next != free.end() && offset+bytes == next->first) {
-        next->first = offset; next->second += bytes;
-      } else free.insert(next,{offset,bytes});
+      } else if (next != free.end() && offset + bytes == next->first) {
+        next->first = offset;
+        next->second += bytes;
+      } else
+        free.insert(next, {offset, bytes});
       --liveRanges;
     }
-
   };
   struct BufferAllocation {
     VkDevice device = VK_NULL_HANDLE;
@@ -80,7 +87,7 @@ namespace remix::trace::detail {
       if (handle)
         vkDestroyBuffer(device, handle, nullptr);
       if (block)
-        block->release(memoryOffset,allocationSize);
+        block->release(memoryOffset, allocationSize);
       else
         MemoryRelease::free(device, memory); // (its mapping with it)
       const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - began).count();
@@ -112,8 +119,8 @@ namespace remix::trace::detail {
       size_t best = m_count;
       for (size_t i = 0; i < m_count; ++i) {
         const auto &entry = m_entries[i];
-        if (entry.usage == usage && entry.host == host && entry.size >= size &&
-            entry.size - size <= size && (best == m_count || entry.size < m_entries[best].size))
+        if (entry.usage == usage && entry.host == host && entry.size >= size && entry.size - size <= size &&
+            (best == m_count || entry.size < m_entries[best].size))
           best = i;
       }
       if (best == m_count)
@@ -133,13 +140,21 @@ namespace remix::trace::detail {
         size_t entries = 0;
         for (size_t i = 0; i < m_count; ++i)
           entries += m_entries[i].block == block;
-        if (block.use_count() != long(entries+1)) continue; // A submitted/live buffer owns it.
-        if (block->size <= byteLimit-idle) { idle += block->size; continue; }
+        if (block.use_count() != long(entries + 1))
+          continue; // A submitted/live buffer owns it.
+        if (block->size <= byteLimit - idle) {
+          idle += block->size;
+          continue;
+        }
         for (size_t i = 0; i < m_count;) {
-          if (m_entries[i].block != block) { ++i; continue; }
+          if (m_entries[i].block != block) {
+            ++i;
+            continue;
+          }
           m_bytes -= m_entries[i].allocationSize;
           m_entries[i].destroy();
-          m_entries[i] = m_entries[--m_count]; m_entries[m_count] = {};
+          m_entries[i] = m_entries[--m_count];
+          m_entries[m_count] = {};
         }
       }
     }

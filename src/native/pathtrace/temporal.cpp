@@ -27,7 +27,8 @@ namespace remix {
           indirectPass.mode = mode == '0' ? 0u : mode == '1' ? 2u : 1u;
         if (std::fgetc(file) == ',') {
           const int placement = std::fgetc(file);
-          if (placement == '0' || placement == '1') deviceLocalScene = placement == '1';
+          if (placement == '0' || placement == '1')
+            deviceLocalScene = placement == '1';
         }
         std::fclose(file);
       }
@@ -37,12 +38,11 @@ namespace remix {
   void PathTracer::Gpu::configureIndirect(Frame &frame, const TraceOptions &options, bool querySharc) {
     indirectPass.active = false;
     // Mode 1 (auto): only where the combined kernel's registers made it pay.
-    const bool planned =
-        indirectPlanned(options) &&
-        !(indirectPass.mode == 1 &&
-          (rrActive() || !denoiser || !postSplit || !splitLightingActive || !localIlluminationActive ||
-           (options.pbrLocalReuse && options.localDirectClamp == 0 && options.indirectClamp == 0) || querySharc ||
-           options.separateLocalLighting != 3));
+    const bool planned = indirectPlanned(options) &&
+                         !(indirectPass.mode == 1 &&
+                           (rrActive() || !denoiser || !postSplit || !splitLightingActive || !localIlluminationActive ||
+                            (options.pbrLocalReuse && options.localDirectClamp == 0 && options.indirectClamp == 0) ||
+                            querySharc || options.separateLocalLighting != 3));
     // Consumer base pipelines exist once the transport does.
     if (!planned && !indirectPass.results)
       return;
@@ -55,7 +55,8 @@ namespace remix {
       const VkDeviceSize bytes = VkDeviceSize(extent.width) * extent.height * 16;
       if (!indirectPass.results || indirectPass.results->size < bytes) {
         auto next = buffer(bytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, false);
-        if (indirectPass.results) retiredBuffers.push_back(std::move(indirectPass.results));
+        if (indirectPass.results)
+          retiredBuffers.push_back(std::move(indirectPass.results));
         indirectPass.results = std::move(next);
       }
       frame.indirectResults = indirectPass.results->address;
@@ -68,8 +69,10 @@ namespace remix {
                                   denoiser ? temporalLayout : layout, &indirectPass.pipeline, true}});
       indirectPass.active = true;
     } catch (VkResult error) {
-      if (error == VK_ERROR_DEVICE_LOST) throw;
-      if (error == VK_NOT_READY) return; // compiling: inline tracing meanwhile
+      if (error == VK_ERROR_DEVICE_LOST)
+        throw;
+      if (error == VK_NOT_READY)
+        return; // compiling: inline tracing meanwhile
       indirectPass.failed = true;
       std::fprintf(stderr, "Separate indirect pass unavailable (%d); using inline tracing\n", int(error));
     }
@@ -134,11 +137,11 @@ namespace remix {
   }
   void PathTracer::Gpu::beginFrame(const TraceOptions &options) {
     // A changed variant setting: prewarm the scene's variants for its value.
-    const bool variantSettings =
-        lightingOptions.shadowEarlyOut != options.shadowEarlyOut || lightingOptions.localGuiding != options.localGuiding ||
-        lightingOptions.separateLocalLighting != options.separateLocalLighting ||
-        std::max(lightingOptions.emissiveCandidates, lightingOptions.sphereCandidates) !=
-            std::max(options.emissiveCandidates, options.sphereCandidates);
+    const bool variantSettings = lightingOptions.shadowEarlyOut != options.shadowEarlyOut ||
+                                 lightingOptions.localGuiding != options.localGuiding ||
+                                 lightingOptions.separateLocalLighting != options.separateLocalLighting ||
+                                 std::max(lightingOptions.emissiveCandidates, lightingOptions.sphereCandidates) !=
+                                     std::max(options.emissiveCandidates, options.sphereCandidates);
     lightingOptions = options;
     // After this frame's own requests (rendering.cpp), so they get workers first.
     prewarmPending |= variantSettings;
@@ -146,8 +149,7 @@ namespace remix {
     const auto &caps = postCapabilities;
     const bool reblur = options.denoiser && !options.accumulate && !options.sharcDebug && caps.reblurShSupported;
     const bool taa = options.taa && !upscaler && !options.accumulate && !options.sharcDebug && caps.taaSupported;
-    bool sigma = options.sigma && !options.accumulate && !options.sharcDebug &&
-                       sigmaCapable;
+    bool sigma = options.sigma && !options.accumulate && !options.sharcDebug && sigmaCapable;
     bool local = !rrActive() && localSeen && (reblur || taa || sigma || upscaler);
     const bool localLimited = local && !localCapable[sigma];
     if (localLimited) {
@@ -161,8 +163,8 @@ namespace remix {
     const bool split = local && options.separateLocalLighting != 0 && (preparedEmissive || options.restir) &&
                        denoise::localSupported(physical, sigma, true);
     const bool combinedDirect = split && options.separateLocalLighting == 3;
-    if (reblur != postReblur || taa != postTaa || sigma != postSigmaRequested ||
-        local != postLocalRequested || localDenoise != postLocalDenoiseRequested || split != postSplitRequested ||
+    if (reblur != postReblur || taa != postTaa || sigma != postSigmaRequested || local != postLocalRequested ||
+        localDenoise != postLocalDenoiseRequested || split != postSplitRequested ||
         combinedDirect != postCombinedDirect) {
       if (!preparing)
         check(vkDeviceWaitIdle(device));
@@ -182,9 +184,10 @@ namespace remix {
     if (localLimited)
       postFailure = "Insufficient descriptors for separate local and sun signals; SIGMA is disabled";
     if (local && options.separateLocalLighting && (preparedEmissive || options.restir) && !split)
-      postFailure = options.separateLocalLighting == 3
-          ? "Insufficient descriptors for a separate combined-light pass; inline combined lighting active"
-          : "Insufficient descriptors for separate torch/emissive histories; combined local lighting active";
+      postFailure =
+          options.separateLocalLighting == 3
+              ? "Insufficient descriptors for a separate combined-light pass; inline combined lighting active"
+              : "Insufficient descriptors for separate torch/emissive histories; combined local lighting active";
     if ((options.denoiser && !caps.reblurShSupported) || (options.taa && !caps.taaSupported))
       postFailure = caps.unavailableReason;
     if ((!reblur && !taa && !sigma && !upscaler && !options.neuralUplift) || postAttempted)
@@ -204,10 +207,8 @@ namespace remix {
       bool compiling = false;
       try {
         auto next = std::make_unique<denoise::Renderer>();
-        next->initialize(physical, device, extent, reblur, queueFamily,
-                         postSigma, postLocal, postLocalDenoise, postSplit,
-                         rrActive(), options.validation,
-                         options.separateLocalLighting == 1,
+        next->initialize(physical, device, extent, reblur, queueFamily, postSigma, postLocal, postLocalDenoise,
+                         postSplit, rrActive(), options.validation, options.separateLocalLighting == 1,
                          rrActive() && caps.reblurShSupported);
         VkDescriptorSetLayout layouts[] = {setLayout, next->inputLayout()};
         // The same push ranges as `layout`, so both families' dispatches
@@ -217,14 +218,13 @@ namespace remix {
                                       .pSetLayouts = layouts,
                                       .pushConstantRangeCount = uint32_t(std::size(pushRanges)),
                                       .pPushConstantRanges = pushRanges};
-        check(pipeline::createPipelineLayout(device, &li, nullptr,
-                                             &temporalLayout));
+        check(pipeline::createPipelineLayout(device, &li, nullptr, &temporalLayout));
         // One batch: the temporal lighting passes compile concurrently.
         const bool separateIndirect = indirectPlanned(options);
-        const TemporalTargets targets{&indirectPass.pipeline, &temporalCompute, &temporalTransparencyCompute,
-                                      &frontGuidesCompute, &psrCompute, &singleTemporalTransparencyCompute,
-                                      &sheetTemporalCompute, &splitDirectCompute, &restir.initial,
-                                      &restir.spatial, &confidenceCompute};
+        const TemporalTargets targets{&indirectPass.pipeline, &temporalCompute,    &temporalTransparencyCompute,
+                                      &frontGuidesCompute,    &psrCompute,         &singleTemporalTransparencyCompute,
+                                      &sheetTemporalCompute,  &splitDirectCompute, &restir.initial,
+                                      &restir.spatial,        &confidenceCompute};
         awaitLightingPipelines(temporalRequests(postSplit, postSigma, postLocal, postSplit && options.restir, reblur,
                                                 separateIndirect, targets));
         prewarmTemporalConfigurations(separateIndirect);
@@ -274,10 +274,13 @@ namespace remix {
     auto allowed = [&](upscale::Backend b) { return !(failedBackends & (1u << uint32_t(b))); };
     if (requestedBackend == upscale::Backend::Fsr31 || requestedBackend == upscale::Backend::Xess)
       return allowed(requestedBackend) ? requestedBackend : upscale::Backend::Native;
-    if (requestedBackend == upscale::Backend::Native || !ngx) return upscale::Backend::Native;
+    if (requestedBackend == upscale::Backend::Native || !ngx)
+      return upscale::Backend::Native;
     const auto caps = ngx->capabilities();
-    if (rrRequested && caps.rr && allowed(upscale::Backend::DlssRr)) return upscale::Backend::DlssRr;
-    if (caps.sr && allowed(upscale::Backend::DlssSr)) return upscale::Backend::DlssSr;
+    if (rrRequested && caps.rr && allowed(upscale::Backend::DlssRr))
+      return upscale::Backend::DlssRr;
+    if (caps.sr && allowed(upscale::Backend::DlssSr))
+      return upscale::Backend::DlssSr;
     return upscale::Backend::Native;
   }
   TraceOptions PathTracer::Gpu::effectiveOptions(TraceOptions options) const {
@@ -293,10 +296,8 @@ namespace remix {
     }
     return options;
   }
-  void PathTracer::prepareConfiguration(const TraceOptions &options,
-                                        bool perspective, bool local, bool emissive,
-                                        uint32_t failedBackends,
-                                        const std::string &failure) {
+  void PathTracer::prepareConfiguration(const TraceOptions &options, bool perspective, bool local, bool emissive,
+                                        uint32_t failedBackends, const std::string &failure) {
     auto &g = *m_gpu;
     g.preparedPerspective = perspective;
     g.preparedLocal = local;
@@ -331,39 +332,49 @@ namespace remix {
     if (g.upscaler)
       g.upscaler->finishInitialization(queue);
   }
-  void PathTracer::beginFrame(const TraceOptions &options,
-                              const RasterRenderer &) {
+  void PathTracer::beginFrame(const TraceOptions &options, const RasterRenderer &) {
     auto &g = *m_gpu;
     g.configureFrame(options, g.preparedPerspective, g.preparedLocal);
   }
-  void PathTracer::Gpu::configureFrame(const TraceOptions &options,
-                                       bool perspective, bool local) {
+  void PathTracer::Gpu::configureFrame(const TraceOptions &options, bool perspective, bool local) {
     auto &g = *this;
     const bool eligible = !options.accumulate && !options.sharcDebug && g.postCapabilities.taaSupported && perspective;
-    const auto backend = !eligible || options.upscaler == upscale::Mode::Off ? upscale::Backend::Native :
-        options.upscaler == upscale::Mode::Fsr31 ? upscale::Backend::Fsr31 :
-        options.upscaler == upscale::Mode::Xess ? upscale::Backend::Xess : upscale::Backend::DlssSr;
+    const auto backend = !eligible || options.upscaler == upscale::Mode::Off ? upscale::Backend::Native
+                         : options.upscaler == upscale::Mode::Fsr31          ? upscale::Backend::Fsr31
+                         : options.upscaler == upscale::Mode::Xess           ? upscale::Backend::Xess
+                                                                             : upscale::Backend::DlssSr;
     const auto quality = options.upscaler == upscale::Mode::Fsr31  ? options.fsrQuality
                          : options.upscaler == upscale::Mode::Xess ? options.xessQuality
                                                                    : options.dlssQuality;
     const bool rrCnn = options.dlssRayReconstructionModel == 1;
     const uint32_t rrPreset = options.dlssRayReconstructionPresetOverride ? options.dlssRayReconstructionPreset : 0;
-    bool changed = options.upscaler != g.requestedUpscaler || quality != g.fsrQuality || options.dlssRayReconstruction != g.rrRequested;
-    if (changed) { g.failedBackends = 0; g.fsrFailure.clear(); }
+    bool changed = options.upscaler != g.requestedUpscaler || quality != g.fsrQuality ||
+                   options.dlssRayReconstruction != g.rrRequested;
+    if (changed) {
+      g.failedBackends = 0;
+      g.fsrFailure.clear();
+    }
     changed |= backend != g.requestedBackend;
     // A model or preset change recreates Ray Reconstruction only.
     changed |= options.dlssRayReconstruction && backend == upscale::Backend::DlssSr &&
                (rrCnn != g.rrCnnRequested || rrPreset != g.rrPresetRequested);
-    g.requestedUpscaler = options.upscaler; g.requestedBackend = backend;
-    g.fsrQuality = quality; g.rrRequested = options.dlssRayReconstruction;
-    g.rrCnnRequested = rrCnn; g.rrPresetRequested = rrPreset;
+    g.requestedUpscaler = options.upscaler;
+    g.requestedBackend = backend;
+    g.fsrQuality = quality;
+    g.rrRequested = options.dlssRayReconstruction;
+    g.rrCnnRequested = rrCnn;
+    g.rrPresetRequested = rrPreset;
     if (changed || !g.extent.width)
       g.createTarget();
     if (options.upscaler != upscale::Mode::Off && !options.accumulate && !options.sharcDebug) {
-      if (!g.postCapabilities.taaSupported) g.fsrFailure = g.postCapabilities.unavailableReason;
-      else if (!perspective) g.fsrFailure = "Reconstruction requires a finite perspective world camera";
-      else if (!g.upscaler && g.fsrFailure.empty() && g.ngx) g.fsrFailure = g.ngx->capabilities().reason;
-      else if (g.upscaler && options.dlssRayReconstruction && g.upscaler->statistics().backend == upscale::Backend::DlssSr && g.fsrFailure.empty())
+      if (!g.postCapabilities.taaSupported)
+        g.fsrFailure = g.postCapabilities.unavailableReason;
+      else if (!perspective)
+        g.fsrFailure = "Reconstruction requires a finite perspective world camera";
+      else if (!g.upscaler && g.fsrFailure.empty() && g.ngx)
+        g.fsrFailure = g.ngx->capabilities().reason;
+      else if (g.upscaler && options.dlssRayReconstruction &&
+               g.upscaler->statistics().backend == upscale::Backend::DlssSr && g.fsrFailure.empty())
         g.fsrFailure = g.ngx->capabilities().reason;
     }
     g.localSeen |= local;
@@ -378,24 +389,33 @@ namespace remix {
     if (!g.denoiser)
       g.createRawPipelines();
     g.beginSharc(g.effectiveOptions(options));
-    if (g.denoiser) g.denoiser->selectFrame(g.frameIndex);
-    if (g.upscaler) g.upscaler->selectFrame(g.frameIndex);
+    if (g.denoiser)
+      g.denoiser->selectFrame(g.frameIndex);
+    if (g.upscaler)
+      g.upscaler->selectFrame(g.frameIndex);
   }
   PathTracer::FrameGenerationInputs PathTracer::frameGeneration() const { return m_gpu->frameGeneration; }
   upscale::Statistics PathTracer::upscalingStatistics() const {
     const auto &g = *m_gpu;
     auto result = g.upscaler ? g.upscaler->statistics() : upscale::Statistics{};
     result.requested = g.requestedUpscaler;
-    result.render = g.extent; result.display = g.displayExtent;
+    result.render = g.extent;
+    result.display = g.displayExtent;
     if (g.ngx) {
       auto caps = g.ngx->capabilities();
-      result.srSupported = caps.sr; result.rrSupported = caps.rr; result.sdkAvailable = caps.sdk;
-      result.rrCnnPackaged = caps.rrCnnPackaged; result.rrCnn = caps.rrCnn;
+      result.srSupported = caps.sr;
+      result.rrSupported = caps.rr;
+      result.sdkAvailable = caps.sdk;
+      result.rrCnnPackaged = caps.rrCnnPackaged;
+      result.rrCnn = caps.rrCnn;
     }
-    result.rrPreset = g.rrPresetCreated; result.rrNote = g.rrModelNote;
+    result.rrPreset = g.rrPresetCreated;
+    result.rrNote = g.rrModelNote;
     result.failures += g.reconstructionFailures;
-    result.frames += g.reconstructedFrames; result.resets += g.reconstructionResets;
-    if (result.failure.empty()) result.failure = g.fsrFailure;
+    result.frames += g.reconstructedFrames;
+    result.resets += g.reconstructionResets;
+    if (result.failure.empty())
+      result.failure = g.fsrFailure;
     return result;
   }
   upscale::NeuralUpliftStatistics PathTracer::neuralUpliftStatistics() const {
@@ -466,8 +486,8 @@ namespace remix {
     // Visibility culling: lights with a cluster (low 16 bits) and lights
     // unrestricted by it (high 16 bits); 0 when no partition is active.
     if (g.lightVisibility.table())
-      result.reserved = std::min(g.lightVisibility.clustered, 0xffffu) |
-                        std::min(g.lightVisibility.unrestricted, 0xffffu) << 16;
+      result.reserved =
+          std::min(g.lightVisibility.clustered, 0xffffu) | std::min(g.lightVisibility.unrestricted, 0xffffu) << 16;
     result.memoryBytes += (g.cameraCulling.nodes ? g.cameraCulling.nodes->size : 0) +
                           (g.cameraCulling.leaves ? g.cameraCulling.leaves->size : 0);
     result.memoryBytes += (g.visibilityNodes ? g.visibilityNodes->size : 0) +
@@ -524,7 +544,7 @@ namespace remix {
   remixapi_ShadowStatisticsEXT PathTracer::shadowStatistics() const {
     const auto &g = *m_gpu;
     auto result = g.denoiser ? g.denoiser->shadowStatistics()
-                            : remixapi_ShadowStatisticsEXT{.structSize = sizeof(remixapi_ShadowStatisticsEXT)};
+                             : remixapi_ShadowStatisticsEXT{.structSize = sizeof(remixapi_ShadowStatisticsEXT)};
     result.supported = g.sigmaCapable;
     result.renderedFrames += g.shadowFrames;
     result.historyResets += g.shadowResets;
@@ -533,95 +553,93 @@ namespace remix {
     std::strncpy(result.unavailableReason, reason, sizeof(result.unavailableReason) - 1);
     return result;
   }
-  bool PathTracer::translucencyDenoiserActive() const {
-    return m_gpu->denoiser && m_gpu->denoiser->foregroundActive();
-  }
+  bool PathTracer::translucencyDenoiserActive() const { return m_gpu->denoiser && m_gpu->denoiser->foregroundActive(); }
   remixapi_DenoisingStatisticsEXT PathTracer::denoisingStatistics() const {
     auto &g = *m_gpu;
-    auto result =
-        g.denoiser ? g.denoiser->statistics()
-                   : remixapi_DenoisingStatisticsEXT{.structSize = sizeof(remixapi_DenoisingStatisticsEXT)};
+    auto result = g.denoiser ? g.denoiser->statistics()
+                             : remixapi_DenoisingStatisticsEXT{.structSize = sizeof(remixapi_DenoisingStatisticsEXT)};
     result.historyResets += g.historyResets;
     result.renderedFrames += g.denoisedFrames;
     result.peakMemoryBytes = std::max(result.peakMemoryBytes, g.postPeakMemory);
     std::strncpy(result.unavailableReason, g.postFailure.c_str(), sizeof(result.unavailableReason) - 1);
     return result;
   }
-// The temporal lighting requests of one configuration: its opaque stage (by
-// split lighting, local lights and SIGMA), the passes every configuration
-// has, and its split direct, ReSTIR and confidence passes; each pipeline
-// lands in its target.
-std::vector<PathTracer::Gpu::LightingRequest>
-PathTracer::Gpu::temporalRequests(bool split, bool sigma, bool local, bool restirPasses, bool reblur,
-                                  bool separateIndirect, const TemporalTargets &t) const {
-  std::vector<LightingRequest> requests;
-  auto make = [&](trace::Stage stage, VkPipeline *out) {
-    // The multi-sheet pass compiles in the background: the composition
-    // pass composes layered pixels from the front sheet's light meanwhile.
-    requests.push_back({lightingStage(stage), temporalLayout, out,
-                        out == t.opaque || out == t.splitDirect || out == t.indirect, true, out == t.splitDirect,
-                        out != t.psr && out != t.frontGuides, separateIndirect && out == t.opaque,
-                        out == t.transparency});
-  };
-  // The separate indirect pass and its consumer compile together.
-  if (separateIndirect && !*t.indirect)
-    make(trace::Stage::indirectTemporal, t.indirect);
-  if (split && sigma)
-    make(trace::Stage::splitLocalSigmaTemporal, t.opaque);
-  else if (split)
-    make(trace::Stage::splitLocalTemporal, t.opaque);
-  else if (local && sigma)
-    make(trace::Stage::localSigmaTemporal, t.opaque);
-  else if (local)
-    make(trace::Stage::localTemporal, t.opaque);
-  else if (sigma)
-    make(trace::Stage::sigmaTemporal, t.opaque);
-  else
-    make(trace::Stage::temporal, t.opaque);
-  make(trace::Stage::temporalTransparency, t.transparency);
-  make(trace::Stage::frontGuides, t.frontGuides);
-  make(trace::Stage::psr, t.psr);
-  make(trace::Stage::singleTemporalTransparency, t.single);
-  make(trace::Stage::sheetLightingTemporal, t.sheet);
-  if (split)
-    make(trace::Stage::splitLocalDirect, t.splitDirect);
-  if (restirPasses) {
-    requests.push_back({trace::Stage::splitRestirInitial, temporalLayout, t.restirInitial, false});
-    requests.push_back({trace::Stage::splitRestirSpatial, temporalLayout, t.restirSpatial, false});
+  // The temporal lighting requests of one configuration: its opaque stage (by
+  // split lighting, local lights and SIGMA), the passes every configuration
+  // has, and its split direct, ReSTIR and confidence passes; each pipeline
+  // lands in its target.
+  std::vector<PathTracer::Gpu::LightingRequest> PathTracer::Gpu::temporalRequests(bool split, bool sigma, bool local,
+                                                                                  bool restirPasses, bool reblur,
+                                                                                  bool separateIndirect,
+                                                                                  const TemporalTargets &t) const {
+    std::vector<LightingRequest> requests;
+    auto make = [&](trace::Stage stage, VkPipeline *out) {
+      // The multi-sheet pass compiles in the background: the composition
+      // pass composes layered pixels from the front sheet's light meanwhile.
+      requests.push_back({lightingStage(stage), temporalLayout, out,
+                          out == t.opaque || out == t.splitDirect || out == t.indirect, true, out == t.splitDirect,
+                          out != t.psr && out != t.frontGuides, separateIndirect && out == t.opaque,
+                          out == t.transparency});
+    };
+    // The separate indirect pass and its consumer compile together.
+    if (separateIndirect && !*t.indirect)
+      make(trace::Stage::indirectTemporal, t.indirect);
+    if (split && sigma)
+      make(trace::Stage::splitLocalSigmaTemporal, t.opaque);
+    else if (split)
+      make(trace::Stage::splitLocalTemporal, t.opaque);
+    else if (local && sigma)
+      make(trace::Stage::localSigmaTemporal, t.opaque);
+    else if (local)
+      make(trace::Stage::localTemporal, t.opaque);
+    else if (sigma)
+      make(trace::Stage::sigmaTemporal, t.opaque);
+    else
+      make(trace::Stage::temporal, t.opaque);
+    make(trace::Stage::temporalTransparency, t.transparency);
+    make(trace::Stage::frontGuides, t.frontGuides);
+    make(trace::Stage::psr, t.psr);
+    make(trace::Stage::singleTemporalTransparency, t.single);
+    make(trace::Stage::sheetLightingTemporal, t.sheet);
+    if (split)
+      make(trace::Stage::splitLocalDirect, t.splitDirect);
+    if (restirPasses) {
+      requests.push_back({trace::Stage::splitRestirInitial, temporalLayout, t.restirInitial, false});
+      requests.push_back({trace::Stage::splitRestirSpatial, temporalLayout, t.restirSpatial, false});
+    }
+    if (reblur)
+      make(trace::Stage::confidence, t.confidence);
+    return requests;
   }
-  if (reblur)
-    make(trace::Stage::confidence, t.confidence);
-  return requests;
-}
 
-// The other configurations' temporal pipelines (and their split variants),
-// queued for idle compiler workers once this one's are requested: switching
-// ray reconstruction, the denoiser, SIGMA, split local lighting or ReSTIR
-// then finds them compiled (or compiling, promoted when requested). Their
-// keys match because the denoiser's input layout no longer follows the
-// configuration. Only this SHARC choice, separate indirect role and shadow
-// early-out are covered; changing those compiles on demand.
-void PathTracer::Gpu::prewarmTemporalConfigurations(bool separateIndirect) {
-  if (!lightingOptions.precompileConfigurations)
-    return;
-  VkPipeline scratch[11] = {};
-  const TemporalTargets targets{&scratch[0], &scratch[1], &scratch[2], &scratch[3], &scratch[4], &scratch[5],
-                                &scratch[6], &scratch[7], &scratch[8], &scratch[9], &scratch[10]};
-  std::vector<LightingRequest> requests;
-  // Split lighting implies local lights; ReSTIR and confidence ride along.
-  const bool kinds[][3] = {{true, true, true}, {true, false, true}, {false, true, true},
-                           {false, false, true}, {false, true, false}, {false, false, false}};
-  for (const auto &[split, sigma, local] : kinds)
-    for (auto &request : temporalRequests(split, sigma, local, split, postCapabilities.reblurShSupported,
-                                          separateIndirect, targets))
-      if (std::none_of(requests.begin(), requests.end(),
-                       [&](const LightingRequest &r) { return r.stage == request.stage; }))
-        requests.push_back(request);
-  prewarmingLighting = true;
-  struct Reset {
-    bool &flag;
-    ~Reset() { flag = false; }
-  } reset{prewarmingLighting};
-  createLightingPipelines(requests);
-}
+  // The other configurations' temporal pipelines (and their split variants),
+  // queued for idle compiler workers once this one's are requested: switching
+  // ray reconstruction, the denoiser, SIGMA, split local lighting or ReSTIR
+  // then finds them compiled (or compiling, promoted when requested). Their
+  // keys match because the denoiser's input layout no longer follows the
+  // configuration. Only this SHARC choice, separate indirect role and shadow
+  // early-out are covered; changing those compiles on demand.
+  void PathTracer::Gpu::prewarmTemporalConfigurations(bool separateIndirect) {
+    if (!lightingOptions.precompileConfigurations)
+      return;
+    VkPipeline scratch[11] = {};
+    const TemporalTargets targets{&scratch[0], &scratch[1], &scratch[2], &scratch[3], &scratch[4], &scratch[5],
+                                  &scratch[6], &scratch[7], &scratch[8], &scratch[9], &scratch[10]};
+    std::vector<LightingRequest> requests;
+    // Split lighting implies local lights; ReSTIR and confidence ride along.
+    const bool kinds[][3] = {{true, true, true},   {true, false, true},  {false, true, true},
+                             {false, false, true}, {false, true, false}, {false, false, false}};
+    for (const auto &[split, sigma, local] : kinds)
+      for (auto &request :
+           temporalRequests(split, sigma, local, split, postCapabilities.reblurShSupported, separateIndirect, targets))
+        if (std::none_of(requests.begin(), requests.end(),
+                         [&](const LightingRequest &r) { return r.stage == request.stage; }))
+          requests.push_back(request);
+    prewarmingLighting = true;
+    struct Reset {
+      bool &flag;
+      ~Reset() { flag = false; }
+    } reset{prewarmingLighting};
+    createLightingPipelines(requests);
+  }
 } // namespace remix

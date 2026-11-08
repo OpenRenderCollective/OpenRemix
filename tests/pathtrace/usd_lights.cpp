@@ -78,8 +78,7 @@ int main(int argc, char **argv) {
     return handle;
   };
   const auto white = material({1, 1, 1}, 1);
-  auto quad = [&](int axis, float plane, float a0, float a1, float b0, float b1,
-                  remixapi_MaterialHandle mat) {
+  auto quad = [&](int axis, float plane, float a0, float a1, float b0, float b1, remixapi_MaterialHandle mat) {
     remixapi_HardcodedVertex vertices[4]{};
     for (int i = 0; i < 4; ++i) {
       vertices[i].position[axis] = plane;
@@ -216,8 +215,7 @@ int main(int argc, char **argv) {
   auto greenSky = capture("hdr-dome-green");
   dome.transform.matrix[0][0] = dome.transform.matrix[2][2] = -1;
   auto redSky = capture("hdr-dome-rotated");
-  require(greenSky[1] > .5f && greenSky[1] > greenSky[0] + .2f && redSky[0] > .5f &&
-              redSky[0] > redSky[1] + .2f,
+  require(greenSky[1] > .5f && greenSky[1] > greenSky[0] + .2f && redSky[0] > .5f && redSky[0] > redSky[1] + .2f,
           "HDR dome upload and rotation");
   usd.pNext = nullptr;
   geometry = true;

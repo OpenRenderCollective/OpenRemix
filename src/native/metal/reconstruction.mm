@@ -206,16 +206,16 @@ kernel void extractRoughness(texture2d<float, access::read> normalRoughness [[te
     // motion, and reactive/composition masks from transmission.
     {
       g.prepareSet.begin(g.slot);
-      const id<MTLTexture> images[] = {viewDepth, transmission, g.deviceDepth, g.reactive, g.composition, motion,
-                                       g.motion,  color,        g.output};
+      const id<MTLTexture> images[] = {viewDepth, transmission, g.deviceDepth, g.reactive, g.composition,
+                                       motion,    g.motion,     color,         g.output};
       for (uint32_t i = 0; i < 9; ++i)
         g.prepareSet.texture(i, images[i]);
       struct {
         scene::Matrix projection;
         uint32_t mode, padding[3];
       } push{upscale::reversedDepth(projection), 2, {}};
-      id<MTLComputeCommandEncoder> encoder = computeEncoder(command, @"Reconstruction input preparation",
-                                                            g.stats.renderWidth, g.stats.renderHeight);
+      id<MTLComputeCommandEncoder> encoder =
+          computeEncoder(command, @"Reconstruction input preparation", g.stats.renderWidth, g.stats.renderHeight);
       [encoder setComputePipelineState:g.prepare];
       [encoder setBuffer:g.prepareSet.current() offset:0 atIndex:0];
       g.prepareSet.use(encoder);
@@ -292,7 +292,8 @@ kernel void extractRoughness(texture2d<float, access::read> normalRoughness [[te
 
   // upscale/renderer.cpp composite.
   void Renderer::composite(id<MTLRenderCommandEncoder> encoder, id<MTLTexture> stableDepth, id<MTLBuffer> exposure,
-                           id<MTLTexture> bloom, id<MTLSamplerState> bloomSampler, id<MTLBuffer> postSettings, uint32_t slot) {
+                           id<MTLTexture> bloom, id<MTLSamplerState> bloomSampler, id<MTLBuffer> postSettings,
+                           uint32_t slot, const scene::DisplayOutput &display) {
     auto &g = *m_gpu;
     if (!g.compositePipeline) {
       auto *descriptor = [MTLRenderPipelineDescriptor new];
@@ -324,8 +325,7 @@ kernel void extractRoughness(texture2d<float, access::read> normalRoughness [[te
     [encoder setFragmentBuffer:g.postSet.current() offset:0 atIndex:1];
     g.compositeSet.use(encoder, MTLRenderStageFragment);
     g.postSet.use(encoder, MTLRenderStageFragment);
-    // upscale.frag's constants: SDR.
-    const scene::DisplayOutput display;
+    // upscale.frag's constants.
     const struct {
       uint32_t display;
       float peakNits, paperWhiteNits;

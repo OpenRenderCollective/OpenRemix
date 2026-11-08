@@ -555,13 +555,21 @@ namespace remix {
     Double inverseView, inverseProjection;
     if (!invert(widen(m_authoredViews[world]), inverseView) || !invert(widen(worldProjection), inverseProjection))
       return false;
-    const auto correction = product(
-        inverseView,
-        product(inverseProjection, product(widen(projection), product(shrink, widen(m_authoredViews[viewModel])))));
+    const auto correction =
+        product(inverseView, product(inverseProjection,
+                                     product(widen(projection), product(shrink, widen(m_authoredViews[viewModel])))));
     if (!std::all_of(correction.begin(), correction.end(), [](double v) { return std::isfinite(v); }))
       return false;
+    // Traced now, its identity must be unique, which DrawInstance does not ask
+    // of a view-model-camera draw: a repeated one takes a frame's own.
+    scene::IdSet seen;
+    bool repeated = false;
     for (auto &draw : m_draws)
       if (draw.camera == viewModel && !draw.viewModel) {
+        if (!draw.surfaceIndex && !draw.instanceIndex)
+          repeated = draw.instanceId && (m_frameIds.count(draw.instanceId) || !seen.insert(draw.instanceId));
+        if (repeated)
+          draw.instanceId = 0;
         const auto model = product(correction, widen(draw.model));
         std::copy(model.begin(), model.end(), draw.model.begin());
         draw.camera = world;

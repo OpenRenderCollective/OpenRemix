@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <atomic>
 #include <charconv>
+#include <cstdio>
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
@@ -18,6 +19,8 @@
 
 namespace remix::config {
   namespace {
+    // The panel's tab order panel.tab counts in (ui::Tab); older state has none.
+    constexpr const char *kTabLayout = "2";
     std::filesystem::path pathFromUtf8(std::string_view text) {
       return std::filesystem::path(std::u8string(text.begin(), text.end()));
     }
@@ -48,8 +51,7 @@ namespace remix::config {
     }
     // The temporary file is exclusively created beside its destination. Failed
     // writes/replacements only remove that temporary file, never the old data.
-    bool atomicWrite(const std::filesystem::path &path, const std::string &text, bool replace,
-                     std::string &error) {
+    bool atomicWrite(const std::filesystem::path &path, const std::string &text, bool replace, std::string &error) {
       std::error_code ec;
       std::filesystem::create_directories(path.parent_path(), ec);
       if (ec) {
@@ -65,15 +67,15 @@ namespace remix::config {
       auto temporary = path;
 #if defined(_WIN32)
       temporary += ".tmp-" + std::to_string(GetCurrentProcessId()) + "-" + std::to_string(++sequence);
-      HANDLE file = CreateFileW(temporary.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW,
-                                FILE_ATTRIBUTE_NORMAL, nullptr);
+      HANDLE file =
+          CreateFileW(temporary.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
       if (file == INVALID_HANDLE_VALUE) {
         error = "Cannot create temporary file";
         return false;
       }
       DWORD written = 0;
-      bool ok = text.size() <= MAXDWORD &&
-                WriteFile(file, text.data(), DWORD(text.size()), &written, nullptr) && written == text.size();
+      bool ok = text.size() <= MAXDWORD && WriteFile(file, text.data(), DWORD(text.size()), &written, nullptr) &&
+                written == text.size();
       ok = FlushFileBuffers(file) && ok;
       ok = CloseHandle(file) && ok;
       if (ok)
@@ -120,16 +122,15 @@ namespace remix::config {
   }
 
   bool Profiles::validName(std::string_view name) {
-    if (name.empty() || name.size() > 100 || name == "." || name == ".." || name.front() == ' ' ||
-        name.back() == ' ' || name.back() == '.')
+    if (name.empty() || name.size() > 100 || name == "." || name == ".." || name.front() == ' ' || name.back() == ' ' ||
+        name.back() == '.')
       return false;
     for (unsigned char c : name)
       if (c < 32 || c == 127 || std::string_view("/\\:<>\"|?*").find(c) != std::string_view::npos)
         return false;
     const auto stem = lower(std::string(name.substr(0, name.find('.'))));
     if (stem == "con" || stem == "prn" || stem == "aux" || stem == "nul" ||
-        (stem.size() == 4 && (stem.starts_with("com") || stem.starts_with("lpt")) && stem[3] >= '1' &&
-         stem[3] <= '9'))
+        (stem.size() == 4 && (stem.starts_with("com") || stem.starts_with("lpt")) && stem[3] >= '1' && stem[3] <= '9'))
       return false;
     return true;
   }
@@ -147,7 +148,7 @@ namespace remix::config {
     std::string state;
     if (readFile(m_directory / "state.conf", state)) {
       std::istringstream lines(state);
-      std::string line;
+      std::string line, tabLayout;
       while (std::getline(lines, line)) {
         if (!line.empty() && line.back() == '\r') // written on Windows in text mode
           line.pop_back();
@@ -163,8 +164,18 @@ namespace remix::config {
           float width = 0;
           if (parseFloat(value, width) && std::isfinite(width))
             m_panel.width = std::clamp(width, 240.f, 1600.f);
-        } else if (key == "panel.tab" && value.size() == 1 && value[0] >= '0' && value[0] <= '5')
-          m_panel.tab = value[0] - '0';
+        } else if ((key == "panel.background" || key == "panel.accent") && value.size() == 7 && value[0] == '#') {
+          uint32_t color = 0;
+          const auto end = value.data() + value.size();
+          if (std::from_chars(value.data() + 1, end, color, 16).ptr == end)
+            (key == "panel.background" ? m_panel.background : m_panel.accent) = color;
+        } else if (key == "panel.tab") {
+          int tab = 0;
+          const auto end = value.data() + value.size();
+          if (std::from_chars(value.data(), end, tab).ptr == end && tab >= 0 && tab <= 10)
+            m_panel.tab = tab;
+        } else if (key == "panel.tabs")
+          tabLayout = value;
         else if (key == "panel.menuKey" || key == "panel.menuModifiers" || key == "panel.sceneCaptureKey" ||
                  key == "panel.sceneCaptureModifiers" || key == "panel.screenshotKey" ||
                  key == "panel.screenshotModifiers") {
@@ -187,6 +198,12 @@ namespace remix::config {
           else if (key == "panel.screenshotModifiers" && number <= 15)
             m_panel.screenshotModifiers = number;
         }
+      }
+      // State written before the tabs were regrouped (no panel.tabs): Rendering, Lighting, Sky,
+      // Post-processing, Diagnostics, Textures become Display, Lighting, Sky, Image, Diagnostics, Textures.
+      if (tabLayout != kTabLayout) {
+        constexpr int regrouped[] = {0, 1, 3, 4, 6, 7};
+        m_panel.tab = m_panel.tab < 6 ? regrouped[m_panel.tab] : 0;
       }
     }
     refresh();
@@ -355,8 +372,7 @@ namespace remix::config {
     std::string error;
     if (!validName(name) || !validate(m_current, error))
       return fail("Cannot save profile: " + error);
-    if (!atomicWrite(m_folder / pathFromUtf8(name + ".conf"), serialize(m_current, m_unknown), replace,
-                     error))
+    if (!atomicWrite(m_folder / pathFromUtf8(name + ".conf"), serialize(m_current, m_unknown), replace, error))
       return fail("Cannot save " + name + ": " + error);
     return true;
   }
@@ -394,18 +410,27 @@ namespace remix::config {
     clearMessage();
   }
 
+  namespace {
+    std::string hexColor(uint32_t color) {
+      char text[8];
+      std::snprintf(text, sizeof(text), "#%06x", color & 0xffffffu);
+      return text;
+    }
+  } // namespace
+
   void Profiles::remember() {
     std::string error;
-    const auto text = "# OpenRemix session state (not rendering settings)\nlastProfile = " + m_last +
-                      "\npanel.side = " + (m_panel.right ? "right" : "left") +
-                      "\npanel.width = " + std::to_string(m_panel.width) +
-                      "\npanel.tab = " + std::to_string(m_panel.tab) +
-                      "\npanel.menuKey = " + std::to_string(m_panel.menuKey) +
-                      "\npanel.menuModifiers = " + std::to_string(m_panel.menuModifiers) +
-                      "\npanel.sceneCaptureKey = " + std::to_string(m_panel.sceneCaptureKey) +
-                      "\npanel.sceneCaptureModifiers = " + std::to_string(m_panel.sceneCaptureModifiers) +
-                      "\npanel.screenshotKey = " + std::to_string(m_panel.screenshotKey) +
-                      "\npanel.screenshotModifiers = " + std::to_string(m_panel.screenshotModifiers) + "\n";
+    const auto text =
+        "# OpenRemix session state (not rendering settings)\nlastProfile = " + m_last +
+        "\npanel.side = " + (m_panel.right ? "right" : "left") + "\npanel.width = " + std::to_string(m_panel.width) +
+        "\npanel.tab = " + std::to_string(m_panel.tab) + "\npanel.tabs = " + kTabLayout +
+        "\npanel.background = " + hexColor(m_panel.background) + "\npanel.accent = " + hexColor(m_panel.accent) +
+        "\npanel.menuKey = " + std::to_string(m_panel.menuKey) +
+        "\npanel.menuModifiers = " + std::to_string(m_panel.menuModifiers) +
+        "\npanel.sceneCaptureKey = " + std::to_string(m_panel.sceneCaptureKey) +
+        "\npanel.sceneCaptureModifiers = " + std::to_string(m_panel.sceneCaptureModifiers) +
+        "\npanel.screenshotKey = " + std::to_string(m_panel.screenshotKey) +
+        "\npanel.screenshotModifiers = " + std::to_string(m_panel.screenshotModifiers) + "\n";
     if (!atomicWrite(m_directory / "state.conf", text, true, error)) {
       if (!m_message.empty())
         m_message += '\n';

@@ -5,15 +5,13 @@
 #include <cstring>
 
 namespace {
-void require(bool value, const char *message) {
-  if (!value) {
-    std::fprintf(stderr, "%s\n", message);
-    std::exit(1);
+  void require(bool value, const char *message) {
+    if (!value) {
+      std::fprintf(stderr, "%s\n", message);
+      std::exit(1);
+    }
   }
-}
-void ok(remixapi_ErrorCode result) {
-  require(!result, "Process-exit fixture API failure");
-}
+  void ok(remixapi_ErrorCode result) { require(!result, "Process-exit fixture API failure"); }
 } // namespace
 
 int main(int argc, char **argv) {
@@ -41,29 +39,23 @@ int main(int argc, char **argv) {
   // First initialize the raster/validation exit handler, then load the tracing
   // and reconstruction SDK resources asynchronously after it was registered.
   frame();
-  ok(api.SetConfigVariable("rtx.native.pathtrace.upscaler",
-                           sr || rr ? "dlss" : argv[1]));
-  ok(api.SetConfigVariable("rtx.native.pathtrace.dlssRayReconstruction",
-                           rr ? "1" : "0"));
+  ok(api.SetConfigVariable("rtx.native.pathtrace.upscaler", sr || rr ? "dlss" : argv[1]));
+  ok(api.SetConfigVariable("rtx.native.pathtrace.dlssRayReconstruction", rr ? "1" : "0"));
   ok(api.SetConfigVariable("rtx.native.backend", "pathtrace"));
   for (int i = 0; i < 8; ++i)
     frame();
   const auto reconstruction = remix::api::g_runtime.reconstructionStatistics();
-  if ((sr && !reconstruction.srSupported) ||
-      (rr && !reconstruction.rrSupported)) {
+  if ((sr && !reconstruction.srSupported) || (rr && !reconstruction.rrSupported)) {
     ok(api.Shutdown());
     return 77;
   }
-  require(remix::api::g_runtime.backendCapabilities().activeBackend == 1,
-          "Tracing must be active at exit");
+  require(remix::api::g_runtime.backendCapabilities().activeBackend == 1, "Tracing must be active at exit");
   require(uint32_t(reconstruction.backend) == (rr    ? 3u
                                                : sr  ? 2u
                                                : fsr ? 1u
                                                      : 0u),
           "Requested reconstruction must be active at exit");
-  std::fprintf(stderr,
-               "Exit without explicit Shutdown after active %s frames\n",
-               argv[1]);
+  std::fprintf(stderr, "Exit without explicit Shutdown after active %s frames\n", argv[1]);
   // Deliberately leave live device/SDK resources for process-exit cleanup.
   return 0;
 }

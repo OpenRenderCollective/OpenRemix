@@ -8,11 +8,13 @@
 #include <remix/remix_reconstruction_ext.h>
 #include <dlfcn.h>
 
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <string>
+#include <thread>
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_ONLY_PNG
 #include <image/stb_image.h>
@@ -147,10 +149,13 @@ namespace {
         ok(api.RequestPresentedScreenshot(path.c_str()));
       ok(api.Present(nullptr));
     }
-    // The capture is written when the next presentation begins.
     ok(api.PumpEvents());
     scene.draw(1, 1);
     ok(api.Present(nullptr));
+    // The capture is read back when the next presentation begins and written
+    // by a worker (runtime/screenshot.cpp; renamed into place when complete).
+    for (int i = 0; i < 500 && !std::filesystem::exists(path); ++i)
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
     int channels = 0;
     image.pixels = stbi_load(path.c_str(), &image.width, &image.height, &channels, 4);
     require(image.pixels != nullptr, "Presented screenshot was not written");
@@ -170,6 +175,11 @@ int main(int argc, char **argv) {
   GroundScene scene;
   scene.create();
   // The default profile may path trace (runtime/settings.cpp): rasterize first.
+  // The captures are measured as SDR (an EDR display would turn on HDR10 output).
+  const auto setDefault = reinterpret_cast<remixapi_ErrorCode(REMIXAPI_CALL *)(const char *, const char *)>(
+      dlsym(library, "remixapi_SetConfigDefaultEXT"));
+  require(setDefault, "SetConfigDefaultEXT is not exported");
+  ok(setDefault("rtx.native.hdr", "0"));
   ok(api.SetConfigVariable("rtx.native.backend", "raster"));
 
   Image raster;
@@ -184,14 +194,22 @@ int main(int argc, char **argv) {
   ok(api.SetConfigVariable("rtx.native.pathtrace.accumulate", "1"));
   // The defaults are a tuned game profile's: the references compare the
   // passes under the settings these checks were written for.
-  for (const auto &[key, value] : {std::pair{"bounces", "2"}, {"russianRoulette", "0"}, {"sharcSceneScale", "50"},
-                                   {"separateLocalLighting", "0"}, {"localFireflyFilter", "0"}, {"pbrLocalReuse", "0"},
-                                   {"translucencyReuse", "0"}, {"viewModel", "0"}, {"upscaler", "auto"}})
+  for (const auto &[key, value] : {std::pair{"bounces", "2"},
+                                   {"russianRoulette", "0"},
+                                   {"sharcSceneScale", "50"},
+                                   {"separateLocalLighting", "0"},
+                                   {"localFireflyFilter", "0"},
+                                   {"pbrLocalReuse", "0"},
+                                   {"translucencyReuse", "0"},
+                                   {"viewModel", "0"},
+                                   {"upscaler", "auto"},
+                                   // The thresholds are for the fixed exposure, not the metered one.
+                                   {"autoExposure", "0"}})
     ok(api.SetConfigVariable((std::string("rtx.native.pathtrace.") + key).c_str(), value));
-  const auto capabilitiesOf = reinterpret_cast<PFN_remixapi_GetBackendCapabilitiesEXT>(
-      dlsym(library, "remixapi_GetBackendCapabilitiesEXT"));
-  const auto tracingOf = reinterpret_cast<PFN_remixapi_GetTracingStatisticsEXT>(
-      dlsym(library, "remixapi_GetTracingStatisticsEXT"));
+  const auto capabilitiesOf =
+      reinterpret_cast<PFN_remixapi_GetBackendCapabilitiesEXT>(dlsym(library, "remixapi_GetBackendCapabilitiesEXT"));
+  const auto tracingOf =
+      reinterpret_cast<PFN_remixapi_GetTracingStatisticsEXT>(dlsym(library, "remixapi_GetTracingStatisticsEXT"));
   require(capabilitiesOf && tracingOf, "Backend and tracing statistics are not exported");
   // The path tracer is prepared on a thread (pipelines compile on first use):
   // frames present meanwhile. Wait until it traces with accumulation.
@@ -220,14 +238,23 @@ int main(int argc, char **argv) {
   require(rgb[1] > rgb[0] + .1f && rgb[1] > rgb[2], "Path tracing: the cube's sunlit green face is missing");
   traced.sample(.5f, .12f, rgb);
   require(rgb[2] > rgb[0] && rgb[2] < .4f, "Path tracing: the sky is wrong");
+  // Automatic exposure meters the frame (postfx meter and resolve): this scene
+  // is darker than the meter's target, so it brightens the sunlit ground.
+  ok(api.SetConfigVariable("rtx.native.pathtrace.autoExposure", "1"));
+  Image metered;
+  render(scene, 64, directory + "/pathtrace-metered.png", metered);
+  const float meteredLit = metered.luminance(.14f, .84f);
+  std::printf("metered lit ground %.3f\n", meteredLit);
+  require(meteredLit > lit * 1.05f, "Path tracing: automatic exposure did not meter the frame");
+  ok(api.SetConfigVariable("rtx.native.pathtrace.autoExposure", "0"));
 
   // The temporal stack (NRD REBLUR/SIGMA, TAA, SHARC by default) replaces
   // accumulation: a new configuration is prepared while frames present.
   // Reconstruction is off here (MetalFX is checked below).
   ok(api.SetConfigVariable("rtx.native.pathtrace.upscaler", "off"));
   ok(api.SetConfigVariable("rtx.native.pathtrace.accumulate", "0"));
-  const auto denoisingOf = reinterpret_cast<PFN_remixapi_GetDenoisingStatisticsEXT>(
-      dlsym(library, "remixapi_GetDenoisingStatisticsEXT"));
+  const auto denoisingOf =
+      reinterpret_cast<PFN_remixapi_GetDenoisingStatisticsEXT>(dlsym(library, "remixapi_GetDenoisingStatisticsEXT"));
   require(denoisingOf != nullptr, "remixapi_GetDenoisingStatisticsEXT is not exported");
   remixapi_DenoisingStatisticsEXT denoising = {.structSize = sizeof(denoising)};
   for (unsigned frame = 0; frame < 200000; ++frame) {

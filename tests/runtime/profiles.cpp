@@ -44,10 +44,16 @@ int main(int argc, char **argv) {
   t.upscaler = upscale::Mode::Fsr31;
   t.dlssRayReconstruction = false;
   t.dlssQuality = 2;
-  t.autoExposure = false; t.bloom = false;
-  t.exposure = 2.3f; t.autoExposureTarget = .13f; t.autoExposureSpeed = 3.7f;
-  t.autoExposureCentre = .62f; t.autoExposureMinEv = -10; t.autoExposureMaxEv = 5;
-  t.bloomIntensity = .21f; t.bloomRadius = .74f;
+  t.autoExposure = false;
+  t.bloom = false;
+  t.exposure = 2.3f;
+  t.autoExposureTarget = .13f;
+  t.autoExposureSpeed = 3.7f;
+  t.autoExposureCentre = .62f;
+  t.autoExposureMinEv = -10;
+  t.autoExposureMaxEv = 5;
+  t.bloomIntensity = .21f;
+  t.bloomRadius = .74f;
   t.fsrQuality = 4;
   t.fsrSharpness = .37f;
   t.sigma = false;
@@ -106,10 +112,8 @@ int main(int argc, char **argv) {
   require(config::validate(changed, error), error.c_str());
   require(config::parse(config::serialize(changed), parsed, unknown, warnings, error), error.c_str());
   require(changed == parsed, "Complete nondefault snapshot did not round-trip");
-  require(config::serialize(changed).find("sharcReset") == std::string::npos,
-          "One-shot action was serialized");
-  require(
-      config::parse("profile.version = 1\nrtx.native.pathtrace.samples = 5\nfuture.setting = alpha = beta\n",
+  require(config::serialize(changed).find("sharcReset") == std::string::npos, "One-shot action was serialized");
+  require(config::parse("profile.version = 1\nrtx.native.pathtrace.samples = 5\nfuture.setting = alpha = beta\n",
                     parsed, unknown, warnings, error),
       "Partial profile rejected");
   config::Settings partial;
@@ -123,8 +127,7 @@ int main(int argc, char **argv) {
           "Unknown key was not retained/warned");
   require(config::serialize(parsed, unknown).find("future.setting = alpha = beta") != std::string::npos,
           "Unknown key lost on save");
-  for (const auto &bad :
-       {"profile.version = 2\n", "rtx.native.vsync = true\n", "profile.version = 1\nbad line\n",
+  for (const auto &bad : {"profile.version = 2\n", "rtx.native.vsync = true\n", "profile.version = 1\nbad line\n",
         "profile.version = 1\nrtx.native.pathtrace.samples = 17\n",
         "profile.version = 1\nrtx.native.pathtrace.localRange = 0.001\n",
         "profile.version = 1\nrtx.native.pathtrace.lightIntensity = nan\n",
@@ -137,8 +140,8 @@ int main(int argc, char **argv) {
     require(!config::parse(bad, parsed, unknown, warnings, error), "Invalid profile accepted");
     require(parsed == before && unknown == extra && warnings == notices, "Invalid load mutated output");
   }
-  require(config::parse("\xef\xbb\xbfprofile.version = 1\r\nrtx.native.pathtrace.samples = 5\r\n", parsed,
-                        unknown, warnings, error) &&
+  require(config::parse("\xef\xbb\xbfprofile.version = 1\r\nrtx.native.pathtrace.samples = 5\r\n", parsed, unknown,
+                        warnings, error) &&
               parsed == partial,
           "UTF-8 BOM/CRLF file rejected");
   require(config::set(parsed, "rtx.native.vsync", "TrUe") == config::SetResult::Success && parsed.vsync,
@@ -146,24 +149,21 @@ int main(int argc, char **argv) {
   require(config::set(parsed, "rtx.native.pathtrace.samples", "true") == config::SetResult::Success &&
               parsed.trace.samples == 1,
           "Integer aliases changed");
-  require(config::set(parsed, "rtx.native.pathtrace.dlssRayReconstruction", "true") ==
-              config::SetResult::Invalid,
+  require(config::set(parsed, "rtx.native.pathtrace.dlssRayReconstruction", "true") == config::SetResult::Invalid,
           "Strict RR boolean changed");
   require(config::set(parsed, "rtx.native.pathtrace.localRange", ".01") == config::SetResult::Success,
           "Minimum light range rejected");
   require(config::set(parsed, "rtx.native.pathtrace.sunAngularDiameter", "-1") == config::SetResult::Success,
           "Inherited sun diameter rejected");
-  require(config::parse("profile.version = 1\nrtx.native.pathtrace.sharcReset = 1\n", parsed, unknown,
-                        warnings, error) &&
+  require(
+      config::parse("profile.version = 1\nrtx.native.pathtrace.sharcReset = 1\n", parsed, unknown, warnings, error) &&
               !parsed.trace.sharcReset && unknown.empty(),
           "File replayed one-shot action");
 
   config::Profiles profiles;
   profiles.startup(root);
-  require(profiles.active() == "Default" && !profiles.dirty() && profiles.files().empty(),
-          "Initial default state");
-  require(profiles.edit(changed) && profiles.dirty() && profiles.save() && !profiles.dirty(),
-          "Save Default snapshot");
+  require(profiles.active() == "Default" && !profiles.dirty() && profiles.files().empty(), "Initial default state");
+  require(profiles.edit(changed) && profiles.dirty() && profiles.save() && !profiles.dirty(), "Save Default snapshot");
   const auto original = read(root / "profiles/Default.conf");
   auto edited = changed;
   edited.trace.samples = 11;
@@ -186,8 +186,7 @@ int main(int argc, char **argv) {
   write(root / "profiles/nested/Hidden.conf", "profile.version = 1\n");
   profiles.refresh();
   require(profiles.files().size() == 3, "Refresh must only list local profile files");
-  require(profiles.load("Partial") && profiles.current() == partial && profiles.save(),
-          "Partial load/save failed");
+  require(profiles.load("Partial") && profiles.current() == partial && profiles.save(), "Partial load/save failed");
   require(read(root / "profiles/Partial.conf").find("future.setting = keep") != std::string::npos,
           "Save dropped unknown data");
   require(profiles.create("New") && profiles.current() == config::Settings{} && profiles.dirty(),
@@ -197,16 +196,13 @@ int main(int argc, char **argv) {
 
   ui::ProfileActions actions;
   require(!actions.request(profiles, ui::ProfileAction::Load, "Default"), "Dirty load did not ask");
-  require(actions.resolve(profiles, ui::UnsavedChoice::Cancel) && profiles.active() == "New",
-          "Cancel changed profile");
+  require(actions.resolve(profiles, ui::UnsavedChoice::Cancel) && profiles.active() == "New", "Cancel changed profile");
   actions.request(profiles, ui::ProfileAction::Load, "Default");
-  require(actions.resolve(profiles, ui::UnsavedChoice::Save) && profiles.current() == changed,
-          "Save then load failed");
+  require(actions.resolve(profiles, ui::UnsavedChoice::Save) && profiles.current() == changed, "Save then load failed");
   require(fs::exists(root / "profiles/New.conf"), "Save-before-load omitted original profile");
   profiles.edit(edited);
   actions.request(profiles, ui::ProfileAction::Revert);
-  require(actions.resolve(profiles, ui::UnsavedChoice::Discard) && profiles.current() == changed &&
-              !profiles.dirty(),
+  require(actions.resolve(profiles, ui::UnsavedChoice::Discard) && profiles.current() == changed && !profiles.dirty(),
           "Discard/revert failed");
   profiles.edit(edited);
   actions.request(profiles, ui::ProfileAction::New, "Fresh");
@@ -219,8 +215,7 @@ int main(int argc, char **argv) {
   actions.request(profiles, ui::ProfileAction::Load, "Partial");
   require(!actions.resolve(profiles, ui::UnsavedChoice::Save) && profiles.dirty() && profiles.hasError(),
           "Failed save discarded edits or pending action");
-  require(actions.pending == ui::ProfileAction::Load && profiles.current() == edited,
-          "Failed save switched profile");
+  require(actions.pending == ui::ProfileAction::Load && profiles.current() == edited, "Failed save switched profile");
   require(read(root / "saved-profiles/Default.conf") == original, "Failed save damaged previous file");
   fs::remove(root / "profiles");
   fs::rename(root / "saved-profiles", root / "profiles");

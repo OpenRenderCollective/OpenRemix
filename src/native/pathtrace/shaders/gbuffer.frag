@@ -102,6 +102,7 @@ void main() {
   // Zero is background, one opaque/cutout, two coverage, three a tinted sheet,
   // four a decal, five a measured sheet; plus 8 on a viewmodel, plus 16
   // for thin film, explicit metal colour or subsurface data requiring retracing.
+  // Plus 32 for a replacement screen, energy surface or ray portal.
   vec3 smoothNormal=shadingNormal(authoredNormal,n,normalize(-direction));
   vec3 t=tangent-smoothNormal*dot(smoothNormal,tangent);
   if(dot(t,t)<1e-12)t=cross(abs(smoothNormal.z)<.999?vec3(0,0,1):vec3(0,1,0),smoothNormal);
@@ -109,7 +110,7 @@ void main() {
   vec3 b=cross(smoothNormal,t);
   if(dot(b,bitangent)<0)b=-b;
   bool measured=(s.material.x&measuredSheetMaterialFlag)!=0u&&frame.sheetMaterials!=0;
-  outNormal=vec4(materialNormal(s,uv,mat3(t,b,smoothNormal),normalize(-direction)),(decalSurface(s)?4:blendedAtAlpha(s,albedo.a)?(measured?5:(s.state.w&32)!=0?3:2):1)+((draw.stableDepth&2u)!=0u?8:0)+((filmed(s)||(s.material.x&256u)!=0u||subsurfaced(s))?16:0)+(((s.state.w>>12)&7u)!=0u?32:0));
+  outNormal=vec4(materialNormal(s,uv,mat3(t,b,smoothNormal),normalize(-direction)),(decalSurface(s)?4:blendedAtAlpha(s,albedo.a)?(measured?5:(s.state.w&32)!=0?3:2):1)+((draw.stableDepth&2u)!=0u?8:0)+((filmed(s)||(s.material.x&256u)!=0u||subsurfaced(s))?16:0)+((s.state.w&0x3c07000u)!=0u?32:0));
   vec2 rm=materialParameters(s,uv,albedo.rgb);
   outPbr=vec4(s.pbr.z!=0?rm.x:-1,rm.y,encodeGeometricNormal(n));
   outAlbedo=vec4(albedo.rgb+self,albedo.a);

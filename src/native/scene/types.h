@@ -54,8 +54,8 @@ namespace remix {
       uint32_t width = 0, height = 0;
       bool srgb = true;
       std::vector<std::vector<uint8_t>> mips;
-      std::vector<std::vector<float>> hdrMips; // Linear RGBA32F, retained through upload.
-      bool twoChannel = false; // BC5 stores normal X/Y; reconstruct Z when used as a normal map.
+      std::vector<std::vector<float>> hdrMips;      // Linear RGBA32F, retained through upload.
+      bool twoChannel = false;                      // BC5 stores normal X/Y; reconstruct Z when used as a normal map.
       std::shared_ptr<CompressedPixels> compressed; // Set only for GPU-compressed textures.
       uint32_t levels() const { return compressed ? compressed->levels : uint32_t(mips.size()); }
     };
@@ -91,10 +91,10 @@ namespace remix {
       std::atomic<uint64_t> &out;
       std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
       ~CounterTicks() {
-        out.fetch_add(uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(
-                                   std::chrono::steady_clock::now() - start)
-                                   .count()),
-                      std::memory_order_relaxed);
+        out.fetch_add(
+            uint64_t(
+                std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count()),
+            std::memory_order_relaxed);
       }
     };
     struct Texture {
@@ -148,6 +148,36 @@ namespace remix {
                std::equal(bloodRange, bloodRange + 2, o.bloodRange);
       }
     };
+    // remixapi_MaterialPortalRimEXT, validated: Portal 2's portal rim, whose
+    // noise is the material's albedo texture (read as stored). The ramp is
+    // read through rampSampler (bilinear, clamped).
+    struct PortalRim {
+      std::shared_ptr<Texture> ramp;
+      std::shared_ptr<Material> rampSampler;
+      float colorScale = 1;
+      bool operator==(const PortalRim &o) const { return ramp == o.ramp && colorScale == o.colorScale; }
+    };
+    // remixapi_MaterialSolidEnergyEXT, validated: Portal 2's SolidEnergy
+    // surface (a light bridge), whose base is the material's albedo texture.
+    // The details are read through their samplers (bilinear, repeating).
+    struct SolidEnergy {
+      std::shared_ptr<Texture> detail1, detail2;
+      std::shared_ptr<Material> detail1Sampler, detail2Sampler;
+      float intensity = 1;
+      float baseScroll[2] = {}, detail1Scroll[2] = {}, detail2Scroll[2] = {}, detail1Sway[2] = {};
+      // Its glow averaged over the textures (the scrolls move them apart, so
+      // over time every texel of each meets every other's), linear: the
+      // light it gives per unit of the material's emission (scene/emission.cpp,
+      // once per material).
+      mutable std::once_flag meanOnce;
+      mutable std::array<float, 3> mean{};
+      bool operator==(const SolidEnergy &o) const {
+        auto same = [](const float *a, const float *b) { return a[0] == b[0] && a[1] == b[1]; };
+        return detail1 == o.detail1 && detail2 == o.detail2 && intensity == o.intensity &&
+               same(baseScroll, o.baseScroll) && same(detail1Scroll, o.detail1Scroll) &&
+               same(detail2Scroll, o.detail2Scroll) && same(detail1Sway, o.detail1Sway);
+      }
+    };
     // remixapi_InstanceInfoWoundCutEXT, validated. A description keeps the
     // texture's name (path); the draws built from it hold the texture and
     // its sampler material (bilinear, clipped: black outside 0..1).
@@ -166,6 +196,10 @@ namespace remix {
     struct Material {
       uint64_t sourceHash = 0;
       std::vector<uint64_t> replacementKeys;
+      // A mod material whose textures stream (usd/submission.h): a draw that
+      // resolves to it sets 1, or 2 when a scene instance keeps it. The mod
+      // loader reads and clears it. Guarded by the API mutex.
+      std::shared_ptr<uint8_t> streamUse;
       std::shared_ptr<Texture> texture;
       std::shared_ptr<Texture> emissionTexture;
       std::shared_ptr<Texture> roughnessTexture, metallicTexture, normalTexture;
@@ -188,6 +222,11 @@ namespace remix {
       // remixapi_MaterialGradientMapEXT (null: none); texture is then a data
       // texture (as stored).
       std::shared_ptr<const GradientMap> gradient;
+      // remixapi_MaterialPortalRimEXT (null: none); texture is then its noise,
+      // a data texture (as stored).
+      std::shared_ptr<const PortalRim> portalRim;
+      // remixapi_MaterialSolidEnergyEXT (null: none).
+      std::shared_ptr<const SolidEnergy> solidEnergy;
       // remixapi_MaterialNormalScrollEXT (normal encoding 5): layers, then the
       // base, layer 1 and layer 2 rates.
       uint32_t scrollLayers = 1;
@@ -195,10 +234,10 @@ namespace remix {
       // Measured optical properties in scene units. Zero measurement distance
       // retains legacy tinted-sheet shading; positive thickness denotes a sheet.
       float refractiveIndex = 1.5f, transmittanceDistance = 0;
-      float thinWallThickness = 0; // positive: measured parallel sheet, not a containing volume
+      float thinWallThickness = 0;       // positive: measured parallel sheet, not a containing volume
       float transmittanceScroll[2] = {}; // actual tint UV rates; bake-averaged axes ignore the clock
-      uint32_t bakeTintAxes = 0; // explicitly averaged transmission-tint UV axes; live shading ignores this
-      bool bakeSmoothBoundary = false; // explicit mean interface; live ripple normals are excluded
+      uint32_t bakeTintAxes = 0;         // explicitly averaged transmission-tint UV axes; live shading ignores this
+      bool bakeSmoothBoundary = false;   // explicit mean interface; live ripple normals are excluded
       // A thin-film coating (remixapi_MaterialIridescenceEXT, or the opaque
       // info's thinFilmThickness): strength 0 means none. Thicknesses in nm.
       struct Iridescence {
@@ -244,6 +283,9 @@ namespace remix {
       // remixapi_MaterialInfoScreenCameraEXT: the screen camera slot + 1 it
       // shows (0: none).
       uint8_t screenCamera = 0;
+      // remixapi_MaterialInfoPortalEXT: the ray portal index + 1 its surface
+      // opens (0: none; scene/portals.h).
+      uint8_t rayPortal = 0;
       // Wrap modes in RTX Remix's MDL encoding: 0 clamp, 1 repeat, 2 mirrored
       // repeat, 3 clip.
       uint8_t filter = 0, wrapU = 1, wrapV = 1;
@@ -264,6 +306,12 @@ namespace remix {
       // remixapi_MaterialGradientMapEXT (frame_tables.h materialFields: its
       // parameters take the thin film's fields, which such a material lacks).
       static constexpr uint32_t gradientMap = 1024;
+      // remixapi_MaterialPortalRimEXT (frame_tables.h portalRimFields: its
+      // ramp and colour scale in the film's fields, which it lacks too).
+      static constexpr uint32_t portalRim = 2048;
+      // remixapi_MaterialSolidEnergyEXT (frame_tables.h solidEnergyFields:
+      // its details and rates in the film's fields, likewise).
+      static constexpr uint32_t solidEnergy = 4096;
       uint32_t flags = 0, pbrWord = 0;
       float selfIlluminationScale = 0;
     };
@@ -327,7 +375,7 @@ namespace remix {
       // Emitter of an instance the host identified as dynamic
       // (remixapi_InstanceIdentityEXT): kept in the light tree's dynamic part.
       bool dynamic = false;
-      uint32_t style = 0; // captured stationary style; excluded from shared indirect transport
+      uint32_t style = 0;    // captured stationary style; excluded from shared indirect transport
       uint32_t bakeHint = 0; // optional engine-agnostic static representation preference
       // Triangle emitters: the surface draw they belong to (0 for sphere
       // lights) and their place in a spatial order of its emitters. The light
@@ -360,8 +408,7 @@ namespace remix {
       uint32_t classification = 1; // dynamic for callers without the extension
       bool rasterVisible = true;
       bool traced() const {
-        return !ui && camera == REMIXAPI_CAMERA_TYPE_WORLD && classification != 2 && blend.mask != 0 &&
-               !maskGroup;
+        return !ui && camera == REMIXAPI_CAMERA_TYPE_WORLD && classification != 2 && blend.mask != 0 && !maskGroup;
       }
       std::shared_ptr<Surface> surface;
       std::shared_ptr<Material> material;

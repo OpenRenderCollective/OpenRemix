@@ -36,7 +36,8 @@ namespace remix::scene {
     }
     Pixels decodeFloat(uint32_t width, uint32_t height, uint32_t mips, unsigned channels, bool half,
                        const uint8_t *data, size_t size) {
-      if (!width || !height || width > maxTextureDimension || height > maxTextureDimension || !data || channels < 1 || channels > 4)
+      if (!width || !height || width > maxTextureDimension || height > maxTextureDimension || !data || channels < 1 ||
+          channels > 4)
         throw invalid;
       unsigned levels = 0;
       for (auto n = std::max(width, height); n; n >>= 1)
@@ -97,8 +98,8 @@ namespace remix::scene {
       out.twoChannel = block == 5;
       size_t offset = 0, total = 0;
       for (uint32_t mip = 0; mip < mips; ++mip) {
-        const size_t bytes =
-            block ? size_t((width + 3) / 4) * ((height + 3) / 4) * ((block == 1 || block == 4) ? 8 : 16)
+        const size_t bytes = block
+                                 ? size_t((width + 3) / 4) * ((height + 3) / 4) * ((block == 1 || block == 4) ? 8 : 16)
                   : size_t(width) * height * 4;
         const size_t decodedSize = size_t(width) * height * 4;
         total += decodedSize * ((block == 6 || block == 16) ? 5 : 1);
@@ -326,8 +327,7 @@ namespace remix::scene {
       uint64_t low, high;
       std::memcpy(&low, data, 8);
       std::memcpy(&high, data + 8, 8);
-      const uint64_t value =
-          start >= 64 ? high >> (start - 64) : (low >> start) | (start ? high << (64 - start) : 0);
+      const uint64_t value = start >= 64 ? high >> (start - 64) : (low >> start) | (start ? high << (64 - start) : 0);
       return uint32_t(value & ((1ull << count) - 1));
     }
     // 16-bit mask of the block's texels whose decoded alpha is not 255, without
@@ -338,8 +338,8 @@ namespace remix::scene {
         // Only the three-color mode (color0 <= color1) has a transparent index.
         if (!bc1Alpha || (data[0] | data[1] << 8) > (data[2] | data[3] << 8))
           return 0;
-        const uint32_t indices = uint32_t(data[4]) | uint32_t(data[5]) << 8 | uint32_t(data[6]) << 16 |
-                                 uint32_t(data[7]) << 24;
+        const uint32_t indices =
+            uint32_t(data[4]) | uint32_t(data[5]) << 8 | uint32_t(data[6]) << 16 | uint32_t(data[7]) << 24;
         for (unsigned i = 0; i < 16; ++i)
           if (((indices >> (2 * i)) & 3) == 3)
             mask |= 1u << i;
@@ -383,8 +383,8 @@ namespace remix::scene {
     // Word-at-a-time content hash. Byte-wise FNV over a multi-megabyte chain
     // would dominate the cost of a compressed CreateTexture.
     uint64_t hashBlocks(const uint8_t *data, size_t size, uint64_t seed) {
-      uint64_t lanes[4] = {seed ^ 0x9e3779b97f4a7c15ull, seed ^ 0xc2b2ae3d27d4eb4full,
-                           seed ^ 0x165667b19e3779f9ull, seed ^ 0x27d4eb2f165667c5ull};
+      uint64_t lanes[4] = {seed ^ 0x9e3779b97f4a7c15ull, seed ^ 0xc2b2ae3d27d4eb4full, seed ^ 0x165667b19e3779f9ull,
+                           seed ^ 0x27d4eb2f165667c5ull};
       size_t i = 0;
       for (; i + 32 <= size; i += 32)
         for (unsigned k = 0; k < 4; ++k) {
@@ -579,23 +579,9 @@ namespace remix::scene {
     return decodeTexture(info);
   }
 
-  Pixels loadTexture(const std::filesystem::path &path) {
-    std::ifstream file(path, std::ios::binary | std::ios::ate);
-    if (!file) {
-      throw REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
-    }
-    const auto length = file.tellg();
-    if (length <= 0 || length > 512 * 1024 * 1024) {
-      throw invalid;
-    }
-    std::vector<uint8_t> data(static_cast<size_t>(length));
-    file.seekg(0);
-    if (!file.read(reinterpret_cast<char *>(data.data()), length)) {
-      throw invalid;
-    }
+  static Pixels decodeTextureFile(const std::vector<uint8_t> &data) {
     if (data.size() >= 128 && word(data, 0) == 0x20534444) {
-      if (word(data, 4) != 124 || word(data, 76) != 32 || word(data, 24) > 1 ||
-          (word(data, 112) & 0x20fe00)) {
+      if (word(data, 4) != 124 || word(data, 76) != 32 || word(data, 24) > 1 || (word(data, 112) & 0x20fe00)) {
         throw invalid;
       } // No volumes or cube faces.
       uint32_t width = word(data, 16), height = word(data, 12), block = 0;
@@ -754,8 +740,7 @@ namespace remix::scene {
         }
         return compressTexture(info);
       }
-      auto out = decode(width, height, word(data, 28), srgb, block, bgra, data.data() + offset,
-                        data.size() - offset);
+      auto out = decode(width, height, word(data, 28), srgb, block, bgra, data.data() + offset, data.size() - offset);
       if (forceAlpha) {
         for (auto &mip : out.mips) {
           for (size_t i = 3; i < mip.size(); i += 4) {
@@ -772,12 +757,10 @@ namespace remix::scene {
     }
     if (stbi_is_hdr_from_memory(data.data(), int(data.size()))) {
       std::unique_ptr<float, decltype(&stbi_image_free)> hdr(
-          stbi_loadf_from_memory(data.data(), int(data.size()), &width, &height, &channels, 4),
-          stbi_image_free);
+          stbi_loadf_from_memory(data.data(), int(data.size()), &width, &height, &channels, 4), stbi_image_free);
       if (!hdr || uint64_t(width) * height * 20 > 512u * 1024 * 1024)
         throw invalid;
-      Pixels out{
-          uint32_t(width), uint32_t(height), false, {std::vector<uint8_t>(size_t(width) * height * 4)}};
+      Pixels out{uint32_t(width), uint32_t(height), false, {std::vector<uint8_t>(size_t(width) * height * 4)}};
       out.hdrMips.emplace_back(hdr.get(), hdr.get() + size_t(width) * height * 4);
       for (size_t i = 0; i < out.mips[0].size(); ++i)
         out.mips[0][i] = uint8_t(std::clamp(hdr.get()[i], 0.f, 1.f) * 255);
@@ -788,8 +771,116 @@ namespace remix::scene {
     if (!pixels) {
       throw invalid;
     }
-    return decode(uint32_t(width), uint32_t(height), 1, true, 0, false, pixels.get(),
-                  size_t(width) * height * 4);
+    return decode(uint32_t(width), uint32_t(height), 1, true, 0, false, pixels.get(), size_t(width) * height * 4);
+  }
+
+  Pixels loadTexture(const std::filesystem::path &path) {
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    if (!file) {
+      throw REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
+    }
+    const auto length = file.tellg();
+    if (length <= 0 || length > 512 * 1024 * 1024) {
+      throw invalid;
+    }
+    std::vector<uint8_t> data(static_cast<size_t>(length));
+    file.seekg(0);
+    if (!file.read(reinterpret_cast<char *>(data.data()), length)) {
+      throw invalid;
+    }
+    return decodeTextureFile(data);
+  }
+
+  Pixels loadTexturePreview(const std::filesystem::path &path, uint32_t maxEdge) {
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    if (!file) {
+      throw REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
+    }
+    const auto length = uint64_t(file.tellg());
+    // Bytes per block of a block-compressed DDS's header, else 0.
+    const auto blockBytes = [](const std::vector<uint8_t> &header) -> uint64_t {
+      if (word(header, 0) != 0x20534444 || !(word(header, 80) & 4))
+        return 0;
+      switch (word(header, 84)) {
+      case 0x31545844: // DXT1
+      case 0x31495441: // ATI1
+      case 0x55344342: // BC4U
+        return 8;
+      case 0x33545844: // DXT3
+      case 0x35545844: // DXT5
+      case 0x32495441: // ATI2
+      case 0x55354342: // BC5U
+        return 16;
+      case 0x30315844: // DX10
+        switch (header.size() >= 148 ? word(header, 128) : 0) {
+        case 71:
+        case 72:
+        case 80:
+          return 8;
+        case 74:
+        case 75:
+        case 77:
+        case 78:
+        case 83:
+        case 95:
+        case 96:
+        case 98:
+        case 99:
+          return 16;
+        }
+      }
+      return 0;
+    };
+    std::vector<uint8_t> header(size_t(std::min<uint64_t>(length, 148)));
+    file.seekg(0);
+    if (length >= 128 && file.read(reinterpret_cast<char *>(header.data()), std::streamsize(header.size()))) {
+      if (const uint64_t bytes = blockBytes(header)) {
+        const uint32_t levels = word(header, 28);
+        uint32_t width = word(header, 16), height = word(header, 12), level = 0;
+        const size_t headerSize = word(header, 84) == 0x30315844 ? 148 : 128;
+        uint64_t offset = headerSize;
+        while (std::max(width, height) > maxEdge && level + 1 < levels) {
+          offset += uint64_t((width + 3) / 4) * ((height + 3) / 4) * bytes;
+          width = std::max(1u, width / 2);
+          height = std::max(1u, height / 2);
+          ++level;
+        }
+        if (std::max(width, height) <= maxEdge && offset < length) {
+          std::vector<uint8_t> data(header.begin(), header.begin() + headerSize);
+          data.resize(headerSize + size_t(length - offset));
+          file.seekg(std::streamoff(offset));
+          if (file.read(reinterpret_cast<char *>(data.data() + headerSize), std::streamsize(length - offset))) {
+            const auto set = [&](size_t at, uint32_t value) { std::memcpy(data.data() + at, &value, 4); };
+            set(12, height);
+            set(16, width);
+            set(28, levels - level);
+            return decodeTextureFile(data);
+          }
+        }
+      }
+    }
+    file.close();
+    auto whole = loadTexture(path);
+    if (whole.compressed) {
+      const auto &c = *whole.compressed;
+      Pixels preview{c.previewWidth, c.previewHeight, whole.srgb, {c.preview}};
+      if (!c.hdrPreview.empty())
+        preview.hdrMips = {c.hdrPreview};
+      preview.twoChannel = whole.twoChannel;
+      return preview;
+    }
+    // HDR levels stay whole: a dome light's, loaded once.
+    if (!whole.hdrMips.empty() || std::max(whole.width, whole.height) <= maxEdge)
+      return whole;
+    if (whole.mips.size() < 2)
+      generateMips(whole);
+    size_t first = 0;
+    while (first + 1 < whole.mips.size() && std::max(whole.width >> first, whole.height >> first) > maxEdge)
+      ++first;
+    Pixels preview{std::max(1u, whole.width >> first), std::max(1u, whole.height >> first), whole.srgb};
+    preview.mips.assign(std::make_move_iterator(whole.mips.begin() + first), std::make_move_iterator(whole.mips.end()));
+    preview.twoChannel = whole.twoChannel;
+    return preview;
   }
 
   namespace {
@@ -815,8 +906,8 @@ namespace remix::scene {
 
     // Texel (x, y) of the level below a width x height one: a 2x2 box (a
     // 1-texel edge stays as is); odd sizes drop their last row/column.
-    void filterTexel(const Pixels &pixels, size_t sourceLevel, uint32_t width, uint32_t height, uint32_t x,
-                     uint32_t y, uint8_t *out, float *hdrOut) {
+    void filterTexel(const Pixels &pixels, size_t sourceLevel, uint32_t width, uint32_t height, uint32_t x, uint32_t y,
+                     uint8_t *out, float *hdrOut) {
       const auto &source = pixels.mips[sourceLevel];
       const float *hdrSource = hdrOut ? pixels.hdrMips[sourceLevel].data() : nullptr;
       const auto &toLinear = linearTable();
@@ -886,14 +977,29 @@ namespace remix::scene {
     uint32_t width = pixels.width, height = pixels.height;
     if (const auto &c = pixels.compressed; c && !c->upload.empty()) {
       switch (c->block) {
-      case 1: dxgi = pixels.srgb ? 72 : 71; break;
-      case 3: dxgi = pixels.srgb ? 78 : 77; break;
-      case 4: dxgi = 80; break;
-      case 5: dxgi = 83; break;
-      case 6: dxgi = 95; break;
-      case 16: dxgi = 96; break;
-      case 7: dxgi = pixels.srgb ? 99 : 98; break;
-      default: return {};
+      case 1:
+        dxgi = pixels.srgb ? 72 : 71;
+        break;
+      case 3:
+        dxgi = pixels.srgb ? 78 : 77;
+        break;
+      case 4:
+        dxgi = 80;
+        break;
+      case 5:
+        dxgi = 83;
+        break;
+      case 6:
+        dxgi = 95;
+        break;
+      case 16:
+        dxgi = 96;
+        break;
+      case 7:
+        dxgi = pixels.srgb ? 99 : 98;
+        break;
+      default:
+        return {};
       }
       levels = c->levels;
       bytes.push_back(&c->upload);

@@ -19,8 +19,7 @@ _Static_assert(offsetof(remixapi_BakeSurfaceChartEXT, texcoords) == 32, "Bake ch
 _Static_assert(sizeof(remixapi_BakeSceneSurfacesInfoEXT) == 104, "Bake surfaces descriptor ABI");
 _Static_assert(offsetof(remixapi_BakeSceneSurfacesInfoEXT, charts) == 96, "Bake chart array alignment");
 _Static_assert(sizeof(remixapi_BakeStatisticsEXT) == 272, "Bake statistics extension ABI");
-_Static_assert(offsetof(remixapi_BakeStatisticsEXT, reflectionRequested) == 256,
-               "Bake statistics legacy prefix ABI");
+_Static_assert(offsetof(remixapi_BakeStatisticsEXT, reflectionRequested) == 256, "Bake statistics legacy prefix ABI");
 _Static_assert(offsetof(remixapi_BakeSceneInfoEXT, instances) == 40, "Bake scene array alignment");
 _Static_assert(sizeof(remixapi_MaterialInfoEmissionEXT) == 24, "Material emission extension ABI");
 _Static_assert(offsetof(remixapi_MaterialInfoEmissionEXT, suppressLightGeneration) == 16,
@@ -73,10 +72,15 @@ _Static_assert(sizeof(remixapi_HostPassVertexBindingEXT) == 16, "Host pass verte
 _Static_assert(sizeof(remixapi_HostPassAttributeEXT) == 16, "Host pass attribute ABI");
 _Static_assert(sizeof(remixapi_HostPassEXT) == 272, "Host pass ABI");
 _Static_assert(sizeof(remixapi_HostPassListEXT) == 32, "Host pass list ABI");
-_Static_assert(sizeof(remixapi_HostPassStatisticsEXT) == 72, "Host pass statistics ABI");
+_Static_assert(sizeof(remixapi_HostPassListFlagsEXT) == 32, "Host pass list flags ABI");
+_Static_assert(sizeof(remixapi_HostPassStatisticsEXT) == 80, "Host pass statistics ABI");
+_Static_assert(offsetof(remixapi_HostPassStatisticsEXT, always) == 72, "Host pass statistics version 1 size");
 _Static_assert(sizeof(remixapi_InstanceInfoWireframeEXT) == 24, "Wireframe instance ABI");
 _Static_assert(sizeof(remixapi_MaterialBakeBoundaryEXT) == 24, "Smooth bake boundary ABI");
 _Static_assert(sizeof(remixapi_BakeSceneReflectionsInfoEXT) == 128, "Reflection seed descriptor ABI");
+_Static_assert(sizeof(remixapi_MaterialPortalRimEXT) == 32, "Portal rim material ABI");
+_Static_assert(sizeof(remixapi_MaterialSolidEnergyEXT) == 72, "Solid energy material ABI");
+_Static_assert(offsetof(remixapi_MaterialSolidEnergyEXT, intensity) == 32, "Solid energy material intensity");
 _Static_assert(sizeof(remixapi_ParticleEmitterInfoEXT) == 232, "Particle emitter ABI");
 _Static_assert(offsetof(remixapi_ParticleEmitterInfoEXT, transform) == 40, "Particle emitter transform");
 _Static_assert(offsetof(remixapi_ParticleEmitterInfoEXT, colorStart) == 168, "Particle emitter colours");

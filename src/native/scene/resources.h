@@ -54,17 +54,7 @@ namespace remix {
       m_modMaterials.clear();
       m_modParts.clear();
       m_modMerged.clear();
-      m_modCandidates.clear();
-      m_modRequested.clear();
-      m_modRequests.clear();
       ++m_modGeneration;
-    }
-    // Lazily created mod materials: draws whose material hash is a candidate
-    // are recorded (once) for the mod loader, which adds the replacement when
-    // its textures are ready. Until then the original material is drawn.
-    void setModMaterialCandidates(std::unordered_set<uint64_t> candidates) {
-      clearModMaterials();
-      m_modCandidates = std::move(candidates);
     }
     // parts: what the mod authors of it (scene::ModParts); the rest keeps the
     // replaced material's values.
@@ -80,7 +70,16 @@ namespace remix {
         ++m_modGeneration;
       }
     }
-    std::vector<uint64_t> takeModMaterialRequests() { return std::exchange(m_modRequests, {}); }
+    // A mod material's handle resolves to a new object (its textures streamed
+    // in or out): what replaced by it now draws that. Its parts stay, and a
+    // merged copy of the old object is remade when next drawn.
+    void updateModMaterial(uint64_t hash, remixapi_MaterialHandle handle) {
+      auto it = m_materials.find(uint64_t(reinterpret_cast<uintptr_t>(handle)));
+      if (it != m_materials.end() && m_modMaterials.contains(hash)) {
+        m_modMaterials[hash] = it->second;
+        ++m_modGeneration;
+      }
+    }
     void replaceModMaterials(const std::map<uint64_t, remixapi_MaterialHandle> &handles) {
       std::unordered_map<uint64_t, std::shared_ptr<scene::Material>> next;
       for (auto [hash, handle] : handles) {
@@ -99,7 +98,15 @@ namespace remix {
     void cacheTexturePath(const std::string &path, const std::shared_ptr<scene::Texture> &texture) {
       m_paths[std::filesystem::absolute(utf8Path(path)).lexically_normal()] = texture;
     }
+    void uncacheTexturePath(const std::string &path) {
+      m_paths.erase(std::filesystem::absolute(utf8Path(path)).lexically_normal());
+    }
     void createMaterial(const remixapi_MaterialInfo &info, remixapi_MaterialHandle &handle);
+    void setMaterialStreamUse(remixapi_MaterialHandle handle, std::shared_ptr<uint8_t> use) {
+      auto it = m_materials.find(uint64_t(reinterpret_cast<uintptr_t>(handle)));
+      if (it != m_materials.end())
+        it->second->streamUse = std::move(use);
+    }
     void setMaterialSourceHash(remixapi_MaterialHandle handle, uint64_t hash) {
       auto it = m_materials.find(uint64_t(reinterpret_cast<uintptr_t>(handle)));
       if (it != m_materials.end() && it->second->sourceHash != hash) {
@@ -109,6 +116,13 @@ namespace remix {
     }
     void destroyMaterial(remixapi_MaterialHandle handle);
     void createMesh(const remixapi_MeshInfo &info, remixapi_MeshHandle &handle);
+    // A mesh's parts apart from the API mutex (a mod's load): a surface as
+    // createMesh makes it, with the same checks. `bytes` adds up a mesh's size
+    // against createMesh's limit. adoptMesh registers surfaces so made, which
+    // name their materials by then; nothing is copied.
+    static std::shared_ptr<scene::Surface> prepareSurface(const remixapi_MeshInfoSurfaceTriangles &source,
+                                                          bool spriteVertices, uint64_t &bytes);
+    void adoptMesh(uint64_t hash, std::vector<std::shared_ptr<scene::Surface>> surfaces, remixapi_MeshHandle &handle);
     void destroyMesh(remixapi_MeshHandle handle);
     void createTexture(const remixapi_TextureInfo &info, remixapi_TextureHandle &handle);
     // Stores pixels prepared outside the API mutex (see scene::compressTexture).
@@ -164,13 +178,15 @@ namespace remix {
     scene::ReflectionBinding materialReflection(uint64_t material) const {
       if (m_materialReflections) {
         const auto found = m_materialReflections->find(material);
-        if (found != m_materialReflections->end()) return found->second;
+        if (found != m_materialReflections->end())
+          return found->second;
       }
       return {};
     }
     std::shared_ptr<const scene::ReflectionVolumes> reflectionVolumes() const {
       return m_bakeScene && m_reflectionVolumes && m_reflectionVolumes->sceneId == m_bakeScene->sceneId
-                 ? m_reflectionVolumes : nullptr;
+                 ? m_reflectionVolumes
+                 : nullptr;
     }
     const std::shared_ptr<const scene::BakeScene> &bakeScene() const { return m_bakeScene; }
     // Authored definition dependencies, independent of this frame's light draw
@@ -250,8 +266,8 @@ namespace remix {
     // Set while frames are rendered on another thread: shared resource state
     // that rendering writes (Material::emissionCache) is not read from here.
     void setConcurrentConsumer(bool value) { m_concurrentConsumer = value; }
-    void registerUiTexture(uint64_t id, uint32_t width, uint32_t height, remixapi_Format format,
-                           const void *pixels, uint64_t size);
+    void registerUiTexture(uint64_t id, uint32_t width, uint32_t height, remixapi_Format format, const void *pixels,
+                           uint64_t size);
     void updateUiTextureRegion(uint64_t id, uint32_t x, uint32_t y, uint32_t width, uint32_t height,
                                remixapi_Format format, const void *pixels, uint32_t rowPitch);
     void freeUiTexture(uint64_t id);
@@ -402,8 +418,6 @@ namespace remix {
       std::shared_ptr<scene::Material> merged;
     };
     std::unordered_map<uint64_t, ModMerged> m_modMerged;
-    std::unordered_set<uint64_t> m_modCandidates, m_modRequested;
-    std::vector<uint64_t> m_modRequests;
     // Weak content entries share immutable payloads, never mesh lifetimes.
     std::shared_ptr<scene::Surface> shareSurface(std::shared_ptr<scene::Surface> surface);
     std::unordered_map<uint64_t, std::weak_ptr<scene::Surface>> m_surfaceContent;

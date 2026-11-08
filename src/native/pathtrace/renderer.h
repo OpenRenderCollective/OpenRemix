@@ -1,4 +1,5 @@
 #pragma once
+#include "pathtrace/path_inspection.h"
 #include "denoise/renderer.h"
 #include "pathtrace/options.h"
 #include "runtime/settings.h"
@@ -77,15 +78,6 @@ namespace remix::trace {
 } // namespace remix::trace
 
 namespace remix {
-  // One pixel's path, as the last frame traced it (PathTracer::inspectPixel):
-  // records of 16 floats, kind in [3] (pathtrace.comp pathDebugRecord), and
-  // the world-to-clip camera and render size they were traced with.
-  struct PathInspection {
-    std::vector<std::array<float, 16>> records;
-    scene::Matrix camera{};
-    uint32_t width = 0, height = 0, x = 0, y = 0;
-    uint64_t frame = 0; // frames inspected so far (0: none yet)
-  };
   class PathTracer {
   public:
     // Records the paths of render pixel (x, y) each frame; x < 0 stops.
@@ -94,8 +86,7 @@ namespace remix {
     static constexpr uint32_t textureLimit = 4096;
     PathTracer();
     ~PathTracer();
-    void initialize(VkPhysicalDevice physical, VkDevice device,
-                    uint32_t queueFamily, bool preparing = false,
+    void initialize(VkPhysicalDevice physical, VkDevice device, uint32_t queueFamily, bool preparing = false,
                     bool rasterPrimary = true, std::shared_ptr<postfx::State> exposureState = {});
     std::shared_ptr<postfx::State> exposureState() const;
     VkExtent2D renderExtent() const;
@@ -140,14 +131,13 @@ namespace remix {
       upscale::FrameGenerationInputs images;
       scene::Matrix view{}, projection{}, previousView{}, previousProjection{};
       float frameMilliseconds = 0; // since the previous frame, as the upscaler was given
-      bool reset = true; // no usable previous frame
+      bool reset = true;           // no usable previous frame
       bool valid = false;
     };
     FrameGenerationInputs frameGeneration() const;
     void setNgx(std::shared_ptr<upscale::Ngx> ngx);
-    void prepareConfiguration(const TraceOptions &options, bool perspective,
-                              bool local, bool emissive, uint32_t failedBackends = 0,
-                              const std::string &failure = {});
+    void prepareConfiguration(const TraceOptions &options, bool perspective, bool local, bool emissive,
+                              uint32_t failedBackends = 0, const std::string &failure = {});
     bool finishPreparation(VkQueue queue);
     // Submits the setup of reconstruction recreated in place (a Ray
     // Reconstruction model or preset change in beginFrame) ahead of the frame.
@@ -185,11 +175,11 @@ namespace remix {
     uint64_t frameDigest() const;
     // The persistent static set in the last prepared frame (Diagnostics).
     struct StaticStatistics {
-      bool active = false;                      // traced from the kept static set
-      uint64_t units = 0, surfaces = 0;         // its traced instances and table entries
-      uint64_t reusedSurfaces = 0;              // static entries taken from kept tables
-      uint64_t rebuiltSurfaces = 0;             // static entries of units built this frame
-      uint64_t dynamicSurfaces = 0;             // entries of the frame's other instances
+      bool active = false;              // traced from the kept static set
+      uint64_t units = 0, surfaces = 0; // its traced instances and table entries
+      uint64_t reusedSurfaces = 0;      // static entries taken from kept tables
+      uint64_t rebuiltSurfaces = 0;     // static entries of units built this frame
+      uint64_t dynamicSurfaces = 0;     // entries of the frame's other instances
       uint64_t rebuiltUnits = 0, changes = 0, temporalSurfaces = 0, relayouts = 0;
       double syncMilliseconds = 0;              // within scene preparation
       double tableMilliseconds = 0;             // within trace surfaces
@@ -202,8 +192,7 @@ namespace remix {
     // The NUMOS sky: the profile's sky settings, the game's control over
     // them (remix_sky_ext.h), and why the device cannot run it (empty when
     // it can). Applies from the next prepared frame.
-    void setSky(const config::SkySettings &settings, const config::SkyControl &control,
-                const std::string &unavailable);
+    void setSky(const config::SkySettings &settings, const config::SkyControl &control, const std::string &unavailable);
     struct SkyStatus {
       bool supported = false, active = false;
       std::string reason; // why the sky is not active, or empty

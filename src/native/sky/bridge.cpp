@@ -18,30 +18,44 @@ namespace remix::sky {
 
     VkFormat format(numos::Format value) {
       switch (value) {
-      case numos::Format::R8Unorm: return VK_FORMAT_R8_UNORM;
-      case numos::Format::RGBA8Unorm: return VK_FORMAT_R8G8B8A8_UNORM;
-      case numos::Format::R16Float: return VK_FORMAT_R16_SFLOAT;
-      case numos::Format::RGBA16Float: return VK_FORMAT_R16G16B16A16_SFLOAT;
-      case numos::Format::R32Uint: return VK_FORMAT_R32_UINT;
-      case numos::Format::R32Float: return VK_FORMAT_R32_SFLOAT;
-      case numos::Format::RG32Float: return VK_FORMAT_R32G32_SFLOAT;
-      case numos::Format::RGBA32Float: return VK_FORMAT_R32G32B32A32_SFLOAT;
-      case numos::Format::RG16Float: return VK_FORMAT_R16G16_SFLOAT;
+      case numos::Format::R8Unorm:
+        return VK_FORMAT_R8_UNORM;
+      case numos::Format::RGBA8Unorm:
+        return VK_FORMAT_R8G8B8A8_UNORM;
+      case numos::Format::R16Float:
+        return VK_FORMAT_R16_SFLOAT;
+      case numos::Format::RGBA16Float:
+        return VK_FORMAT_R16G16B16A16_SFLOAT;
+      case numos::Format::R32Uint:
+        return VK_FORMAT_R32_UINT;
+      case numos::Format::R32Float:
+        return VK_FORMAT_R32_SFLOAT;
+      case numos::Format::RG32Float:
+        return VK_FORMAT_R32G32_SFLOAT;
+      case numos::Format::RGBA32Float:
+        return VK_FORMAT_R32G32B32A32_SFLOAT;
+      case numos::Format::RG16Float:
+        return VK_FORMAT_R16G16_SFLOAT;
       }
       return VK_FORMAT_UNDEFINED;
     }
 
     size_t texelBytes(numos::Format value) {
       switch (value) {
-      case numos::Format::R8Unorm: return 1;
-      case numos::Format::R16Float: return 2;
+      case numos::Format::R8Unorm:
+        return 1;
+      case numos::Format::R16Float:
+        return 2;
       case numos::Format::RGBA8Unorm:
       case numos::Format::R32Uint:
       case numos::Format::R32Float:
-      case numos::Format::RG16Float: return 4;
+      case numos::Format::RG16Float:
+        return 4;
       case numos::Format::RGBA16Float:
-      case numos::Format::RG32Float: return 8;
-      case numos::Format::RGBA32Float: return 16;
+      case numos::Format::RG32Float:
+        return 8;
+      case numos::Format::RGBA32Float:
+        return 16;
       }
       return 4;
     }
@@ -49,29 +63,45 @@ namespace remix::sky {
     // The numos::Format of a storage image's SPIR-V ImageFormat (placeholders).
     numos::Format fromSpirv(uint32_t value) {
       switch (value) {
-      case 1: return numos::Format::RGBA32Float;  // Rgba32f
-      case 2: return numos::Format::RGBA16Float;  // Rgba16f
-      case 3: return numos::Format::R32Float;     // R32f
-      case 4: return numos::Format::RGBA8Unorm;   // Rgba8
-      case 6: return numos::Format::RG32Float;    // Rg32f
-      case 7: return numos::Format::RG16Float;    // Rg16f
-      case 9: return numos::Format::R16Float;     // R16f
-      case 15: return numos::Format::R8Unorm;     // R8
-      case 33: return numos::Format::R32Uint;     // R32ui
+      case 1:
+        return numos::Format::RGBA32Float; // Rgba32f
+      case 2:
+        return numos::Format::RGBA16Float; // Rgba16f
+      case 3:
+        return numos::Format::R32Float; // R32f
+      case 4:
+        return numos::Format::RGBA8Unorm; // Rgba8
+      case 6:
+        return numos::Format::RG32Float; // Rg32f
+      case 7:
+        return numos::Format::RG16Float; // Rg16f
+      case 9:
+        return numos::Format::R16Float; // R16f
+      case 15:
+        return numos::Format::R8Unorm; // R8
+      case 33:
+        return numos::Format::R32Uint; // R32ui
       }
       return numos::Format::RGBA16Float;
     }
 
     VkDescriptorType descriptorType(numos::BindingKind kind) {
       switch (kind) {
-      case numos::BindingKind::ConstantBuffer: return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-      case numos::BindingKind::SampledTexture: return VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-      case numos::BindingKind::StorageTexture: return VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-      case numos::BindingKind::Sampler: return VK_DESCRIPTOR_TYPE_SAMPLER;
-      case numos::BindingKind::CombinedTextureSampler: return VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+      case numos::BindingKind::ConstantBuffer:
+        return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+      case numos::BindingKind::SampledTexture:
+        return VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+      case numos::BindingKind::StorageTexture:
+        return VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+      case numos::BindingKind::Sampler:
+        return VK_DESCRIPTOR_TYPE_SAMPLER;
+      case numos::BindingKind::CombinedTextureSampler:
+        return VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
       case numos::BindingKind::StructuredBuffer:
-      case numos::BindingKind::RWStructuredBuffer: return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-      case numos::BindingKind::AccelerationStructure: return VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+      case numos::BindingKind::RWStructuredBuffer:
+        return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+      case numos::BindingKind::AccelerationStructure:
+        return VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
       }
       return VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
     }
@@ -79,7 +109,7 @@ namespace remix::sky {
     VkImageViewType viewType(numos::TextureType type) {
       return type == numos::TextureType::Tex3D        ? VK_IMAGE_VIEW_TYPE_3D
              : type == numos::TextureType::Tex2DArray ? VK_IMAGE_VIEW_TYPE_2D_ARRAY
-                                                     : VK_IMAGE_VIEW_TYPE_2D;
+                                                      : VK_IMAGE_VIEW_TYPE_2D;
     }
 
     uint32_t layers(const numos::TextureDesc &desc) {
@@ -99,8 +129,7 @@ namespace remix::sky {
     }
   } // namespace
 
-  Bridge::Bridge(VkPhysicalDevice physical, VkDevice device, std::vector<HostPass> hostPasses)
-      : m_device(device) {
+  Bridge::Bridge(VkPhysicalDevice physical, VkDevice device, std::vector<HostPass> hostPasses) : m_device(device) {
     vkGetPhysicalDeviceProperties(physical, &m_properties);
     vkGetPhysicalDeviceMemoryProperties(physical, &m_memory);
     for (uint32_t i = 0; i < numos::passCount(); ++i)
@@ -223,7 +252,8 @@ namespace remix::sky {
     vkGetBufferMemoryRequirements(m_device, buffer, &requirements);
     const VkMemoryAllocateInfo allocate{.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
                                         .allocationSize = requirements.size,
-                                        .memoryTypeIndex = memoryType(requirements.memoryTypeBits, required, preferred)};
+                                        .memoryTypeIndex =
+                                            memoryType(requirements.memoryTypeBits, required, preferred)};
     if (VkResult result = vkAllocateMemory(m_device, &allocate, nullptr, &memory); result != VK_SUCCESS) {
       vkDestroyBuffer(m_device, buffer, nullptr);
       throw result;
@@ -249,8 +279,7 @@ namespace remix::sky {
     s.pool = 0;
   }
 
-  bool Bridge::preparePipelines(const std::function<bool(uint32_t pass)> &needed, uint32_t &ready,
-                                uint32_t &total) {
+  bool Bridge::preparePipelines(const std::function<bool(uint32_t pass)> &needed, uint32_t &ready, uint32_t &total) {
     ready = total = 0;
     for (uint32_t index = 0; index < m_passes.size(); ++index) {
       auto &pass = m_passes[index];
@@ -264,14 +293,14 @@ namespace remix::sky {
                                                     .pCode = pass.code.code};
           check(pipeline::createShaderModule(m_device, &moduleInfo, nullptr, &pass.module));
         }
-        const VkComputePipelineCreateInfo info{
-            .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
-            .stage = {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                      .stage = VK_SHADER_STAGE_COMPUTE_BIT,
-                      .module = pass.module,
-                      .pName = "main"},
-            .layout = pass.layout};
-        const auto result = pipeline::createComputePipelines(m_device, VK_NULL_HANDLE, 1, &info, nullptr, &pass.pipeline);
+        const VkComputePipelineCreateInfo info{.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+                                               .stage = {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                                                         .stage = VK_SHADER_STAGE_COMPUTE_BIT,
+                                                         .module = pass.module,
+                                                         .pName = "main"},
+                                               .layout = pass.layout};
+        const auto result =
+            pipeline::createComputePipelines(m_device, VK_NULL_HANDLE, 1, &info, nullptr, &pass.pipeline);
         if (result != VK_SUCCESS && result != VK_NOT_READY)
           throw result;
         if (pass.pipeline) {
@@ -288,8 +317,9 @@ namespace remix::sky {
     m_command = command;
     // The host's TLAS build and depth writes come before NUMOS reads them.
     memoryBarrier(command,
-                  VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
-                      VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT | workStages,
+                  VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR |
+                      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT |
+                      workStages,
                   VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
                       VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | workAccess,
                   workStages, workAccess | VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR);
@@ -298,8 +328,8 @@ namespace remix::sky {
   void Bridge::end() {
     while (!m_zones.empty())
       m_zones.pop_back();
-    memoryBarrier(m_command, workStages, workAccess,
-                  workStages | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_UNIFORM_READ_BIT);
+    memoryBarrier(m_command, workStages, workAccess, workStages | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                  VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_UNIFORM_READ_BIT);
     m_command = VK_NULL_HANDLE;
   }
 
@@ -353,20 +383,20 @@ namespace remix::sky {
 
   numos::GpuHandle Bridge::createTexture(const numos::TextureDesc &desc) {
     Resource resource{.kind = Resource::Kind::Texture, .texture = desc};
-    const VkImageCreateInfo info{
-        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-        .imageType = desc.type == numos::TextureType::Tex3D ? VK_IMAGE_TYPE_3D : VK_IMAGE_TYPE_2D,
-        .format = format(desc.format),
-        .extent = {std::max(desc.width, 1u), std::max(desc.height, 1u),
-                   desc.type == numos::TextureType::Tex3D ? std::max(desc.depth, 1u) : 1u},
-        .mipLevels = std::max(desc.mipLevels, 1u),
-        .arrayLayers = layers(desc),
-        .samples = VK_SAMPLE_COUNT_1_BIT,
-        .tiling = VK_IMAGE_TILING_OPTIMAL,
-        .usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-                 VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED};
+    const VkImageCreateInfo info{.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+                                 .imageType =
+                                     desc.type == numos::TextureType::Tex3D ? VK_IMAGE_TYPE_3D : VK_IMAGE_TYPE_2D,
+                                 .format = format(desc.format),
+                                 .extent = {std::max(desc.width, 1u), std::max(desc.height, 1u),
+                                            desc.type == numos::TextureType::Tex3D ? std::max(desc.depth, 1u) : 1u},
+                                 .mipLevels = std::max(desc.mipLevels, 1u),
+                                 .arrayLayers = layers(desc),
+                                 .samples = VK_SAMPLE_COUNT_1_BIT,
+                                 .tiling = VK_IMAGE_TILING_OPTIMAL,
+                                 .usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT |
+                                          VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+                                 .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+                                 .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED};
     check(vkCreateImage(m_device, &info, nullptr, &resource.image));
     VkMemoryRequirements requirements;
     vkGetImageMemoryRequirements(m_device, resource.image, &requirements);
@@ -419,7 +449,8 @@ namespace remix::sky {
 
   numos::GpuHandle Bridge::createSampler(const numos::SamplerDesc &desc) {
     const auto address = [](numos::AddressMode mode) {
-      return mode == numos::AddressMode::Repeat ? VK_SAMPLER_ADDRESS_MODE_REPEAT : VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+      return mode == numos::AddressMode::Repeat ? VK_SAMPLER_ADDRESS_MODE_REPEAT
+                                                : VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     };
     const auto filter = [](numos::Filter value) {
       return value == numos::Filter::Linear ? VK_FILTER_LINEAR : VK_FILTER_NEAREST;
@@ -428,8 +459,8 @@ namespace remix::sky {
         .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
         .magFilter = filter(desc.filter),
         .minFilter = filter(desc.filter),
-        .mipmapMode = desc.mipFilter == numos::Filter::Linear ? VK_SAMPLER_MIPMAP_MODE_LINEAR
-                                                             : VK_SAMPLER_MIPMAP_MODE_NEAREST,
+        .mipmapMode =
+            desc.mipFilter == numos::Filter::Linear ? VK_SAMPLER_MIPMAP_MODE_LINEAR : VK_SAMPLER_MIPMAP_MODE_NEAREST,
         .addressModeU = address(desc.addressU),
         .addressModeV = address(desc.addressV),
         .addressModeW = address(desc.addressW),
@@ -505,8 +536,8 @@ namespace remix::sky {
     if (target.buffer.usage == numos::BufferUsage::Readback) {
       target.copyFrame = m_frame;
       // The host reads mapped memory once the slot's fence has passed.
-      memoryBarrier(m_command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
-                    VK_PIPELINE_STAGE_HOST_BIT, VK_ACCESS_HOST_READ_BIT);
+      memoryBarrier(m_command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_HOST_BIT,
+                    VK_ACCESS_HOST_READ_BIT);
     }
   }
 
@@ -545,7 +576,8 @@ namespace remix::sky {
     const auto &desc = target.texture;
     const VkExtent3D extent{std::max(desc.width >> mip, 1u), std::max(desc.height >> mip, 1u),
                             desc.type == numos::TextureType::Tex3D ? std::max(desc.depth >> mip, 1u) : 1u};
-    const size_t expected = size_t(extent.width) * extent.height * extent.depth * layers(desc) * texelBytes(desc.format);
+    const size_t expected =
+        size_t(extent.width) * extent.height * extent.depth * layers(desc) * texelBytes(desc.format);
     if (size < expected)
       throw std::runtime_error("NUMOS texture upload is smaller than the mip");
     auto [staging, source] = stage(data, expected);
@@ -612,7 +644,7 @@ namespace remix::sky {
                   : binding.dim == numos::BindingDim::Tex2DArray ? numos::TextureType::Tex2DArray
                                                                  : numos::TextureType::Tex2D;
       desc.format = binding.kind == numos::BindingKind::StorageTexture ? fromSpirv(binding.spirvImageFormat)
-                                                                        : numos::Format::RGBA16Float;
+                                                                       : numos::Format::RGBA16Float;
       desc.debugName = "NUMOS placeholder";
       handle = createTexture(desc);
       const float zero[4] = {};
@@ -676,7 +708,8 @@ namespace remix::sky {
                                        binding.resource ? binding.mipCount : ~0u, storage),
                      .imageLayout = VK_IMAGE_LAYOUT_GENERAL};
         if (declared.kind == numos::BindingKind::CombinedTextureSampler)
-          images[i].sampler = get(binding.sampler ? binding.sampler : placeholder({.kind = numos::BindingKind::Sampler})).sampler;
+          images[i].sampler =
+              get(binding.sampler ? binding.sampler : placeholder({.kind = numos::BindingKind::Sampler})).sampler;
         write.pImageInfo = &images[i];
         break;
       }

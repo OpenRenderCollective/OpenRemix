@@ -31,26 +31,36 @@ using namespace remix::api;
 extern "C" {
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL
 remixapi_GetReconstructionDiagnosticsEXT(remixapi_ReconstructionDiagnosticsEXT *out) {
-  if (!out || out->structSize < 8) return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
+  if (!out || out->structSize < 8)
+    return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
   try {
     std::lock_guard lock(g_apiMutex);
-    if (!g_runtime.isInitialized()) return REMIXAPI_ERROR_CODE_NOT_INITIALIZED;
+    if (!g_runtime.isInitialized())
+      return REMIXAPI_ERROR_CODE_NOT_INITIALIZED;
     const auto stats = g_runtime.reconstructionStatistics();
     remixapi_ReconstructionDiagnosticsEXT result{};
-    result.structSize = sizeof(result); result.version = 1;
-    result.capabilities = uint32_t(stats.sdkAvailable) | uint32_t(stats.srSupported) << 1 | uint32_t(stats.rrSupported) << 2;
-    result.requestedMode = uint32_t(stats.requested); result.activeBackend = uint32_t(stats.backend);
-    result.renderWidth = stats.render.width; result.renderHeight = stats.render.height;
-    result.displayWidth = stats.display.width; result.displayHeight = stats.display.height;
-    result.evaluatedFrames = stats.frames; result.historyResets = stats.resets;
-    result.failures = stats.failures; result.memoryBytes = stats.memoryBytes;
+    result.structSize = sizeof(result);
+    result.version = 1;
+    result.capabilities =
+        uint32_t(stats.sdkAvailable) | uint32_t(stats.srSupported) << 1 | uint32_t(stats.rrSupported) << 2;
+    result.requestedMode = uint32_t(stats.requested);
+    result.activeBackend = uint32_t(stats.backend);
+    result.renderWidth = stats.render.width;
+    result.renderHeight = stats.render.height;
+    result.displayWidth = stats.display.width;
+    result.displayHeight = stats.display.height;
+    result.evaluatedFrames = stats.frames;
+    result.historyResets = stats.resets;
+    result.failures = stats.failures;
+    result.memoryBytes = stats.memoryBytes;
     result.gpuMilliseconds = stats.milliseconds;
-    std::strncpy(result.fallbackReason, stats.failure.c_str(), sizeof(result.fallbackReason)-1);
+    std::strncpy(result.fallbackReason, stats.failure.c_str(), sizeof(result.fallbackReason) - 1);
     std::memcpy(out, &result, std::min(size_t(out->structSize), sizeof(result)));
     return REMIXAPI_ERROR_CODE_SUCCESS;
-  } catch (...) { return REMIXAPI_ERROR_CODE_GENERAL_FAILURE; }
+  } catch (...) {
+    return REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
+  }
 }
-
 
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_RequestPresentedScreenshot(const char *absolutePath) {
   if (absolutePath == nullptr || absolutePath[0] == '\0') {
@@ -79,8 +89,7 @@ REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetPresentationCount(uint64_t
   }
 }
 
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL
-remixapi_GetFeatureAvailability(remixapi_FeatureAvailability *outFeatures) {
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetFeatureAvailability(remixapi_FeatureAvailability *outFeatures) {
   if (outFeatures == nullptr) {
     return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
   }
@@ -93,8 +102,7 @@ remixapi_GetFeatureAvailability(remixapi_FeatureAvailability *outFeatures) {
   }
 }
 
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL
-remixapi_GetBackendCapabilitiesEXT(remixapi_BackendCapabilitiesEXT *out) {
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetBackendCapabilitiesEXT(remixapi_BackendCapabilitiesEXT *out) {
   if (!out || out->structSize != sizeof(*out))
     return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
   try {
@@ -108,8 +116,7 @@ remixapi_GetBackendCapabilitiesEXT(remixapi_BackendCapabilitiesEXT *out) {
   }
 }
 
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL
-remixapi_GetPreparationStatisticsEXT(remixapi_PreparationStatisticsEXT *out) {
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetPreparationStatisticsEXT(remixapi_PreparationStatisticsEXT *out) {
   if (!out || out->structSize != sizeof(*out))
     return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
   try {
@@ -120,11 +127,12 @@ remixapi_GetPreparationStatisticsEXT(remixapi_PreparationStatisticsEXT *out) {
     // This query neither waits for the render thread nor submits GPU work.
     const auto status = g_runtime.preparationStatus();
     remixapi_PreparationStatisticsEXT result{.structSize = sizeof(result),
-        .pending = uint32_t(status.pending), .loading = uint32_t(status.loading),
-        .failed = uint32_t(!status.failure.empty()),
-        .pipelinesRequested = status.pipelines.requested,
-        .pipelinesCompleted = status.pipelines.completed,
-        .pipelinesFailed = status.pipelines.failed};
+                                             .pending = uint32_t(status.pending),
+                                             .loading = uint32_t(status.loading),
+                                             .failed = uint32_t(!status.failure.empty()),
+                                             .pipelinesRequested = status.pipelines.requested,
+                                             .pipelinesCompleted = status.pipelines.completed,
+                                             .pipelinesFailed = status.pipelines.failed};
     std::strncpy(result.failureReason, status.failure.c_str(), sizeof(result.failureReason) - 1);
     *out = result;
     return REMIXAPI_ERROR_CODE_SUCCESS;
@@ -133,8 +141,7 @@ remixapi_GetPreparationStatisticsEXT(remixapi_PreparationStatisticsEXT *out) {
   }
 }
 
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL
-remixapi_GetFramePerformanceEXT(remixapi_FramePerformanceEXT *out) {
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetFramePerformanceEXT(remixapi_FramePerformanceEXT *out) {
   if (!out || out->structSize != sizeof(*out))
     return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
   try {
@@ -148,8 +155,7 @@ remixapi_GetFramePerformanceEXT(remixapi_FramePerformanceEXT *out) {
   }
 }
 
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL
-remixapi_GetFrameBreakdownEXT(remixapi_FrameBreakdownEXT *out) {
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetFrameBreakdownEXT(remixapi_FrameBreakdownEXT *out) {
   if (!out || out->structSize != sizeof(*out))
     return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
   std::lock_guard lock(g_apiMutex);
@@ -162,8 +168,7 @@ remixapi_GetFrameBreakdownEXT(remixapi_FrameBreakdownEXT *out) {
 static_assert(sizeof(remixapi_TextureStatisticsEXT) == 168);
 
 // Process-wide counters: no runtime state is read, so no API lock is taken.
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL
-remixapi_GetTextureStatisticsEXT(remixapi_TextureStatisticsEXT *out) {
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetTextureStatisticsEXT(remixapi_TextureStatisticsEXT *out) {
   if (!out || out->structSize != sizeof(*out))
     return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
   const auto &c = remix::scene::textureCounters;
@@ -198,8 +203,7 @@ static_assert(sizeof(remixapi_GpuPassTimingEXT) == 88 && sizeof(remixapi_GpuPass
 static_assert(REMIXAPI_GPU_PASS_TIMING_CAPACITY_EXT >= remix::gpu::GpuTimers::maxPasses);
 #endif
 
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL
-remixapi_GetGpuPassTimingsEXT(remixapi_GpuPassTimingsEXT *out) {
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetGpuPassTimingsEXT(remixapi_GpuPassTimingsEXT *out) {
   if (!out || out->structSize != sizeof(*out))
     return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
   std::lock_guard lock(g_apiMutex);
@@ -237,8 +241,7 @@ remixapi_GetGpuPassTimingsEXT(remixapi_GpuPassTimingsEXT *out) {
   return REMIXAPI_ERROR_CODE_SUCCESS;
 }
 
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL
-remixapi_GetTracingStatisticsEXT(remixapi_TracingStatisticsEXT *out) {
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetTracingStatisticsEXT(remixapi_TracingStatisticsEXT *out) {
   if (!out || out->structSize != sizeof(*out))
     return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
   try {
@@ -251,8 +254,7 @@ remixapi_GetTracingStatisticsEXT(remixapi_TracingStatisticsEXT *out) {
     return REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
   }
 }
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL
-remixapi_GetLocalLightStatisticsEXT(remixapi_LocalLightStatisticsEXT *out) {
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetLocalLightStatisticsEXT(remixapi_LocalLightStatisticsEXT *out) {
   if (!out || out->structSize != sizeof(*out))
     return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
   try {
@@ -299,8 +301,7 @@ remixapi_GetLocalLightGuidingStatisticsEXT(remixapi_LocalLightGuidingStatisticsE
     return REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
   }
 }
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL
-remixapi_GetShadowStatisticsEXT(remixapi_ShadowStatisticsEXT *out) {
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetShadowStatisticsEXT(remixapi_ShadowStatisticsEXT *out) {
   if (!out || out->structSize != sizeof(*out))
     return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
   try {
@@ -313,8 +314,7 @@ remixapi_GetShadowStatisticsEXT(remixapi_ShadowStatisticsEXT *out) {
     return REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
   }
 }
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL
-remixapi_GetSharcStatisticsEXT(remixapi_SharcStatisticsEXT *out) {
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetSharcStatisticsEXT(remixapi_SharcStatisticsEXT *out) {
   if (!out || out->structSize != sizeof(*out))
     return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
   try {
@@ -327,8 +327,7 @@ remixapi_GetSharcStatisticsEXT(remixapi_SharcStatisticsEXT *out) {
     return REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
   }
 }
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL
-remixapi_GetDenoisingCapabilitiesEXT(remixapi_DenoisingCapabilitiesEXT *out) {
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetDenoisingCapabilitiesEXT(remixapi_DenoisingCapabilitiesEXT *out) {
   if (!out || out->structSize != sizeof(*out))
     return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
   try {
@@ -341,8 +340,7 @@ remixapi_GetDenoisingCapabilitiesEXT(remixapi_DenoisingCapabilitiesEXT *out) {
     return REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
   }
 }
-REMIXAPI remixapi_ErrorCode REMIXAPI_CALL
-remixapi_GetDenoisingStatisticsEXT(remixapi_DenoisingStatisticsEXT *out) {
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetDenoisingStatisticsEXT(remixapi_DenoisingStatisticsEXT *out) {
   if (!out || out->structSize != sizeof(*out))
     return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
   try {

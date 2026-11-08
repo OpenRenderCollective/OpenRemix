@@ -59,16 +59,16 @@ namespace remix {
     vkEnumerateInstanceExtensionProperties(nullptr, &available, availableExtensions.data());
     // HDR10 output's ST.2084 swapchain colour space (runtime/hdr_output.h).
     m_swapchainColorSpace =
-        !m_headless &&
-        std::any_of(availableExtensions.begin(), availableExtensions.end(), [](const auto &e) {
+        !m_headless && std::any_of(availableExtensions.begin(), availableExtensions.end(), [](const auto &e) {
           return std::strcmp(e.extensionName, VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME) == 0;
         });
-    if (m_swapchainColorSpace &&
-        std::none_of(extensions.begin(), extensions.end(),
-                     [](auto p) { return std::strcmp(p, VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME) == 0; }))
+    if (m_swapchainColorSpace && std::none_of(extensions.begin(), extensions.end(), [](auto p) {
+          return std::strcmp(p, VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME) == 0;
+        }))
       extensions.push_back(VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME);
-    if (std::any_of(availableExtensions.begin(), availableExtensions.end(),
-                    [](const auto &e) { return std::strcmp(e.extensionName, VK_EXT_DEBUG_UTILS_EXTENSION_NAME) == 0; }) &&
+    if (std::any_of(
+            availableExtensions.begin(), availableExtensions.end(),
+            [](const auto &e) { return std::strcmp(e.extensionName, VK_EXT_DEBUG_UTILS_EXTENSION_NAME) == 0; }) &&
         std::none_of(extensions.begin(), extensions.end(),
                      [](auto p) { return std::strcmp(p, VK_EXT_DEBUG_UTILS_EXTENSION_NAME) == 0; }))
       extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
@@ -145,9 +145,8 @@ namespace remix {
       }
     }
 
-    return selection.physicalDevice != VK_NULL_HANDLE
-               ? REMIXAPI_ERROR_CODE_SUCCESS
-               : REMIXAPI_ERROR_CODE_HRESULT_GRAPHICS_QUEUE_FAMILY_MISSING;
+    return selection.physicalDevice != VK_NULL_HANDLE ? REMIXAPI_ERROR_CODE_SUCCESS
+                                                      : REMIXAPI_ERROR_CODE_HRESULT_GRAPHICS_QUEUE_FAMILY_MISSING;
   }
 
   remixapi_ErrorCode RemixNativeRuntime::createDevice(const QueueSelection &selection) {
@@ -158,8 +157,7 @@ namespace remix {
         .queueCount = 1,
         .pQueuePriorities = &kQueuePriority,
     };
-    std::vector<const char *> extensions(std::begin(kRequiredDeviceExtensions),
-                                         std::end(kRequiredDeviceExtensions));
+    std::vector<const char *> extensions(std::begin(kRequiredDeviceExtensions), std::end(kRequiredDeviceExtensions));
 #if defined(__linux__) || defined(_WIN32)
     if (m_headless) {
       extensions.clear();
@@ -180,16 +178,14 @@ namespace remix {
 #endif
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(selection.physicalDevice, &properties);
-    VkPhysicalDeviceRayQueryFeaturesKHR ray = {.sType =
-                                                   VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR};
+    VkPhysicalDeviceRayQueryFeaturesKHR ray = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR};
     VkPhysicalDeviceAccelerationStructureFeaturesKHR acceleration = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR, .pNext = &ray};
-    VkPhysicalDeviceVulkan12Features vulkan12 = {
-        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, .pNext = &acceleration};
-    VkPhysicalDeviceVulkan11Features vulkan11 = {
-        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES, .pNext = &vulkan12};
-    VkPhysicalDeviceFeatures2 features = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
-                                          .pNext = &vulkan11};
+    VkPhysicalDeviceVulkan12Features vulkan12 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
+                                                 .pNext = &acceleration};
+    VkPhysicalDeviceVulkan11Features vulkan11 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
+                                                 .pNext = &vulkan12};
+    VkPhysicalDeviceFeatures2 features = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, .pNext = &vulkan11};
     m_traceUnavailable.clear();
     auto missing = [&](bool supported, const char *name) {
       if (!supported) {
@@ -198,11 +194,9 @@ namespace remix {
         m_traceUnavailable += name;
       }
     };
-    const bool version12 =
-        m_instanceApiVersion >= VK_API_VERSION_1_2 && properties.apiVersion >= VK_API_VERSION_1_2;
+    const bool version12 = m_instanceApiVersion >= VK_API_VERSION_1_2 && properties.apiVersion >= VK_API_VERSION_1_2;
     missing(version12, "Vulkan 1.2");
-    const char *traceExtensions[] = {VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
-                                     VK_KHR_RAY_QUERY_EXTENSION_NAME,
+    const char *traceExtensions[] = {VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME, VK_KHR_RAY_QUERY_EXTENSION_NAME,
                                      VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME};
     bool extensionsSupported = true;
     for (const char *extension : traceExtensions) {
@@ -221,15 +215,14 @@ namespace remix {
       const auto colorFeatures = VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
       const auto depthFeatures = VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
       m_forwardSupported = (queues[selection.family].queueFlags & VK_QUEUE_COMPUTE_BIT) &&
-        (color.optimalTilingFeatures & colorFeatures) == colorFeatures &&
-        (depth.optimalTilingFeatures & depthFeatures) == depthFeatures &&
-        properties.limits.maxPerStageDescriptorStorageBuffers >= 4 &&
-        properties.limits.maxDescriptorSetStorageBuffers >= 4 &&
-        properties.limits.maxComputeWorkGroupSize[0] >= 64 &&
-        properties.limits.maxComputeWorkGroupInvocations >= 64;
+                           (color.optimalTilingFeatures & colorFeatures) == colorFeatures &&
+                           (depth.optimalTilingFeatures & depthFeatures) == depthFeatures &&
+                           properties.limits.maxPerStageDescriptorStorageBuffers >= 4 &&
+                           properties.limits.maxDescriptorSetStorageBuffers >= 4 &&
+                           properties.limits.maxComputeWorkGroupSize[0] >= 64 &&
+                           properties.limits.maxComputeWorkGroupInvocations >= 64;
     }
-    missing((queues[selection.family].queueFlags & VK_QUEUE_COMPUTE_BIT) != 0,
-            "graphics/compute/present queue");
+    missing((queues[selection.family].queueFlags & VK_QUEUE_COMPUTE_BIT) != 0, "graphics/compute/present queue");
     if (version12 && extensionsSupported) {
       vkGetPhysicalDeviceFeatures2(selection.physicalDevice, &features);
       missing(acceleration.accelerationStructure, "accelerationStructure");
@@ -242,38 +235,34 @@ namespace remix {
                   properties.limits.maxDescriptorSetSamplers >= PathTracer::textureLimit &&
                   properties.limits.maxDescriptorSetSampledImages >= PathTracer::textureLimit,
               "4096 sampled-image descriptors");
-      missing(properties.limits.maxPerStageResources >= PathTracer::textureLimit + 14,
-              "4110 compute-stage resources");
+      missing(properties.limits.maxPerStageResources >= PathTracer::textureLimit + 14, "4110 compute-stage resources");
       missing(properties.limits.maxPerStageDescriptorStorageImages >= 10 &&
                   properties.limits.maxDescriptorSetStorageImages >= 10,
               "ten tracing storage images");
-      missing(properties.limits.maxColorAttachments >= 6 &&
-                  properties.limits.maxFragmentOutputAttachments >= 6,
+      missing(properties.limits.maxColorAttachments >= 6 && properties.limits.maxFragmentOutputAttachments >= 6,
               "six G-buffer color attachments");
-      for (auto targetFormat : {VK_FORMAT_R32G32B32A32_SFLOAT, VK_FORMAT_R16G16B16A16_SFLOAT,
-                                VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_R32_SFLOAT}) {
+      for (auto targetFormat : {VK_FORMAT_R32G32B32A32_SFLOAT, VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_R8G8B8A8_UNORM,
+                                VK_FORMAT_R32_SFLOAT}) {
         VkFormatProperties target;
         vkGetPhysicalDeviceFormatProperties(selection.physicalDevice, targetFormat, &target);
         const auto required = VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT | VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT;
         missing((target.optimalTilingFeatures & required) == required, "G-buffer attachment/storage format");
       }
       VkFormatProperties stateFormat;
-      vkGetPhysicalDeviceFormatProperties(selection.physicalDevice, VK_FORMAT_R32G32B32A32_UINT,
-                                          &stateFormat);
+      vkGetPhysicalDeviceFormatProperties(selection.physicalDevice, VK_FORMAT_R32G32B32A32_UINT, &stateFormat);
       missing((stateFormat.optimalTilingFeatures & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) != 0,
               "RGBA32UI tracing state storage");
       VkPhysicalDeviceAccelerationStructurePropertiesKHR accelerationProperties = {
           .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR};
-      VkPhysicalDeviceProperties2 tracingProperties = {
-          .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, .pNext = &accelerationProperties};
+      VkPhysicalDeviceProperties2 tracingProperties = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+                                                       .pNext = &accelerationProperties};
       vkGetPhysicalDeviceProperties2(selection.physicalDevice, &tracingProperties);
       missing(accelerationProperties.maxPerStageDescriptorAccelerationStructures >= 2 &&
                   accelerationProperties.maxDescriptorSetAccelerationStructures >= 2,
               "two acceleration-structure descriptors");
       VkFormatProperties format;
       vkGetPhysicalDeviceFormatProperties(selection.physicalDevice, VK_FORMAT_R32G32B32A32_SFLOAT, &format);
-      missing((format.optimalTilingFeatures & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) != 0,
-              "RGBA32F storage images");
+      missing((format.optimalTilingFeatures & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) != 0, "RGBA32F storage images");
       missing((format.optimalTilingFeatures &
                (VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT)) ==
                   (VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT),
@@ -281,7 +270,7 @@ namespace remix {
     }
     m_traceSupported = m_traceUnavailable.empty();
     m_forwardRaySupported = m_forwardSupported && version12 && extensionsSupported &&
-      acceleration.accelerationStructure && ray.rayQuery && vulkan12.bufferDeviceAddress;
+                            acceleration.accelerationStructure && ray.rayQuery && vulkan12.bufferDeviceAddress;
     m_denoiseCapabilities = denoise::capabilities(selection.physicalDevice);
     const bool sharcSupported = REMIX_HAS_SHARC && m_traceSupported && vulkan11.storageBuffer16BitAccess &&
                                 vulkan12.shaderFloat16 && vulkan12.shaderBufferInt64Atomics;
@@ -289,17 +278,16 @@ namespace remix {
     // the extended formats, some declared without a format.
     VkPhysicalDeviceFeatures skyFeatures{};
     vkGetPhysicalDeviceFeatures(selection.physicalDevice, &skyFeatures);
-    m_skyUnavailable = !m_traceSupported                                ? m_traceUnavailable
-                       : !vulkan12.scalarBlockLayout                     ? "scalar block layout"
-                       : !skyFeatures.shaderStorageImageExtendedFormats  ? "extended storage image formats"
-                       : !skyFeatures.shaderStorageImageReadWithoutFormat ? "storage image reads without format"
+    m_skyUnavailable = !m_traceSupported                                   ? m_traceUnavailable
+                       : !vulkan12.scalarBlockLayout                       ? "scalar block layout"
+                       : !skyFeatures.shaderStorageImageExtendedFormats    ? "extended storage image formats"
+                       : !skyFeatures.shaderStorageImageReadWithoutFormat  ? "storage image reads without format"
                        : !skyFeatures.shaderStorageImageWriteWithoutFormat ? "storage image writes without format"
-                                                                            : "";
+                                                                           : "";
     features.features = {};
     vulkan11 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES, .pNext = &vulkan12};
     vulkan12 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, .pNext = &acceleration};
-    acceleration = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR,
-                    .pNext = &ray};
+    acceleration = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR, .pNext = &ray};
     ray = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR};
     if (m_traceSupported || m_forwardRaySupported) {
       extensions.insert(extensions.end(), std::begin(traceExtensions), std::end(traceExtensions));
@@ -370,9 +358,8 @@ namespace remix {
     for (const auto &extension : ngxExtensions)
       if (std::none_of(extensions.begin(), extensions.end(), [&](auto p) { return extension == p; }))
         extensions.push_back(extension.c_str());
-    const bool pipelineFeedback = supportsDeviceExtension(
-        selection.physicalDevice,
-        VK_EXT_PIPELINE_CREATION_FEEDBACK_EXTENSION_NAME);
+    const bool pipelineFeedback =
+        supportsDeviceExtension(selection.physicalDevice, VK_EXT_PIPELINE_CREATION_FEEDBACK_EXTENSION_NAME);
     if (pipelineFeedback)
       extensions.push_back(VK_EXT_PIPELINE_CREATION_FEEDBACK_EXTENSION_NAME);
     // Dev aid (REMIX_PIPELINE_STATISTICS=1): compiled pipelines' register
@@ -381,7 +368,8 @@ namespace remix {
     VkPhysicalDevicePipelineExecutablePropertiesFeaturesKHR executables{
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_EXECUTABLE_PROPERTIES_FEATURES_KHR};
     const char *statisticsSwitch = std::getenv("REMIX_PIPELINE_STATISTICS");
-    if (!statisticsSwitch) statisticsSwitch = std::getenv("REMIX_PIPELINE_EXECUTABLES");
+    if (!statisticsSwitch)
+      statisticsSwitch = std::getenv("REMIX_PIPELINE_EXECUTABLES");
     const bool pipelineStatistics =
         statisticsSwitch && *statisticsSwitch && *statisticsSwitch != '0' &&
         supportsDeviceExtension(selection.physicalDevice, VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME);
@@ -409,8 +397,7 @@ namespace remix {
     }
     // Present metering (frame generation): the driver spaces a frame's
     // generated and rendered images itself (presentImages).
-    VkPhysicalDevicePresentMeteringFeaturesNV metering = {
-        .sType = presentMeteringFeaturesType};
+    VkPhysicalDevicePresentMeteringFeaturesNV metering = {.sType = presentMeteringFeaturesType};
     m_presentMeteringSupported = false;
     // The diagnostic switch must also omit the device feature, rather than
     // merely disabling metered presents after enabling the extension. Older
@@ -419,8 +406,7 @@ namespace remix {
     const bool meteringAllowed = !meteringOption || meteringOption[0] != '0';
     if (meteringAllowed && !m_headless && m_instanceApiVersion >= VK_API_VERSION_1_1 &&
         supportsDeviceExtension(selection.physicalDevice, VK_NV_PRESENT_METERING_EXTENSION_NAME)) {
-      VkPhysicalDeviceFeatures2 available = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
-                                             .pNext = &metering};
+      VkPhysicalDeviceFeatures2 available = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, .pNext = &metering};
       vkGetPhysicalDeviceFeatures2(selection.physicalDevice, &available);
       if (metering.presentMetering) {
         m_presentMeteringSupported = true;
@@ -432,8 +418,8 @@ namespace remix {
     // Last: libxess sets fields of the finished chain and links its own
     // structures (upscale/xess.h).
     void *featureChain = &features;
-    const auto xessUnavailable = upscale::xess::enableDevice(m_instance, selection.physicalDevice,
-                                                             m_instanceApiVersion, extensions, featureChain);
+    const auto xessUnavailable = upscale::xess::enableDevice(m_instance, selection.physicalDevice, m_instanceApiVersion,
+                                                             extensions, featureChain);
     const VkDeviceCreateInfo createInfo = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .pNext = featureChain,
@@ -467,8 +453,7 @@ namespace remix {
                               vkCreateSemaphore(m_device, &semaphore, nullptr, &m_latencySemaphore) == VK_SUCCESS;
     }
     m_gpuTimers.initialize(m_physicalDevice, m_device, m_queueFamily);
-    m_pipelines = std::make_unique<pipeline::Service>(m_device, m_properties,
-                                                      pipelineFeedback, pipelineStatistics);
+    m_pipelines = std::make_unique<pipeline::Service>(m_device, m_properties, pipelineFeedback, pipelineStatistics);
     m_hostPasses.initialize(m_physicalDevice, m_device);
     // Ray queries are enabled with tracing.
     m_particles = std::make_unique<particles::Renderer>(m_physicalDevice, m_device, m_traceSupported);
@@ -484,8 +469,7 @@ namespace remix {
     if (!succeeded(vkEnumerateDeviceExtensionProperties(device, nullptr, &count, extensions.data()))) {
       return false;
     }
-    return std::any_of(extensions.begin(), extensions.end(), [name](const auto &extension) {
-      return std::strcmp(extension.extensionName, name) == 0;
-    });
+    return std::any_of(extensions.begin(), extensions.end(),
+                       [name](const auto &extension) { return std::strcmp(extension.extensionName, name) == 0; });
   }
 } // namespace remix

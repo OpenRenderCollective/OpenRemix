@@ -50,7 +50,7 @@ namespace {
     std::string name;
     std::filesystem::path albedo; // an absolute texture path or empty
     float color[3] = {1, 1, 1};
-    bool masked = false;      // map_d: the mask is in the albedo's alpha
+    bool masked = false; // map_d: the mask is in the albedo's alpha
   };
   struct Surface {
     std::vector<remixapi_HardcodedVertex> vertices;
@@ -227,7 +227,8 @@ int main(int argc, char **argv) {
       for (size_t begin = 0; begin < list.size();) {
         const size_t end = std::min(list.find(',', begin), list.size());
         const std::string pair = list.substr(begin, end - begin);
-        if (const size_t equals = pair.find('='); equals != std::string::npos &&
+        if (const size_t equals = pair.find('=');
+            equals != std::string::npos &&
             api.SetConfigVariable(pair.substr(0, equals).c_str(), pair.substr(equals + 1).c_str()))
           std::fprintf(stderr, "Setting rejected: %s\n", pair.c_str());
         begin = end + 1;
@@ -292,7 +293,13 @@ int main(int argc, char **argv) {
       check(api.CreateMeshBatched(&info, &mesh), "CreateMesh");
   }
   if (!status)
-    std::fprintf(stderr, "Alt+X: settings panel (free camera: Rendering tab; the shortcut is set in the panel's header)\n");
+#if defined(__APPLE__)
+    std::fprintf(stderr,
+                 "Cmd+X: settings panel (free camera: Rendering tab; the shortcut is set in the panel's header)\n");
+#else
+    std::fprintf(stderr,
+                 "Alt+X: settings panel (free camera: Rendering tab; the shortcut is set in the panel's header)\n");
+#endif
 
   using Tracing = remixapi_ErrorCode(REMIXAPI_CALL *)(remixapi_TracingStatisticsEXT *);
   const auto tracingOf = reinterpret_cast<Tracing>(
@@ -371,8 +378,7 @@ int main(int argc, char **argv) {
     const double elapsed = std::chrono::duration<double>(Clock::now() - windowStart).count();
     if (elapsed >= 2) {
       std::fprintf(stderr, "%ux%u: %.1f fps, frame %.2f ms, GPU trace %.2f ms\n", state.drawableWidth,
-                   state.drawableHeight, windowFrames / elapsed, elapsed * 1000 / windowFrames,
-                   gpuSum / windowFrames);
+                   state.drawableHeight, windowFrames / elapsed, elapsed * 1000 / windowFrames, gpuSum / windowFrames);
       // The upscaler in use (remix_reconstruction_ext.h's backend numbers).
       remixapi_ReconstructionDiagnosticsEXT reconstruction = {.structSize = sizeof(reconstruction)};
       if (reconstructionOf && !reconstructionOf(&reconstruction))

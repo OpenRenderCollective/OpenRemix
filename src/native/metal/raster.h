@@ -12,6 +12,12 @@ namespace remix::metal {
     // device: an id<MTLDevice>.
     void initializeGpu(void *device);
     void shutdownGpu();
+    // Takes other's GPU state (caches, pipelines, target), leaving other
+    // without one (raster/renderer.h adoptGpu): asynchronous presentation
+    // renders from a published frame (NativeResources::publishFrame) held by
+    // a second Raster. The caller has completed the render thread's work.
+    void adoptGpu(Raster &other);
+    bool hasGpu() const { return m_gpu != nullptr; }
     struct MemoryStatistics {
       uint64_t textureBytes = 0, textureCount = 0, compressedTextureBytes = 0;
       uint64_t geometryBytes = 0, pooledBytes = 0;

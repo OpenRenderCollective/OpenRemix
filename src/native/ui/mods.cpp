@@ -14,7 +14,7 @@ namespace remix::ui {
     bool part(const char *label, bool *value, size_t count, const char *tooltip) {
       char text[96];
       std::snprintf(text, sizeof text, count == size_t(-1) ? "%s" : "%s (%zu)", label, count);
-      const bool changed = ImGui::Checkbox(text, value);
+      const bool changed = ui::checkbox(text, value);
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", tooltip);
       return changed;
@@ -23,8 +23,8 @@ namespace remix::ui {
     void drawCapture(ProfileUi &ui) {
       using State = usd::CaptureStatus::State;
       const auto status = usd::captureStatus();
-      const bool busy = status.state == State::Requested || status.state == State::Recording ||
-                        status.state == State::Writing;
+      const bool busy =
+          status.state == State::Requested || status.state == State::Recording || status.state == State::Writing;
       static char name[128] = {};
       if (static bool loaded = false; !loaded) {
         std::snprintf(name, sizeof name, "%s", status.name.c_str());
@@ -43,7 +43,7 @@ namespace remix::ui {
         ImGui::SetTooltip("Write the next frame's meshes, materials, textures, lights and camera as a USD\n"
                           "capture (RTX Remix layout) for the Remix Toolkit or for authoring mods.");
       ImGui::SameLine();
-      const std::string label = (ui.capturingSceneCaptureShortcut ? std::string("Press a shortcut...")
+      const std::string label = (ui.capturingSceneCaptureShortcut  ? std::string("Press a shortcut...")
                                  : ui.sceneCaptureShortcut.empty() ? std::string("Set shortcut")
                                                                    : ui.sceneCaptureShortcut) +
                                 "###Capture shortcut";
@@ -78,7 +78,7 @@ namespace remix::ui {
 
   void drawMods([[maybe_unused]] ProfileUi &ui, [[maybe_unused]] config::Settings &settings) {
 #if REMIX_HAS_USD
-    if (ImGui::CollapsingHeader("Capture", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (ui::Panel panel{"Scene capture", ImGuiTreeNodeFlags_DefaultOpen}) {
       drawCapture(ui);
       ui::Checkbox("Scene Z-up", &settings.zUp);
       if (ImGui::IsItemHovered())
@@ -86,14 +86,16 @@ namespace remix::ui {
                           "Captures declare it and mods are rotated to it. A host that sets its own axis\n"
                           "(remixapi_ConfigureUSDModsEXT) keeps it.");
     }
-    ImGui::SeparatorText("Mods");
+    ui::Panel panel{"Mods", ImGuiTreeNodeFlags_DefaultOpen};
+    if (!panel)
+      return;
     const auto status = usd::modStatus();
     if (!status.active) {
       ImGui::TextWrapped("Mod loading is disabled for this session.");
       return;
     }
     bool enabled = status.enabled;
-    if (ImGui::Checkbox("Enable mods", &enabled))
+    if (ui::checkbox("Enable mods", &enabled))
       usd::setModsEnabled(enabled);
     if (ImGui::IsItemHovered())
       ImGui::SetTooltip("Apply replacements. Mods stay loaded while off, so turning them back on is instant.");
@@ -106,7 +108,11 @@ namespace remix::ui {
       ImGui::SetTooltip("Parse the mods directory again");
     ImGui::TextWrapped("%s", status.directory.c_str());
     if (status.loading)
-      ImGui::TextUnformatted("Loading...");
+      ImGui::TextUnformatted(usd::modLoadText().c_str());
+    else if (!status.mods.empty())
+      ImGui::Text("Loaded in %.1f s%s: geometry %.2f GB; %zu of %zu replacement materials in full", status.loadSeconds,
+                  status.fromCache ? " from its cache" : "", double(status.geometryBytes) / 1e9, status.materialsInFull,
+                  status.materials);
     if (!status.diagnostic.empty())
       ImGui::TextColored(ImVec4(1, .55f, .4f, 1), "%s", status.diagnostic.c_str());
     ImGui::Separator();
@@ -136,12 +142,18 @@ namespace remix::ui {
     for (const auto &mod : status.mods) {
       auto parts = mod.parts;
       ImGui::PushID(mod.name.c_str());
-      bool changed = ImGui::Checkbox("##enabled", &parts.enabled);
+      bool changed = ui::checkbox("##enabled", &parts.enabled);
       ImGui::SameLine();
       const bool open = ImGui::TreeNodeEx(mod.name.c_str(), ImGuiTreeNodeFlags_SpanAvailWidth);
       if (!(parts == usd::ModParts{.enabled = parts.enabled})) {
         ImGui::SameLine();
         ImGui::TextDisabled("(partial)");
+      }
+      if (mod.missingTextures) {
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(1, .55f, .4f, 1), "%zu textures missing", mod.missingTextures);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("Not found or not decodable: the materials using them draw without them");
       }
       if (open) {
         ImGui::BeginDisabled(!parts.enabled);
@@ -153,6 +165,24 @@ namespace remix::ui {
         changed |= part("Materials", &parts.materials, mod.materials, "Material (texture) replacements");
         changed |= part("Keep original draws", &parts.keepOriginal, size_t(-1),
                         "Draw the game's mesh beside its replacement instead of hiding it");
+        float scale = mod.lightScale;
+        ImGui::SetNextItemWidth(ImGui::GetFontSize() * 10);
+        if (ImGui::SliderFloat("Light scale", &scale, 0.001f, 1000.f, "%.3g", ImGuiSliderFlags_Logarithmic))
+          usd::setModLightScale(mod.name, scale);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("Multiplies the intensity of the lights this mod authors. Lights made for RTX Remix\n"
+                            "can read brighter here. Saved in the mod's mod.usda (customLayerData\n"
+                            "openremix:lightScale).");
+        ImGui::SameLine();
+        static std::string saveError;
+        ImGui::BeginDisabled(mod.lightScale == mod.authoredLightScale);
+        if (ImGui::SmallButton("Save"))
+          saveError = usd::saveModLightScale(mod.name);
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+          ImGui::SetTooltip("Write this light scale into the mod's mod.usda");
+        if (!saveError.empty())
+          ImGui::TextColored(ImVec4(1, .55f, .4f, 1), "%s", saveError.c_str());
         ImGui::EndDisabled();
         ImGui::TreePop();
       }

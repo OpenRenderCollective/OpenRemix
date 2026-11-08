@@ -88,8 +88,8 @@ namespace remix::ui {
       ImGui::SameLine();
       ImGui::TextColored(profiles.hasError() ? ImVec4(1, .65f, .45f, 1) : ImVec4(.7f, .85f, 1, 1), "%s",
                          ImGui::GetContentRegionAvail().x < 110 * ImGui::GetStyle().FontScaleDpi ? "!"
-                         : profiles.hasError() ? "Profile error"
-                                               : "Profile warning");
+                         : profiles.hasError()                                                   ? "Profile error"
+                                                                                                 : "Profile warning");
       if (ImGui::IsItemHovered()) {
         ImGui::BeginTooltip();
         ImGui::PushTextWrapPos(420);
@@ -104,20 +104,17 @@ namespace remix::ui {
     if (ui.nameDialog)
       ImGui::OpenPopup("Profile name");
     const auto size = ImGui::GetMainViewport()->WorkSize;
-    ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0),
-                                        ImVec2(std::max(1.f, size.x - 20), std::max(1.f, size.y - 20)));
+    ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(std::max(1.f, size.x - 20), std::max(1.f, size.y - 20)));
     ImGui::SetNextWindowSize(ImVec2(std::min(420 * ImGui::GetStyle().FontScaleDpi, size.x - 20), 0),
                              ImGuiCond_Appearing);
     if (ImGui::BeginPopupModal("Profile name", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-      ImGui::TextWrapped("%s",
-                         ui.duplicate ? "Duplicate current settings" : "New profile from built-in defaults");
+      ImGui::TextWrapped("%s", ui.duplicate ? "Duplicate current settings" : "New profile from built-in defaults");
       if (ui.focusName) {
         ImGui::SetKeyboardFocusHere();
         ui.focusName = false;
       }
       ImGui::SetNextItemWidth(-1);
-      const bool enter =
-          ImGui::InputText("##Name", ui.name, sizeof(ui.name), ImGuiInputTextFlags_EnterReturnsTrue);
+      const bool enter = ImGui::InputText("##Name", ui.name, sizeof(ui.name), ImGuiInputTextFlags_EnterReturnsTrue);
       if (ImGui::Button(ui.duplicate ? "Duplicate" : "Create") || enter) {
         bool close = false;
         if (ui.duplicate)
@@ -127,8 +124,8 @@ namespace remix::ui {
           if (!config::Profiles::validName(ui.name)) {
             ImGui::OpenPopup("Invalid name");
           } else {
-            close = ui.actions.request(profiles, ProfileAction::New, ui.name) ||
-                    ui.actions.pending != ProfileAction::None;
+            close =
+                ui.actions.request(profiles, ProfileAction::New, ui.name) || ui.actions.pending != ProfileAction::None;
           }
         }
         if (close) {
@@ -141,8 +138,7 @@ namespace remix::ui {
         ui.nameDialog = false;
         ImGui::CloseCurrentPopup();
       }
-      ImGui::TextWrapped(
-          "Use a unique name without path components. The .conf extension is added automatically.");
+      ImGui::TextWrapped("Use a unique name without path components. The .conf extension is added automatically.");
       feedback(profiles);
       if (ImGui::BeginPopup("Invalid name")) {
         ImGui::TextUnformatted("Enter a name without path components or reserved characters.");
@@ -152,8 +148,7 @@ namespace remix::ui {
     }
     if (ui.actions.pending != ProfileAction::None && !ui.nameDialog)
       ImGui::OpenPopup("Unsaved changes");
-    ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0),
-                                        ImVec2(std::max(1.f, size.x - 20), std::max(1.f, size.y - 20)));
+    ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(std::max(1.f, size.x - 20), std::max(1.f, size.y - 20)));
     ImGui::SetNextWindowSize(ImVec2(std::min(420 * ImGui::GetStyle().FontScaleDpi, size.x - 20), 0),
                              ImGuiCond_Appearing);
     if (ImGui::BeginPopupModal("Unsaved changes", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
