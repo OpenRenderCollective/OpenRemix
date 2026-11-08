@@ -1,6 +1,6 @@
 // Repeatable renderer benchmark built only on the public SDK.
 //   remix-bench LIBRARY FRAMES BACKEND [grid=N] [foliage=N] [textures=N] [size=N] [format=bc|rgba] [stats=0|1]
-//   [work=MS] [async=0|1] [churn=N] [churnTris=N]
+//   [work=MS] [async=0|1] [churn=N] [churnTris=N] [still=0|1] [shot=PATH]
 // Draws a grid of one-sided textured cubes and double-sided alpha-tested
 // foliage cards, then reports texture creation, first frame and steady Present
 // timings. Measurement starts once the requested backend reports GPU timings
@@ -16,6 +16,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <map>
 #include <string>
 #include <vector>
 #if !defined(_WIN32)
@@ -39,6 +40,10 @@ namespace {
     // Meshes re-created every frame under their hash with new vertices (MESH_UPDATE_EXT
     // with motion, as a capture host updates animated geometry), churnTris triangles each.
     unsigned churn = 0, churnTris = 5000;
+    // still: the camera holds its first pose. shot: an absolute path the
+    // last measured frame is saved to (RequestPresentedScreenshot).
+    bool still = false;
+    std::string shot;
   };
 
   uint16_t rgb565(unsigned r, unsigned g, unsigned b) { return uint16_t((r >> 3) << 11 | (g >> 2) << 5 | b >> 3); }
@@ -164,7 +169,7 @@ int main(int argc, char **argv) {
   if (argc < 4) {
     std::fprintf(stderr,
                  "usage: %s LIBRARY FRAMES BACKEND [grid=N] [foliage=N] [textures=N] [size=N] [format=bc|rgba] "
-                 "[stats=0|1] [work=MS] [async=0|1] [churn=N] [churnTris=N]\n",
+                 "[stats=0|1] [work=MS] [async=0|1] [churn=N] [churnTris=N] [still=0|1] [shot=PATH]\n",
                  argv[0]);
     return 2;
   }
@@ -194,6 +199,10 @@ int main(int argc, char **argv) {
       options.churn = number;
     else if (key == "churnTris")
       options.churnTris = std::max(2u, number);
+    else if (key == "still")
+      options.still = value != "0";
+    else if (key == "shot")
+      options.shot = value;
     else {
       std::fprintf(stderr, "unknown option %s\n", arg.c_str());
       return 2;
@@ -373,6 +382,8 @@ int main(int argc, char **argv) {
     churnMesh(i, 0);
   std::vector<double> uploadPass, assemblyPass, gpuFrame;
   uint64_t lastPassFrame = 0;
+  // Each timed pass's self time summed over the measured GPU frames.
+  std::map<std::string, double> passTotals;
   // Fixed layout: static cubes on a grid with foliage clumps between them.
   struct Placement {
     remixapi_MeshHandle mesh;
@@ -427,7 +438,7 @@ int main(int argc, char **argv) {
     check(api.DrawLightInstance(sun), "DrawLightInstance");
     remixapi_CameraInfoParameterizedEXT params = {};
     params.sType = REMIXAPI_STRUCT_TYPE_CAMERA_INFO_PARAMETERIZED_EXT;
-    const float sway = std::sin(frame * .01f) * .15f;
+    const float sway = options.still ? 0.f : std::sin(frame * .01f) * .15f;
     params.position = {0, 3, -2};
     params.forward = {std::sin(sway), -.25f, std::cos(sway)};
     const float length = std::hypot(params.forward.x, params.forward.y, params.forward.z);
@@ -480,6 +491,8 @@ int main(int argc, char **argv) {
       check(api.DrawInstance(&instance), "DrawInstance churn");
     }
     const auto presentStart = Clock::now();
+    if (!options.shot.empty() && ready && measured + 3 == frames && frame >= ready + warmup)
+      check(api.RequestPresentedScreenshot(options.shot.c_str()), "RequestPresentedScreenshot");
     check(api.Present(nullptr), "Present");
     const auto now = Clock::now();
     remixapi_TracingStatisticsEXT trace = {};
@@ -523,6 +536,7 @@ int main(int argc, char **argv) {
             upload += passes.passes[i].selfMilliseconds;
           if (std::strcmp(passes.passes[i].name, "Delta vertex assembly") == 0)
             assembly += passes.passes[i].selfMilliseconds;
+          passTotals[passes.passes[i].name] += passes.passes[i].selfMilliseconds;
         }
         uploadPass.push_back(upload);
         assemblyPass.push_back(assembly);
@@ -557,5 +571,7 @@ int main(int argc, char **argv) {
     std::printf("gpu_pass_ms frame=%.3f uploads=%.3f assembly=%.3f (churn=%u x %zu triangles)\n",
                 summarize(gpuFrame).mean, summarize(uploadPass).mean, summarize(assemblyPass).mean, options.churn,
                 churnIndices.size() / 3);
+  for (const auto &[name, total] : passTotals)
+    std::printf("pass_ms %.4f %s\n", total / double(gpuFrame.size()), name.c_str());
   return 0;
 }
