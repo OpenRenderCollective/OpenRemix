@@ -88,6 +88,40 @@ One difference from the shader-only path: subsurface probe rays
 (`subsurface.glsl`) count every surface crossing without an alpha test, so a
 cut-out micro-triangle is no longer counted there.
 
+## Wavefront indirect lighting
+
+`rtx.native.pathtrace.wavefrontIndirect` (0/1, default 1) runs the separate
+indirect pass (one sample a pixel, denoised lighting) as small kernels
+(`pathtrace.comp`, `WAVEFRONT_PASS`) instead of one kernel that carries a
+whole path. Each compiles alone, with fewer registers than the whole path
+needs, and the bounce kernels launch only for the paths still going:
+
+- **start** (over the screen): the primary surface, the first direction and
+  the sky rays; a pixel without a path (sky, blended) gets its result here.
+- per split bounce (`rtx.native.pathtrace.wavefrontBounces`, 1-16, default
+  1): **arguments** (one invocation: the indirect dispatch over the bounce's
+  list of live paths), **trace** (the bounce ray's receiver query) and
+  **shade** (that bounce, appending the paths that go on to the next list).
+- **tail**: the remaining bounces of the paths left, in one kernel (a kernel
+  per bounce of the long roulette tail costs more in launches than its few
+  paths do).
+- **finish** (over the screen): the denoiser inputs and the opaque pass's
+  transport, as the single kernel writes them.
+
+`rtx.native.pathtrace.wavefrontShadowQueue` (0/1, default 1) moves the split
+bounces' sun and sky shadow rays into a **shadow** kernel over their own list.
+
+The path state between kernels (origin, direction, throughput, radiance and
+random state exact, the rest as halves) is in per-pixel records, allocated
+while the option is on. Neither the receiver query nor the alpha test draws
+random numbers, so a path continues as the single kernel's would; images
+match within noise. The kernels compile with the temporal lighting passes, or
+in the background when the option is turned on later; until all have, the
+single kernel runs. GPU timings name them `Trace indirect (wavefront ...)`.
+On `ep2_outland_06a`'s forest (Garry's Mod, RTX 5080, 960x540 render, paint)
+the indirect pass took 3.30 ms as one kernel and 2.18 ms as wavefront
+kernels with the shadow queue (frame 8.28 to 7.33 ms).
+
 ## Tests
 
 - `remix-micromap-test`: hardware-measured order anchors, table nesting, and a
