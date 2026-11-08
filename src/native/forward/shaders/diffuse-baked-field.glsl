@@ -17,4 +17,3 @@ ReceiverLighting sampleBakedDiffuseField(vec3 position, vec3 normal, vec3 geomet
   }
   return lighting;
 }
-

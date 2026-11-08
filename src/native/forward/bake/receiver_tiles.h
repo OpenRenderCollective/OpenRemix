@@ -26,4 +26,3 @@ namespace remix::forward::bake {
     std::set<std::array<int32_t, 2>> m_tiles;
   };
 }
-

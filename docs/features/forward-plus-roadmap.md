@@ -2134,7 +2134,6 @@ world caster set proves a light's moving map empty. Static visibility fallback a
 viewmodel self shadows remain independent. Captured-caster counts are reused;
 hidden or unbaked actors disable the shortcut. Two-map warm replay controls show
 pixel-identical output and lower GPU time; live gameplay acceptance remains open.
-See `empty-moving-shadows-2026-10-20.txt` for controls and limits.
 
 
 Completion requires scalable attributed surface corrections beyond the four retained SH owners,
@@ -2549,7 +2548,7 @@ independent of volume centre; the aligned reference does not establish complete 
 A six-axial-ray projection trial improved mean reference-box IoU only from 0.223 to 0.290
 and still crossed doorway boundaries by over 2000 Source units at individual sites. It is not
 a production replacement. Next candidates must establish receiver visibility and room enclosure
-separately, with actual Construct coverage gains; see cubemap-axial-comparison-2026-10-20.txt.
+separately, with actual Construct coverage gains.
 
 The two authored Construct volumes now provide separate capture-placement and receiver-domain
 fixtures. At the smaller room's authored capture position, fitting generates a room-shaped
@@ -2759,47 +2758,43 @@ Construct sky-prop clipping now removes the reproduced white-room tree intrusion
 without disabling sky props. The adapter clips placed triangles, rather than only
 testing model origins. Fresh/warm bake parity and unchanged Crossfire cache/output
 are verified; two edge pixels, full replacement meshes and live acceptance remain
-open. See sky-prop-clipping-2026-10-20.txt.
+open.
 
 Denoiser queue calibration now measures parallel CPU independently of serial
 CPU selection. Both measured margins remain required. Normal Construct controls
 show unchanged bake time; a validation diagnostic exercises the formerly excluded
-choice. Existing cache restoration is exact. See denoise-queue-selection-2026-10-20.txt.
+choice. Existing cache restoration is exact.
 
 Sparse styled direct/indirect merging now skips tiles proven black in both
 validated input maps. Construct grouped preparation saves about227ms in paired
 warm controls, with exact validation screenshot/cache restoration. Cold-map and
-live performance gates remain open; see sparse-empty-tiles-2026-10-20.txt.
+live performance gates remain open.
 
 Grouped direct composition now marks conservative per-style chart tile occupancy,
 including full captured rectangles/seam donors. Construct paired composition mean
-559->391ms; validation cache/image remains exact. See direct-style-occupancy-2026-10-20.txt.
+559->391ms; validation cache/image remains exact.
 
 Exact offline BSP half-space intersections confirm that conservative clipping
 alone does not explain the authored-volume mismatch:13/14 reference boxes still
 exceed8% solid/outside partition volume. Keep runtime fitting unchanged until a
-receiver-domain/wall-separation approach passes real-map coverage; see
-cubemap-exact-occupancy-2026-10-20.txt.
+receiver-domain/wall-separation approach passes real-map coverage.
 
 Construct alternative-audit controls reject both spare-slot spreading and full
 shape expansion:208vs144 boxes with unchanged49,536rays selects identical captures
 and image; spreading regresses surface coverage. Neither runtime trial remains.
-Do not repeat scheduling changes without a new fitting/receiver-quality objective;
-see cubemap-alternative-budget-2026-10-20.txt.
+Do not repeat scheduling changes without a new fitting/receiver-quality objective.
 
 The earlier Construct selector investigation ranked corridor candidates50/53,
 beyond the then32capture cap. A two-sided wall-support score changes only1/16
 selections and leaves sampled receiver coverage unchanged. Next investigate bounded
 per-tile probe assignment/larger map sets or local residency versus a receiver-aware
-fixed budget; do not simply enlarge the per-fragment global scan. See
-cubemap-selection-capacity-2026-10-20.txt.
+fixed budget; do not simply enlarge the per-fragment global scan.
 
 Workgroup-local probe candidate masks now cull the screen-space reflection
 filter conservatively. Oriented/priority/roughness/partial-group tests pass; matched
 Construct/Crossfire screenshots remain exact, reflection pass saves~9/~2.5us.
 Other production shader stages retain original walks. That checkpoint established
 the lookup primitive; the subsequent64capacity implementation is described below.
-See probe-tile-culling-2026-10-20.txt.
 
 Reflection storage, two-word masks, cache headers and authoring now support64.
 Construct selects54captures including the previously omitted local origins;
@@ -2807,7 +2802,6 @@ Crossfire selects64. Existing16capture caches retain exact visible output.
 That checkpoint retained default16; the current default budget is64 to improve
 room coverage. Explicit saved budgets remain respected. Larger sets are a quality
 choice, not an FPS win, and automatic room bounds remain open.
-See probe-capacity64-2026-10-20.txt for limits and tests.
 
 Irradiance records now use sparse lattice addressing when the host supplies a
 closed visibility partition. Empty nodes use zero directory entries, placement
