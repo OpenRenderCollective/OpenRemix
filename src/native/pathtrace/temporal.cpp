@@ -115,8 +115,10 @@ namespace remix {
     try {
       createLightingPipelines(wavefrontRequests());
       const VkDeviceSize pixels = VkDeviceSize(extent.width) * extent.height;
-      const VkDeviceSize bytes = pass.wavefrontBytes(pixels);
-      if (!pass.paths || pass.paths->size < bytes) {
+      // Sized to the extent and the shadow queue: a smaller need (the queue
+      // turned off) gives the memory back (buffers are whole 4 KiB pages).
+      const VkDeviceSize bytes = pass.wavefrontBytes(pixels, options.wavefrontShadowQueue);
+      if (!pass.paths || pass.paths->size < bytes || pass.paths->size >= bytes + 4096) {
         auto next = buffer(bytes,
                            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
                                VK_BUFFER_USAGE_TRANSFER_DST_BIT,

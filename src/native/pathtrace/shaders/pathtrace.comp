@@ -1776,7 +1776,8 @@ IndirectResult traceIndirect(Hit primary,ivec2 pixel,vec3 diffuseFactor,vec3 spe
 // traceIndirect writes). With rtx.native.pathtrace.wavefrontShadowQueue
 // (frame.wavefrontFlags bit 0) the shade kernel (its WAVEFRONT_DEFER_SHADOWS
 // variant) leaves its vertex's sun and sky shadow rays to the shadow kernel
-// (7, after the next arguments kernel). Neither nearest() nor
+// (7, after the next arguments kernel), which adds the light that arrives to
+// the path's before its next bounce. Neither nearest() nor
 // the candidate tests draw random numbers, so resuming from the saved rng
 // and roulette state continues the inline pass's path; the records keep what
 // the next ray depends on exactly (origin, direction, throughput, radiance,
@@ -1784,10 +1785,11 @@ IndirectResult traceIndirect(Hit primary,ivec2 pixel,vec3 diffuseFactor,vec3 spe
 // The records (frame.wavefrontPaths): planes of 16 bytes per pixel,
 // frame.wavefrontStride apart, so a group's accesses to a plane are
 // contiguous. 0-5 (96 bytes): the PathState and the globals its steps read
-// (written by the start and shade kernels); 6-9 (64 bytes): what the finish
-// kernel needs of the start; 10-14: the receiver the trace kernel found; 15:
-// the light the shadow kernel found unblocked.
-const uint wavefrontPathPlanes=0u,wavefrontFinishPlanes=6u,wavefrontReceiverPlanes=10u;
+// (written by the start and shade kernels); 6-8 (48 bytes): what the finish
+// kernel needs of the start; 9-12 (64 bytes): the receiver the trace kernel
+// found, by the path's place in the bounce's list (the shade kernel at that
+// place reads it), so a group's accesses stay contiguous.
+const uint wavefrontPathPlanes=0u,wavefrontFinishPlanes=6u,wavefrontReceiverPlanes=9u;
 layout(buffer_reference,std430,buffer_reference_align=16) buffer WavefrontPlanes { uvec4 v[]; };
 uvec4 wavefrontLoad(uint plane,uint index) {
   return WavefrontPlanes(frame.wavefrontPaths).v[plane*frame.wavefrontStride+index];
@@ -1844,32 +1846,57 @@ Hit wavefrontPrimary(PathState s) {
   Hit hit;hit.pbr=false;hit.color=vec4(s.factor,1);
   return hit;
 }
-// Planes 6-9: the extra sky rays, IndirectPrimary and the lobe's results.
-void storeFinish(uint index,IndirectPrimary p,vec3 extraSky,vec3 extraSkySpecular,vec3 firstDir,float probability,
-                 vec3 specularRatio) {
-  uint bits=(p.pbr?1u:0u)|(p.sssMoved?2u:0u);
+// Planes 6-8: the extra sky rays, IndirectPrimary and the lobe's results.
+// The NRD factors are kept over the material factor (the finish multiplies
+// by their inverse); the roughness as a half, the other half holding the
+// flags, the selected lobe and the lobe's probability (the firefly limit's,
+// to 1/2047); the mixture's specular share as whether it is at least half
+// (all indirectSample asks of it); the subsurface tint with a shared
+// exponent (packShared). The view depth stays exact: as 8 bits of mantissa
+// it moved the denoised image (REBLUR's hit distance normalization).
+// RGB9E5: three 9-bit mantissas over one 5-bit exponent (0 to 65408).
+uint packShared(vec3 c) {
+  c=clamp(c,vec3(0),vec3(65408));
+  float m=max(c.r,max(c.g,c.b));
+  int e=max(-16,int(floor(log2(max(m,1e-30)))))+16;
+  float scale=exp2(float(e-24));
+  if(floor(m/scale+.5)>=512.){scale*=2;++e;}
+  uvec3 q=uvec3(floor(c/scale+.5));
+  return q.r|q.g<<9|q.b<<18|uint(e)<<27;
+}
+vec3 unpackShared(uint v) {
+  return vec3(v&511u,(v>>9)&511u,(v>>18)&511u)*exp2(float(int(v>>27)-24));
+}
+void storeFinish(uint index,IndirectPrimary p,int lobe,vec3 extraSky,vec3 extraSkySpecular,vec3 firstDir,
+                 float probability,vec3 specularRatio) {
+  uint bits=(p.pbr?1u:0u)|(p.sssMoved?2u:0u)|uint(lobe+1)<<2|(firstSpecularShare>=.5?16u:0u);
+  vec3 diffuse=p.diffuseFactor/p.factor,specular=p.specularFactor/p.factor;
   wavefrontStore(6u,index,uvec4(packHalves(extraSky.r,extraSky.g),packHalves(extraSky.b,extraSkySpecular.r),
                                packHalves(extraSkySpecular.g,extraSkySpecular.b),packSnorm2x16(encodeGeometricNormal(firstDir))));
-  wavefrontStore(7u,index,uvec4(packHalves(p.roughness,p.sssSpecular),packHalves(p.diffuseProbability,probability),
-                               packHalves(firstSpecularShare,specularRatio.r),packHalves(specularRatio.g,specularRatio.b)));
-  wavefrontStore(8u,index,uvec4(packHalves(p.factor.r,p.factor.g),packHalves(p.factor.b,p.diffuseFactor.r),
-                               packHalves(p.diffuseFactor.g,p.diffuseFactor.b),packHalves(p.specularFactor.r,p.specularFactor.g)));
-  wavefrontStore(9u,index,uvec4(packHalves(p.specularFactor.b,p.sssTint.r),packHalves(p.sssTint.g,p.sssTint.b),
-                               floatBitsToUint(p.z),bits));
+  wavefrontStore(7u,index,uvec4(floatBitsToUint(p.z),
+                               (packHalf2x16(vec2(p.roughness,0))&0xffffu)|(bits|uint(round(clamp(probability,0.,1.)*2047.))<<5)<<16,
+                               packHalves(specularRatio.r,specularRatio.g),packHalves(specularRatio.b,diffuse.r)));
+  wavefrontStore(8u,index,uvec4(packHalves(diffuse.g,diffuse.b),packHalves(specular.r,specular.g),
+                               packHalves(specular.b,p.sssSpecular),p.sssMoved?packShared(p.sssTint):0u));
 }
 IndirectPrimary loadFinish(uint index,out vec3 extraSky,out vec3 extraSkySpecular,out vec3 firstDir,
                            out float probability,out vec3 specularRatio) {
   IndirectPrimary p;
-  uvec4 a=wavefrontLoad(6u,index),b=wavefrontLoad(7u,index),c=wavefrontLoad(8u,index),d=wavefrontLoad(9u,index);
+  uvec4 a=wavefrontLoad(6u,index),b=wavefrontLoad(7u,index),c=wavefrontLoad(8u,index);
   vec2 a0=unpackHalf2x16(a.x),a1=unpackHalf2x16(a.y),a2=unpackHalf2x16(a.z);
   extraSky=vec3(a0,a1.x);extraSkySpecular=vec3(a1.y,a2);firstDir=decodeGeometricNormal(unpackSnorm2x16(a.w));
-  vec2 b0=unpackHalf2x16(b.x),b1=unpackHalf2x16(b.y),b2=unpackHalf2x16(b.z),b3=unpackHalf2x16(b.w);
-  p.roughness=b0.x;p.sssSpecular=b0.y;p.diffuseProbability=b1.x;probability=b1.y;firstSpecularShare=b2.x;
-  specularRatio=vec3(b2.y,b3);
-  vec2 c0=unpackHalf2x16(c.x),c1=unpackHalf2x16(c.y),c2=unpackHalf2x16(c.z),c3=unpackHalf2x16(c.w);
-  vec2 d0=unpackHalf2x16(d.x),d1=unpackHalf2x16(d.y);
-  p.factor=vec3(c0,c1.x);p.diffuseFactor=vec3(c1.y,c2);p.specularFactor=vec3(c3,d0.x);p.sssTint=vec3(d0.y,d1);
-  p.z=uintBitsToFloat(d.z);p.pbr=(d.w&1u)!=0u;p.sssMoved=(d.w&2u)!=0u;
+  uint bits=(b.y>>16)&31u;
+  vec2 b1=unpackHalf2x16(b.y),b2=unpackHalf2x16(b.z),b3=unpackHalf2x16(b.w);
+  vec2 c0=unpackHalf2x16(c.x),c1=unpackHalf2x16(c.y),c2=unpackHalf2x16(c.z);
+  p.z=uintBitsToFloat(b.x);probability=float((b.y>>21)&2047u)/2047.;
+  p.roughness=b1.x;specularRatio=vec3(b2,b3.x);
+  p.factor=vec3(1);p.diffuseFactor=vec3(b3.y,c0);p.specularFactor=vec3(c1,c2.x);p.sssSpecular=c2.y;
+  p.pbr=(bits&1u)!=0u;p.sssMoved=(bits&2u)!=0u;firstSpecularShare=(bits&16u)!=0u?1.:0.;
+  p.sssTint=p.sssMoved?unpackShared(c.w):vec3(1);
+  // The start's lobe, as indirectSample selects it again: -1 mixture,
+  // 0 diffuse (any choice passes), 1 specular (none does).
+  int lobe=int((bits>>2)&3u)-1;
+  p.diffuseProbability=lobe<0?-1.:lobe==0?2.:0.;
   return p;
 }
 // The path start for the pixel (a pixel without one gets its result here);
@@ -1883,15 +1910,14 @@ bool wavefrontStart(Hit primary,ivec2 pixel,uint index,vec3 diffuseFactor,vec3 s
   }
   Hit lit;IndirectPrimary p=indirectPrimary(primary,diffuseFactor,specularFactor,lit);
   float probability;
-  int lobe=primaryLobe(p.diffuseProbability,pixel,frame.config.z,0u,probability);
+  int lobe=primaryLobe(p.diffuseProbability,pixel,frame.config.z,0u,probability),selected=lobe;
   vec3 firstDir,extraSky,extraSkySpecular;
   PathState s=pathStart(lit,lobe,probability,false,frame.config.y,firstDir,extraSky,extraSkySpecular);
   // Dead at the primary: only the extra sky rays (pathFinish).
   if(s.dead)s.going=false;
   else if(frame.config.y==0)profilePath(8u);
   storePath(index,s);
-  storeFinish(index,p,extraSky,extraSkySpecular,firstDir,probability,s.specularWeight/max(s.weight,vec3(1e-20)));
-  if((frame.wavefrontFlags&1u)!=0u)wavefrontStore(15u,index,uvec4(0));
+  storeFinish(index,p,selected,extraSky,extraSkySpecular,firstDir,probability,s.specularWeight/max(s.weight,vec3(1e-20)));
   return wavefrontSteps(s);
 }
 // The live paths of each bounce (after the planes): a header, then two lists
@@ -1904,7 +1930,7 @@ bool wavefrontStart(Hit primary,ivec2 pixel,uint index,vec3 diffuseFactor,vec3 s
 // dispatch arguments from word 8 (four words each), the shadow kernel's
 // group columns at 72 and its arguments from word 80. The host zeroes it
 // every frame.
-const uint wavefrontPlaneCount=16u,wavefrontHeaderWords=256u;
+const uint wavefrontPlaneCount=13u,wavefrontHeaderWords=256u;
 layout(buffer_reference,std430,buffer_reference_align=4) buffer WavefrontQueue {
   uint header[wavefrontHeaderWords]; uint list[];
 };
@@ -1952,7 +1978,8 @@ void wavefrontArgs() {
   wavefrontDispatch(shadows,80u+4u*min(bounce,15u),72u);
 }
 // The shadow kernel: a shade kernel vertex's sun and sky shadow rays; their
-// light that arrives, added to the path's (plane 15).
+// light that arrives, added to the path's radiance (plane 3) before its next
+// bounce reads it.
 void wavefrontShadow() {
   WavefrontQueue q=wavefrontQueue();
   uint id=(gl_WorkGroupID.y*q.header[72]+gl_WorkGroupID.x)*64u+gl_LocalInvocationIndex;
@@ -1971,13 +1998,16 @@ void wavefrontShadow() {
     if(!any(greaterThan(weight,vec3(0))))continue;
     light+=weight*shadow(origin,source==0u?-frame.lightDirection.xyz:skyDirection);
   }
-  if(any(greaterThan(light,vec3(0))))
-    wavefrontStore(15u,index,wavefrontPack(uintBitsToFloat(wavefrontLoad(15u,index).xyz)+light,0u));
+  if(any(greaterThan(light,vec3(0)))) {
+    uvec4 result=wavefrontLoad(3u,index);
+    wavefrontStore(3u,index,wavefrontPack(uintBitsToFloat(result.xyz)+light,result.w));
+  }
 }
-// This invocation's path of the bounce's list (shadingPixel set).
-bool wavefrontQueued(out uint index) {
+// This invocation's place in the bounce's list (id) and its path
+// (shadingPixel set).
+bool wavefrontQueued(out uint id,out uint index) {
   WavefrontQueue q=wavefrontQueue();
-  uint id=(gl_WorkGroupID.y*q.header[5]+gl_WorkGroupID.x)*64u+gl_LocalInvocationIndex;
+  id=(gl_WorkGroupID.y*q.header[5]+gl_WorkGroupID.x)*64u+gl_LocalInvocationIndex;
   index=0u;
   if(id>=q.header[2])return false;
   index=q.list[(q.header[3]&1u)*frame.wavefrontStride+id];
@@ -1986,7 +2016,10 @@ bool wavefrontQueued(out uint index) {
 }
 uint wavefrontNextList() { return (wavefrontQueue().header[3]&1u)^1u; }
 // secondaryHit's first query: closest()'s receiver, which leaves out paint.
-void wavefrontTrace(uint index) {
+// Kept: the transform (each column with one more word), the surface, the
+// primitive and the barycentrics; the shade kernel works out the distance
+// and the wound's W again.
+void wavefrontTrace(uint id,uint index) {
   uvec4 a=wavefrontLoad(0u,index);
   if((a.w&1u)==0u||((a.w>>6)&31u)>=frame.config.y)return;
   viewModelPath=(a.w&8u)!=0u;
@@ -1995,12 +2028,11 @@ void wavefrontTrace(uint index) {
   Intersection x=nearest(uintBitsToFloat(a.xyz),uintBitsToFloat(wavefrontLoad(1u,index).xyz),1e30,0);
   traceMask=cameraMask;
   const uint r=wavefrontReceiverPlanes;
-  wavefrontStore(r+4u,index,uvec4(x.surface,x.primitive,floatBitsToUint(x.bary)));
+  wavefrontStore(r,id,wavefrontPack(x.model[0],x.surface));
   if(x.surface==~0u)return;
-  wavefrontStore(r,index,wavefrontPack(x.model[0],floatBitsToUint(x.t)));
-  wavefrontStore(r+1u,index,wavefrontPack(x.model[1],floatBitsToUint(x.wound)));
-  wavefrontStore(r+2u,index,wavefrontPack(x.model[2],0u));
-  wavefrontStore(r+3u,index,wavefrontPack(x.model[3],0u));
+  wavefrontStore(r+1u,id,wavefrontPack(x.model[1],x.primitive));
+  wavefrontStore(r+2u,id,wavefrontPack(x.model[2],floatBitsToUint(x.bary.x)));
+  wavefrontStore(r+3u,id,wavefrontPack(x.model[3],floatBitsToUint(x.bary.y)));
 }
 #if WAVEFRONT_PASS==6
 // The tail (rtx.native.pathtrace.wavefrontBounces): the path's remaining
@@ -2017,18 +2049,27 @@ void wavefrontTail(uint index) {
 #if WAVEFRONT_PASS==3
 // The path's next bounce, from the receiver the trace kernel found (the
 // blended layers it passes on the way traced here); whether another follows.
-bool wavefrontShade(uint index,out bool shadowed) {
+bool wavefrontShade(uint id,uint index,out bool shadowed) {
   shadowed=false;
   bool traced;PathState s=loadPath(index,traced);
   if(!traced||!wavefrontSteps(s))return false;
   const uint r=wavefrontReceiverPlanes;
-  uvec4 f=wavefrontLoad(r+4u,index);
-  Intersection x;x.surface=f.x;x.primitive=f.y;x.bary=uintBitsToFloat(f.zw);
-  x.t=1e30;x.model=mat4x3(1);x.wound=0;
+  uvec4 c0=wavefrontLoad(r,id);
+  Intersection x;x.surface=c0.w;x.primitive=0u;x.bary=vec2(0);x.t=1e30;x.model=mat4x3(1);x.wound=0;
   if(x.surface!=~0u) {
-    uvec4 c0=wavefrontLoad(r,index),c1=wavefrontLoad(r+1u,index),c2=wavefrontLoad(r+2u,index),c3=wavefrontLoad(r+3u,index);
+    uvec4 c1=wavefrontLoad(r+1u,id),c2=wavefrontLoad(r+2u,id),c3=wavefrontLoad(r+3u,id);
     x.model=mat4x3(uintBitsToFloat(c0.xyz),uintBitsToFloat(c1.xyz),uintBitsToFloat(c2.xyz),uintBitsToFloat(c3.xyz));
-    x.t=uintBitsToFloat(c0.w);x.wound=uintBitsToFloat(c1.w);
+    x.primitive=c1.w;x.bary=uintBitsToFloat(uvec2(c2.w,c3.w));
+    // The distance along the ray to the point the barycentrics give, and a
+    // wounded surface's W there (as its candidate test found it).
+    Surface surface=surfaces[x.surface];
+    surface.indices=surface.traceIndices;
+    uint tri=x.primitive*3u;
+    vec3 a=surface.vertices.v[surface.indices.i[tri]].position.xyz;
+    vec3 point=x.model*vec4(a+x.bary.x*(surface.vertices.v[surface.indices.i[tri+1u]].position.xyz-a)+
+                            x.bary.y*(surface.vertices.v[surface.indices.i[tri+2u]].position.xyz-a),1);
+    x.t=dot(point-s.origin,s.direction);
+    if(surface.textureState.y!=0u)woundAt(surface,x.primitive,x.bary,x.wound);
   }
   wavefrontReceiver=x;wavefrontInjected=true;
   Hit primary=wavefrontPrimary(s);
@@ -2063,7 +2104,6 @@ bool wavefrontFinish(ivec2 pixel,uint index,out IndirectResult result) {
   IndirectPrimary p=loadFinish(index,extraSky,extraSkySpecular,firstDir,probability,specularRatio);
   // The specular share as the ratio the start kept (pathFinish).
   s.specularWeight=specularRatio;s.weight=vec3(1);
-  if((frame.wavefrontFlags&1u)!=0u)s.result+=uintBitsToFloat(wavefrontLoad(15u,index).xyz);
   vec3 sampleSpecular;
   vec3 sampleLight=pathFinish(primary,s,s.dead,extraSky,extraSkySpecular,probability,sampleSpecular);
   indirectSample(pixel,0u,p,sampleLight,sampleSpecular,firstDir,s.pathDistance,result);
@@ -2522,14 +2562,14 @@ void main() {
   return;
 #elif WAVEFRONT_PASS==2 || WAVEFRONT_PASS==3 || WAVEFRONT_PASS==6
   // Over the bounce's live paths (wavefrontArgs' indirect dispatch).
-  uint queued;
-  bool live=wavefrontQueued(queued);
+  uint id,queued;
+  bool live=wavefrontQueued(id,queued);
 #if WAVEFRONT_PASS==2
-  if(live)wavefrontTrace(queued);
+  if(live)wavefrontTrace(id,queued);
 #elif WAVEFRONT_PASS==6
   if(live)wavefrontTail(queued);
 #else
-  bool shadowed=false,next=live&&wavefrontShade(queued,shadowed);
+  bool shadowed=false,next=live&&wavefrontShade(id,queued,shadowed);
   if(live) {
     wavefrontEnqueue(wavefrontNextList(),queued,next);
 #ifdef WAVEFRONT_DEFER_SHADOWS

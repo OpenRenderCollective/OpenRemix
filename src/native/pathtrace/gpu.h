@@ -394,15 +394,16 @@ namespace remix {
       // (pathtrace.comp WAVEFRONT_PASS: start; per bounce arguments, trace
       // and shade over the bounce's live paths; finish) over the path records
       // in `paths`: wavefrontPlanes 16-byte planes a pixel, then the queue
-      // header, two lists of 4 bytes a pixel and the shadow rays, 32 bytes a
-      // pixel (pathtrace.comp WavefrontQueue). Dispatched only while every
-      // kernel exists, else the single kernel runs. Temporal (denoised)
-      // lighting, one sample a pixel.
-      static constexpr uint32_t wavefrontPlanes = 16, wavefrontQueueHeader = 1024, wavefrontMaxBounces = 16;
+      // header, two lists of 4 bytes a pixel and, with the shadow queue, the
+      // shadow rays, 32 bytes a pixel (pathtrace.comp WavefrontQueue).
+      // Dispatched only while every kernel exists, else the single kernel
+      // runs. Temporal (denoised) lighting, one sample a pixel.
+      static constexpr uint32_t wavefrontPlanes = 13, wavefrontQueueHeader = 1024, wavefrontMaxBounces = 16;
       // start, trace, shade, finish, tail, shadow, shade leaving its shadow rays, arguments
       static constexpr size_t wavefrontKernels = 8;
-      static VkDeviceSize wavefrontBytes(VkDeviceSize pixels) {
-        return pixels * wavefrontPlanes * 16 + wavefrontQueueHeader + (pixels * 2 * 4 + 15) / 16 * 16 + pixels * 32;
+      static VkDeviceSize wavefrontBytes(VkDeviceSize pixels, bool shadows) {
+        return pixels * wavefrontPlanes * 16 + wavefrontQueueHeader + (pixels * 2 * 4 + 15) / 16 * 16 +
+               (shadows ? pixels * 32 : 0);
       }
       VkPipeline wavefront[wavefrontKernels] = {};
       std::unique_ptr<Buffer> paths;
