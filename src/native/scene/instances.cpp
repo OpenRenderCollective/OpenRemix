@@ -111,6 +111,19 @@ namespace remix {
       if (!inside->inside || medium[3] <= 0)
         medium = {};
     }
+    // remixapi_CameraMediumFogEXT: the medium fades linearly over its fog end
+    // (rendering.cpp: pathConfig.w bit 15), which takes the distance's place.
+    bool mediumFog = false;
+    if (const auto *fog = static_cast<const remixapi_CameraMediumFogEXT *>(
+            extension(info.pNext, REMIXAPI_STRUCT_TYPE_CAMERA_MEDIUM_FOG_EXT))) {
+      finite(&fog->fogEnd, 1);
+      if (!(fog->fogEnd > 0))
+        throw invalid;
+      if (medium[3] > 0) {
+        medium[3] = fog->fogEnd;
+        mediumFog = true;
+      }
+    }
     // remixapi_CameraScreensEXT: per slot, the position (w 1: set), then
     // right and up scaled to the image plane's half extents and forward.
     ScreenCameras screens = {};
@@ -144,6 +157,7 @@ namespace remix {
     }
     if (info.type == REMIXAPI_CAMERA_TYPE_WORLD) {
       m_cameraMedium = medium;
+      m_cameraMediumFog = mediumFog;
       m_screenCameras = screens;
       const auto *metadata = static_cast<const remixapi_CameraTemporalEXT *>(
           extension(info.pNext, REMIXAPI_STRUCT_TYPE_CAMERA_TEMPORAL_EXT));
@@ -404,6 +418,9 @@ namespace remix {
                 merged->transmission = mod->transmission;
                 merged->refractiveIndex = mod->refractiveIndex;
                 merged->transmittanceDistance = mod->transmittanceDistance;
+                merged->fogBody = mod->fogBody;
+                std::copy_n(mod->refractTint, 3, merged->refractTint);
+                merged->fogStart = mod->fogStart;
               }
               if (p & ModParts::roughness) {
                 merged->roughness = mod->roughness;

@@ -1,5 +1,7 @@
 #pragma once
+#include <cstdint>
 #include <memory>
+#include <vector>
 #include <vulkan/vulkan.h>
 
 namespace remix {
@@ -13,6 +15,12 @@ namespace remix {
     bool matches(VkFormat format, VkExtent2D extent) const;
     void capture(VkCommandBuffer command, VkImage source, VkImageLayout layout);
     void restore(VkCommandBuffer command, VkImage destination, VkExtent2D extent, VkImageLayout layout) const;
+    // The last capture's texels, tightly packed, copied out through a command
+    // buffer of its own on `queue` (idle before and after; the caller holds
+    // its lock). Empty before the first capture.
+    std::vector<uint8_t> read(VkPhysicalDevice physical, VkQueue queue, uint32_t family) const;
+    VkFormat format() const { return m_format; }
+    VkExtent2D extent() const { return m_extent; }
 
   private:
     VkDevice m_device{};

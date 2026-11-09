@@ -82,6 +82,8 @@ namespace remix {
     // directory's screenshots folder, named by the local time.
     remixapi_ErrorCode requestScreenshotSet();
     void completeScreenshot();
+    // remixapi_ReadPresentedImageEXT: the last-frame snapshot, read back now.
+    remixapi_ErrorCode readPresentedImage(remixapi_PresentedImageEXT &image);
     const PresentedScreenshot &screenshot() const { return m_screenshot; }
     int configureSharedFrame(remixapi_EditorSharedFrame &frame);
     bool modsDisabled() const { return m_disableMods; }

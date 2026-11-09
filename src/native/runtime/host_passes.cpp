@@ -324,8 +324,13 @@ namespace remix {
       else if (channels == REMIXAPI_HOST_CHANNELS_NO_ALPHA_EXT)
         sampledView.components = {same, same, same, one};
       check(vkCreateImageView(m_device, &sampledView, nullptr, &t.sampled));
-      if (volume)
-        return t; // sampled only: no render pass or framebuffer
+      if (volume) {
+        // Sampled only: no render pass or framebuffer. Its use counts from now,
+        // or the end of this frame's record would take it as stale and destroy
+        // it under the upload just recorded.
+        t.lastFrame = m_frame;
+        return t;
+      }
       // Its render pass: load and keep, in GENERAL layout throughout.
       const VkAttachmentDescription attachment{.format = format,
                                                .samples = VK_SAMPLE_COUNT_1_BIT,
@@ -744,8 +749,11 @@ namespace remix {
     std::vector<Upload> uploads;
     {
       std::lock_guard lock(m_mutex);
-      passes = std::move(m_pending);
-      m_pending.clear();
+      // The host's latest list, kept for the frames that come before its next
+      // one (presentation runs on its own thread: a frame recorded between two
+      // submissions drew none of the passes, and the effect flickered). The
+      // host submits every frame, an empty list when it has no passes.
+      passes = m_pending;
       uploads = std::move(m_uploads);
       m_uploads.clear();
       m_stats.passes = uint32_t(passes.size());

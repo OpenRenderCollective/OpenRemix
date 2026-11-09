@@ -302,17 +302,8 @@ namespace remix {
       if (sdrWanted) {
         if (job.half) {
           // SDR output's image of the HDR10 frame.
-          linear();
-          const SdrCurve curve(nits.peak / nits.paperWhite);
-          job.bytes.assign(pixels * 4, 255);
-          for (size_t i = 0; i < pixels; ++i) {
-            Vec3 c = inset * Vec3{light[i * 3], light[i * 3 + 1], light[i * 3 + 2]};
-            for (auto &v : c)
-              v = curve(v);
-            c = outset * c;
-            for (int k = 0; k < 3; ++k)
-              job.bytes[i * 4 + k] = uint8_t(std::lround(std::pow(std::clamp(c[k], 0.f, 1.f), 1 / 2.2f) * 255));
-          }
+          job.bytes.resize(pixels * 4);
+          sdrFromHdr10(job.halves.data(), pixels, job.nits, job.bytes.data());
         }
         save(job.set ? withSuffix(".png") : job.single, sdrPng(job.bytes, job.width, job.height));
       }
@@ -373,6 +364,25 @@ namespace remix {
       return status;
     }
   } // namespace
+
+  void sdrFromHdr10(const uint16_t *halves, size_t pixels, HdrNits nits, uint8_t *rgba) {
+    nits = nits.clamped();
+    const SdrCurve curve(nits.peak / nits.paperWhite);
+    for (size_t i = 0; i < pixels; ++i) {
+      Vec3 c;
+      for (int k = 0; k < 3; ++k) {
+        const float v = halfFloat(halves[i * 4 + k]);
+        c[k] = v == v ? std::copysign(std::pow(std::abs(v), 2.2f), v) : 0;
+      }
+      c = inset * c;
+      for (auto &v : c)
+        v = curve(v);
+      c = outset * c;
+      for (int k = 0; k < 3; ++k)
+        rgba[i * 4 + k] = uint8_t(std::lround(std::pow(std::clamp(c[k], 0.f, 1.f), 1 / 2.2f) * 255));
+      rgba[i * 4 + 3] = 255;
+    }
+  }
 
   PresentedScreenshot::~PresentedScreenshot() {
     if (m_writer.joinable())

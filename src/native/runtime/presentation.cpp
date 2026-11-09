@@ -1736,6 +1736,55 @@ namespace remix {
     return m_screenshot.request(path, m_screenshotSupported);
   }
 
+  remixapi_ErrorCode RemixNativeRuntime::readPresentedImage(remixapi_PresentedImageEXT &image) {
+    if (!m_initialized)
+      return REMIXAPI_ERROR_CODE_NOT_INITIALIZED;
+    if (m_asyncActive)
+      waitRenderThread();
+    if (m_failed)
+      return REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
+    if (!m_lastFrame)
+      return REMIXAPI_ERROR_CODE_FEATURE_UNAVAILABLE;
+    std::vector<uint8_t> texels;
+    {
+      std::lock_guard lock(m_queueMutex);
+      texels = m_lastFrame->read(m_physicalDevice, m_queue, m_queueFamily);
+    }
+    if (texels.empty())
+      return REMIXAPI_ERROR_CODE_FEATURE_UNAVAILABLE;
+    const VkExtent2D extent = m_lastFrame->extent();
+    const VkFormat format = m_lastFrame->format();
+    const size_t pixels = size_t(extent.width) * extent.height;
+    std::vector<uint8_t> rgba;
+    bool bgra = false;
+    if (format == VK_FORMAT_R16G16B16A16_SFLOAT) {
+      const auto &settings = m_profiles.current();
+      rgba.resize(pixels * 4);
+      std::vector<uint16_t> halves(pixels * 4);
+      std::memcpy(halves.data(), texels.data(), halves.size() * sizeof(uint16_t));
+      sdrFromHdr10(halves.data(), pixels, {settings.hdrPeakNits, settings.hdrPaperWhiteNits, settings.hdrUiNits},
+                   rgba.data());
+    } else {
+      rgba = std::move(texels);
+      bgra = format == VK_FORMAT_B8G8R8A8_SRGB || format == VK_FORMAT_B8G8R8A8_UNORM;
+    }
+    image.presentedWidth = extent.width;
+    image.presentedHeight = extent.height;
+    for (uint32_t y = 0; y < image.height; ++y) {
+      const uint32_t sy = uint32_t(uint64_t(y) * extent.height / image.height);
+      auto *row = static_cast<uint8_t *>(image.pixels) + size_t(y) * image.rowPitch;
+      for (uint32_t x = 0; x < image.width; ++x) {
+        const uint32_t sx = uint32_t(uint64_t(x) * extent.width / image.width);
+        const uint8_t *texel = &rgba[(size_t(sy) * extent.width + sx) * 4];
+        row[x * 4 + 0] = texel[bgra ? 0 : 2];
+        row[x * 4 + 1] = texel[1];
+        row[x * 4 + 2] = texel[bgra ? 2 : 0];
+        row[x * 4 + 3] = 255;
+      }
+    }
+    return REMIXAPI_ERROR_CODE_SUCCESS;
+  }
+
   remixapi_ErrorCode RemixNativeRuntime::requestScreenshotSet() {
     if (!m_initialized)
       return REMIXAPI_ERROR_CODE_NOT_INITIALIZED;

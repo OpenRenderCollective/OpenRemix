@@ -33,6 +33,10 @@ namespace remix::scene {
       d.flags |= MaterialDecode::portalRim;
     if (m.solidEnergy)
       d.flags |= MaterialDecode::solidEnergy;
+    if (m.blendModulation)
+      d.flags |= MaterialDecode::blendModulation;
+    if (m.fogBody && (m.refractTint[0] != 1 || m.refractTint[1] != 1 || m.refractTint[2] != 1 || m.fogStart != 0))
+      d.flags |= MaterialDecode::refractTint;
     return d;
   }
 } // namespace remix::scene
@@ -178,6 +182,21 @@ namespace remix {
         material->roughness = .04f; // a smooth surface, shaded as PBR for its reflection
         material->metallic = 0;
       }
+      if (const auto *fog = static_cast<const remixapi_MaterialTranslucentFogEXT *>(
+              extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_TRANSLUCENT_FOG_EXT))) {
+        const float tint[3] = {fog->refractTint.x, fog->refractTint.y, fog->refractTint.z};
+        finite(&fog->fogEnd, 1);
+        finite(&fog->fogStart, 1);
+        finite(tint, 3);
+        if (material->transmittanceDistance <= 0 || !(fog->fogEnd > 0) || !(fog->fogStart < fog->fogEnd) ||
+            extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_IRIDESCENCE_EXT) ||
+            std::any_of(tint, tint + 3, [](float v) { return v < 0 || v > 1; }))
+          throw invalid;
+        material->transmittanceDistance = fog->fogEnd;
+        material->fogBody = true;
+        std::copy_n(tint, 3, material->refractTint);
+        material->fogStart = fog->fogStart;
+      }
     }
     finite(material->tint, 4);
     if (material->tint[3] < 0 || material->tint[3] > 1) {
@@ -242,6 +261,21 @@ namespace remix {
       std::copy_n(energy->detail2Scroll, 2, out->detail2Scroll);
       std::copy_n(energy->detail1Sway, 2, out->detail1Sway);
       material->solidEnergy = std::move(out);
+    }
+    if (const auto *modulation = static_cast<const remixapi_MaterialBlendModulationEXT *>(
+            extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_BLEND_MODULATION_EXT))) {
+      // The mask and its transform take the film's fields (frame_tables.h
+      // blendModulationFields).
+      if (!opaque || gradient || rim || portal || material->solidEnergy || opaque->thinFilmThickness_hasvalue ||
+          opaque->alphaIsThinFilmThickness || extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_IRIDESCENCE_EXT) ||
+          !modulation->maskTexture || !*modulation->maskTexture)
+        throw invalid;
+      finite(&modulation->transform[0][0], 6);
+      auto out = std::make_shared<BlendModulation>();
+      out->mask = dataTexturePath(modulation->maskTexture);
+      out->sampler = samplerMaterial(out->mask, 1, 1);
+      std::copy_n(&modulation->transform[0][0], 6, &out->transform[0][0]);
+      material->blendModulation = std::move(out);
     }
     if (gradient) {
       // B.a is luminance, not coverage: an opaque material without alpha test
@@ -445,12 +479,16 @@ namespace remix {
              a.normalEncoding == b.normalEncoding && a.roughness == b.roughness && a.metallic == b.metallic &&
              a.remap[0] == b.remap[0] && a.remap[1] == b.remap[1] && a.scrollLayers == b.scrollLayers &&
              std::equal(a.scroll, a.scroll + 6, b.scroll) && a.refractiveIndex == b.refractiveIndex &&
-             a.transmittanceDistance == b.transmittanceDistance && a.iridescence == b.iridescence &&
+             a.transmittanceDistance == b.transmittanceDistance && a.fogBody == b.fogBody &&
+             std::equal(a.refractTint, a.refractTint + 3, b.refractTint) && a.fogStart == b.fogStart &&
+             a.iridescence == b.iridescence &&
              a.subsurface == b.subsurface && a.metalColored == b.metalColored &&
              std::equal(a.metalColor, a.metalColor + 3, b.metalColor) && a.pbrBlur == b.pbrBlur &&
              (a.gradient == b.gradient || (a.gradient && b.gradient && *a.gradient == *b.gradient)) &&
              (a.portalRim == b.portalRim || (a.portalRim && b.portalRim && *a.portalRim == *b.portalRim)) &&
              (a.solidEnergy == b.solidEnergy || (a.solidEnergy && b.solidEnergy && *a.solidEnergy == *b.solidEnergy)) &&
+             (a.blendModulation == b.blendModulation ||
+              (a.blendModulation && b.blendModulation && *a.blendModulation == *b.blendModulation)) &&
              a.pbr == b.pbr && std::equal(a.emission, a.emission + 3, b.emission) &&
              std::equal(a.tint, a.tint + 4, b.tint) && a.compare == b.compare && a.reference == b.reference &&
              a.drawAlpha == b.drawAlpha && a.translucent == b.translucent && a.transmission == b.transmission &&

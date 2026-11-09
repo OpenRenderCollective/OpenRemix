@@ -895,6 +895,8 @@ namespace remix {
       frame.pathConfig[3] |= 0x2000u; // subsurface maps off (pathtrace.comp surfaceSubsurface)
     if (!options.subsurfaceTransmission)
       frame.pathConfig[3] |= 0x4000u; // a profile's far side off (subsurface.glsl)
+    if (resources.cameraMediumFog())
+      frame.pathConfig[3] |= 0x8000u; // the camera's medium is a fog body (pathtrace.comp cameraMedium)
     append(&frame, sizeof(frame));
     append(&options.localFireflyFilter, sizeof(options.localFireflyFilter));
     append(&options.translucencyDenoiser, sizeof(options.translucencyDenoiser));
