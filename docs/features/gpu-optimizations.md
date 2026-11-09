@@ -97,7 +97,10 @@ whole path. Each compiles alone, with fewer registers than the whole path
 needs, and the bounce kernels launch only for the paths still going:
 
 - **start** (over the screen): the primary surface, the first direction and
-  the sky rays; a pixel without a path (sky, blended) gets its result here.
+  the sky rays' directions and weights; a pixel without a path (sky,
+  blended) gets its result here.
+- **sky**: the sky rays' shadow rays (and sky-guide training) over the paths
+  that have them.
 - per split bounce (`rtx.native.pathtrace.wavefrontBounces`, 1-16, default
   1): **arguments** (one invocation: the indirect dispatch over the bounce's
   list of live paths), **trace** (the bounce ray's receiver query) and
@@ -113,7 +116,9 @@ bounces' sun and sky shadow rays into a **shadow** kernel over their own list.
 
 The path state between kernels (origin, direction, throughput, radiance and
 random state exact, the rest as halves) is in per-pixel records, allocated
-while the option is on. Neither the receiver query nor the alpha test draws
+while the option is on: 216 bytes a pixel, plus 16 a sky sample or 32 with
+the shadow queue, whichever is more (248 by default: 123 MiB at 960x540,
+872 MiB at 2560x1440). Neither the receiver query nor the alpha test draws
 random numbers, so a path continues as the single kernel's would; images
 match within noise. The kernels compile with the temporal lighting passes, or
 in the background when the option is turned on later; until all have, the
