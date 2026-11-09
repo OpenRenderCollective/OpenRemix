@@ -759,12 +759,16 @@ vec3 offsetRay(vec3 p,vec3 n) {
 // A translucent body's refractive index and measurement distance at a sheet
 // (zero: none). A sheet from the raster G-buffer carries no material record:
 // its ray is traced again for it.
-vec2 sheetBody(Hit hit,vec3 direction) {
-  vec2 body=hit.thick;
+// tint: a fog body's refraction tint (MaterialDecode::refractTint in the
+// film's fields; one when none).
+vec2 sheetBody(Hit hit,vec3 direction,out vec3 tint) {
+  vec2 body=hit.thick;int surface=hit.surface;
   if(body.x==0&&frame.target.w!=0&&hit.tinted) {
     Hit traced=cameraHit(offsetRay(hit.p,hit.ng),direction);
-    if(traced.t<1e30&&traced.blended)body=traced.thick;
+    if(traced.t<1e30&&traced.blended){body=traced.thick;surface=traced.surface;}
   }
+  tint=vec3(1);
+  if(body.y<0&&surface>=0&&(surfaces[surface].material.x&16384u)!=0u)tint=surfaces[surface].film.yzw;
   return body;
 }
 // A camera ray's direction past a translucent body's surface: refracted by
@@ -1938,7 +1942,8 @@ vec3 sheetFilm(Hit hit,float ior) {
 // through: what passes to the layers behind; direction: bent for them.
 // A thin film (sheetFilm) takes the place of the body's Fresnel.
 bool thickSheet(Hit hit,inout vec3 direction,inout float alpha,inout vec3 through) {
-  vec2 body=sheetBody(hit,direction);
+  vec3 refractTint;
+  vec2 body=sheetBody(hit,direction,refractTint);
   if(body.x<1||body.y==0)return false;
   bool inside=frame.cameraMedium.w>0;
   float f0=(body.x-1)/(body.x+1);f0*=f0;
@@ -1955,7 +1960,7 @@ bool thickSheet(Hit hit,inout vec3 direction,inout float alpha,inout vec3 throug
     // view's cosine (at most 20 times the depth).
     float t=behind.t;
     if(body.y<0)t*=abs(dot(bent,n))/max(abs(dot(direction,n)),.05);
-    passed=behind.t<1e30?bodyTransmittance(hit.color.rgb,t,body.y):vec3(0);
+    passed=behind.t<1e30?bodyTransmittance(hit.color.rgb,t,body.y)*refractTint:vec3(0);
   }
   through=(1-fresnel)*passed;
   alpha=1-dot(through,vec3(.2126,.7152,.0722));
@@ -1966,9 +1971,11 @@ bool thickSheet(Hit hit,inout vec3 direction,inout float alpha,inout vec3 throug
 // sees of the body over `distance`: what is absorbed becomes the body's colour
 // lit as a surface facing up would be by the sky and the sun. transmittance:
 // what passes of the surface at that distance.
+// A fog medium (remixapi_CameraMediumFogEXT, pathConfig.w bit 15) fades it
+// linearly, untinted, to nothing at its fog end (in the distance's place).
 vec3 cameraMedium(float distance,out vec3 transmittance) {
   vec3 color=clamp(frame.cameraMedium.rgb,vec3(1e-4),vec3(1));
-  transmittance=distance<1e30?pow(color,vec3(distance/frame.cameraMedium.w)):vec3(0);
+  transmittance=distance>=1e30?vec3(0):bodyTransmittance(color,distance,(frame.pathConfig.w&0x8000u)!=0u?-frame.cameraMedium.w:frame.cameraMedium.w);
   vec3 up=vec3(0);up[uint(frame.upAxis)]=1;
   vec3 light=environmentRadiance(up)+frame.lightRadiance.rgb*max(dot(up,-frame.lightDirection.xyz),0)/3.14159265;
   return (1-transmittance)*color*light;

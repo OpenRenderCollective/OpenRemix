@@ -1640,13 +1640,28 @@ typedef struct remixapi_MaterialBlendModulationEXT {
 // (none past fogEnd) untinted; the rest is the body's own colour (its
 // transmittance colour, lit), as Source's water fades into its $fogcolor
 // between $fogstart and $fogend. fogEnd (world units) above zero and finite;
-// its measurement distance is then not used.
+// its measurement distance is then not used. refractTint multiplies what
+// passes, seen through the surface ($refracttint; {1, 1, 1}: none), each
+// channel 0..1. Not with a thin film.
 #define REMIXAPI_STRUCT_TYPE_MATERIAL_TRANSLUCENT_FOG_EXT ((remixapi_StructType)0x7fff1035)
 typedef struct remixapi_MaterialTranslucentFogEXT {
   remixapi_StructType sType;
   const void *pNext;
   float fogEnd;
+  remixapi_Float3D refractTint;
 } remixapi_MaterialTranslucentFogEXT;
+
+// Optional pNext on a world CameraInfo beside remixapi_CameraMediumEXT: the
+// body the camera is in fades what it sees as Source's water fog does (see
+// remixapi_MaterialTranslucentFogEXT), untinted and linearly to nothing at
+// fogEnd, into the body's colour, instead of absorbing it by that colour.
+// fogEnd above zero and finite.
+#define REMIXAPI_STRUCT_TYPE_CAMERA_MEDIUM_FOG_EXT ((remixapi_StructType)0x7fff1036)
+typedef struct remixapi_CameraMediumFogEXT {
+  remixapi_StructType sType;
+  const void *pNext;
+  float fogEnd;
+} remixapi_CameraMediumFogEXT;
 
 // Optional pNext on opaque or translucent MaterialInfo: a thin-film coating
 // whose interference colours the reflection (iridescence), evaluated

@@ -35,6 +35,8 @@ namespace remix::scene {
       d.flags |= MaterialDecode::solidEnergy;
     if (m.blendModulation)
       d.flags |= MaterialDecode::blendModulation;
+    if (m.fogBody && (m.refractTint[0] != 1 || m.refractTint[1] != 1 || m.refractTint[2] != 1))
+      d.flags |= MaterialDecode::refractTint;
     return d;
   }
 } // namespace remix::scene
@@ -182,11 +184,16 @@ namespace remix {
       }
       if (const auto *fog = static_cast<const remixapi_MaterialTranslucentFogEXT *>(
               extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_TRANSLUCENT_FOG_EXT))) {
+        const float tint[3] = {fog->refractTint.x, fog->refractTint.y, fog->refractTint.z};
         finite(&fog->fogEnd, 1);
-        if (material->transmittanceDistance <= 0 || !(fog->fogEnd > 0))
+        finite(tint, 3);
+        if (material->transmittanceDistance <= 0 || !(fog->fogEnd > 0) ||
+            extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_IRIDESCENCE_EXT) ||
+            std::any_of(tint, tint + 3, [](float v) { return v < 0 || v > 1; }))
           throw invalid;
         material->transmittanceDistance = fog->fogEnd;
         material->fogBody = true;
+        std::copy_n(tint, 3, material->refractTint);
       }
     }
     finite(material->tint, 4);
@@ -471,6 +478,7 @@ namespace remix {
              a.remap[0] == b.remap[0] && a.remap[1] == b.remap[1] && a.scrollLayers == b.scrollLayers &&
              std::equal(a.scroll, a.scroll + 6, b.scroll) && a.refractiveIndex == b.refractiveIndex &&
              a.transmittanceDistance == b.transmittanceDistance && a.fogBody == b.fogBody &&
+             std::equal(a.refractTint, a.refractTint + 3, b.refractTint) &&
              a.iridescence == b.iridescence &&
              a.subsurface == b.subsurface && a.metalColored == b.metalColored &&
              std::equal(a.metalColor, a.metalColor + 3, b.metalColor) && a.pbrBlur == b.pbrBlur &&

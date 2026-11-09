@@ -880,6 +880,12 @@ namespace remix::trace {
         const uint32_t detail1 = sampled(e.detail1Sampler), detail2 = sampled(e.detail2Sampler);
         detail::solidEnergyFields(e, detail1, detail2, value.film, value.filmMaps);
       }
+      if (decode.flags & scene::MaterialDecode::refractTint) {
+        // A fog body's refraction tint in the film's fields (scene.glsl
+        // sheetBody); a fog body has no film.
+        value.film[0] = 0;
+        std::copy_n(material.refractTint, 3, value.film + 1);
+      }
       if (material.blendModulation)
         detail::blendModulationFields(*material.blendModulation, sampled(material.blendModulation->sampler),
                                       value.film, value.filmMaps);
