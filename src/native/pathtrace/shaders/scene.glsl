@@ -9,7 +9,7 @@ vec3 shadingNormal(vec3 n,vec3 geometric,vec3 wo) {
 }
 layout(buffer_reference, std430, buffer_reference_align=16) readonly buffer Vertices { Vertex v[]; };
 layout(buffer_reference, std430, buffer_reference_align=4) readonly buffer Indices { uint i[]; };
-const uint measuredSheetMaterialFlag = 2048u;
+const uint measuredSheetMaterialFlag = 32768u;
 struct Surface {
   Vertices vertices;
   Indices indices;

@@ -581,11 +581,6 @@ namespace remix {
     const VkDeviceAddress woundAddress = evaluateWounds(command);
     tableTime.close();
     Frame frame = {};
-    if (!optical.empty()) {
-      hostBuffer(sheetMaterials, optical.data(), optical.size() * sizeof(trace::SheetMaterial),
-                 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-      frame.sheetMaterials = sheetMaterials->address;
-    }
     frame.woundVertices = woundAddress;
     frame.localConfig[0] = options.localLights && options.localIntensity > 0 ? lightBvh.active : 0;
     localIlluminationActive = frame.localConfig[0] != 0;
@@ -835,10 +830,8 @@ namespace remix {
     frame.upAxis = float(std::min(options.volumetricUpAxis, 2u));
     static const auto animationStart = std::chrono::steady_clock::now();
     if (flags.usesAnimationTime && !options.accumulate) {
-      // Animated normal and optical tint maps need a changing material clock.
-      // Progressive reference rendering freezes them at time zero so successive
-      // samples describe the same surface instead of resetting history forever.
-      // Ordinary material animation remains wrapped before float precision suffers.
+      // Keep the shared material clock available to portal rims and film flow.
+      // Progressive references freeze it so successive samples agree.
       const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - animationStart).count();
       frame.animationTime = float(std::fmod(seconds, 4096.0));
     }
@@ -948,6 +941,13 @@ namespace remix {
     if (sceneChanged) {
       ++stats.sceneGeneration;
       stats.accumulationCount = 0;
+    }
+    // Optical values are already in the material signature. The per-slot
+    // upload address is independent of the scene and can rotate every frame.
+    if (!optical.empty()) {
+      hostBuffer(sheetMaterials, optical.data(), optical.size() * sizeof(trace::SheetMaterial),
+                 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+      frame.sheetMaterials = sheetMaterials->address;
     }
     lap(breakdown.signatureMilliseconds);
     if (options.accumulate != bool(stats.accumulationEnabled))

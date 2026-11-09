@@ -811,7 +811,9 @@ namespace remix::trace {
       f.blended = surface.blend.enabled;
       f.decal = surface.decal;
       // Unused textures/layers do not advance the procedural material clock.
-      f.usesAnimationTime = detail::hasScrollingNormals(material) || detail::hasScrollingTint(material);
+      f.usesAnimationTime = detail::hasScrollingNormals(material) || detail::hasScrollingTint(material) ||
+                            material.portalRim || (material.iridescence.strength > 0 &&
+                            material.iridescence.flowAmplitude != 0 && material.iridescence.flowSpeed != 0);
       const bool rough =
           !material.pbr || material.roughnessTexture || material.roughness >= REMIX_SHARC_PBR_MIN_ROUGHNESS;
       const bool opaque = !surface.blend.enabled, fixed = surface.classification == 0;

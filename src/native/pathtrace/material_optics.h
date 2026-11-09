@@ -6,9 +6,11 @@
 #include <cstdint>
 
 namespace remix::trace {
-  constexpr uint32_t measuredSheetMaterialFlag = 2048;
+  constexpr uint32_t measuredSheetMaterialFlag = 32768;
   static_assert((measuredSheetMaterialFlag & (scene::MaterialDecode::metalColor |
-      scene::MaterialDecode::pbrBlur | scene::MaterialDecode::gradientMap)) == 0);
+      scene::MaterialDecode::pbrBlur | scene::MaterialDecode::gradientMap | scene::MaterialDecode::portalRim |
+      scene::MaterialDecode::solidEnergy | scene::MaterialDecode::blendModulation |
+      scene::MaterialDecode::refractTint)) == 0);
   // Private, full-precision sheet data shared by persistent and rebuilt tables.
   // Zero thickness keeps legacy alpha sheets and containing bodies unchanged.
   struct SheetMaterial {
