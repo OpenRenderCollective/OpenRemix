@@ -1161,6 +1161,15 @@ vec2 firstSurfaceNoise(uint ray) {
   uint rotation=hash((firstSurfacePaths*16u+ray)^0x736b7921u);
   return fract(blue+vec2(rotation>>8,hash(rotation)>>8)*(1.0/16777216.0));
 }
+#if WAVEFRONT_PASS==1
+// The wavefront start kernel leaves its path's sky rays to the sky kernel
+// (wavefrontSky): ray k's direction, its light without the shadow ray, and
+// the extra rays' specular part or, for a path training the sky guide, the
+// environment over the ray's PDF. wavefrontSkyTraining: the guide's face and
+// key for it.
+void wavefrontSkyRay(uint k,vec3 direction,vec3 light,vec3 extra);
+bool wavefrontSkyTraining=false;uint wavefrontSkyFace=0u,wavefrontSkyKey=0u,wavefrontIndex=0u;
+#endif
 // A path past its start: what continuation's steps read and leave for the
 // next (with the globals rng, coneWidth, coneSpread and leavingNormal). The
 // wavefront indirect passes (WAVEFRONT_PASS) carry it between their kernels.
@@ -1256,7 +1265,26 @@ PathState pathStart(Hit primary,inout int lobe,inout float probability,bool ligh
       directionSample=vec2(-1);
       if(lobe==0)skySpecular=vec3(0);else if(lobe==1)skySpecular=skyWeight;
     }
-    if((primary.pbr||(guided&&k!=0u))&&!any(greaterThan(skyWeight,vec3(0))))continue;
+    if((primary.pbr||(guided&&k!=0u))&&!any(greaterThan(skyWeight,vec3(0)))) {
+#if WAVEFRONT_PASS==1
+      wavefrontSkyRay(k,skyDirection,vec3(0),vec3(0));
+#endif
+      continue;
+    }
+#if WAVEFRONT_PASS==1
+    {
+      // The sky kernel traces the shadow ray (and adds k 0's light to the
+      // path's radiance before its first bounce).
+      vec3 environment=environmentRadiance(skyDirection);
+      vec3 light=(primary.pbr?skyWeight/max(materialFactor(primary),vec3(1e-6)):guided&&k!=0u?skyWeight:vec3(1))
+                 *environment/float(skyRays);
+      wavefrontSkyTraining=training;wavefrontSkyFace=skyFace;
+      if(training)wavefrontSkyKey=skyGuideKey(primary);
+      wavefrontSkyRay(k,skyDirection,light,training?(skyPdf>0?environment/skyPdf:vec3(0))
+                                       :k!=0u&&primary.pbr?light*skySpecular/max(skyWeight,vec3(1e-20)):vec3(0));
+      continue;
+    }
+#endif
     vec3 skyLight=environmentRadiance(skyDirection)*shadow(origin,skyDirection);
     if(training&&skyPdf>0)trainSkyGuide(primary,skyDirection,dot(skyLight,vec3(.2126,.7152,.0722))/skyPdf);
     vec3 sky=(primary.pbr?skyWeight/max(materialFactor(primary),vec3(1e-6)):guided&&k!=0u?skyWeight:vec3(1))
@@ -1777,7 +1805,8 @@ IndirectResult traceIndirect(Hit primary,ivec2 pixel,vec3 diffuseFactor,vec3 spe
 // (frame.wavefrontFlags bit 0) the shade kernel (its WAVEFRONT_DEFER_SHADOWS
 // variant) leaves its vertex's sun and sky shadow rays to the shadow kernel
 // (7, after the next arguments kernel), which adds the light that arrives to
-// the path's before its next bounce. Neither nearest() nor
+// the path's before its next bounce. The start kernel leaves its sky rays'
+// shadow rays to the sky kernel (8, after it, over the paths with sky rays). Neither nearest() nor
 // the candidate tests draw random numbers, so resuming from the saved rng
 // and roulette state continues the inline pass's path; the records keep what
 // the next ray depends on exactly (origin, direction, throughput, radiance,
@@ -1802,11 +1831,15 @@ uint packHalves(float a,float b) { return packHalf2x16(clamp(vec2(a,b),vec2(-655
 // Plane 0's w: 1 going, 2 dead at the primary, 4 short path, 8 a view model
 // path, 16 the pixel has a path, 32 a leaving normal; the bounce << 6, the
 // layers << 11; the first direction's specular share (bounce 0's motion,
-// 15 bits) << 17.
+// 11 bits) << 17; from the start kernel to the sky kernel, a path training
+// the sky guide << 28 and the guide's face << 29.
 void storePath(uint index,PathState s) {
   bool leaving=dot(leavingNormal,leavingNormal)>0;
   uint flags=(s.going?1u:0u)|(s.dead?2u:0u)|(s.shortPath?4u:0u)|(viewModelPath?8u:0u)|16u|(leaving?32u:0u)|
-             min(s.bounce,31u)<<6|min(s.layers,63u)<<11|uint(round(clamp(s.specularShare,0.,1.)*32767.))<<17;
+             min(s.bounce,31u)<<6|min(s.layers,63u)<<11|uint(round(clamp(s.specularShare,0.,1.)*2047.))<<17;
+#if WAVEFRONT_PASS==1
+  flags|=(wavefrontSkyTraining?1u<<28:0u)|wavefrontSkyFace<<29;
+#endif
   vec3 previous=s.previousVertex-s.origin;
   wavefrontStore(0u,index,wavefrontPack(s.origin,flags));
   wavefrontStore(1u,index,wavefrontPack(s.direction,rng));
@@ -1825,7 +1858,7 @@ PathState loadPath(uint index,out bool traced) {
   traced=(flags&16u)!=0u;
   rng=b.w;
   s.going=(flags&1u)!=0u;s.dead=(flags&2u)!=0u;s.shortPath=(flags&4u)!=0u;viewModelPath=(flags&8u)!=0u;
-  s.bounce=(flags>>6)&31u;s.layers=(flags>>11)&63u;s.specularShare=float(flags>>17)/32767.;s.atPrimary=false;
+  s.bounce=(flags>>6)&31u;s.layers=(flags>>11)&63u;s.specularShare=float((flags>>17)&2047u)/2047.;s.atPrimary=false;
   if(!traced)return s;
   s.origin=uintBitsToFloat(a.xyz);s.direction=uintBitsToFloat(b.xyz);
   uvec4 c=wavefrontLoad(2u,index);s.throughput=uintBitsToFloat(c.xyz);s.rouletteState=c.w;
@@ -1877,7 +1910,13 @@ void storeFinish(uint index,IndirectPrimary p,int lobe,vec3 extraSky,vec3 extraS
                                (packHalf2x16(vec2(p.roughness,0))&0xffffu)|(bits|uint(round(clamp(probability,0.,1.)*2047.))<<5)<<16,
                                packHalves(specularRatio.r,specularRatio.g),packHalves(specularRatio.b,diffuse.r)));
   wavefrontStore(8u,index,uvec4(packHalves(diffuse.g,diffuse.b),packHalves(specular.r,specular.g),
-                               packHalves(specular.b,p.sssSpecular),p.sssMoved?packShared(p.sssTint):0u));
+                               packHalves(specular.b,p.sssSpecular),p.sssMoved?packShared(p.sssTint):
+#if WAVEFRONT_PASS==1
+                               wavefrontSkyKey
+#else
+                               0u
+#endif
+                               ));
 }
 IndirectPrimary loadFinish(uint index,out vec3 extraSky,out vec3 extraSkySpecular,out vec3 firstDir,
                            out float probability,out vec3 specularRatio) {
@@ -1901,7 +1940,8 @@ IndirectPrimary loadFinish(uint index,out vec3 extraSky,out vec3 extraSkySpecula
 }
 // The path start for the pixel (a pixel without one gets its result here);
 // whether the path's first bounce follows.
-bool wavefrontStart(Hit primary,ivec2 pixel,uint index,vec3 diffuseFactor,vec3 specularFactor) {
+bool wavefrontStart(Hit primary,ivec2 pixel,uint index,vec3 diffuseFactor,vec3 specularFactor,out bool sky) {
+  sky=false;
   if(!(primary.t<1e30&&!primary.blended)) {
     wavefrontStore(0u,index,uvec4(0));
     IndirectResults(frame.indirectResults).pixels[index]=packIndirect(vec3(0),0,rng);
@@ -1912,7 +1952,15 @@ bool wavefrontStart(Hit primary,ivec2 pixel,uint index,vec3 diffuseFactor,vec3 s
   float probability;
   int lobe=primaryLobe(p.diffuseProbability,pixel,frame.config.z,0u,probability),selected=lobe;
   vec3 firstDir,extraSky,extraSkySpecular;
+#if WAVEFRONT_PASS==1
+  wavefrontIndex=index;
+#endif
   PathState s=pathStart(lit,lobe,probability,false,frame.config.y,firstDir,extraSky,extraSkySpecular);
+#if WAVEFRONT_PASS==1
+  // A subsurface path's tint takes the guide key's word: it trains nothing.
+  wavefrontSkyTraining=wavefrontSkyTraining&&!p.sssMoved;
+#endif
+  sky=frame.skyRadiance.w!=0;
   // Dead at the primary: only the extra sky rays (pathFinish).
   if(s.dead)s.going=false;
   else if(frame.config.y==0)profilePath(8u);
@@ -1970,6 +2018,14 @@ void wavefrontDispatch(uint count,uint slot,uint columns) {
 // bounce's, and the shadow kernel's for the bounce before.
 void wavefrontArgs() {
   WavefrontQueue q=wavefrontQueue();
+  // Pushed bit 31: the sky kernel's, over list 1 (count at 74, columns at
+  // 73, arguments at 144), which the first shade kernel then fills.
+  if((features.bits&0x80000000u)!=0u) {
+    uint count=q.header[1];
+    q.header[1]=0u;q.header[74]=count;
+    wavefrontDispatch(count,144u,73u);
+    return;
+  }
   uint bounce=q.header[4],list=bounce&1u,count=q.header[list],shadows=q.header[6];
   // This list takes the bounce after next's paths.
   q.header[list]=0u;q.header[2]=count;q.header[3]=bounce;q.header[4]=bounce+1u;
@@ -2003,6 +2059,57 @@ void wavefrontShadow() {
     wavefrontStore(3u,index,wavefrontPack(uintBitsToFloat(result.xyz)+light,result.w));
   }
 }
+#if WAVEFRONT_PASS==8
+// The sky kernel: the start's sky rays of a path (records in the shadow
+// rays' region, ray k's in its plane k): their light that arrives, ray 0's
+// added to the path's radiance and the extra rays' to the finish's extra sky
+// (plane 6); the sky guide trained with it.
+void wavefrontSky() {
+  WavefrontQueue q=wavefrontQueue();
+  uint id=(gl_WorkGroupID.y*q.header[73]+gl_WorkGroupID.x)*64u+gl_LocalInvocationIndex;
+  if(id>=q.header[74])return;
+  uint index=q.list[frame.wavefrontStride+id];
+  shadingPixel=ivec2(index%frame.target.x,index/frame.target.x);
+  uvec4 a=wavefrontLoad(0u,index);
+  viewModelPath=(a.w&8u)!=0u;
+  bool training=(a.w&(1u<<28))!=0u;
+  uint face=a.w>>29,key=training?wavefrontLoad(8u,index).w:0u;
+  vec3 origin=uintBitsToFloat(a.xyz),first=vec3(0),extra=vec3(0),extraSpecular=vec3(0);
+  WavefrontShadows records=wavefrontShadows();
+  uint skyRays=max(1u,(frame.pathConfig.z>>8)&31u);
+  // One shadow() call site for every ray.
+  for(uint k=0u;k<skyRays;++k) {
+    uvec4 r=records.v[k*frame.wavefrontStride+index];
+    vec2 r1=unpackHalf2x16(r.y),r2=unpackHalf2x16(r.z),r3=unpackHalf2x16(r.w);
+    vec3 light=vec3(r1,r2.x),other=vec3(r2.y,r3);
+    if(!any(greaterThan(light,vec3(0))))continue;
+    vec3 direction=decodeGeometricNormal(unpackSnorm2x16(r.x));
+    vec3 visibility=shadow(origin,direction);
+    if(training)trainSkyGuide(face,key,direction,dot(other*visibility,vec3(.2126,.7152,.0722)));
+    if(k==0u)first=light*visibility;
+    else {
+      extra+=light*visibility;
+      if(!training)extraSpecular+=other*visibility;
+    }
+  }
+  if(any(greaterThan(first,vec3(0)))) {
+    uvec4 result=wavefrontLoad(3u,index);
+    wavefrontStore(3u,index,wavefrontPack(uintBitsToFloat(result.xyz)+first,result.w));
+  }
+  if(any(greaterThan(extra,vec3(0)))) {
+    uvec4 f=wavefrontLoad(6u,index);
+    vec2 f0=unpackHalf2x16(f.x),f1=unpackHalf2x16(f.y),f2=unpackHalf2x16(f.z);
+    vec3 sky=vec3(f0,f1.x)+extra,specular=vec3(f1.y,f2)+extraSpecular;
+    wavefrontStore(6u,index,uvec4(packHalves(sky.r,sky.g),packHalves(sky.b,specular.r),packHalves(specular.g,specular.b),f.w));
+  }
+}
+#endif
+#if WAVEFRONT_PASS==1
+void wavefrontSkyRay(uint k,vec3 direction,vec3 light,vec3 extra) {
+  wavefrontShadows().v[k*frame.wavefrontStride+wavefrontIndex]=uvec4(packSnorm2x16(encodeGeometricNormal(direction)),
+    packHalves(light.r,light.g),packHalves(light.b,extra.r),packHalves(extra.g,extra.b));
+}
+#endif
 // This invocation's place in the bounce's list (id) and its path
 // (shadingPixel set).
 bool wavefrontQueued(out uint id,out uint index) {
@@ -2560,6 +2667,9 @@ void main() {
 #elif WAVEFRONT_PASS==7
   wavefrontShadow();
   return;
+#elif WAVEFRONT_PASS==8
+  wavefrontSky();
+  return;
 #elif WAVEFRONT_PASS==2 || WAVEFRONT_PASS==3 || WAVEFRONT_PASS==6
   // Over the bounce's live paths (wavefrontArgs' indirect dispatch).
   uint id,queued;
@@ -2599,7 +2709,10 @@ void main() {
       hitF0(primary),primary.rm.x,diffuseFactor,specularFactor);
 #endif
 #if WAVEFRONT_PASS==1
-  wavefrontEnqueue(0u,index,wavefrontStart(primary,pixel,index,diffuseFactor,specularFactor));
+  bool sky,going=wavefrontStart(primary,pixel,index,diffuseFactor,specularFactor,sky);
+  wavefrontEnqueue(0u,index,going);
+  // The sky kernel's list: list 1 until the first shade kernel.
+  wavefrontEnqueue(1u,index,sky);
   return;
 #endif
   IndirectResult result=traceIndirect(primary,pixel,diffuseFactor,specularFactor);

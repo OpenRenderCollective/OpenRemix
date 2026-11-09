@@ -93,12 +93,12 @@ namespace remix {
     using trace::Stage;
     const Stage stages[] = {Stage::wavefrontStartTemporal, Stage::wavefrontTraceTemporal, Stage::wavefrontShadeTemporal,
                             Stage::wavefrontFinishTemporal, Stage::wavefrontTailTemporal, Stage::wavefrontShadowTemporal,
-                            Stage::wavefrontShadeDeferTemporal};
+                            Stage::wavefrontShadeDeferTemporal, Stage::wavefrontSkyTemporal};
     std::vector<LightingRequest> requests;
     for (size_t i = 0; i < std::size(stages); ++i)
       requests.push_back({lightingStage(stages[i]), temporalLayout, &indirectPass.wavefront[i], true});
     // The bounces' dispatch arguments: one invocation, no lighting.
-    requests.push_back({Stage::wavefrontArgs, temporalLayout, &indirectPass.wavefront[7], false, false, false, false});
+    requests.push_back({Stage::wavefrontArgs, temporalLayout, &indirectPass.wavefront[8], false, false, false, false});
     return requests;
   }
 
@@ -117,7 +117,8 @@ namespace remix {
       const VkDeviceSize pixels = VkDeviceSize(extent.width) * extent.height;
       // Sized to the extent and the shadow queue: a smaller need (the queue
       // turned off) gives the memory back (buffers are whole 4 KiB pages).
-      const VkDeviceSize bytes = pass.wavefrontBytes(pixels, options.wavefrontShadowQueue);
+      const VkDeviceSize bytes =
+          pass.wavefrontBytes(pixels, options.wavefrontShadowQueue, std::clamp(options.skySamples, 1u, 16u));
       if (!pass.paths || pass.paths->size < bytes || pass.paths->size >= bytes + 4096) {
         auto next = buffer(bytes,
                            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |

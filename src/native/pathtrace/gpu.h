@@ -394,16 +394,19 @@ namespace remix {
       // (pathtrace.comp WAVEFRONT_PASS: start; per bounce arguments, trace
       // and shade over the bounce's live paths; finish) over the path records
       // in `paths`: wavefrontPlanes 16-byte planes a pixel, then the queue
-      // header, two lists of 4 bytes a pixel and, with the shadow queue, the
-      // shadow rays, 32 bytes a pixel (pathtrace.comp WavefrontQueue).
+      // header, two lists of 4 bytes a pixel and a region the start kernel's
+      // sky rays (16 bytes each) and, with the shadow queue, the shade
+      // kernels' shadow rays (32 bytes a pixel) take in turn (pathtrace.comp
+      // WavefrontQueue).
       // Dispatched only while every kernel exists, else the single kernel
       // runs. Temporal (denoised) lighting, one sample a pixel.
       static constexpr uint32_t wavefrontPlanes = 13, wavefrontQueueHeader = 1024, wavefrontMaxBounces = 16;
-      // start, trace, shade, finish, tail, shadow, shade leaving its shadow rays, arguments
-      static constexpr size_t wavefrontKernels = 8;
-      static VkDeviceSize wavefrontBytes(VkDeviceSize pixels, bool shadows) {
+      // start, trace, shade, finish, tail, shadow, shade leaving its shadow
+      // rays, sky, arguments
+      static constexpr size_t wavefrontKernels = 9;
+      static VkDeviceSize wavefrontBytes(VkDeviceSize pixels, bool shadows, uint32_t skyRays) {
         return pixels * wavefrontPlanes * 16 + wavefrontQueueHeader + (pixels * 2 * 4 + 15) / 16 * 16 +
-               (shadows ? pixels * 32 : 0);
+               pixels * std::max<VkDeviceSize>(shadows ? 32 : 0, 16 * skyRays);
       }
       VkPipeline wavefront[wavefrontKernels] = {};
       std::unique_ptr<Buffer> paths;

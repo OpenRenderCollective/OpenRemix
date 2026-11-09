@@ -1456,7 +1456,7 @@ namespace remix {
       const auto indirectLayout = selectedLayout;
       // The wavefront kernels (configureWavefront) run as a set or not at all:
       // each reads the records the one before wrote.
-      constexpr size_t lit = 7; // start, trace, shade, finish, tail, shadow, deferring shade; then the arguments
+      constexpr size_t lit = 8; // start, trace, shade, finish, tail, shadow, deferring shade, sky; then arguments
       VkPipeline kernels[lit] = {};
       uint32_t kernelFeatures[lit] = {};
       VkPipelineLayout kernelLayouts[lit] = {};
@@ -1486,6 +1486,17 @@ namespace remix {
           gpu::GpuScope scope(command, "Trace indirect (wavefront start)", extent);
           bindTrace(command, kernels[0], kernelLayouts[0], kernelFeatures[0]);
           vkCmdDispatch(command, screenX, screenY, 1);
+        }
+        // The start's sky rays: their arguments (pushed bit 31), then the sky
+        // kernel over the paths that have them.
+        barrier(command, compute, computeWrite, compute, computeAccess);
+        bindTrace(command, arguments, temporalLayout, 0x80000000u);
+        vkCmdDispatch(command, 1, 1, 1);
+        barrier(command, compute, computeWrite, compute | indirect, computeAccess | VK_ACCESS_INDIRECT_COMMAND_READ_BIT);
+        {
+          gpu::GpuScope scope(command, "Trace indirect (wavefront sky)", extent);
+          bindTrace(command, kernels[7], kernelLayouts[7], kernelFeatures[7]);
+          vkCmdDispatchIndirect(command, paths, header + 144 * 4);
         }
         // Each split bounce over the paths the one before left going: its
         // arguments, the shadow rays of the bounce before, its rays'

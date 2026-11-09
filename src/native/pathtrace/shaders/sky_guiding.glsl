@@ -93,12 +93,12 @@ vec3 skyGuideDirection(uint slot,uint face,vec2 u) {
 // Records one sky ray: `value` is its visible sky luminance over its PDF.
 // The first trainer of a cell this frame carries a decayed share of last
 // frame's bins, so the guide follows changes and forgets unseen cells.
-void trainSkyGuide(Hit hit,vec3 direction,float value) {
+// By the surface's face and key (skyGuideKey).
+void trainSkyGuide(uint face,uint key,vec3 direction,float value) {
   if(frame.skyGuideWrite==0||!(value>0))return;
-  uint face=lightGuideFace(hit.n);
   vec3 local=transpose(skyGuideFrame(face))*direction;
   if(local.z<=0)return;
-  uint key=skyGuideKey(hit),base=(key&(frame.skyGuideConfig.x-1u))*skyGuideStride;
+  uint base=(key&(frame.skyGuideConfig.x-1u))*skyGuideStride;
   SkyGuide next=SkyGuide(frame.skyGuideWrite);
   uint owner=atomicCompSwap(next.data[base],0u,key);
   if(owner!=0u&&owner!=key)return; // A collision loses guidance, never energy.
@@ -117,4 +117,7 @@ void trainSkyGuide(Hit hit,vec3 direction,float value) {
   if(amount==0u)return;
   atomicAdd(next.data[base+4u+skyGuideBin(local)],amount);
   atomicAdd(next.data[base+1u],amount);
+}
+void trainSkyGuide(Hit hit,vec3 direction,float value) {
+  trainSkyGuide(lightGuideFace(hit.n),skyGuideKey(hit),direction,value);
 }
