@@ -178,6 +178,16 @@ namespace remix {
                same(detail2Scroll, o.detail2Scroll) && same(detail1Sway, o.detail1Sway);
       }
     };
+    // remixapi_MaterialBlendModulationEXT: the mask (a data texture: read as
+    // stored) and its sampler material, and the mesh UV -> mask UV rows.
+    struct BlendModulation {
+      std::shared_ptr<Texture> mask;
+      std::shared_ptr<Material> sampler;
+      float transform[2][3] = {{1, 0, 0}, {0, 1, 0}};
+      bool operator==(const BlendModulation &o) const {
+        return mask == o.mask && std::equal(&transform[0][0], &transform[0][0] + 6, &o.transform[0][0]);
+      }
+    };
     // remixapi_InstanceInfoWoundCutEXT, validated. A description keeps the
     // texture's name (path); the draws built from it hold the texture and
     // its sampler material (bilinear, clipped: black outside 0..1).
@@ -227,6 +237,8 @@ namespace remix {
       std::shared_ptr<const PortalRim> portalRim;
       // remixapi_MaterialSolidEnergyEXT (null: none).
       std::shared_ptr<const SolidEnergy> solidEnergy;
+      // remixapi_MaterialBlendModulationEXT (null: none).
+      std::shared_ptr<const BlendModulation> blendModulation;
       // remixapi_MaterialNormalScrollEXT (normal encoding 5): layers, then the
       // base, layer 1 and layer 2 rates.
       uint32_t scrollLayers = 1;
@@ -238,6 +250,10 @@ namespace remix {
       float transmittanceScroll[2] = {}; // actual tint UV rates; bake-averaged axes ignore the clock
       uint32_t bakeTintAxes = 0;         // explicitly averaged transmission-tint UV axes; live shading ignores this
       bool bakeSmoothBoundary = false;   // explicit mean interface; live ripple normals are excluded
+      // remixapi_MaterialTranslucentFogEXT: the body fades linearly over
+      // transmittanceDistance (its fog end), untinted, instead of absorbing.
+      bool fogBody = false;
+      float refractTint[3] = {1, 1, 1}; // what passes, seen through it (fogBody)
       // A thin-film coating (remixapi_MaterialIridescenceEXT, or the opaque
       // info's thinFilmThickness): strength 0 means none. Thicknesses in nm.
       struct Iridescence {
@@ -312,6 +328,13 @@ namespace remix {
       // remixapi_MaterialSolidEnergyEXT (frame_tables.h solidEnergyFields:
       // its details and rates in the film's fields, likewise).
       static constexpr uint32_t solidEnergy = 4096;
+      // remixapi_MaterialBlendModulationEXT (frame_tables.h
+      // blendModulationFields: the mask and its transform in the film's
+      // fields, which such a material lacks as well).
+      static constexpr uint32_t blendModulation = 8192;
+      // A fog body's refraction tint (remixapi_MaterialTranslucentFogEXT)
+      // in the film's fields, which such a material lacks (frame_tables.h).
+      static constexpr uint32_t refractTint = 16384;
       uint32_t flags = 0, pbrWord = 0;
       float selfIlluminationScale = 0;
     };

@@ -307,6 +307,7 @@ namespace remix {
     const std::array<float, 3> &skyRadiance() const { return m_skyRadiance; }
     // remixapi_CameraMediumEXT: transmittance colour, measurement distance (0: in air).
     const std::array<float, 4> &cameraMedium() const { return m_cameraMedium; }
+    bool cameraMediumFog() const { return m_cameraMediumFog; }
     // remixapi_CameraScreensEXT, by slot (scene/instances.cpp).
     const ScreenCameras &screenCameras() const { return m_screenCameras; }
     void createLight(const remixapi_LightInfo &info, remixapi_LightHandle &handle);
@@ -484,6 +485,7 @@ namespace remix {
     scene::TemporalEpoch m_temporalEpoch;
     std::array<float, 3> m_skyRadiance = {};
     std::array<float, 4> m_cameraMedium = {};
+    bool m_cameraMediumFog = false; // remixapi_CameraMediumFogEXT
     ScreenCameras m_screenCameras = {};
     std::vector<scene::Draw> m_draws, m_uiDraws, m_overlay;
     std::vector<scene::HaloGroup> m_halos;

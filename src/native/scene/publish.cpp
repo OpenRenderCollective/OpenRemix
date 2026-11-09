@@ -40,6 +40,7 @@ namespace remix {
     frame.m_temporalEpoch = m_temporalEpoch;
     frame.m_skyRadiance = m_skyRadiance;
     frame.m_cameraMedium = m_cameraMedium;
+    frame.m_cameraMediumFog = m_cameraMediumFog;
     frame.m_screenCameras = m_screenCameras;
     frame.m_light = m_light;
     frame.m_iesProfiles = m_iesProfiles; // shared, immutable

@@ -109,8 +109,11 @@ namespace remix::trace::detail {
     // A translucent body: its refractive index and measurement distance, half
     // floats in pbr[3] (scene.glsl thickSheet); zero for everything else.
     if (material.transmission && material.transmittanceDistance > 0 && material.thinWallThickness == 0) {
-      const uint32_t packed = detail::halfBits(material.refractiveIndex) |
-                              detail::halfBits(std::min(material.transmittanceDistance, 65504.f)) << 16;
+      // A fog body (remixapi_MaterialTranslucentFogEXT): its fog end, negated
+      // (scene.glsl bodyTransmittance).
+      const float distance = std::min(material.transmittanceDistance, 65504.f);
+      const uint32_t packed =
+          detail::halfBits(material.refractiveIndex) | detail::halfBits(material.fogBody ? -distance : distance) << 16;
       std::memcpy(&pbr[3], &packed, 4);
     } else if (decode.flags & (scene::MaterialDecode::metalColor | scene::MaterialDecode::pbrBlur)) {
       // An opaque material's metal colour (unorm8 RGB) and roughness map blur
@@ -193,6 +196,16 @@ namespace remix::trace::detail {
     film[2] = film[3] = 0;
     maps[0] = ramp;
     maps[1] = maps[2] = maps[3] = 0;
+  }
+  // remixapi_MaterialBlendModulationEXT (MaterialDecode::blendModulation) in
+  // the film's fields, which such a material lacks (film[0] stays 0): film[1..3]
+  // the transform's u row, maps[1..3] its v row (float bits), maps[0] the
+  // mask's texture slot (scene.glsl blendModulated).
+  inline void blendModulationFields(const scene::BlendModulation &b, uint32_t mask, float film[4], uint32_t maps[4]) {
+    film[0] = 0;
+    std::copy_n(b.transform[0], 3, film + 1);
+    std::memcpy(maps + 1, b.transform[1], 3 * sizeof(float));
+    maps[0] = mask;
   }
   // remixapi_MaterialSolidEnergyEXT (MaterialDecode::solidEnergy) in the
   // film's fields, which such a material lacks (film[0] stays 0), as half
@@ -907,6 +920,15 @@ namespace remix::trace {
         const uint32_t detail1 = sampled(e.detail1Sampler), detail2 = sampled(e.detail2Sampler);
         detail::solidEnergyFields(e, detail1, detail2, value.film, value.filmMaps);
       }
+      if (decode.flags & scene::MaterialDecode::refractTint) {
+        // A fog body's refraction tint in the film's fields (scene.glsl
+        // sheetBody); a fog body has no film.
+        value.film[0] = 0;
+        std::copy_n(material.refractTint, 3, value.film + 1);
+      }
+      if (material.blendModulation)
+        detail::blendModulationFields(*material.blendModulation, sampled(material.blendModulation->sampler),
+                                      value.film, value.filmMaps);
       if (material.gradient) {
         const auto &g = *material.gradient;
         const uint32_t gradient = sampled(g.gradientSampler);
