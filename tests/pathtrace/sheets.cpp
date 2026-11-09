@@ -91,11 +91,11 @@ int main(int argc, char **argv) {
   config("bounces", "2");
   config("sheetLocalLights", "1");
   uint64_t id = 100;
-  auto mesh = [&](remixapi_MaterialHandle material) {
+  auto mesh = [&](remixapi_MaterialHandle material, float halfSize = 100) {
     remixapi_HardcodedVertex vertices[4]{};
     for (unsigned i = 0; i < 4; ++i) {
-      vertices[i].position[0] = i == 0 || i == 3 ? -100 : 100;
-      vertices[i].position[1] = i < 2 ? -100 : 100;
+      vertices[i].position[0] = i == 0 || i == 3 ? -halfSize : halfSize;
+      vertices[i].position[1] = i < 2 ? -halfSize : halfSize;
       vertices[i].color = 0xffffffff;
     }
     const uint32_t indices[] = {0, 2, 1, 0, 3, 2};
@@ -209,7 +209,9 @@ int main(int argc, char **argv) {
     backgroundInfo.hash = id++;
     backgroundInfo.emissiveIntensity = 0;
     ok(api.CreateMaterial(&backgroundInfo, &material));
-    background = mesh(material);
+    // Keep the receiver close to the orthographic view footprint. A much
+    // larger triangle can exceed the local ray-origin offset at this scale.
+    background = mesh(material, 2.f);
     remixapi_MaterialInfoTranslucentEXT sheet{};
     sheet.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_TRANSLUCENT_EXT;
     sheet.refractiveIndex = 1;
