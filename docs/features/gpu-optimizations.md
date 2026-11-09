@@ -88,6 +88,18 @@ One difference from the shader-only path: subsurface probe rays
 (`subsurface.glsl`) count every surface crossing without an alpha test, so a
 cut-out micro-triangle is no longer counted there.
 
+`rtx.native.pathtrace.shadowMicromap2State` (0-2, default 0) lets shadow-type
+rays (sun, sky and local light visibility) skip the shader's alpha test on
+micromapped geometry altogether: the bake stores each unproved micro-triangle
+as unknown-opaque or unknown-transparent by the alpha estimated at its centre,
+and these rays force the two-state reading of the micromap. 1 applies it to
+the indirect pass, the radiance cache and every sky ray; 2 also to the primary
+surface's sun and local light shadows. Camera and bounce rays keep the exact
+test. A cutout's shadow edge then follows the micro-triangles (about half a
+texel at the level the triangle got) instead of the texels. Geometry without
+a micromap (paint, moving texture coordinates, dynamic textures, anything the
+bake proved nothing about) is traced as before.
+
 ## Wavefront indirect lighting
 
 `rtx.native.pathtrace.wavefrontIndirect` (0/1, default 1) runs the separate

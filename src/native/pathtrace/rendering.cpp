@@ -860,7 +860,11 @@ namespace remix {
     frame.target[2] = (topCombined ? uint32_t(staticInstances || dynamicInstances)
                                    : uint32_t(staticInstances) | uint32_t(dynamicInstances) << 1) |
                       uint32_t(faceCulling) << 2 |
-                      (options.traversalDebug == 1 ? 8u : options.traversalDebug == 2 ? 16u : 0u);
+                      (options.traversalDebug == 1 ? 8u : options.traversalDebug == 2 ? 16u : 0u) |
+                      // Forced two-state micromaps for shadow rays (shadowFlags, pathtrace.comp).
+                      (options.opacityMicromaps && micromapLevelLimit
+                           ? (options.shadowMicromap2State >= 1 ? 32u : 0u) | (options.shadowMicromap2State >= 2 ? 64u : 0u)
+                           : 0u);
     frame.target[3] = options.rasterPrimary;
     // Reserved private word; included in scene-change detection. Raw/reference
     // and multi-sample rendering retain one estimator at every surface pixel.

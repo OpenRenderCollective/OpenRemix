@@ -378,6 +378,13 @@ namespace remix {
     uint32_t wavefrontBounces = 1;
     // Its split bounces' sun and sky shadow rays in a kernel of their own.
     bool wavefrontShadowQueue = true;
+    // Shadow-type rays (sun, sky, local light visibility) settle an opacity
+    // micromap's unproved micro-triangles by their baked estimate instead of
+    // the shader's alpha test (VK_EXT_opacity_micromap's forced two states).
+    // 1: the indirect pass's, the radiance cache's and every sky ray; 2: the
+    // primary surface's sun and local light shadows too. Foliage shadow edges
+    // follow the micro-triangles (docs/features/gpu-optimizations.md).
+    uint32_t shadowMicromap2State = 0;
     // Diagnostics, wrong images: 1 traces every ray with all geometry opaque
     // (what traversal alone costs), 2 accepts every non-opaque candidate
     // without its alpha test (the candidate round trips without texture work).

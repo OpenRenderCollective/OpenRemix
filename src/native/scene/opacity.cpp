@@ -540,9 +540,52 @@ namespace remix::scene {
         } else if (!usesTexture)
           sampled = {1, 1}; // Not read by the combiner.
         const auto alpha = combinedAlpha(draw, sampled, vertex);
-        const uint8_t state = alwaysPasses(compare, alpha, reference)  ? M::Opaque
-                              : alwaysFails(compare, alpha, reference) ? M::Transparent
-                                                                       : M::UnknownOpaque;
+        uint8_t state = alwaysPasses(compare, alpha, reference)  ? M::Opaque
+                        : alwaysFails(compare, alpha, reference) ? M::Transparent
+                                                                 : M::UnknownOpaque;
+        if (state == M::UnknownOpaque && at == level) {
+          // Unproved at the finest level: the shader decides for a 4-state
+          // ray. A ray that forces two states (shadow rays,
+          // rtx.native.pathtrace.shadowMicromap2State) takes the test's likely
+          // result instead: the alpha estimated at the micro-triangle's
+          // centre (the texels its centre filters, the mean vertex alpha).
+          Range centre{0, 1};
+          if (texture) {
+            const std::array<float, 2> c = {(points[0][0] + points[1][0] + points[2][0]) / 3,
+                                            (points[0][1] + points[1][1] + points[2][1]) / 3};
+            std::array<Region, 4> regions;
+            unsigned count = 0;
+            if (footprint(0, draw, uv, {c, c, c}, regions, count) == OpacityPartition::Solid) {
+              // A compressed texture's block ranges say nothing inside a block
+              // an edge crosses: its texels' alpha levels do.
+              const auto &pixels = m.texture->pixels;
+              const auto *levels =
+                  pixels.compressed && pixels.compressed->alphaLevels.size() ==
+                                           size_t((pixels.width + 3) / 4) * ((pixels.height + 3) / 4)
+                      ? pixels.compressed.get()
+                      : nullptr;
+              float sum = 0;
+              uint32_t texelCount = 0;
+              centre = {1, 0};
+              for (unsigned i = 0; i < count; ++i) {
+                const auto range = texture->alphaRange(regions[i]);
+                centre = {std::min(centre[0], range[0]), std::max(centre[1], range[1])};
+                if (levels)
+                  for (uint32_t y = regions[i][1]; y <= regions[i][3] && y < regions[i][1] + 4; ++y)
+                    for (uint32_t x = regions[i][0]; x <= regions[i][2] && x < regions[i][0] + 4; ++x, ++texelCount)
+                      sum += levels->alphaLevel(x, y, pixels.width);
+              }
+              if (texelCount && centre[0] < centre[1])
+                centre = {sum / float(texelCount), sum / float(texelCount)};
+            }
+          } else if (!usesTexture)
+            centre = {1, 1};
+          const float texel = (centre[0] + centre[1]) / 2, mean = (vertex[0] + vertex[1]) / 2;
+          const auto estimate = combinedAlpha(draw, {texel, texel}, {mean, mean});
+          const float a = (estimate[0] + estimate[1]) / 2;
+          const bool passes = compare == 1 ? a < reference : compare == 3 ? a <= reference : compare == 4 ? a > reference : a >= reference;
+          state = passes ? M::UnknownOpaque : M::UnknownTransparent;
+        }
         if (state != M::UnknownOpaque || at == level) {
           const size_t span = size_t(1) << (2 * (level - at));
           std::fill_n(states.begin() + index * span, span, state);
@@ -557,8 +600,8 @@ namespace remix::scene {
         ++counts[state];
       micromap->opaque += counts[M::Opaque];
       micromap->transparent += counts[M::Transparent];
-      micromap->unknown += counts[M::UnknownOpaque];
-      proved |= counts[M::UnknownOpaque] != states.size();
+      micromap->unknown += counts[M::UnknownOpaque] + counts[M::UnknownTransparent];
+      proved |= counts[M::Opaque] + counts[M::Transparent] != 0;
       if (counts[M::Opaque] == states.size()) {
         micromap->indices[triangle] = M::FullyOpaque;
         continue;
@@ -569,6 +612,10 @@ namespace remix::scene {
       }
       if (counts[M::UnknownOpaque] == states.size()) {
         micromap->indices[triangle] = M::FullyUnknownOpaque;
+        continue;
+      }
+      if (counts[M::UnknownTransparent] == states.size()) {
+        micromap->indices[triangle] = M::FullyUnknownTransparent;
         continue;
       }
       packed.assign(states.size() / 4, 0);

@@ -47,6 +47,16 @@ namespace remix {
       // Mip 0's decoded alpha (min, max) per 4x4 block (row-major, texels
       // inside the image only), for micromap proofs. Empty with `transparent`.
       std::vector<std::array<uint8_t, 2>> alphaBlocks;
+      // Mip 0's decoded alpha in four levels (alpha >> 6), two bits per texel
+      // of each 4x4 block (texel i in bits 2i): what an alpha test most likely
+      // decides where the block's range does not (the micromap's unknown
+      // micro-triangles for two-state rays). Empty with `transparent`.
+      std::vector<uint32_t> alphaLevels;
+      // A texel's alpha as those levels give it (their midpoints).
+      float alphaLevel(uint32_t x, uint32_t y, uint32_t width) const {
+        const uint32_t block = alphaLevels[size_t(y / 4) * ((width + 3) / 4) + x / 4];
+        return (float((block >> (2 * (y % 4 * 4 + x % 4))) & 3u) + .5f) / 4;
+      }
       // Small decoded level (at most 64x64 texels) for CPU emission statistics:
       // RGBA8 like Pixels::mips, plus linear RGBA32F for BC6H.
       uint32_t previewWidth = 0, previewHeight = 0;

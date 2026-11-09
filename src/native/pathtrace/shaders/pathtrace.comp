@@ -193,6 +193,22 @@ uint traceFlags() {
   return ((frame.target.z&4u)!=0?gl_RayFlagsCullBackFacingTrianglesEXT:gl_RayFlagsNoneEXT)|
          ((frame.target.z&8u)!=0?gl_RayFlagsOpaqueEXT:gl_RayFlagsNoneEXT);
 }
+// rtx.native.pathtrace.shadowMicromap2State: sun, sky and local light
+// visibility rays take an opacity micromap's unknown micro-triangles as their
+// baked likely result (gl_RayFlagsForceOpacityMicromap2StateEXT, 0x400: set
+// from frame data so the stages need no micromap capability; the host sets
+// the bits only with micromaps in use). target.z bit 5: the rays of the
+// indirect pass, the radiance cache and the sparse paths (bounce vertices,
+// every sky ray); bit 6: every other pass's (the primary surface's sun and
+// local light shadows). Geometry without a micromap is traced as ever.
+uint shadowFlags() {
+#if defined(INDIRECT_PASS) || defined(SHARC_UPDATE_PASS) || defined(ORCA_SPARSE_PASS)
+  const uint bit=32u;
+#else
+  const uint bit=64u;
+#endif
+  return traceFlags()|((frame.target.z&bit)!=0u?0x400u:0u);
+}
 // Instance mask for closestGeometry: camera and transparency rays see every
 // instance but view models, which cameraHit looks for on its own first
 // (secondaryHit narrows it).

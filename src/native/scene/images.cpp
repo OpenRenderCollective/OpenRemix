@@ -516,7 +516,12 @@ namespace remix::scene {
           if (c->transparent.empty()) {
             c->transparent.assign((size_t(width) * height + 63) / 64, 0);
             c->alphaBlocks.assign(size_t(blocksWide) * blocksHigh, {255, 255});
+            c->alphaLevels.assign(size_t(blocksWide) * blocksHigh, ~0u);
           }
+          uint32_t levels = 0;
+          for (uint32_t i = 0; i < 16; ++i)
+            levels |= uint32_t(alpha[i] >> 6) << (2 * i);
+          c->alphaLevels[index] = levels;
           // One step of slack: hardware may interpolate BC3/BC7 alpha with
           // other rounding than bcdec (0 and 255 are exact either way).
           c->alphaBlocks[index] = {uint8_t(std::max(0, range[0] - 1)), uint8_t(std::min(255, range[1] + 1))};

@@ -344,6 +344,7 @@ namespace remix::config {
         TRACE(wavefrontBounces, 1, 16);
         TRACE(wavefrontShadowQueue, 0, 1);
         TRACE(traversalDebug, 0, 2);
+        TRACE(shadowMicromap2State, 0, 2);
         TRACE(opacityMicromaps, 0, 1);
         TRACE(opacityMicromapLevel, 1, 8);
         TRACE(neuralUplift, 0, 1);

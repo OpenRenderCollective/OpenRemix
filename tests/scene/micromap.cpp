@@ -109,7 +109,8 @@ namespace {
         if (index == OpacityMicromap::FullyTransparent)
           return OpacityMicromap::Transparent;
         if (index < 0)
-          return OpacityMicromap::UnknownOpaque;
+          return index == OpacityMicromap::FullyUnknownTransparent ? OpacityMicromap::UnknownTransparent
+                                                                  : OpacityMicromap::UnknownOpaque;
         const auto &t = micromap.triangles[size_t(index)];
         return (micromap.data[t.dataOffset + micro / 4] >> (2 * (micro % 4))) & 3u;
       };
@@ -123,7 +124,7 @@ namespace {
       const auto &micros = microTriangles(level);
       for (uint32_t micro = 0; micro < micros.size(); ++micro) {
         const uint32_t value = state(micro);
-        if (value == OpacityMicromap::UnknownOpaque)
+        if (value == OpacityMicromap::UnknownOpaque || value == OpacityMicromap::UnknownTransparent)
           continue;
         const auto corners = microCorners(micros[micro], level);
         for (unsigned sample = 0; sample < 24; ++sample) {
