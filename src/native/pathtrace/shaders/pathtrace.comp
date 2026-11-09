@@ -951,11 +951,13 @@ vec3 sunVisibility(Hit receiver,ivec2 pixel,out float blockerDistance) {
 #include "pbr_reuse.glsl"
 bool skipSheetLocal=false; // set around direct() for PBR sheets (see sheetLocalLights)
 #ifdef WAVEFRONT_DEFER_SHADOWS
-// The wavefront shade kernel's sun and sky light at its vertex before their
-// shadow rays, which the shadow kernel traces (wavefrontShadow): the light
-// unshadowed (cloud shadow and sky radiance in), the rays' origin and the
-// sky ray's direction.
-vec3 wavefrontSun=vec3(0),wavefrontSky=vec3(0),wavefrontShadowOrigin=vec3(0),wavefrontSkyDirection=vec3(0);
+// The wavefront shade kernel's sun, sky and local light at its vertex before
+// their shadow rays, which the shadow kernel traces (wavefrontShadow): the
+// light unshadowed (cloud shadow and sky radiance in; the local light's
+// estimate times the material factor), the rays' origin, the sky ray's
+// direction (the local light's endpoint: wavefrontLocalEndpoint).
+vec3 wavefrontSun=vec3(0),wavefrontSky=vec3(0),wavefrontLocal=vec3(0),wavefrontShadowOrigin=vec3(0),
+     wavefrontSkyDirection=vec3(0);
 #endif
 #include "subsurface.glsl"
 vec3 direct(Hit hit,bool primary,out vec3 specular,out float distance) {
@@ -963,6 +965,9 @@ vec3 direct(Hit hit,bool primary,out vec3 specular,out float distance) {
   float cosine=max(0,dot(hit.n,toLight));
   distance=0;
   vec3 local=vec3(0);specular=vec3(0);
+#ifdef WAVEFRONT_DEFER_SHADOWS
+  wavefrontShadowOrigin=shadowOrigin(hit);wavefrontLocalEstimate=vec3(0);wavefrontLocal=vec3(0);
+#endif
   // PBR transparent sheets (water) may skip local-light sampling at their own
   // surface (rtx.native.pathtrace.sheetLocalLights=0); their traced paths still
   // carry local light reflected from the scene. Sun and sky stay.
@@ -972,6 +977,9 @@ vec3 direct(Hit hit,bool primary,out vec3 specular,out float distance) {
     local=materialFactor(hit)*localLighting(hit,rng,primary?frame.localConfig.y:1u,distance,false,specular,primary?frame.firefly.x:0);
     regirLookup=true;
     specular*=materialFactor(hit);
+#ifdef WAVEFRONT_DEFER_SHADOWS
+    wavefrontLocal=materialFactor(hit)*wavefrontLocalEstimate;
+#endif
   }
   // The sun (0) and the sky (1) share one shadow() call site: each inlined
   // copy is a set of visibility queries.
@@ -989,7 +997,6 @@ vec3 direct(Hit hit,bool primary,out vec3 specular,out float distance) {
 #ifdef WAVEFRONT_DEFER_SHADOWS
     if(source==0)wavefrontSun=weight*cloudShadow(hit.p);
     else{wavefrontSky=weight*environmentRadiance(direction);wavefrontSkyDirection=direction;}
-    wavefrontShadowOrigin=shadowOrigin(hit);
     continue;
 #endif
     vec3 visibility=shadow(shadowOrigin(hit),direction);
@@ -1399,7 +1406,8 @@ void pathSteps(Hit primary,inout PathState s,uint maxBounces,uint untilBounce,
 #ifdef WAVEFRONT_DEFER_SHADOWS
     // The sun and sky light waits for its shadow rays; the motion below
     // counts it unshadowed.
-    wavefrontSun*=s.throughput;wavefrontSky*=s.throughput;unshadowed=wavefrontSun+wavefrontSky;
+    wavefrontSun*=s.throughput;wavefrontSky*=s.throughput;wavefrontLocal*=s.throughput;
+    unshadowed=wavefrontSun+wavefrontSky+wavefrontLocal;
 #endif
     s.result+=lighting;
     if(s.diffuseMotion<.2) {
@@ -1970,7 +1978,7 @@ bool wavefrontStart(Hit primary,ivec2 pixel,uint index,vec3 diffuseFactor,vec3 s
 }
 // The live paths of each bounce (after the planes): a header, then two lists
 // of path indices, the current bounce's and the next's, frame.wavefrontStride
-// each, then the shadow rays of a shade kernel's vertices (two planes of
+// each, then the shadow rays of a shade kernel's vertices (three planes of
 // 16 bytes). Header: the two lists' counts (appended by the start and shade
 // kernels), the current bounce's count and number, the next bounce's number,
 // its dispatch's group columns (x); the shadow rays' count (appended by the
@@ -2033,7 +2041,7 @@ void wavefrontArgs() {
   wavefrontDispatch(count,8u+4u*min(bounce,15u),5u);
   wavefrontDispatch(shadows,80u+4u*min(bounce,15u),72u);
 }
-// The shadow kernel: a shade kernel vertex's sun and sky shadow rays; their
+// The shadow kernel: a shade kernel vertex's sun, sky and local light shadow rays; their
 // light that arrives, added to the path's radiance (plane 3) before its next
 // bounce reads it.
 void wavefrontShadow() {
@@ -2054,6 +2062,10 @@ void wavefrontShadow() {
     if(!any(greaterThan(weight,vec3(0))))continue;
     light+=weight*shadow(origin,source==0u?-frame.lightDirection.xyz:skyDirection);
   }
+  uvec4 c=items.v[2u*frame.wavefrontStride+id];
+  vec3 local=vec3(unpackHalf2x16(c.z),unpackHalf2x16(c.w).x);
+  if(any(greaterThan(local,vec3(0))))
+    light+=local*localVisibility(origin,origin+decodeGeometricNormal(unpackSnorm2x16(c.x))*uintBitsToFloat(c.y));
   if(any(greaterThan(light,vec3(0)))) {
     uvec4 result=wavefrontLoad(3u,index);
     wavefrontStore(3u,index,wavefrontPack(uintBitsToFloat(result.xyz)+light,result.w));
@@ -2184,7 +2196,7 @@ bool wavefrontShade(uint id,uint index,out bool shadowed) {
   pathSteps(primary,s,frame.config.y,s.bounce+1u,primaryLight,primarySpecular,primaryDistance);
   storePath(index,s);
 #ifdef WAVEFRONT_DEFER_SHADOWS
-  shadowed=any(greaterThan(wavefrontSun+wavefrontSky,vec3(0)));
+  shadowed=any(greaterThan(wavefrontSun+wavefrontSky+wavefrontLocal,vec3(0)));
 #endif
   return wavefrontSteps(s);
 }
@@ -2197,6 +2209,12 @@ void wavefrontShadowEnqueue(uint index,bool add) {
   items.v[at]=wavefrontPack(wavefrontShadowOrigin,index|(viewModelPath?0x80000000u:0u));
   items.v[frame.wavefrontStride+at]=uvec4(packSnorm2x16(encodeGeometricNormal(wavefrontSkyDirection)),
     packHalves(wavefrontSun.r,wavefrontSun.g),packHalves(wavefrontSun.b,wavefrontSky.r),packHalves(wavefrontSky.g,wavefrontSky.b));
+  // The local light's ray: its direction and length from the origin.
+  vec3 delta=wavefrontLocalEndpoint-wavefrontShadowOrigin;
+  float distance=length(delta);
+  bool local=any(greaterThan(wavefrontLocal,vec3(0)))&&distance>0;
+  items.v[2u*frame.wavefrontStride+at]=uvec4(local?packSnorm2x16(encodeGeometricNormal(delta/distance)):0u,
+    floatBitsToUint(distance),local?packHalves(wavefrontLocal.r,wavefrontLocal.g):0u,local?packHalves(wavefrontLocal.b,0):0u);
 }
 #endif
 #endif
