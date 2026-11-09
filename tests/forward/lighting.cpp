@@ -981,38 +981,32 @@ int main() {
   require(!changed.sameTargets(settings.forward),
           "Hardware reflection enable prepares replacement resources");
   std::vector<std::string> warnings;
-  require(config::set(settings, "rtx.native.forward.experimentalBakedHighlightLights", "0") ==
+  require(config::set(settings, "rtx.native.forward.bakedHighlightLights", "0") ==
               config::SetResult::Success && settings.forward.bakedHighlightLights == 0 &&
-              config::set(settings, "rtx.native.forward.experimentalBakedHighlightLights", "32") ==
+              config::set(settings, "rtx.native.forward.bakedHighlightLights", "32") ==
                   config::SetResult::Success && settings.forward.bakedHighlightLights == 32 &&
-              config::set(settings, "rtx.native.forward.experimentalBakedHighlightFade", "1.5") ==
+              config::set(settings, "rtx.native.forward.bakedHighlightFade", "1.5") ==
                   config::SetResult::Success && settings.forward.bakedHighlightFade == 1.5f,
           "Highlight budget and duration persist independently of shadow settings");
   require(config::Settings{}.forward.bakedLighting && config::Settings{}.forward.baking.styledIndirect &&
               config::Settings{}.forward.baking.styleStorageMiB == 256 &&
-              config::set(settings, "rtx.native.forward.experimentalBakedLightingPreview", "1") ==
+              config::set(settings, "rtx.native.forward.bakedLighting", "1") ==
                   config::SetResult::Success && settings.forward.bakedLighting &&
-              config::set(settings, "rtx.native.forward.experimentalBakedLightingPreview", "0") ==
+              config::set(settings, "rtx.native.forward.bakedLighting", "0") ==
                   config::SetResult::Success && !settings.forward.bakedLighting,
-          "Baked lighting defaults on in runtime profiles and the legacy key remains reversible");
+          "Baked lighting defaults on and can be disabled explicitly");
   {
-    config::Settings migrated;
+    config::Settings parsed;
     config::UnknownSettings extra;
     std::vector<std::string> notices;
     std::string problem;
-    require(config::parse("profile.version=1\nrtx.native.forward.experimentalBakedLightingPreview=0\n"
-                           "rtx.native.forward.styledIndirect=0\nrtx.native.forward.styleStorageMiB=128\n",
-                           migrated, extra, notices, problem) && migrated.forward.bakedLighting &&
-                migrated.forward.baking.styledIndirect && migrated.forward.baking.styleStorageMiB == 256 && !notices.empty(),
-            "Old preview-off defaults migrate to completed baked lighting");
     require(config::parse("profile.version=1\nrtx.native.forward.bakedLighting=0\n"
-                           "rtx.native.forward.experimentalBakedLightingPreview=1\n",
-                           migrated, extra, notices, problem) && !migrated.forward.bakedLighting,
-            "Canonical analytic opt-out wins over the legacy preview alias regardless of order");
-    const auto saved = config::serialize(migrated);
-    require(saved.find("experimentalBakedLightingPreview") == std::string::npos &&
-                saved.find("rtx.native.forward.bakedLighting = 0") != std::string::npos,
-            "Profiles save one canonical runtime policy and preserve explicit opt-out");
+                           "rtx.native.forward.styledIndirect=0\nrtx.native.forward.styleStorageMiB=128\n",
+                           parsed, extra, notices, problem) && !parsed.forward.bakedLighting &&
+                !parsed.forward.baking.styledIndirect && parsed.forward.baking.styleStorageMiB == 128,
+            "Profiles preserve explicit baked lighting and style choices");
+    require(config::serialize(parsed).find("rtx.native.forward.bakedLighting = 0") != std::string::npos,
+            "Profiles save the explicit baked lighting opt-out");
   }
   require(!settings.forward.selectedBakedLights &&
               config::set(settings, "rtx.native.forward.experimentalSelectedBakedLights", "1") ==

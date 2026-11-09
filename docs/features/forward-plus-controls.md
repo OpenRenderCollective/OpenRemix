@@ -1,7 +1,6 @@
-# Forward+ controls and compatibility
+# Forward+ controls
 
-This catalog describes the main `forward-plus-renderer` code checkpoint
-`c10a9022`. It separates saved renderer requests, production-path ablations,
+This catalog separates saved renderer requests, production-path ablations,
 private experiments and diagnostics. A `REMIX_DEBUG_*` name alone does not mean
 that its implementation is unused or disabled by default.
 
@@ -19,14 +18,6 @@ holds requests; [techniques](../../src/native/forward/techniques.h),
 [resource plan](../../src/native/forward/provider_plan.h) resolve their supported
 combination. Quality/display/cache preferences remain separate from technique
 selection. A saved value need not be active under every selected technique.
-
-Three old spellings are compatibility aliases, not separate rendering paths:
-
-| Old suffix after `rtx.native.forward.` | Canonical suffix |
-| --- | --- |
-| `experimentalBakedLightingPreview` | `bakedLighting` |
-| `experimentalBakedHighlightLights` | `bakedHighlightLights` |
-| `experimentalBakedHighlightFade` | `bakedHighlightFade` |
 
 Five canonical keys retain historical experimental names:
 `experimentalAggregateDiffuse`, `experimentalFullyBakedLights`,
