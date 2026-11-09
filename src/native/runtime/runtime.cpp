@@ -38,6 +38,7 @@ namespace remix {
     // Establish destruction order before this runtime can launch persistence.
     // The service itself starts no thread until a completed map is submitted.
     forward::bake::cache::persistence();
+    forward::probes::capture_cache::persistence();
     forward::probes::capture_cache::sharedPersistence();
   }
   RemixNativeRuntime::~RemixNativeRuntime() {
