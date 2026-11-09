@@ -153,10 +153,8 @@ namespace remix {
     if (!info.hash)
       throw invalid;
     auto ext = [&](remixapi_StructType type) { return extension(info.pNext, type); };
-    const auto *baking = static_cast<const remixapi_LightInfoBakingEXT *>(ext(REMIXAPI_STRUCT_TYPE_LIGHT_BAKING_EXT));
-    // Pre-release adapters used this tag in light chains before it was assigned upstream.
-    if (!baking)
-      baking = static_cast<const remixapi_LightInfoBakingEXT *>(ext(remixapi_StructType(0x7fff1032)));
+    const auto *baking = static_cast<const remixapi_LightInfoBakingEXT *>(
+        ext(REMIXAPI_STRUCT_TYPE_LIGHT_BAKING_EXT));
     const uint32_t bakeHint = baking ? uint32_t(baking->hint) : 0;
     if (bakeHint > REMIXAPI_LIGHT_BAKING_REQUIRE_MIXED_EXT)
       throw invalid;

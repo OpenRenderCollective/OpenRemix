@@ -484,12 +484,6 @@ int main() {
               bakedHint->lights[0].bakeHint == REMIXAPI_LIGHT_BAKING_PREFER_BAKED_EXT,
           "Different valid policy hints cannot reuse one baked content identity");
   const auto beforeCutoff = resources.bakeScene();
-  baking.sType = remixapi_StructType(0x7fff1032);
-  resources.updateLight(lamp, light);
-  resources.setBakeScene(&info);
-  require(resources.bakeScene()->contentHash == beforeCutoff->contentHash,
-          "The pre-release light hint tag retains its bake identity");
-  baking.sType = REMIXAPI_STRUCT_TYPE_LIGHT_BAKING_EXT;
   remixapi_LightInfoForwardCutoffEXT cutoff{REMIXAPI_STRUCT_TYPE_LIGHT_INFO_FORWARD_CUTOFF_EXT, &baking, 128};
   sphere.pNext = &cutoff;
   resources.updateLight(lamp, light);

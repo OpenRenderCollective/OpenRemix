@@ -192,14 +192,6 @@ namespace {
     require(snapshot && r.bakeScene()->contentHash == snapshot->contentHash &&
                 snapshot->draws.front().material->replacementKeys.size() == 2,
             "Matching metadata preserves transport identity and immutable snapshot metadata");
-    alternates.sType = remixapi_StructType(0x7fff1032);
-    const uint64_t legacyKeys[] = {901, 902};
-    alternates.count = 2;
-    alternates.keys = legacyKeys;
-    r.createMaterial(info, handle);
-    r.finishFrame();
-    require(drawn(r, mesh)->replacementKeys == original->replacementKeys,
-            "The pre-release material alias tag preserves replacement keys");
   }
 
   std::shared_ptr<scene::Material> drawn(remix::NativeResources &r, remixapi_MeshHandle mesh) {
