@@ -1160,6 +1160,16 @@ namespace remix {
           ImGui::SetTooltip("The deepest subdivision of a triangle: up to 4^level micro-triangles, about two\n"
                             "per texel. Higher proves more of large triangles at more memory and baking time.\n"
                             "Limited by the device. rtx.native.pathtrace.opacityMicromapLevel");
+        int twoState = int(options.shadowMicromap2State);
+        if (ui::Combo("Micromap shadow rays", &twoState, "Exact\0Two-state: bounces and sky\0Two-state: all shadow rays\0"))
+          options.shadowMicromap2State = uint32_t(twoState);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("Sun, sky and local-light shadow rays take the micromap's baked estimate where it\n"
+                            "proves nothing, instead of running the alpha test: no cutout candidate reaches\n"
+                            "their shader. Cutout shadow edges then follow the micro-triangles (about half a\n"
+                            "texel) rather than the texels. \"Bounces and sky\" leaves the directly seen\n"
+                            "surfaces' sun and local-light shadows exact. Camera and bounce rays always are.\n"
+                            "Applies at the next frame. rtx.native.pathtrace.shadowMicromap2State");
       }
     }
   }

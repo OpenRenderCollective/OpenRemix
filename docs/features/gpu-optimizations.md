@@ -88,7 +88,7 @@ One difference from the shader-only path: subsurface probe rays
 (`subsurface.glsl`) count every surface crossing without an alpha test, so a
 cut-out micro-triangle is no longer counted there.
 
-`rtx.native.pathtrace.shadowMicromap2State` (0-2, default 0) lets shadow-type
+`rtx.native.pathtrace.shadowMicromap2State` (0-2, default 2) lets shadow-type
 rays (sun, sky and local light visibility) skip the shader's alpha test on
 micromapped geometry altogether: the bake stores each unproved micro-triangle
 as unknown-opaque or unknown-transparent by the alpha estimated at its centre,
@@ -97,8 +97,12 @@ the indirect pass, the radiance cache and every sky ray; 2 also to the primary
 surface's sun and local light shadows. Camera and bounce rays keep the exact
 test. A cutout's shadow edge then follows the micro-triangles (about half a
 texel at the level the triangle got) instead of the texels. Geometry without
-a micromap (paint, moving texture coordinates, dynamic textures, anything the
-bake proved nothing about) is traced as before.
+a micromap (paint, wounded instances, moving texture coordinates, dynamic
+textures, anything the bake proved nothing about) is traced as before. On
+`ep2_outland_06a`'s forest (Garry's Mod, RTX 5080, 960x540, level 8) the GPU
+frame took 8.03 ms exact, 7.64 ms with 1 and 7.21 ms with 2, images within
+run-to-run noise; 0 restores the exact shadow test. Compressed textures with
+alpha keep a quarter byte per texel of CPU memory for the estimate.
 
 ## Wavefront indirect lighting
 

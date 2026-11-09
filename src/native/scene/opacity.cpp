@@ -235,7 +235,7 @@ namespace remix::scene {
               b.factor >> 24,
               flags,
               uint32_t(m.filter) | uint32_t(m.wrapU) << 8 | uint32_t(m.wrapV) << 16,
-              draw.decal ? 0u : micromapLevel};
+              draw.decal || draw.wound ? 0u : micromapLevel};
     return true;
   }
 
@@ -364,8 +364,10 @@ namespace remix::scene {
       }
       if (!result->reasons[P::Solid] || result->reasons[P::Solid] == result->triangles)
         result->key.assign(1, result->reasons[P::Solid] ? 1 : 0);
-      // Decals are skipped by visibility rays before their alpha test.
-      if (micromapLevel && !draw.decal && result->key[0] != 1) {
+      // Decals are skipped by visibility rays before their alpha test. A wound
+      // cut holes the surface in the candidate test alone: no micromap may
+      // settle its micro-triangles (two-state shadow rays would close it).
+      if (micromapLevel && !draw.decal && !draw.wound && result->key[0] != 1) {
         const TextureEntries *proof = usesTexture ? pixels : nullptr;
         const uint64_t hash = contentHash(*draw.surface);
         auto *shared = content(hash, texture, key, *result);

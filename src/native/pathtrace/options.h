@@ -384,7 +384,7 @@ namespace remix {
     // 1: the indirect pass's, the radiance cache's and every sky ray; 2: the
     // primary surface's sun and local light shadows too. Foliage shadow edges
     // follow the micro-triangles (docs/features/gpu-optimizations.md).
-    uint32_t shadowMicromap2State = 0;
+    uint32_t shadowMicromap2State = 2;
     // Diagnostics, wrong images: 1 traces every ray with all geometry opaque
     // (what traversal alone costs), 2 accepts every non-opaque candidate
     // without its alpha test (the candidate round trips without texture work).
