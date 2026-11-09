@@ -281,7 +281,7 @@ struct Intersection { float t; uint surface; uint primitive; vec2 bary; mat4x3 m
 // The wavefront shade kernel's bounce receiver, found by its trace kernel
 // (closest() takes it in place of its first query).
 #if WAVEFRONT_PASS==3
-Intersection wavefrontReceiver;bool wavefrontInjected=false;
+Intersection wavefrontReceiver;
 #endif
 void queryScene(accelerationStructureEXT scene, vec3 origin, vec3 direction, inout Intersection x,float minimum) {
   rayQueryEXT query;
@@ -481,16 +481,22 @@ Hit closest(vec3 origin,vec3 direction,float maximum,bool motion) {
   float lastDecal=0,minimum=0,end=maximum;
   const float attach=frame.visibilityProbe.y;
   const uint mask=traceMask;
+#ifdef WAVEFRONT_PLAIN
+  // The unpainted shade kernel's: the trace kernel found no paint before the
+  // receiver (wavefrontTrace), so the peel finds none either.
+  const bool paint=false;
+#else
   const bool paint=enableDecals&&(mask&decalInstanceMask)!=0u;
+#endif
   uint layers=0u;
   // Step 0 finds the receiver; the steps after it, up to 32 layers of paint.
   for(uint step=0;step<33;++step) {
     traceMask=step==0u?(paint?mask&~decalInstanceMask:mask):decalInstanceMask;
     if(step==0u) {
 #if WAVEFRONT_PASS==3
-      // The shade kernel's first: its bounce ray's; then the layers it passes.
-      if(wavefrontInjected){receiver=wavefrontReceiver;wavefrontInjected=false;}
-      else receiver=nearest(origin,direction,maximum,0);
+      // A shade kernel's one closest() (it stops at a blended layer): its
+      // bounce ray's receiver, found by the trace kernel.
+      receiver=wavefrontReceiver;
 #else
       receiver=nearest(origin,direction,maximum,0);
 #endif
@@ -1350,7 +1356,13 @@ void pathSteps(Hit primary,inout PathState s,uint maxBounces,uint untilBounce,
         passed=(1-f0*f0)*pow(clamp(hit.color.rgb,vec3(1e-4),vec3(1)),vec3(hit.t/hit.thick.y))/max(1-hit.color.a,1e-3);}
       else passed=transmissionColor(hit.color.rgb,hit.tinted);
       s.throughput*=passed;s.emissiveWeight*=passed;
-      s.origin=offsetRay(hit.p,-hit.ng);leavingNormal=vec3(0);continue;
+      s.origin=offsetRay(hit.p,-hit.ng);leavingNormal=vec3(0);
+#if WAVEFRONT_PASS==3
+      // The next layer's query may meet paint: a shade kernel leaves it to
+      // the next trace kernel (or the tail), which sorts the path again.
+      s.going=true;break;
+#endif
+      continue;
     }
     if(any(greaterThan(s.emissiveWeight,vec3(0)))) {
       pathDebugRecord(3,hit.p,0,vec4(s.emissiveWeight,0),vec4(hit.emission,0),vec4(0));
@@ -1806,7 +1818,10 @@ IndirectResult traceIndirect(Hit primary,ivec2 pixel,vec3 diffuseFactor,vec3 spe
 // to the first bounce ray; a pixel without a path gets its result), then per
 // bounce: arguments (5, the indirect dispatch over the bounce's list), trace
 // (2, the bounce ray's receiver query), shade (3, the bounce with that
-// receiver, appending the paths that go on to the next list); after
+// receiver, appending the paths that go on to the next list; the paths whose
+// receiver has paint before it in a variant that peels it, the rest in a
+// WAVEFRONT_PLAIN one without the peel; both stop at a blended layer, left
+// to the next trace kernel or the tail); after
 // wavefrontBounces of those, the tail (6: the remaining bounces of the paths
 // left, after its arguments); finish (4, over the screen: the results
 // traceIndirect writes). With rtx.native.pathtrace.wavefrontShadowQueue
@@ -1976,17 +1991,19 @@ bool wavefrontStart(Hit primary,ivec2 pixel,uint index,vec3 diffuseFactor,vec3 s
   storeFinish(index,p,selected,extraSky,extraSkySpecular,firstDir,probability,s.specularWeight/max(s.weight,vec3(1e-20)));
   return wavefrontSteps(s);
 }
-// The live paths of each bounce (after the planes): a header, then two lists
-// of path indices, the current bounce's and the next's, frame.wavefrontStride
-// each, then the shadow rays of a shade kernel's vertices (three planes of
-// 16 bytes). Header: the two lists' counts (appended by the start and shade
+// The live paths of each bounce (after the planes): a header, then three
+// lists, frame.wavefrontStride each: path indices of the current bounce and
+// the next, and the places in the current list of the paths whose bounce ray
+// meets paint (the painted list, count at word 76, dispatch at 152; their
+// entries in the current list get bit 31); then the shadow rays of a shade
+// kernel's vertices (three planes of 16 bytes). Header: the two lists' counts (appended by the start and shade
 // kernels), the current bounce's count and number, the next bounce's number,
 // its dispatch's group columns (x); the shadow rays' count (appended by the
 // shade kernel) and the count the shadow kernel takes; each bounce's indirect
 // dispatch arguments from word 8 (four words each), the shadow kernel's
 // group columns at 72 and its arguments from word 80. The host zeroes it
 // every frame.
-const uint wavefrontPlaneCount=13u,wavefrontHeaderWords=256u;
+const uint wavefrontPlaneCount=13u,wavefrontHeaderWords=256u,wavefrontLists=3u;
 layout(buffer_reference,std430,buffer_reference_align=4) buffer WavefrontQueue {
   uint header[wavefrontHeaderWords]; uint list[];
 };
@@ -1996,7 +2013,7 @@ WavefrontQueue wavefrontQueue() {
 }
 WavefrontShadows wavefrontShadows() {
   return WavefrontShadows(frame.wavefrontPaths+uint64_t(wavefrontPlaneCount)*frame.wavefrontStride*16u+
-                          wavefrontHeaderWords*4u+((uint64_t(frame.wavefrontStride)*8u+15u)&~uint64_t(15u)));
+                          wavefrontHeaderWords*4u+((uint64_t(frame.wavefrontStride)*wavefrontLists*4u+15u)&~uint64_t(15u)));
 }
 // A place in the list counted by header word `counter` for each invocation
 // that adds: one atomic for the subgroup, so the list keeps a subgroup's
@@ -2038,6 +2055,8 @@ void wavefrontArgs() {
   // This list takes the bounce after next's paths.
   q.header[list]=0u;q.header[2]=count;q.header[3]=bounce;q.header[4]=bounce+1u;
   q.header[6]=0u;q.header[7]=shadows;
+  // The painted list: its count and dispatch (the trace kernel's atomicMax).
+  q.header[76]=0u;q.header[152]=0u;q.header[153]=0u;q.header[154]=1u;
   wavefrontDispatch(count,8u+4u*min(bounce,15u),5u);
   wavefrontDispatch(shadows,80u+4u*min(bounce,15u),72u);
 }
@@ -2134,24 +2153,64 @@ bool wavefrontQueued(out uint id,out uint index) {
   return true;
 }
 uint wavefrontNextList() { return (wavefrontQueue().header[3]&1u)^1u; }
-// secondaryHit's first query: closest()'s receiver, which leaves out paint.
-// Kept: the transform (each column with one more word), the surface, the
-// primitive and the barycentrics; the shade kernel works out the distance
-// and the wound's W again.
-void wavefrontTrace(uint id,uint index) {
+// The painted shade kernel's path: its place in the bounce's list (id) from
+// the painted list.
+bool wavefrontPainted(out uint id,out uint index) {
+  WavefrontQueue q=wavefrontQueue();
+  uint k=(gl_WorkGroupID.y*32768u+gl_WorkGroupID.x)*64u+gl_LocalInvocationIndex;
+  id=0u;index=0u;
+  if(k>=q.header[76])return false;
+  id=q.list[2u*frame.wavefrontStride+k];
+  index=q.list[(q.header[3]&1u)*frame.wavefrontStride+id]&0x7fffffffu;
+  shadingPixel=ivec2(index%frame.target.x,index/frame.target.x);
+  return true;
+}
+// secondaryHit's first query: closest()'s receiver, which leaves out paint,
+// then the peel's first (closest()'s step 1, same range and origin rule):
+// whether any paint lies before the receiver (painted). Kept: the
+// transform (each column with one more word), the surface, the primitive
+// and the barycentrics; the shade kernel works out the distance and the
+// wound's W again.
+bool wavefrontTrace(uint id,uint index) {
   uvec4 a=wavefrontLoad(0u,index);
-  if((a.w&1u)==0u||((a.w>>6)&31u)>=frame.config.y)return;
+  if((a.w&1u)==0u||((a.w>>6)&31u)>=frame.config.y)return false;
   viewModelPath=(a.w&8u)!=0u;
-  traceMask=bounceMask();
-  if(enableDecals&&(traceMask&decalInstanceMask)!=0u)traceMask&=~decalInstanceMask;
-  Intersection x=nearest(uintBitsToFloat(a.xyz),uintBitsToFloat(wavefrontLoad(1u,index).xyz),1e30,0);
+  vec3 origin=uintBitsToFloat(a.xyz),direction=uintBitsToFloat(wavefrontLoad(1u,index).xyz);
+  const uint mask=bounceMask();
+  const bool paint=enableDecals&&(mask&decalInstanceMask)!=0u;
+  traceMask=paint?mask&~decalInstanceMask:mask;
+  Intersection x=nearest(origin,direction,1e30,0);
+  bool painted=false;
+  if(paint) {
+    // The leaving normal as the shade kernel loads it (loadPath).
+    vec3 leaving=(a.w&32u)!=0u?decodeGeometricNormal(unpackSnorm2x16(wavefrontLoad(4u,index).w)):vec3(0);
+    const float attach=frame.visibilityProbe.y;
+    float minimum=dot(leaving,leaving)>0?attach/max(abs(dot(direction,leaving)),.05):0;
+    if(minimum<x.t) {
+      traceMask=decalInstanceMask;originPaint=attach;
+      painted=nearest(origin,direction,x.t,minimum).surface!=~0u;
+      originPaint=0;
+    }
+  }
   traceMask=cameraMask;
   const uint r=wavefrontReceiverPlanes;
   wavefrontStore(r,id,wavefrontPack(x.model[0],x.surface));
-  if(x.surface==~0u)return;
+  if(x.surface==~0u)return painted;
   wavefrontStore(r+1u,id,wavefrontPack(x.model[1],x.primitive));
   wavefrontStore(r+2u,id,wavefrontPack(x.model[2],floatBitsToUint(x.bary.x)));
   wavefrontStore(r+3u,id,wavefrontPack(x.model[3],floatBitsToUint(x.bary.y)));
+  return painted;
+}
+// A painted path to the painted list (its dispatch grows with it), its
+// entry in the bounce's list marked for the unpainted shade kernel to skip.
+void wavefrontPaint(uint id,uint index,bool painted) {
+  uint at=wavefrontAppend(76u,painted);
+  if(!painted)return;
+  WavefrontQueue q=wavefrontQueue();
+  q.list[2u*frame.wavefrontStride+at]=id;
+  q.list[(q.header[3]&1u)*frame.wavefrontStride+id]=index|0x80000000u;
+  uint groups=at/64u+1u;
+  atomicMax(q.header[152],min(groups,32768u));atomicMax(q.header[153],(groups+32767u)/32768u);
 }
 #if WAVEFRONT_PASS==6
 // The tail (rtx.native.pathtrace.wavefrontBounces): the path's remaining
@@ -2190,7 +2249,7 @@ bool wavefrontShade(uint id,uint index,out bool shadowed) {
     x.t=dot(point-s.origin,s.direction);
     if(surface.textureState.y!=0u)woundAt(surface,x.primitive,x.bary,x.wound);
   }
-  wavefrontReceiver=x;wavefrontInjected=true;
+  wavefrontReceiver=x;
   Hit primary=wavefrontPrimary(s);
   vec3 primaryLight,primarySpecular;float primaryDistance;
   pathSteps(primary,s,frame.config.y,s.bounce+1u,primaryLight,primarySpecular,primaryDistance);
@@ -2693,10 +2752,18 @@ void main() {
   uint id,queued;
   bool live=wavefrontQueued(id,queued);
 #if WAVEFRONT_PASS==2
-  if(live)wavefrontTrace(id,queued);
+  bool painted=live&&wavefrontTrace(id,queued);
+  if(live)wavefrontPaint(id,queued,painted);
 #elif WAVEFRONT_PASS==6
   if(live)wavefrontTail(queued);
 #else
+#ifdef WAVEFRONT_PLAIN
+  // The unpainted shade kernel skips the painted paths (bit 31).
+  live=live&&(queued&0x80000000u)==0u;
+#else
+  // The painted shade kernel: over the painted list.
+  live=wavefrontPainted(id,queued);
+#endif
   bool shadowed=false,next=live&&wavefrontShade(id,queued,shadowed);
   if(live) {
     wavefrontEnqueue(wavefrontNextList(),queued,next);

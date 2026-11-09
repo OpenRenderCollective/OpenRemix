@@ -1456,7 +1456,9 @@ namespace remix {
       const auto indirectLayout = selectedLayout;
       // The wavefront kernels (configureWavefront) run as a set or not at all:
       // each reads the records the one before wrote.
-      constexpr size_t lit = 8; // start, trace, shade, finish, tail, shadow, deferring shade, sky; then arguments
+      // start, trace, shade, finish, tail, shadow, deferring shade, sky, unpainted shade, unpainted deferring
+      // shade; then the arguments kernel
+      constexpr size_t lit = 10;
       VkPipeline kernels[lit] = {};
       uint32_t kernelFeatures[lit] = {};
       VkPipelineLayout kernelLayouts[lit] = {};
@@ -1503,7 +1505,8 @@ namespace remix {
         // receivers, its shading (dispatches of no groups once every path has
         // ended). Then the tail: the remaining bounces of the few paths left,
         // in one kernel (each bounce's own kernels cost more in launches and
-        // barriers than its paths do).
+        // barriers than its paths do), also after the last bounce: a shade
+        // kernel leaves the layer after a blended one to the next kernels.
         const uint32_t bounces = std::min(options.bounces, IndirectPass::wavefrontMaxBounces);
         const uint32_t split = std::clamp(options.wavefrontBounces, 1u, bounces);
         for (uint32_t bounce = 0;; ++bounce) {
@@ -1519,8 +1522,6 @@ namespace remix {
             bindTrace(command, kernels[5], kernelLayouts[5], kernelFeatures[5]);
             vkCmdDispatchIndirect(command, paths, shadowSlot);
           }
-          if (bounce == bounces)
-            break;
           if (bounce == split) {
             barrier(command, compute, computeWrite, compute, computeAccess);
             gpu::GpuScope scope(command, "Trace indirect (wavefront tail)", extent);
@@ -1534,12 +1535,23 @@ namespace remix {
             bindTrace(command, kernels[1], kernelLayouts[1], kernelFeatures[1]);
             vkCmdDispatchIndirect(command, paths, slot);
           }
-          barrier(command, compute, computeWrite, compute, computeAccess);
+          // The trace kernel sorted the paths: those with paint before the
+          // receiver to the painted list (its dispatch at word 152), the rest
+          // for the shade kernel without the paint peel. The two write
+          // different paths.
+          barrier(command, compute, computeWrite, compute | indirect,
+                  computeAccess | VK_ACCESS_INDIRECT_COMMAND_READ_BIT);
           {
-            gpu::GpuScope scope(command, "Trace indirect (wavefront shade)", extent);
-            const size_t shade = options.wavefrontShadowQueue ? 6 : 2;
+            gpu::GpuScope scope(command, "Trace indirect (wavefront shade unpainted)", extent);
+            const size_t shade = options.wavefrontShadowQueue ? 9 : 8;
             bindTrace(command, kernels[shade], kernelLayouts[shade], kernelFeatures[shade]);
             vkCmdDispatchIndirect(command, paths, slot);
+          }
+          {
+            gpu::GpuScope scope(command, "Trace indirect (wavefront shade painted)", extent);
+            const size_t shade = options.wavefrontShadowQueue ? 6 : 2;
+            bindTrace(command, kernels[shade], kernelLayouts[shade], kernelFeatures[shade]);
+            vkCmdDispatchIndirect(command, paths, header + 152 * 4);
           }
         }
         barrier(command, compute, computeWrite, compute, computeAccess);

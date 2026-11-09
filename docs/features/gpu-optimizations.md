@@ -103,8 +103,13 @@ needs, and the bounce kernels launch only for the paths still going:
   that have them.
 - per split bounce (`rtx.native.pathtrace.wavefrontBounces`, 1-16, default
   1): **arguments** (one invocation: the indirect dispatch over the bounce's
-  list of live paths), **trace** (the bounce ray's receiver query) and
-  **shade** (that bounce, appending the paths that go on to the next list).
+  list of live paths), **trace** (the bounce ray's receiver query, and
+  whether paint lies before the receiver) and **shade** (that bounce,
+  appending the paths that go on to the next list): the paths with paint in
+  front of their receiver in a kernel that peels it, the rest in one with the
+  paint peel compiled out (`shade painted`, `shade unpainted`). A shade
+  kernel stops at a blended layer; the next trace kernel or the tail takes
+  the layer behind it.
 - **tail**: the remaining bounces of the paths left, in one kernel (a kernel
   per bounce of the long roulette tail costs more in launches than its few
   paths do).
@@ -117,9 +122,9 @@ their own list (the local light's sample is still drawn in the shade kernel).
 
 The path state between kernels (origin, direction, throughput, radiance and
 random state exact, the rest as halves) is in per-pixel records, allocated
-while the option is on: 216 bytes a pixel, plus 16 a sky sample or 48 with
-the shadow queue, whichever is more (264 by default: 131 MiB at 960x540,
-928 MiB at 2560x1440). Neither the receiver query nor the alpha test draws
+while the option is on: 220 bytes a pixel, plus 16 a sky sample or 48 with
+the shadow queue, whichever is more (268 by default: 133 MiB at 960x540,
+942 MiB at 2560x1440). Neither the receiver query nor the alpha test draws
 random numbers, so a path continues as the single kernel's would; images
 match within noise. The kernels compile with the temporal lighting passes, or
 in the background when the option is turned on later; until all have, the

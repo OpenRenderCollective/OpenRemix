@@ -93,12 +93,13 @@ namespace remix {
     using trace::Stage;
     const Stage stages[] = {Stage::wavefrontStartTemporal, Stage::wavefrontTraceTemporal, Stage::wavefrontShadeTemporal,
                             Stage::wavefrontFinishTemporal, Stage::wavefrontTailTemporal, Stage::wavefrontShadowTemporal,
-                            Stage::wavefrontShadeDeferTemporal, Stage::wavefrontSkyTemporal};
+                            Stage::wavefrontShadeDeferTemporal, Stage::wavefrontSkyTemporal,
+                            Stage::wavefrontShadePlainTemporal, Stage::wavefrontShadeDeferPlainTemporal};
     std::vector<LightingRequest> requests;
     for (size_t i = 0; i < std::size(stages); ++i)
       requests.push_back({lightingStage(stages[i]), temporalLayout, &indirectPass.wavefront[i], true});
     // The bounces' dispatch arguments: one invocation, no lighting.
-    requests.push_back({Stage::wavefrontArgs, temporalLayout, &indirectPass.wavefront[8], false, false, false, false});
+    requests.push_back({Stage::wavefrontArgs, temporalLayout, &indirectPass.wavefront[10], false, false, false, false});
     return requests;
   }
 
