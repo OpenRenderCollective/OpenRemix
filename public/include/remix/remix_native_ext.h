@@ -1636,19 +1636,23 @@ typedef struct remixapi_MaterialBlendModulationEXT {
 // Optional pNext on a translucent MaterialInfo that makes a body (a
 // measurement distance above zero, no thin wall: water): what lies behind its
 // surface fades as Source's water fog fades it instead of being absorbed by
-// its colour. Over a length t inside the body a share 1 - t / fogEnd passes
-// (none past fogEnd) untinted; the rest is the body's own colour (its
-// transmittance colour, lit), as Source's water fades into its $fogcolor
-// between $fogstart and $fogend. fogEnd (world units) above zero and finite;
-// its measurement distance is then not used. refractTint multiplies what
-// passes, seen through the surface ($refracttint; {1, 1, 1}: none), each
-// channel 0..1. Not with a thin film.
+// its colour. Seen through the surface, over a length t inside the body the
+// fog's share is (t - fogStart) / (fogEnd - fogStart), clamped to 0..1: the
+// rest passes untinted, the fog's share is the body's own colour (its
+// transmittance colour, lit), as Source's water fades into its $fogcolor.
+// fogEnd (world units) above zero and finite, fogStart below it (0: from the
+// surface; negative fogs the surface itself); the measurement distance is then
+// not used. Light crossing the body (shadow and bounce rays) passes unfogged,
+// less its Fresnel, as Source's lightmaps ignore the water. refractTint
+// multiplies what passes, seen through the surface ($refracttint; {1, 1, 1}:
+// none), each channel 0..1. Not with a thin film.
 #define REMIXAPI_STRUCT_TYPE_MATERIAL_TRANSLUCENT_FOG_EXT ((remixapi_StructType)0x7fff1035)
 typedef struct remixapi_MaterialTranslucentFogEXT {
   remixapi_StructType sType;
   const void *pNext;
   float fogEnd;
   remixapi_Float3D refractTint;
+  float fogStart;
 } remixapi_MaterialTranslucentFogEXT;
 
 // Optional pNext on a world CameraInfo beside remixapi_CameraMediumEXT: the

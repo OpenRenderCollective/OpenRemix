@@ -420,6 +420,7 @@ namespace remix {
                 merged->transmittanceDistance = mod->transmittanceDistance;
                 merged->fogBody = mod->fogBody;
                 std::copy_n(mod->refractTint, 3, merged->refractTint);
+                merged->fogStart = mod->fogStart;
               }
               if (p & ModParts::roughness) {
                 merged->roughness = mod->roughness;

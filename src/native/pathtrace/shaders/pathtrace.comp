@@ -759,16 +759,17 @@ vec3 offsetRay(vec3 p,vec3 n) {
 // A translucent body's refractive index and measurement distance at a sheet
 // (zero: none). A sheet from the raster G-buffer carries no material record:
 // its ray is traced again for it.
-// tint: a fog body's refraction tint (MaterialDecode::refractTint in the
-// film's fields; one when none).
-vec2 sheetBody(Hit hit,vec3 direction,out vec3 tint) {
+// tint: a fog body's refraction tint, w its fog start (MaterialDecode::
+// refractTint in the film's fields; one and zero when none).
+vec2 sheetBody(Hit hit,vec3 direction,out vec4 tint) {
   vec2 body=hit.thick;int surface=hit.surface;
   if(body.x==0&&frame.target.w!=0&&hit.tinted) {
     Hit traced=cameraHit(offsetRay(hit.p,hit.ng),direction);
     if(traced.t<1e30&&traced.blended){body=traced.thick;surface=traced.surface;}
   }
-  tint=vec3(1);
-  if(body.y<0&&surface>=0&&(surfaces[surface].material.x&16384u)!=0u)tint=surfaces[surface].film.yzw;
+  tint=vec4(1,1,1,0);
+  if(body.y<0&&surface>=0&&(surfaces[surface].material.x&16384u)!=0u)
+    tint=vec4(surfaces[surface].film.yzw,uintBitsToFloat(surfaces[surface].filmMaps.x));
   return body;
 }
 // A camera ray's direction past a translucent body's surface: refracted by
@@ -1265,7 +1266,7 @@ vec3 continuation(Hit primary,int lobe,float probability,out vec3 firstDirection
       // A translucent body: its depth absorption over the segment, per pass taken.
       vec3 passed;
       if(hit.thick.y!=0){float f0=(hit.thick.x-1)/(hit.thick.x+1);
-        passed=(1-f0*f0)*bodyTransmittance(hit.color.rgb,hit.t,hit.thick.y)/max(1-hit.color.a,1e-3);}
+        passed=(1-f0*f0)*(hit.thick.y<0?vec3(1):bodyTransmittance(hit.color.rgb,hit.t,hit.thick.y))/max(1-hit.color.a,1e-3);}
       else passed=transmissionColor(hit.color.rgb,hit.tinted);
       throughput*=passed;emissiveWeight*=passed;
       origin=offsetRay(hit.p,-hit.ng);leavingNormal=vec3(0);continue;
@@ -1942,7 +1943,7 @@ vec3 sheetFilm(Hit hit,float ior) {
 // through: what passes to the layers behind; direction: bent for them.
 // A thin film (sheetFilm) takes the place of the body's Fresnel.
 bool thickSheet(Hit hit,inout vec3 direction,inout float alpha,inout vec3 through) {
-  vec3 refractTint;
+  vec4 refractTint;
   vec2 body=sheetBody(hit,direction,refractTint);
   if(body.x<1||body.y==0)return false;
   bool inside=frame.cameraMedium.w>0;
@@ -1960,7 +1961,9 @@ bool thickSheet(Hit hit,inout vec3 direction,inout float alpha,inout vec3 throug
     // view's cosine (at most 20 times the depth).
     float t=behind.t;
     if(body.y<0)t*=abs(dot(bent,n))/max(abs(dot(direction,n)),.05);
-    passed=behind.t<1e30?bodyTransmittance(hit.color.rgb,t,body.y)*refractTint:vec3(0);
+    // A fog start (refractTint.w) moves where the fog begins: (t - start) / (end - start).
+    if(body.y<0)passed=behind.t<1e30?vec3(clamp((-body.y-t)/(-body.y-refractTint.w),0,1))*refractTint.rgb:vec3(0);
+    else passed=behind.t<1e30?bodyTransmittance(hit.color.rgb,t,body.y):vec3(0);
   }
   through=(1-fresnel)*passed;
   alpha=1-dot(through,vec3(.2126,.7152,.0722));

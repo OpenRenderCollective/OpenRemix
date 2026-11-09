@@ -548,11 +548,14 @@ vec3 transmissionColor(vec3 color, bool tinted) { return tinted ? color : vec3(1
 vec3 bodyTransmittance(vec3 color, float t, float d) {
   return d<0 ? vec3(clamp(1+t/d,0,1)) : pow(clamp(color,vec3(1e-4),vec3(1)),vec3(t/max(d,1e-3)));
 }
+// Light crossing a fog body (Source's water) passes unfogged: Source fogs only
+// what the camera sees through it (its lightmaps ignore the water), and
+// fogging the light as well darkened the bottom twice.
 vec3 sheetTransmission(Surface s, vec4 color, float t) {
   if ((s.state.w&8)!=0 && s.pbr.w!=0) {
     vec2 body=unpackHalf2x16(floatBitsToUint(s.pbr.w));
     float f0=(body.x-1)/(body.x+1);
-    return (1-f0*f0)*bodyTransmittance(color.rgb,t,body.y);
+    return (1-f0*f0)*(body.y<0?vec3(1):bodyTransmittance(color.rgb,t,body.y));
   }
   return transmissionColor(color.rgb,(s.state.w&32)!=0)*(1-color.a);
 }

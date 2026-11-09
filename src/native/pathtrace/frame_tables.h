@@ -881,10 +881,11 @@ namespace remix::trace {
         detail::solidEnergyFields(e, detail1, detail2, value.film, value.filmMaps);
       }
       if (decode.flags & scene::MaterialDecode::refractTint) {
-        // A fog body's refraction tint in the film's fields (scene.glsl
-        // sheetBody); a fog body has no film.
+        // A fog body's refraction tint and fog start in the film's fields
+        // (pathtrace.comp sheetBody); a fog body has no film.
         value.film[0] = 0;
         std::copy_n(material.refractTint, 3, value.film + 1);
+        std::memcpy(&value.filmMaps[0], &material.fogStart, sizeof(float));
       }
       if (material.blendModulation)
         detail::blendModulationFields(*material.blendModulation, sampled(material.blendModulation->sampler),
