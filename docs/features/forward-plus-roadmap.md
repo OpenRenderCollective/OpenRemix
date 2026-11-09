@@ -2941,7 +2941,7 @@ redraw frozen geometry. Next evaluate baked directional visibility with local bo
 memory and bake-time costs; global allocation changes alone have not improved this receiver.
 
 A conservative Construct probe-domain projection spans roughly 382 by 511 m: one 4K D32 map costs 64
-MiB at 9–12 cm per texel, while 8K costs 256 MiB at 5–6 cm. These are domain-box estimates, not
+MiB at 9â€“12 cm per texel, while 8K costs 256 MiB at 5â€“6 cm. These are domain-box estimates, not
 tight receiver bounds or measured image-quality guarantees.
 
 The optional receiver diagnostic now measures all charted triangle vertices in an orthonormal sun

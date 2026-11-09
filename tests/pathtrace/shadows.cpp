@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <remix/remix_native_ext.h>
 #include <vector>
 #define STB_IMAGE_IMPLEMENTATION
@@ -44,6 +45,7 @@ int main(int argc, char **argv) {
 #endif
   ok(api.Startup(&startup));
   if (std::getenv("REMIX_TEST_SHEET_VISIBILITY")) {
+    ok(api.SetConfigVariable("rtx.native.hdr", "0"));
     // Readbacks observe completed frames, independent of the host's saved
     // presentation mode and the Windows startup window defaults.
     ok(api.SetConfigVariable("rtx.native.asyncPresent", "0"));
@@ -206,14 +208,45 @@ int main(int argc, char **argv) {
     ok(remixapi_GetDenoisingStatisticsEXT(&stats));
     return stats;
   };
+  auto captureLinear = [&](const std::string &name, unsigned count) {
+    for (unsigned i = 0; i < count; ++i) frame();
+    const auto path = (directory / (name + ".pfm")).string();
+#ifdef _WIN32
+    _putenv_s("REMIX_PATH_LINEAR_CAPTURE", path.c_str());
+#else
+    setenv("REMIX_PATH_LINEAR_CAPTURE", path.c_str(), 1);
+#endif
+    frame();
+#ifdef _WIN32
+    _putenv_s("REMIX_PATH_LINEAR_CAPTURE", "");
+#else
+    unsetenv("REMIX_PATH_LINEAR_CAPTURE");
+#endif
+    frame();
+    frame();
+    std::ifstream file(path, std::ios::binary);
+    std::string magic;
+    int width = 0, height = 0;
+    float scale = 0;
+    file >> magic >> width >> height >> scale;
+    file.get();
+    require(file.good() && magic == "PF" && width == 256 && height == 128 && scale == -1,
+            "Measured-sheet linear shadow capture header");
+    std::vector<std::array<float, 3>> pixels(width * height);
+    file.read(reinterpret_cast<char *>(pixels.data()), pixels.size() * sizeof(pixels[0]));
+    require(file.good(), "Measured-sheet linear shadow capture pixels");
+    return pixels;
+  };
   auto capture = [&](const std::string &name, unsigned count = 40) {
     for (unsigned i = 0; i < count; ++i)
       frame();
     const auto file = (directory / (name + ".png")).string();
-    ok(remix::test::requestScreenshot(api, file.c_str(), frame));
+    std::filesystem::file_time_type previous;
+    ok(remix::test::requestScreenshot(api, file.c_str(), frame, &previous));
     frame();
     frame();
     int width, height, channels;
+    ok(remix::test::waitForScreenshot(api, file.c_str(), previous));
     auto pixels = stbi_load(file.c_str(), &width, &height, &channels, 4);
     require(pixels && width == 256 && height == 128, "Missing shadow screenshot");
     std::vector<std::array<float, 3>> result(width * height);
@@ -273,7 +306,7 @@ int main(int argc, char **argv) {
         for (unsigned early : {0u, 1u}) {
           configure("shadowEarlyOut", early ? "1" : "0");
           occluder = nullptr;
-          const auto reference = capture(prefix + "-reference-" + std::to_string(early), 4);
+          const auto reference = captureLinear(prefix + "-reference-" + std::to_string(early), 4);
           // Clear, tinted and textured sheets, then legacy coverage and a body.
           for (unsigned kind = 0; kind < 5; ++kind) {
             remixapi_MaterialInfoTranslucentEXT optical{};
@@ -307,7 +340,7 @@ int main(int argc, char **argv) {
                                                 : "-sheet-") +
                                    std::to_string(early) + "-" + std::to_string(kind) + "-" +
                                    std::to_string(int(distance)) + (back ? "-back" : "-front");
-                const auto result = capture(label, 4);
+                const auto result = captureLinear(label, 4);
                 const auto tint = kind == 3
                                       ? std::array<float, 3>{.1f, 1, .2f}
                                       : std::array<float, 3>{optical.transmittanceColor.x, optical.transmittanceColor.y,
