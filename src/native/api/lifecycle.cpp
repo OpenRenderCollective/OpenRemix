@@ -209,6 +209,7 @@ namespace {
       }
       std::ofstream(directory / "pipelines.txt") << text;
     }
+#if !REMIX_METAL
     if (take("probes.request", nullptr)) {
       std::string text;
       {
@@ -217,6 +218,7 @@ namespace {
       }
       std::ofstream(directory / "probes.json") << text;
     }
+#endif
     if (take("lighttree.request", nullptr)) {
       std::lock_guard lock(remix::scene::g_lightTreeSaveMutex);
       remix::scene::g_lightTreeSavePath = std::filesystem::absolute(directory / "lighttree.bin", ec).string();
@@ -275,6 +277,7 @@ namespace {
             text += line;
           }
           const auto breakdown = g_runtime.frameBreakdown();
+#if !REMIX_METAL
           const auto forward = g_runtime.forwardCpuRecording();
           std::snprintf(line, sizeof(line),
                         "# Forward+ CPU recording ms: bake %.3f, live scene %.3f, frame preparation %.3f, "
@@ -289,6 +292,7 @@ namespace {
                         preparation.selection, preparation.draws, preparation.lighting, preparation.uploads,
                         preparation.materials, preparation.publication);
           text += line;
+#endif
           std::snprintf(line, sizeof(line),
                         "# raster draws %llu, outside the view (not drawn) %llu, prepare %.3f ms, record %.3f ms\n",
                         (unsigned long long)breakdown.rasterDraws, (unsigned long long)breakdown.rasterCulledDraws,

@@ -2,6 +2,7 @@
 
 This guide requires only the two public repositories plus the toolchains below.
 Choose any writable parent directory; no owner-local drive layout is assumed.
+Forward+ requires the Vulkan backend. Metal reports Forward+ as unavailable.
 `_work` paths below are outputs created by the build, not files to obtain from
 another developer. Read each repository's AGENTS.md where present.
 

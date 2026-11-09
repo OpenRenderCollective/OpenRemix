@@ -130,6 +130,9 @@ REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetBackendCapabilitiesEXT(rem
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetPreparationStatisticsEXT(remixapi_PreparationStatisticsEXT *out) {
   if (!out || out->structSize != sizeof(*out))
     return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
+#if REMIX_METAL
+  return REMIXAPI_ERROR_CODE_FEATURE_UNAVAILABLE;
+#else
   try {
     std::lock_guard lock(g_apiMutex);
     if (!g_runtime.isInitialized())
@@ -150,6 +153,7 @@ REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetPreparationStatisticsEXT(r
   } catch (...) {
     return REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
   }
+#endif
 }
 
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetFramePerformanceEXT(remixapi_FramePerformanceEXT *out) {
