@@ -158,6 +158,7 @@ vec4 albedo(Surface s, uint triangle, vec2 bary) {
 // W of the last wounded candidate tested (queryScene keeps it for its hit).
 float candidateWound=0;
 bool acceptCandidate(Surface s,uint triangle,vec2 bary) {
+  if((frame.target.z&16u)!=0u)return true; // traversalDebug 2
   // A wound cut (remixapi_InstanceInfoWoundCutEXT) holes the surface for every ray.
   if(s.textureState.y!=0u&&woundAt(s,triangle,bary,candidateWound))return false;
   if(s.state.y==7&&!coverageBlended(s))return true;
@@ -184,7 +185,14 @@ vec3 hitF0(Hit hit) { return mix(vec3(.04),hit.metal.w>0?hit.metal.rgb:hit.color
 // With hardware face culling (target.z bit 2) one-sided instances enable
 // facing culling in the TLAS and this flag culls exactly those back faces in
 // traversal (same front-face definition), so their surfaces can be opaque.
-uint traceFlags() { return (frame.target.z&4u)!=0?gl_RayFlagsCullBackFacingTrianglesEXT:gl_RayFlagsNoneEXT; }
+// Diagnostics (rtx.native.pathtrace.traversalDebug; wrong images): target.z
+// bit 3 makes every query treat all geometry as opaque (no candidate reaches
+// the shader: traversal alone), bit 4 accepts every candidate without its
+// alpha test (the candidate round trips without their texture work).
+uint traceFlags() {
+  return ((frame.target.z&4u)!=0?gl_RayFlagsCullBackFacingTrianglesEXT:gl_RayFlagsNoneEXT)|
+         ((frame.target.z&8u)!=0?gl_RayFlagsOpaqueEXT:gl_RayFlagsNoneEXT);
+}
 // Instance mask for closestGeometry: camera and transparency rays see every
 // instance but view models, which cameraHit looks for on its own first
 // (secondaryHit narrows it).
@@ -297,7 +305,7 @@ void queryScene(accelerationStructureEXT scene, vec3 origin, vec3 direction, ino
   profileRay(0);
   uvGradX=uvGradY=vec2(0); // candidates test coverage at the finest mip
   float wound=0,woundT=-1;
-  rayQueryInitializeEXT(query, scene, traceFlags()|(cameraCut!=0u||cameraRay?gl_RayFlagsNoOpaqueEXT:gl_RayFlagsNoneEXT), traceMask, origin, cameraRay?minimum:max(minimum,contactGap(x.t)), direction, x.t);
+  rayQueryInitializeEXT(query, scene, traceFlags()|((cameraCut!=0u||cameraRay)&&(frame.target.z&8u)==0u?gl_RayFlagsNoOpaqueEXT:gl_RayFlagsNoneEXT), traceMask, origin, cameraRay?minimum:max(minimum,contactGap(x.t)), direction, x.t);
   while (rayQueryProceedEXT(query)) {
     if (rayQueryGetIntersectionTypeEXT(query,false)!=gl_RayQueryCandidateIntersectionTriangleEXT) continue;
     profileRay(1);

@@ -7,16 +7,16 @@ namespace remix {
       return;
     if (!rayProfile.counters)
       rayProfile.counters = buffer(
-          768, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+          1280, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
           false);
     if (!rayProfile.readback)
-      rayProfile.readback = buffer(768, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true);
+      rayProfile.readback = buffer(1280, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true);
     frame.reuseConfig[2] = uint32_t(rayProfile.counters->address);
     frame.reuseConfig[3] = uint32_t(rayProfile.counters->address >> 32);
     barrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
             VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
             VK_ACCESS_TRANSFER_WRITE_BIT);
-    vkCmdFillBuffer(command, rayProfile.counters->handle, 0, 768, 0);
+    vkCmdFillBuffer(command, rayProfile.counters->handle, 0, 1280, 0);
     barrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
             VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
   }
@@ -25,7 +25,7 @@ namespace remix {
       return;
     barrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
             VK_ACCESS_TRANSFER_READ_BIT);
-    VkBufferCopy copy{.size = 768};
+    VkBufferCopy copy{.size = 1280};
     vkCmdCopyBuffer(command, rayProfile.counters->handle, rayProfile.readback->handle, 1, &copy);
     barrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_HOST_BIT,
             VK_ACCESS_HOST_READ_BIT);
@@ -39,12 +39,13 @@ namespace remix {
     VkMappedMemoryRange range{
         .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, .memory = rayProfile.readback->memory, .size = VK_WHOLE_SIZE};
     const auto result = vkInvalidateMappedMemoryRanges(device, 1, &range);
-    uint32_t counts[192] = {};
+    uint32_t counts[320] = {};
     if (result == VK_SUCCESS)
       std::memcpy(counts, mapped, sizeof(counts));
     vkUnmapMemory(device, rayProfile.readback->memory);
     check(result);
     if (auto *file = std::fopen(rayProfile.path, "a")) {
+      std::fseek(file, 0, SEEK_END); // append mode: the position is the start until the first write
       if (std::ftell(file) == 0) {
         std::fprintf(file, "time_ms");
         for (const char *pass : {"opaque", "direct", "transparency"})
@@ -56,6 +57,17 @@ namespace remix {
           for (const char *event : {"starts", "depth1", "depth2", "depth3", "depth4", "miss", "zero", "cache", "limit",
                                     "sheet_limit", "roulette_tests", "roulette_survivals", "roulette_terminated"})
             std::fprintf(file, ",%s_path_%s", pass, event);
+        // The separate indirect pass (wavefront kernels) and the SHARC update,
+        // after the columns older readers know.
+        for (const char *pass : {"indirect", "update"}) {
+          for (const char *ray : {"scene", "sun", "local"})
+            for (const char *event : {"queries", "candidates", "alpha", "alpha_reject", "back_reject", "committed",
+                                      "alpha_texture", "reserved"})
+              std::fprintf(file, ",%s_%s_%s", pass, ray, event);
+          for (const char *event : {"starts", "depth1", "depth2", "depth3", "depth4", "miss", "zero", "cache", "limit",
+                                    "sheet_limit", "roulette_tests", "roulette_survivals", "roulette_terminated"})
+            std::fprintf(file, ",%s_path_%s", pass, event);
+        }
         std::fprintf(file, "\n");
       }
       const auto time =
@@ -67,6 +79,9 @@ namespace remix {
           std::fprintf(file, ",%u", counts[pass * 64 + i]);
       for (unsigned pass = 0; pass < 3; ++pass)
         for (unsigned i = 24; i < 37; ++i)
+          std::fprintf(file, ",%u", counts[pass * 64 + i]);
+      for (unsigned pass = 3; pass < 5; ++pass)
+        for (unsigned i = 0; i < 37; ++i)
           std::fprintf(file, ",%u", counts[pass * 64 + i]);
       std::fprintf(file, "\n");
       std::fclose(file);

@@ -859,7 +859,8 @@ namespace remix {
     const bool staticInstances = !tables.staticInputs().empty(), dynamicInstances = !tables.dynamicInputs().empty();
     frame.target[2] = (topCombined ? uint32_t(staticInstances || dynamicInstances)
                                    : uint32_t(staticInstances) | uint32_t(dynamicInstances) << 1) |
-                      uint32_t(faceCulling) << 2;
+                      uint32_t(faceCulling) << 2 |
+                      (options.traversalDebug == 1 ? 8u : options.traversalDebug == 2 ? 16u : 0u);
     frame.target[3] = options.rasterPrimary;
     // Reserved private word; included in scene-change detection. Raw/reference
     // and multi-sample rendering retain one estimator at every surface pixel.

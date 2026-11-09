@@ -1,14 +1,21 @@
 // Opt-in structural counters, sampled at one in 64 pixel invocations. Timing
-// comparisons must run without this instrumentation. Confidence/SHARC excluded.
+// comparisons must run without this instrumentation. A 64-word block per
+// pass family: opaque (and every pass not named here), split direct,
+// transparency, the separate indirect pass (its wavefront kernels too), the
+// SHARC update. Confidence excluded.
 layout(buffer_reference,std430,buffer_reference_align=4) buffer RayCounters { uint counts[]; };
 void profileRay(uint counter) {
-#if !defined(CONFIDENCE_PASS) && !defined(SHARC_UPDATE_PASS)
+#if !defined(CONFIDENCE_PASS)
   if(!enableRayProfile||(frame.reuseConfig.z==0&&frame.reuseConfig.w==0))return;
   if((hash(uint(shadingPixel.x)+uint(shadingPixel.y)*frame.target.x)&63u)!=0)return;
 #ifdef SPLIT_LIGHTING_PASS
   counter+=64;
 #elif defined(TRANSPARENCY_PASS)
   counter+=128;
+#elif defined(INDIRECT_PASS)
+  counter+=192;
+#elif defined(SHARC_UPDATE_PASS)
+  counter+=256;
 #endif
   uint64_t address=uint64_t(frame.reuseConfig.z)|(uint64_t(frame.reuseConfig.w)<<32);
   atomicAdd(RayCounters(address).counts[counter],1u);

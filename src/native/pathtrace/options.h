@@ -378,6 +378,10 @@ namespace remix {
     uint32_t wavefrontBounces = 1;
     // Its split bounces' sun and sky shadow rays in a kernel of their own.
     bool wavefrontShadowQueue = true;
+    // Diagnostics, wrong images: 1 traces every ray with all geometry opaque
+    // (what traversal alone costs), 2 accepts every non-opaque candidate
+    // without its alpha test (the candidate round trips without texture work).
+    uint32_t traversalDebug = 0;
     // Alpha-tested geometry carries VK_EXT_opacity_micromap data, so
     // traversal settles proved micro-triangles without the shader's alpha
     // test (docs/features/gpu-optimizations.md). No effect without device
