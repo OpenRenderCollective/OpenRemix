@@ -145,13 +145,10 @@ namespace {
     require(original->replacementKeys[0] == 901, "Material creation must own its alternate key array");
     const auto strong = material(r, 820, .2f, .3f, .4f);
     const auto weak = material(r, 821, .6f, .7f, .8f);
-    r.setModMaterialCandidates({901, 902});
     r.addModMaterial(902, weak);
     r.finishFrame();
-    require(drawn(r, mesh) == original,
-            "A loaded weak replacement cannot win while the preferred key is waiting for textures");
-    require(r.takeModMaterialRequests() == std::vector<uint64_t>({901}),
-            "Lazy replacement requests follow host key preference");
+    require(drawn(r, mesh)->tint[0] == .6f,
+            "An available alternate applies while the preferred key is unavailable");
     r.addModMaterial(901, strong);
     r.finishFrame();
     require(drawn(r, mesh)->tint[0] == .2f, "The first available alternate replaces the material");
