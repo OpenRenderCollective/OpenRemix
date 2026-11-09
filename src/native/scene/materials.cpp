@@ -469,8 +469,13 @@ namespace remix {
     if (const auto *replacement = static_cast<const remixapi_MaterialInfoReplacementHashEXT *>(
             extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_REPLACEMENT_HASH_EXT)))
       material->sourceHash = replacement->materialHash;
-    if (const auto *alternates = static_cast<const remixapi_MaterialReplacementKeysEXT *>(
-            extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_REPLACEMENT_KEYS_EXT))) {
+    const auto *alternates = static_cast<const remixapi_MaterialReplacementKeysEXT *>(
+        extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_REPLACEMENT_KEYS_EXT));
+    // Pre-release adapters used this tag in material chains before it was assigned upstream.
+    if (!alternates)
+      alternates = static_cast<const remixapi_MaterialReplacementKeysEXT *>(
+          extension(info.pNext, remixapi_StructType(0x7fff1032)));
+    if (alternates) {
       if (alternates->count > 32 || (alternates->count && !alternates->keys))
         throw invalid;
       for (uint32_t i = 0; i < alternates->count; ++i) {

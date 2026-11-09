@@ -50,7 +50,7 @@ namespace remix::forward::lightmap {
     const Layout &m_layout;
     std::vector<std::vector<uint32_t>> m_chartPoints;
     std::vector<uint32_t> m_order;
-    size_t m_largestImage = 0;
+    [[maybe_unused]] size_t m_largestImage = 0; // Used by the optional OIDN backend.
   };
   // Chart-heavy CUDA workloads may compare bounded real-chart CPU/GPU trials
   // before filtering. A CPU win needs a 35% projected margin; small maps,

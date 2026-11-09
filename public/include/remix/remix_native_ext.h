@@ -5,7 +5,7 @@
 // Optional LightInfo pNext. A backend may use this hint when choosing static
 // lighting representation. Absence preserves its normal policy. Moving and
 // styled lights remain live regardless of a baked preference.
-#define REMIXAPI_STRUCT_TYPE_LIGHT_BAKING_EXT ((remixapi_StructType)0x7fff1032)
+#define REMIXAPI_STRUCT_TYPE_LIGHT_BAKING_EXT ((remixapi_StructType)0x7fff1075)
 typedef enum remixapi_LightBakingHintEXT {
   REMIXAPI_LIGHT_BAKING_DEFAULT_EXT = 0,
   REMIXAPI_LIGHT_BAKING_PREFER_BAKED_EXT = 1,
@@ -373,7 +373,7 @@ typedef struct remixapi_MaterialInfoReplacementHashEXT {
 // the material's own hash and MaterialInfoReplacementHashEXT, before its albedo
 // texture hash. CreateMaterial copies the array. At most 32 entries; zero keys
 // and duplicates are ignored. A null array is valid only when count is zero.
-#define REMIXAPI_STRUCT_TYPE_MATERIAL_REPLACEMENT_KEYS_EXT ((remixapi_StructType)0x7fff1032)
+#define REMIXAPI_STRUCT_TYPE_MATERIAL_REPLACEMENT_KEYS_EXT ((remixapi_StructType)0x7fff1076)
 typedef struct remixapi_MaterialReplacementKeysEXT {
   remixapi_StructType sType;
   const void *pNext;
@@ -1784,6 +1784,3 @@ typedef struct remixapi_LightInfoCookieEXT {
 #define REMIXAPI_FORMAT_R16G16B16A16_SFLOAT_EXT ((remixapi_Format)97)
 #define REMIXAPI_FORMAT_R32G32B32A32_SFLOAT_EXT ((remixapi_Format)109)
 #define REMIXAPI_FORMAT_BC6H_SFLOAT_EXT ((remixapi_Format)144)
-// Immutable linear HDR uploads; values match Vulkan. Existing ABI layouts are unchanged.
-#define REMIXAPI_FORMAT_R16G16B16A16_SFLOAT_EXT ((remixapi_Format)97)
-#define REMIXAPI_FORMAT_R32G32B32A32_SFLOAT_EXT ((remixapi_Format)109)
