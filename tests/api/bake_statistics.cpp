@@ -54,13 +54,14 @@ int main() {
               preparation.failureReason[255] == 0,
           "Preparation diagnostics return bounded flags, counters and terminated failure text");
 
-  statistics.structSize = 256;
+  statistics.structSize = offsetof(remixapi_BakeStatisticsEXT, reflectionRequested);
   statistics.reflectionRequested = statistics.reflectionPending =
       statistics.reflectionActive = statistics.reflectionFailed = 0xa5a5a5a5;
-  ok(remixapi_GetBakeStatisticsEXT(&statistics));
+  require(remixapi_GetBakeStatisticsEXT(&statistics) == REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS,
+          "Truncated statistics buffer rejected");
   require(statistics.reflectionRequested == 0xa5a5a5a5 && statistics.reflectionPending == 0xa5a5a5a5 &&
               statistics.reflectionActive == 0xa5a5a5a5 && statistics.reflectionFailed == 0xa5a5a5a5,
-          "Legacy statistics callers retain their allocation boundary");
+          "Rejected statistics calls leave the buffer untouched");
   statistics = {};
   statistics.structSize = sizeof(statistics);
   ok(remixapi_GetBakeStatisticsEXT(&statistics));
@@ -68,5 +69,5 @@ int main() {
               !statistics.reflectionPending && !statistics.reflectionActive && !statistics.reflectionFailed,
           "Reflection readiness is available and idle before an authored request");
   ok(api.Shutdown());
-  std::puts("Bake statistics legacy prefix and reflection readiness passed");
+  std::puts("Bake statistics size validation and reflection readiness passed");
 }

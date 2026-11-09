@@ -147,14 +147,14 @@ typedef struct remixapi_BakeSceneReceiversInfoEXT {
 #define REMIXAPI_BAKE_FAILED_EXT 4u
 #define REMIXAPI_BAKE_UNSUPPORTED_EXT 5u
 #define REMIXAPI_BAKE_DISABLED_EXT 6u
+// Set structSize to sizeof(remixapi_BakeStatisticsEXT) before calling.
 typedef struct remixapi_BakeStatisticsEXT {
   uint32_t structSize, state, supported, active;
   uint64_t requestedScene, requestedHash, activeHash;
   uint32_t probes, completed, samples, bounces;
   uint64_t memoryBytes;
   char status[192];
-  // Optional tail: reflection-only edits can remain pending after active becomes true.
-  // Consumers must check the returned structSize before reading these fields.
+  // Reflection-only edits can remain pending after active becomes true.
   // reflectionActive can describe the retained previous set while an edit is pending.
   // An authored request is ready only when active, not pending, and not failed.
   uint32_t reflectionRequested, reflectionPending, reflectionActive, reflectionFailed;
