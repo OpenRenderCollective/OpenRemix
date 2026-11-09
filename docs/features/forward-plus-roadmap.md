@@ -15,9 +15,14 @@
   and moving local shadow quality in the follow-up queue. Keep foreground,
   full-quality 1440p and 4K captures separate from standalone replays and smoke
   tests when comparing performance.
-- Recheck Trainstation's playground wall overlays across camera angles and
-  the leaf litter against foreground grass. Compare the storefront and courtyard
-  wall-floor seams with a fresh bake before changing visibility or depth bias.
+- In Trainstation, sweep the playground graffiti and ivy, then check the
+  courtyard leaf bed with foreground grass. The sampled playground views
+  retained the wall overlays where visible. The leaf-bed depth issue still
+  needs a frame capture at the reported angle.
+- At the Trainstation storefront wall-floor seam, one receiver chart spans
+  the intersecting wall. Rays at adjacent luxels correctly return shadow and
+  sun, but the filter blends those samples across the wall. Test a receiver
+  chart split or visibility-aware filtering at that discontinuity.
 - Prototype receiver-focused probe placement from playable bounds. Share region
   hints with cubemap placement, keep diffuse coverage independent of reflection
   assets, and retain coarse coverage at gaps and boundaries. Compare density,
