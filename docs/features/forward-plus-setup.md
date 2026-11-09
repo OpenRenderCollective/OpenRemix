@@ -5,13 +5,16 @@ Choose any writable parent directory; no owner-local drive layout is assumed.
 `_work` paths below are outputs created by the build, not files to obtain from
 another developer. Read each repository's AGENTS.md where present.
 
-## Check out the branches
+## Check out both repositories
 
 ```sh
-git clone --branch forward-plus-renderer https://github.com/OpenRenderCollective/OpenRemix.git OpenRemix
-git clone --branch forward-plus-renderer https://github.com/sambow23/garrys-mod-rtx-remixed-2.git garrys-mod-rtx-remixed-2
+git clone https://github.com/OpenRenderCollective/OpenRemix.git OpenRemix
+git clone https://github.com/sambow23/SourcePT.git garrys-mod-rtx-remixed-2
 git -C OpenRemix submodule update --init third_party/numos/numos-sky third_party/fidelityfx/FidelityFX-SDK third_party/xess/xess
 ```
+
+For pre-merge testing, check out the matching revisions from the review and
+rerun the submodule command at the selected native revision.
 
 The last command initializes pinned sky, FidelityFX and XeSS dependencies without recursion.
 FidelityFX and XeSS are required by the current Windows build; sky is optional.

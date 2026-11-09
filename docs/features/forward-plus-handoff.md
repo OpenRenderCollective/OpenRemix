@@ -1,40 +1,22 @@
 # Forward+ handoff
 
-Current checkpoint: 2026-11-04. This page supersedes older handoff narratives;
-Git history retains them. Start with AGENTS.md, this page and the
-[fresh-clone setup](forward-plus-setup.md) and
-[lighting architecture](../architecture/forward-lighting.md), then the
-[current roadmap queue](forward-plus-roadmap.md). Historical roadmap entries are
-context, not proof that an old experiment is still enabled or a defect is fixed.
+Start with AGENTS.md, the [fresh-clone setup](forward-plus-setup.md), the
+[lighting architecture](../architecture/forward-lighting.md) and the
+[roadmap](forward-plus-roadmap.md). Historical roadmap entries document prior
+investigations. Confirm current behavior against the revisions under review.
 
-## Repository and installation state
+## Repositories and installations
 
-| Item | Current state |
-| --- | --- |
-| Native checkout | `OpenRemix/`, `forward-plus-renderer` |
-| Native modular code checkpoint | `ebfc5c85` (sun submission diagnostics; shader response split at `0c167245`) |
-| Native official remote | `https://github.com/OpenRenderCollective/OpenRemix.git` |
-| Adapter checkout | `garrys-mod-rtx-remixed-2/`, `forward-plus-renderer` |
-| Adapter checkpoint | `952a8bf` (profiling observer-cost qualification; upstream integration retained) |
-| Adapter official remote | `https://github.com/sambow23/garrys-mod-rtx-remixed-2.git` |
-| Previous playable install | Owner-local installation; not distributed in Git |
-| Installed package | Owner-local; not supplied by Git |
-| Last restored native / adapter SHA256 prefixes | `887678bc649e` / `79d14dddcdd0` (binary hashes, not Git revisions) |
+- [OpenRemix](https://github.com/OpenRenderCollective/OpenRemix) owns the
+  renderer, shared material interface and bake resources.
+- [SourcePT](https://github.com/sambow23/SourcePT) owns the game adapter and
+  Source-specific capture and material translation.
+- Check out the matching native and adapter revisions from the review before
+  building. Installed game binaries, caches and launchers are local to each
+  developer. Use an isolated test installation for live comparisons.
 
-Source and playable installation are deliberately different. Recent modular
-changes are not promoted to the playable install by this qualification.
-Benchmark runs temporarily install candidates and restore the exact previous
-binaries; they do not promote a playable package. Preserve user settings, mods,
-launchers and authored cubemaps when qualifying a future package. Path tracing
-remains the configured backend default; Source 2 is the preset within Forward+.
-
-Both branches integrate upstream main as fetched on 2026-11-01: native
-`51217999` and adapter `c9334fe`. The integration retains baked receiver metadata,
-measured-sheet optics, authored reflection bindings and hover-state input handling.
-The adapter follows the runtime-configured panel shortcut; it no longer owns F12.
-Native Windows builds now require the pinned FidelityFX and XeSS submodules, and
-the flat runtime packager includes their DLLs and notices. Fetch and recheck main
-before further integration. The source/playable distinction still applies.
+Path tracing remains the configured backend default. Source 2 is the default
+preset within Forward+. The adapter follows the runtime-configured panel shortcut.
 
 ## First session for the next developer
 
@@ -225,6 +207,3 @@ The current PBR/AutoPBR/replacement path remains default for ordinary materials.
 - Game installations, Workshop maps, runtime settings, baked caches and previous
   playable packages are not supplied by either repository. Wider map cases include
   gm_fork, d1_trainstation_02, bm_c1a1b and combined Half-Life addon maps.
-
-Work resumed on 2026-11-01; this 2026-11-04 checkpoint covers modular provider
-migration, resource ownership and controlled performance diagnosis. This does not declare the renderer or roadmap complete.
