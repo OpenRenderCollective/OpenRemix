@@ -177,14 +177,7 @@ namespace remix {
       m_pipelines->cancel(m_forwardPreparation->job);
       m_obsoleteForward.push_back(std::move(m_forwardPreparation));
     }
-    if (m_forward) {
-      if (!m_deviceLost) {
-        const auto status = vkDeviceWaitIdle(m_device);
-        if (status != VK_SUCCESS)
-          throw status;
-      }
-      m_forward.reset();
-    }
+    m_forward.reset();
     if (!preserveBaking) {
       m_forwardBaking.reset();
       m_forwardReflections.reset();
@@ -196,6 +189,11 @@ namespace remix {
     std::erase_if(m_obsoleteForward, [](const auto &entry) { return entry->job->ready(); });
     const auto &settings = m_profiles.current();
     if (settings.backend != config::Backend::ForwardPlus) {
+      if (m_forward && !m_deviceLost) {
+        const auto status = vkDeviceWaitIdle(m_device);
+        if (status != VK_SUCCESS)
+          throw status;
+      }
       retireForward();
       m_forwardFailure.clear();
       return false;

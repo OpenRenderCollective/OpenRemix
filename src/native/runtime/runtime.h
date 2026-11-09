@@ -475,6 +475,7 @@ namespace remix {
     std::string m_forwardFailure;
     forward::Options m_forwardAttempt;
     bool prepareForwardSettings();
+    // The caller has drained GPU work, or the device is lost.
     void retireForward(bool preserveBaking = false);
     // The raster backend's NUMOS sky (raster_sky.cpp): recordRasterSky before
     // the target pass, false without a sky this frame; compositeRasterSky after
