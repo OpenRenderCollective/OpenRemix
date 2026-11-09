@@ -56,7 +56,7 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
     # source. World resolve, viewmodels and water keep their real composition.
     for name in (*model_files, "shading-model.glsl"):
         shutil.copyfile(root / "src/native/forward/shaders" / name, tree / "shaders" / name)
-    source.write_text((root / "src/native/forward/shaders/forward.frag").read_text(), encoding="utf-8")
+    shutil.copyfile(root / "src/native/forward/shaders/forward.frag", source)
     shutil.copyfile(root / "tests/forward/shaders/custom-environment.glsl",
                     tree / "shaders/reflection-environment.glsl")
     (tree / "shaders/probes.glsl").unlink()
@@ -180,7 +180,7 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
                         *(["-DLIVE_GI"] if ray_incoming else []), str(source),
                         "-o", str(binary)], env=env, check=True)
         subprocess.run([validator, "--target-env", "vulkan1.2", str(binary)], env=env, check=True)
-    source.write_text((root / "src/native/forward/shaders/forward.frag").read_text(), encoding="utf-8")
+    shutil.copyfile(root / "src/native/forward/shaders/forward.frag", source)
     for name in ("gi.glsl", "ray-transport.glsl", "incoming-lighting.glsl"):
         shutil.copyfile(root / "src/native/forward/shaders" / name, tree / "shaders" / name)
     # The alternate local source must not rely on default Source 2 transport
