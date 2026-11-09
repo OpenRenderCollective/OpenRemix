@@ -1,6 +1,5 @@
 #include "runtime/pipelines.h"
 #include "runtime/pipeline_cache.h"
-#include "runtime/pipeline_executables.h"
 #include "platform/utf8_path.h"
 #include <algorithm>
 #include <atomic>
@@ -160,12 +159,12 @@ namespace remix::pipeline {
   struct Service::Impl {
     VkDevice device;
     // REMIX_PIPELINE_STATISTICS (VK_KHR_pipeline_executable_properties):
-    // compute compiles capture the driver's statistics for the report.
+    // Compiles capture the driver's statistics for the report.
     bool statistics = false;
     PFN_vkGetPipelineExecutablePropertiesKHR executableProperties{};
     PFN_vkGetPipelineExecutableStatisticsKHR executableStatistics{};
     // "name value" pairs of each executable's statistics, executables separated by " | ".
-    std::string describe(VkPipeline handle) const {
+    std::string describe(VkPipeline handle) const noexcept try {
       std::string text;
       VkPipelineInfoKHR info{.sType = VK_STRUCTURE_TYPE_PIPELINE_INFO_KHR, .pipeline = handle};
       uint32_t count = 0;
@@ -202,13 +201,14 @@ namespace remix::pipeline {
         }
       }
       return text;
+    } catch (...) {
+      return {};
     }
     VkPipelineCache cache{};
     CacheIdentity identity;
     std::filesystem::path path;
     mutable std::mutex mutex;
     Statistics stats;
-    bool captureExecutables = false;
     // Immutable objects are retained until the compiler and GPU have stopped.
     struct Object {
       uint64_t handle;
@@ -232,7 +232,7 @@ namespace remix::pipeline {
     struct Record {
       double queued = 0, started = 0, finished = 0;
       bool hit = false, failed = false;
-      std::string name, statistics, executables;
+      std::string name, statistics;
     };
     std::vector<Record> records;
     std::vector<std::pair<double, std::string>> events;
@@ -348,14 +348,12 @@ namespace remix::pipeline {
                                                               VK_STRUCTURE_TYPE_PIPELINE_CREATION_FEEDBACK_CREATE_INFO,
                                                           .pPipelineCreationFeedback = &feedback};
                 const auto status = compile(&result->handle, stats.feedback ? &info : nullptr);
-                auto executables = status == VK_SUCCESS && captureExecutables
-                                       ? remix::pipeline::executableStatistics(device, result->handle)
-                                       : std::string{};
+                const auto elapsed = std::chrono::steady_clock::now() - start;
+                auto description = status == VK_SUCCESS && statistics ? describe(result->handle) : std::string{};
                 {
                   std::lock_guard lock(mutex);
                   ++stats.completed;
-                  stats.milliseconds +=
-                      std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+                  stats.milliseconds += std::chrono::duration<double, std::milli>(elapsed).count();
                   // With the count, so a caller that sees it completed can use it.
                   if (status == VK_SUCCESS) {
                     ++stats.created;
@@ -363,11 +361,9 @@ namespace remix::pipeline {
                   } else
                     ++stats.failed;
                   auto &entry = records[record];
-                  entry.executables = std::move(executables);
                   entry.finished = since();
                   entry.failed = status != VK_SUCCESS;
-                  if (status == VK_SUCCESS && statistics)
-                    entry.statistics = describe(result->handle);
+                  entry.statistics = std::move(description);
                   if (feedback.flags & VK_PIPELINE_CREATION_FEEDBACK_VALID_BIT) {
                     stats.driverNanoseconds += feedback.duration;
                     entry.hit = feedback.flags & VK_PIPELINE_CREATION_FEEDBACK_APPLICATION_PIPELINE_CACHE_HIT_BIT;
@@ -483,7 +479,6 @@ namespace remix::pipeline {
           vkGetDeviceProcAddr(device, "vkGetPipelineExecutableStatisticsKHR"));
       g.statistics = g.executableProperties && g.executableStatistics;
     }
-    g.captureExecutables = g.statistics;
     g.identity = {p.vendorID, p.deviceID, p.driverVersion};
     std::copy_n(p.pipelineCacheUUID, 16, g.identity.uuid.begin());
     std::error_code directoryError;
@@ -553,8 +548,6 @@ namespace remix::pipeline {
                   (unsigned long long)s.reused, (unsigned long long)s.deduplicated, (unsigned long long)s.cacheHits,
                   s.milliseconds, Impl::compilerThreads(), s.cacheLoaded ? "loaded" : "not loaded");
     std::string text = line;
-    text += g.captureExecutables ? "# executable statistics enabled (diagnostic run)\n"
-                                 : "# executable statistics disabled\n";
     text += "# queued started finished compile(ms) hit name, and events "
             "(milliseconds since the service started)\n";
     // Compiles and events merged in time order.
@@ -566,9 +559,7 @@ namespace remix::pipeline {
       else
         std::snprintf(line, sizeof(line), "%9.0f %9s %9s %8s %s %s", r.queued, r.started ? "running" : "queued", "", "",
                       "    ", r.name.c_str());
-      lines.emplace_back(r.queued, line);
-      if (!r.executables.empty())
-        lines.emplace_back(r.queued, r.name + "\n" + r.executables);
+      lines.emplace_back(r.queued, std::string(line) + (r.statistics.empty() ? "" : " #" + r.statistics));
     }
     std::stable_sort(lines.begin(), lines.end(), [](auto &a, auto &b) { return a.first < b.first; });
     for (const auto &[time, entry] : lines) {
@@ -945,7 +936,7 @@ namespace remix::pipeline {
                                 [r, &g](VkPipeline *p, VkPipelineCreationFeedbackCreateInfo *feedback) {
                                   r->bind();
                                   r->info.pNext = feedback;
-                                  if (g.captureExecutables)
+                                  if (g.statistics)
                                     r->info.flags |= VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR;
                                   return vkCreateGraphicsPipelines(g.device, g.cache, 1, &r->info, nullptr, p);
                                 }));

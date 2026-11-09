@@ -1184,10 +1184,10 @@ Shader regeneration accepts `--jobs N` to bound concurrent GLSL compilation and 
 Use a modest limit for large optimized path-tracing stages when memory is constrained; validation
 remains enabled and generated stage order is deterministic.
 
-For compiler inspection, start with `REMIX_PIPELINE_EXECUTABLES=1`, then create
+For compiler inspection, start with `REMIX_PIPELINE_STATISTICS=1`, then create
 `pipelines.request` in the profile directory to write `pipelines.txt`. On supporting
-Vulkan devices the report includes executable names, subgroup sizes and the driver's
-named statistics, such as register count and machine-code size. Query failures are
+Vulkan devices the report includes the driver's named statistics for graphics and
+compute pipelines, such as register count and machine-code size. Query failures are
 diagnostic only. This is off by default; keep captures separate from timing runs,
 because statistic capture can affect compilation and driver optimization. Treat
 driver-reported values as implementation-specific, not portable occupancy estimates.

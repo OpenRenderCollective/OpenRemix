@@ -369,8 +369,6 @@ namespace remix {
     VkPhysicalDevicePipelineExecutablePropertiesFeaturesKHR executables{
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_EXECUTABLE_PROPERTIES_FEATURES_KHR};
     const char *statisticsSwitch = std::getenv("REMIX_PIPELINE_STATISTICS");
-    if (!statisticsSwitch)
-      statisticsSwitch = std::getenv("REMIX_PIPELINE_EXECUTABLES");
     const bool pipelineStatistics =
         statisticsSwitch && *statisticsSwitch && *statisticsSwitch != '0' &&
         supportsDeviceExtension(selection.physicalDevice, VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME);
