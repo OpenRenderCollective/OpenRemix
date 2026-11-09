@@ -2669,9 +2669,15 @@ namespace {
         transport.recordRadiance(fixture.command, 0, rays, 2, 1, ordinal);
         fixture.finish();
         transport.read(0, results);
-        for (size_t ray = 0; ray < rays.size(); ++ray)
+        for (size_t ray = 0; ray < rays.size(); ++ray) {
+          if (ordinal == 0)
+            require(reference[ray].irradiance[0][3] == results[ray].irradiance[0][3] &&
+                        reference[ray].statistics[0] == results[ray].statistics[0] &&
+                        reference[ray].statistics[1] == results[ray].statistics[1],
+                    "Parallel cubemap capture preserves the first ray's hit distance and classification");
           for (uint32_t c = 0; c < 3; ++c)
             average[ray][c] += results[ray].irradiance[0][c] / float(samples);
+        }
       }
       for (size_t ray = 0; ray < rays.size(); ++ray) {
         require(reference[ray].statistics[2] == float(samples), "Radiance reports its actual averaged lighting sample count");

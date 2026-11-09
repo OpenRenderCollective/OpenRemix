@@ -9,7 +9,7 @@ namespace remix::forward::bake {
     static const uint64_t fingerprint = [] {
       auto hash = scene::fastHash(atlasShader, sizeof(atlasShader));
       hash = scene::fastHash(transportShader, sizeof(transportShader), hash);
-      return scene::fastHash(parallelShader, sizeof(parallelShader), hash);
+      return scene::fastHash(radianceParallelShader, sizeof(radianceParallelShader), hash);
     }();
     return fingerprint;
   }
@@ -82,6 +82,8 @@ namespace remix::forward::bake {
         append(depthShader, sizeof(depthShader), layout, depthPipeline);
       append(transportShader, sizeof(transportShader), layout, tracePipeline);
       append(parallelShader, sizeof(parallelShader), layout, parallelPipeline);
+      if (options.parallel)
+        append(radianceParallelShader, sizeof(radianceParallelShader), layout, radianceParallelPipeline);
       // Keep optional aggregate transport out of the ordinary bake/live kernels.
       // Compile only the variant this immutable policy can actually dispatch.
       if (aggregateIrradiance) {

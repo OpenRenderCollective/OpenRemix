@@ -259,10 +259,9 @@ namespace remix::forward::bake::cache {
       raw = scene::fastHash(directionalCodec, sizeof(directionalCodec), raw);
     }
     if (c.reflectionProbes) {
-      // Balanced interior seeds prevent diagonal-room slivers. Old captures
-      // retain their old proxy boxes, so reflection bakes need a new identity.
-      // Diffuse-only bakes keep their existing cache keys.
-      const uint32_t reflectionFit[] = {0x5245474eu, 1};
+      // Invalidate combined bakes containing captures from the old parallel
+      // radiance kernel. Pure diffuse keys do not depend on that kernel.
+      const uint32_t reflectionFit[] = {0x5245474eu, 2};
       raw = scene::fastHash(reflectionFit, sizeof(reflectionFit), raw);
       if (fallbackReflections) {
         const uint32_t fallbackCoverage[] = {0x46424356u, 1};
@@ -348,7 +347,7 @@ namespace remix::forward::bake::cache {
     static const uint64_t shaders = [] {
       auto hash = scene::fastHash(atlasShader, sizeof(atlasShader));
       hash = scene::fastHash(transportShader, sizeof(transportShader), hash);
-      return scene::fastHash(parallelShader, sizeof(parallelShader), hash);
+      return scene::fastHash(radianceParallelShader, sizeof(radianceParallelShader), hash);
     }();
     return probes::capture_cache::plannedKey(content, shaders, plan, captures, config,
         {device.vendor, device.model, device.driver,

@@ -45,7 +45,7 @@ namespace remix::forward::bake {
     VkDescriptorSetLayout setLayout = VK_NULL_HANDLE, atlasSetLayout = VK_NULL_HANDLE;
     VkPipelineLayout layout = VK_NULL_HANDLE, atlasLayout = VK_NULL_HANDLE;
     VkPipeline tracePipeline = VK_NULL_HANDLE, parallelPipeline = VK_NULL_HANDLE,
-               visibilityPipeline = VK_NULL_HANDLE, atlasPipeline = VK_NULL_HANDLE, depthPipeline = VK_NULL_HANDLE;
+               radianceParallelPipeline = VK_NULL_HANDLE, visibilityPipeline = VK_NULL_HANDLE, atlasPipeline = VK_NULL_HANDLE, depthPipeline = VK_NULL_HANDLE;
     VkPipeline aggregatePipeline = VK_NULL_HANDLE, aggregateParallelPipeline = VK_NULL_HANDLE;
     VkDescriptorPool pool = VK_NULL_HANDLE;
     VkSampler sampler = VK_NULL_HANDLE;

@@ -25,7 +25,7 @@ Medium pointMedium(vec3 origin, inout uint seed) {
 void storeResult(uint index, RayResult value) {
   uint lane = gl_LocalInvocationIndex;
 #ifdef COMPACT_VISIBILITY
-  if (rayFrame.control.z == 2u) {
+  if (BAKE_MODE == 2u) {
     // Overflow masks consume visibility alone. Avoid reducing, writing and
     // reading nine unused directional coefficients for every light/texel pair.
     sumIrradiance[lane] = vec4(value.irradiance[0].xzw, 0);
@@ -44,7 +44,7 @@ void storeResult(uint index, RayResult value) {
   }
 #endif
 #ifndef COMPACT_VISIBILITY
-  if (rayFrame.control.z == 1u) {
+  if (BAKE_MODE == 1u) {
     // Offline radiance needs one RGB reduction, not the nine irradiance SH
     // bands or visibility ratios. Only sample zero contributes hit metadata.
     sumIrradiance[lane] = value.irradiance[0];
@@ -66,7 +66,7 @@ void storeResult(uint index, RayResult value) {
     }
     return;
   }
-  if (rayFrame.control.z != 0u)
+  if (BAKE_MODE != 0u)
 #endif
   {
     // Visibility needs nine scalar SH values and three reduction scalars.
@@ -86,7 +86,7 @@ void storeResult(uint index, RayResult value) {
     }
     if (lane != 0u) return;
     vec4 first = sumIrradiance[0];
-    float denominator = rayFrame.control.z >= 5u ? float(rayFrame.counts.z) : first.y;
+    float denominator = BAKE_MODE >= 5u ? float(rayFrame.counts.z) : first.y;
 #ifdef COMPACT_VISIBILITY
     float visible = first.z == 0 || denominator <= 0
                         ? 1 : clamp(first.x / denominator, 0, uintBitsToFloat(0x3f7fffffu));

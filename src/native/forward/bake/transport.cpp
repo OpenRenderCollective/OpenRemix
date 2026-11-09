@@ -59,7 +59,7 @@ namespace remix::forward::bake {
     indexedVisibility.reset();
     if (pool)
       vkDestroyDescriptorPool(device, pool, nullptr);
-    for (auto handle : {tracePipeline, parallelPipeline, visibilityPipeline, atlasPipeline,
+    for (auto handle : {tracePipeline, parallelPipeline, radianceParallelPipeline, visibilityPipeline, atlasPipeline,
                         aggregatePipeline, aggregateParallelPipeline, depthPipeline})
       if (handle)
         pipeline::destroyPipeline(device, handle, nullptr);
@@ -737,6 +737,7 @@ namespace remix::forward::bake {
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE,
                       aggregate ? (parallel ? g.aggregateParallelPipeline : g.aggregatePipeline) :
                       slot.compactVisibility ? g.visibilityPipeline :
+                      parallel && mode == Mode::Radiance ? g.radianceParallelPipeline :
                       parallel ? g.parallelPipeline : g.tracePipeline);
     vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, g.layout, 0, 1, &slot.set, 0, nullptr);
     const auto shape = dispatchShape(parallel ? slot.count : (slot.count + 63) / 64);
