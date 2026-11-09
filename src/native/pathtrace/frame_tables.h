@@ -1102,11 +1102,7 @@ namespace remix::trace {
                          uint32_t(material.rayPortal) << 22 |
                          // remixapi_InstanceInfoCameraCullingEXT (bits 9-10): camera rays
                          // skip its back faces / its parts in clusters the camera cannot see.
-                         uint32_t(surface.cameraCull & 3u) << 9 |
-                         // Bit 26: a surface of an instance that is paint alone, which
-                         // carries the paint mask (tlas.cpp): a receiver query that sees
-                         // it notes it instead of testing it (pathtrace.comp foldPaint).
-                         uint32_t(input.decal && !input.viewModel) << 26;
+                         uint32_t(surface.cameraCull & 3u) << 9;
         if (draw.classification == 0) {
           write(staticCursor, value.tint, sizeof(value.tint));
           write(staticCursor, value.factor, sizeof(value.factor));
