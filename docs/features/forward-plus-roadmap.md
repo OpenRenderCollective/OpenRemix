@@ -3920,11 +3920,11 @@ constants to copy. The second supplied capture fails file parsing.
 
 ### Viewmodel depth prepass prototype and acceptance gates
 
-A private `REMIX_DEBUG_VIEWMODEL_DEPTH_PREPASS=1` ablation now writes matching
+The removed viewmodel depth-prepass prototype wrote matching
 alpha/backface depth into the independent weapon target before colour. Colour
 depth is read-only only when the depth pipeline exists. Shared draw submission
 preserves ordering and transforms; world depth, SSR guides and isolated shadows
-remain unchanged. Default stays off. GPU scopes distinguish target, depth and
+remained unchanged. GPU scopes distinguished target, depth and
 colour; frame CSV appends `viewmodelDepthMs`.
 
 Five final-source GPU regressions pass with synchronization validation, including

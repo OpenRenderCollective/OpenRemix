@@ -85,7 +85,6 @@ namespace remix::forward {
     VkPipeline viewModelPipeline = VK_NULL_HANDLE;
     VkPipeline viewModelEarlyPipeline = VK_NULL_HANDLE;
     VkPipeline giViewModelPipeline = VK_NULL_HANDLE, giViewModelEarlyPipeline = VK_NULL_HANDLE;
-    VkPipeline viewModelDepthPipeline = VK_NULL_HANDLE;
     std::unique_ptr<postfx::Renderer> postProcessing;
     VkDescriptorSetLayout postLayout = VK_NULL_HANDLE;
     ray::Provider rayLighting;

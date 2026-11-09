@@ -86,7 +86,6 @@ None of these is promoted to a new Source 2 default by its presence in the tree.
 | `REMIX_DEBUG_PROBE_LOCAL_CAPTURE` | `1` | Derive/restore optional receiver-local reflection captures and evidence. |
 | `REMIX_DEBUG_PROBE_LOCAL_SELECTION` | `1` | Select prepared local replacements when matching evidence is available; default remains the ordinary capture source. |
 | `REMIX_DEBUG_PROBE_REGIONAL_COVERAGE` | `1` | Enables the bounded regional-coverage derivation used by capture diagnostics, not a shipping quality preset. |
-| `REMIX_DEBUG_VIEWMODEL_DEPTH_PREPASS` | Presence | Private separate weapon prepass; coverage checks pass but whole-frame performance acceptance remains open. |
 
 Owners: [storage_options.h](../../src/native/forward/bake/storage_options.h),
 [local capture scheduling](../../src/native/forward/bake/controller_local_reflections.cpp),
@@ -104,7 +103,6 @@ These change the work being measured, not just the amount of logging.
 | `REMIX_DEBUG_BAKE_REFERENCE_POINTS` | Input file selecting bounded point/geometry/radiance reference work; it is not an ordinary full-map bake. |
 | `REMIX_DEBUG_BAKE_SUN_DEPTH` | Presence requests auxiliary sun-depth capture. |
 | `REMIX_DEBUG_BAKE_SURFACE_SAMPLES` | `1` retains raw surface samples and bypasses the ordinary cached shortcut for that qualification. |
-| `REMIX_DEBUG_ZERO_DIFFUSE_MATERIAL` | Presence builds the private zero-diffuse qualification pipeline when the normal lighting view is selected. |
 
 Read [bake preparation](../../src/native/forward/bake/controller.cpp),
 [reference capture](../../src/native/forward/bake/reference_capture.cpp) and

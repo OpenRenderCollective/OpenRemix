@@ -74,7 +74,6 @@ namespace remix {
         << ", \"movingSunShadow\": " << state.drawCalls.movingSunShadow
         << ", \"staticLocalShadow\": " << state.drawCalls.staticLocalShadow
         << ", \"movingLocalShadow\": " << state.drawCalls.movingLocalShadow
-        << ", \"viewModelDepth\": " << state.drawCalls.viewModelDepth
         << ", \"viewModelColor\": " << state.drawCalls.viewModelColor
         << ", \"viewModelSunShadow\": " << state.drawCalls.viewModelSunShadow
         << ", \"viewModelLocalShadow\": " << state.drawCalls.viewModelLocalShadow

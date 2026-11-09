@@ -57,48 +57,37 @@ namespace remix::forward {
         }
       });
     }
-    // The depth shader repeats the same alpha/backface coverage as colour.
-    // Prepassed colour pipelines leave depth read-only, including cutouts.
     gpu::GpuScope targetTime(command, "Forward+ viewmodel target", extent);
     viewModelTarget->record(command, [&] {
-      auto drawModels = [&](bool depthOnly) {
-        const bool gi = !depthOnly && bool(frame.rayInputs.diffuse);
-        const auto drawLayout = gi ? giLayout : layout;
-        const auto colorPipeline = gi ? giViewModelPipeline : viewModelPipeline;
-        const auto earlyPipeline = gi ? giViewModelEarlyPipeline : viewModelEarlyPipeline;
-        VkPipeline activePipeline = VK_NULL_HANDLE;
-        DrawBindings bindings;
-        vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, drawLayout, 0, 1,
-                                &frame.viewModelScene, 0, nullptr);
-        if (gi)
-          vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, drawLayout, 2, 1, &frame.rayInputs.diffuse, 0, nullptr);
-        for (const auto &draw : frame.viewModelCommands) {
-          if (!draw.cameraVisible) continue;
-          const auto pipeline = depthOnly ? viewModelDepthPipeline
-              : earlyPipeline && draw.unconditionalCoverage ? earlyPipeline : colorPipeline;
-          if (!depthOnly)
-            fragmentStatistics->begin(command, pipeline == earlyPipeline
-                ? FragmentStatistics::viewModelEarly : FragmentStatistics::viewModel);
-          if (pipeline != activePipeline) {
-            vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-            activePipeline = pipeline;
-          }
-          bindings.bind(command, drawLayout, draw.material, draw.geometry->vertices->handle,
-                        draw.geometry->indices->handle);
-          const uint32_t push[] = {draw.index, 0};
-          vkCmdPushConstants(command, drawLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                             0, sizeof(push), push);
-          vkCmdDrawIndexed(command, draw.count, 1, draw.source.firstIndex, draw.source.vertexOffset, 0);
-          ++(depthOnly ? statistics.drawCalls.viewModelDepth : statistics.drawCalls.viewModelColor);
-          if (!depthOnly) fragmentStatistics->end(command);
-        }
-      };
-      if (viewModelDepthPipeline) {
-        gpu::GpuScope depthTime(command, "Forward+ viewmodel depth prepass", extent);
-        drawModels(true);
-      }
       gpu::GpuScope colorTime(command, "Forward+ viewmodel color", extent);
-      drawModels(false);
+      const bool gi = bool(frame.rayInputs.diffuse);
+      const auto drawLayout = gi ? giLayout : layout;
+      const auto colorPipeline = gi ? giViewModelPipeline : viewModelPipeline;
+      const auto earlyPipeline = gi ? giViewModelEarlyPipeline : viewModelEarlyPipeline;
+      VkPipeline activePipeline = VK_NULL_HANDLE;
+      DrawBindings bindings;
+      vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, drawLayout, 0, 1,
+                              &frame.viewModelScene, 0, nullptr);
+      if (gi)
+        vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, drawLayout, 2, 1, &frame.rayInputs.diffuse, 0, nullptr);
+      for (const auto &draw : frame.viewModelCommands) {
+        if (!draw.cameraVisible) continue;
+        const auto pipeline = earlyPipeline && draw.unconditionalCoverage ? earlyPipeline : colorPipeline;
+        fragmentStatistics->begin(command, pipeline == earlyPipeline
+              ? FragmentStatistics::viewModelEarly : FragmentStatistics::viewModel);
+        if (pipeline != activePipeline) {
+          vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+          activePipeline = pipeline;
+        }
+        bindings.bind(command, drawLayout, draw.material, draw.geometry->vertices->handle,
+                      draw.geometry->indices->handle);
+        const uint32_t push[] = {draw.index, 0};
+        vkCmdPushConstants(command, drawLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                           0, sizeof(push), push);
+        vkCmdDrawIndexed(command, draw.count, 1, draw.source.firstIndex, draw.source.vertexOffset, 0);
+        ++statistics.drawCalls.viewModelColor;
+        fragmentStatistics->end(command);
+      }
     });
   }
 } // namespace remix::forward

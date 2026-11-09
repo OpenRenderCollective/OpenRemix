@@ -357,8 +357,8 @@ namespace remix {
       ImGui::TextDisabled("Shadow calls: sun %u static + %u moving | local %u static + %u moving",
                           calls.staticSunShadow, calls.movingSunShadow,
                           calls.staticLocalShadow, calls.movingLocalShadow);
-      ImGui::TextDisabled("Viewmodel calls: depth %u | color %u | sun %u | local %u",
-                          calls.viewModelDepth, calls.viewModelColor,
+      ImGui::TextDisabled("Viewmodel calls: color %u | sun %u | local %u",
+                          calls.viewModelColor,
                           calls.viewModelSunShadow, calls.viewModelLocalShadow);
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Geometry API calls recorded for the last reported frame.\n"

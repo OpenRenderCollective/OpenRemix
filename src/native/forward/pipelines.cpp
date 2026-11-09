@@ -127,9 +127,8 @@ namespace remix::forward {
                                                        VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
                                                    .dynamicStateCount = 2,
                                                    .pDynamicStates = states};
-    enum class Pass { Opaque, Shadow, Composite, Terrain, Depth, ViewModel, ViewModelDepth, DepthBatch };
+    enum class Pass { Opaque, Shadow, Composite, Terrain, Depth, ViewModel, DepthBatch };
     using Coverage = lightmap::ReceiverCoverage;
-    const bool viewModelPrepass = std::getenv("REMIX_DEBUG_VIEWMODEL_DEPTH_PREPASS") != nullptr;
     const auto *localLightWorkView = std::getenv("REMIX_DEBUG_LOCAL_LIGHT_WORK_VIEW");
     const uint32_t localLightView = !localLightWorkView ? 0u :
         std::strcmp(localLightWorkView, "early") == 0 ? 9u :
@@ -144,7 +143,7 @@ namespace remix::forward {
       const bool shadow = mode == Pass::Shadow, composite = mode == Pass::Composite;
       const bool terrain = mode == Pass::Terrain;
       const bool batchedDepth = mode == Pass::DepthBatch;
-      const bool depthOnly = mode == Pass::Depth || mode == Pass::ViewModelDepth || batchedDepth;
+      const bool depthOnly = mode == Pass::Depth || batchedDepth;
       const VkVertexInputBindingDescription batchBindings[] = {
           {0, sizeof(depth_batch::Position), VK_VERTEX_INPUT_RATE_VERTEX},
           {1, sizeof(uint32_t), VK_VERTEX_INPUT_RATE_VERTEX}};
@@ -154,7 +153,7 @@ namespace remix::forward {
           .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
           .vertexBindingDescriptionCount = 2, .pVertexBindingDescriptions = batchBindings,
           .vertexAttributeDescriptionCount = 2, .pVertexAttributeDescriptions = batchAttributes};
-      const bool viewModel = mode == Pass::ViewModel || mode == Pass::ViewModelDepth;
+      const bool viewModel = mode == Pass::ViewModel;
       const bool chartHighlights = mixed::chartHighlightsEnabled() && !techniquePlan.rayDiffuse() &&
           !depthOnly && vs == lightmapVertex && coverage != Coverage::Unmapped;
       // Ordinary vertices have no chart coordinates. Lightmap vertex ranges
@@ -214,8 +213,7 @@ namespace remix::forward {
           // A prepassed world draw only shades existing coverage. In particular,
           // forced early tests must not write depth before its cutout discard.
           // Other cameras and shadow/depth passes retain their own depth writes.
-          .depthWriteEnable = !terrain && !(mode == Pass::Opaque && options.depthPrepass) &&
-                              !(mode == Pass::ViewModel && viewModelDepthPipeline),
+          .depthWriteEnable = !terrain && !(mode == Pass::Opaque && options.depthPrepass),
           .depthCompareOp = composite ? VK_COMPARE_OP_ALWAYS : VK_COMPARE_OP_LESS_OR_EQUAL};
       const VkPipelineColorBlendAttachmentState attachment{
           .blendEnable = composite || terrain,
@@ -258,11 +256,6 @@ namespace remix::forward {
       return result;
     };
     opaquePipeline = graphics(vertex, fragment, worldPass);
-    // Private qualification keeps the ordinary compiled fragment path intact.
-    // Create depth first: colour becomes read-only only when this pipeline exists.
-    // The private ablation remains off until whole-frame performance is qualified.
-    if (viewModelPrepass)
-      viewModelDepthPipeline = graphics(vertex, depthFragment, viewModelTarget->pass(), Pass::ViewModelDepth);
     const auto viewModelFragment = reflectionModule(viewModelFragShader, viewModelFragCubeShader);
     viewModelPipeline = graphics(vertex, viewModelFragment, viewModelTarget->pass(), Pass::ViewModel);
     if (giViewModelFragment)

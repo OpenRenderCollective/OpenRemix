@@ -118,7 +118,7 @@ namespace remix::forward {
     for (auto handle : {opaquePipeline, lightmapPipeline, indexedLightmapPipeline, indexedRoughDielectricPipeline, partialLightmapPipeline, unmappedLightmapPipeline,
                         depthPipeline, depthLightmapPipeline, depthBatchPipeline,
                         shadowPipeline, localShadowPipeline,
-                        clusterPipeline, compositePipeline, viewModelPipeline, viewModelEarlyPipeline, viewModelDepthPipeline,
+                        clusterPipeline, compositePipeline, viewModelPipeline, viewModelEarlyPipeline,
                         giViewModelPipeline, giViewModelEarlyPipeline, giOpaquePipeline, giLightmapPipeline,
                         terrainPipeline, terrainLightmapPipeline, terrainPartialLightmapPipeline,
                         giTerrainPipeline, giTerrainLightmapPipeline})
