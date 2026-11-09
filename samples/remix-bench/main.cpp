@@ -1,6 +1,6 @@
 // Repeatable renderer benchmark built only on the public SDK.
 //   remix-bench LIBRARY FRAMES BACKEND [grid=N] [foliage=N] [textures=N] [size=N] [format=bc|rgba] [stats=0|1]
-//   [work=MS] [async=0|1] [churn=N] [churnTris=N] [still=0|1] [shot=PATH]
+//   [work=MS] [async=0|1] [churn=N] [churnTris=N] [still=0|1] [shot=PATH] [lights=N] [glass=N]
 // Draws a grid of one-sided textured cubes and double-sided alpha-tested
 // foliage cards, then reports texture creation, first frame and steady Present
 // timings. Measurement starts once the requested backend reports GPU timings
@@ -44,6 +44,9 @@ namespace {
     // last measured frame is saved to (RequestPresentedScreenshot).
     bool still = false;
     std::string shot;
+    // lights: coloured sphere lights over the grid (local light sampling).
+    // glass: translucent cards among the cubes (blended layers paths pass).
+    unsigned lights = 0, glass = 0;
   };
 
   uint16_t rgb565(unsigned r, unsigned g, unsigned b) { return uint16_t((r >> 3) << 11 | (g >> 2) << 5 | b >> 3); }
@@ -169,7 +172,8 @@ int main(int argc, char **argv) {
   if (argc < 4) {
     std::fprintf(stderr,
                  "usage: %s LIBRARY FRAMES BACKEND [grid=N] [foliage=N] [textures=N] [size=N] [format=bc|rgba] "
-                 "[stats=0|1] [work=MS] [async=0|1] [churn=N] [churnTris=N] [still=0|1] [shot=PATH]\n",
+                 "[stats=0|1] [work=MS] [async=0|1] [churn=N] [churnTris=N] [still=0|1] [shot=PATH] [lights=N] "
+                 "[glass=N]\n",
                  argv[0]);
     return 2;
   }
@@ -203,6 +207,10 @@ int main(int argc, char **argv) {
       options.still = value != "0";
     else if (key == "shot")
       options.shot = value;
+    else if (key == "lights")
+      options.lights = number;
+    else if (key == "glass")
+      options.glass = number;
     else {
       std::fprintf(stderr, "unknown option %s\n", arg.c_str());
       return 2;
@@ -333,6 +341,58 @@ int main(int argc, char **argv) {
     light.radiance = {3.14159265f, 3.14159265f, 3.14159265f};
     check(api.CreateLight(&light, &sun), "CreateLight");
   }
+  // Sphere lights: radius .2, near the ground among the nearer cubes in front
+  // of the camera, so they light what it sees directly and through bounces.
+  std::vector<remixapi_LightHandle> lights(options.lights);
+  {
+    uint32_t lightSeed = 11;
+    for (unsigned i = 0; i < options.lights && status == REMIXAPI_ERROR_CODE_SUCCESS; ++i) {
+      remixapi_LightInfoSphereEXT sphere = {};
+      sphere.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT;
+      sphere.position = {(random(lightSeed) * 2 - 1) * 12, .3f + 1.2f * random(lightSeed), -1 + random(lightSeed) * 24};
+      sphere.radius = .2f;
+      sphere.volumetricRadianceScale = 1;
+      remixapi_LightInfo light = {};
+      light.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
+      light.pNext = &sphere;
+      light.hash = 0x6000 + i;
+      light.radiance = {200 * (.3f + random(lightSeed)), 200 * (.3f + random(lightSeed)), 200 * (.3f + random(lightSeed))};
+      check(api.CreateLight(&light, &lights[i]), "CreateLight sphere");
+    }
+  }
+  // Glass: a translucent material on a tall double-sided quad.
+  remixapi_MeshHandle glassMesh = nullptr;
+  if (options.glass && status == REMIXAPI_ERROR_CODE_SUCCESS) {
+    remixapi_MaterialInfoTranslucentEXT translucent = {};
+    translucent.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_TRANSLUCENT_EXT;
+    translucent.refractiveIndex = 1.3f;
+    translucent.transmittanceColor = {.8f, .9f, .85f};
+    translucent.transmittanceMeasurementDistance = 1;
+    translucent.thinWallThickness_hasvalue = 1;
+    translucent.thinWallThickness_value = .01f;
+    remixapi_MaterialInfo material = {};
+    material.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
+    material.pNext = &translucent;
+    material.hash = 0x7000;
+    materials.emplace_back();
+    if (check(api.CreateMaterial(&material, &materials.back()), "CreateMaterial glass")) {
+      Mesh pane;
+      float p[4][3] = {{-1, 0, 0}, {1, 0, 0}, {1, 2, 0}, {-1, 2, 0}};
+      pane.quad(p);
+      remixapi_MeshInfoSurfaceTriangles surface = {};
+      surface.vertices_values = pane.vertices.data();
+      surface.vertices_count = pane.vertices.size();
+      surface.indices_values = pane.indices.data();
+      surface.indices_count = pane.indices.size();
+      surface.material = materials.back();
+      remixapi_MeshInfo mesh = {};
+      mesh.sType = REMIXAPI_STRUCT_TYPE_MESH_INFO;
+      mesh.hash = 0x7001;
+      mesh.surfaces_count = 1;
+      mesh.surfaces_values = &surface;
+      check(api.CreateMeshBatched(&mesh, &glassMesh), "CreateMesh glass");
+    }
+  }
 
   // Churn: a grid sheet per mesh, re-created each frame with displaced vertices.
   const unsigned churnSide = unsigned(std::ceil(std::sqrt(options.churnTris / 2.0)));
@@ -417,6 +477,19 @@ int main(int argc, char **argv) {
     p.transform.matrix[2][3] = 4 + random(seed) * options.grid * spacing;
     placements.push_back(p);
   }
+  for (unsigned i = 0; i < options.glass && glassMesh; ++i) {
+    Placement p{glassMesh, {}, true};
+    const float angle = random(seed) * 6.2831853f, scale = 1 + random(seed);
+    p.transform.matrix[0][0] = std::cos(angle) * scale;
+    p.transform.matrix[0][2] = std::sin(angle) * scale;
+    p.transform.matrix[1][1] = scale;
+    p.transform.matrix[2][0] = -std::sin(angle) * scale;
+    p.transform.matrix[2][2] = std::cos(angle) * scale;
+    p.transform.matrix[0][3] = (random(seed) * 2 - 1) * half;
+    p.transform.matrix[1][3] = -1;
+    p.transform.matrix[2][3] = 4 + random(seed) * options.grid * spacing;
+    placements.push_back(p);
+  }
 
   std::vector<double> presents, framesMs, gpuTrace, gpuBuild;
   // CPU phases of Present, as reported by the runtime.
@@ -436,6 +509,9 @@ int main(int argc, char **argv) {
     if (!check(api.GetWindowState(&window), "GetWindowState") || window.closeRequested)
       break;
     check(api.DrawLightInstance(sun), "DrawLightInstance");
+    for (auto light : lights)
+      if (light)
+        check(api.DrawLightInstance(light), "DrawLightInstance sphere");
     remixapi_CameraInfoParameterizedEXT params = {};
     params.sType = REMIXAPI_STRUCT_TYPE_CAMERA_INFO_PARAMETERIZED_EXT;
     const float sway = options.still ? 0.f : std::sin(frame * .01f) * .15f;
