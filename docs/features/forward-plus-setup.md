@@ -169,11 +169,29 @@ The adapter has tracked `tools/stage_game.py` and `tools/deploy_testing.py`.
 Use your own legally installed game, original shader DLL and generated package.
 Read the adapter README before installing; prefer an isolated test installation.
 
-`deploy_testing.py` takes your own settings JSON with `source`, `target`, `proxy`,
-`package` and `native_repo` paths. The owner's `_work/testing-install.json` is not
-part of the handoff. `launch_testing.ps1` is intended to run from the staged game
-where it is installed, not directly from the repository's `tools` directory.
-Preserve user settings, mods and authored cubemaps when updating a playable install.
+In the SourcePT checkout, create `_work/testing-install.json` with your absolute
+paths and the full commit IDs recorded when you built both DLLs:
+
+```json
+{
+  "source": "C:/Games/GarrysMod",
+  "target": "C:/Games/GarrysMod-ForwardTest",
+  "proxy": "C:/Projects/SourcePT/_work/build/mingw/shaderapidx9.dll",
+  "package": "C:/Projects/OpenRemix/_work/packages/windows-runtime",
+  "native_revision": "FULL_OPENREMIX_BUILD_COMMIT",
+  "wrapper_revision": "FULL_SOURCEPT_BUILD_COMMIT"
+}
+```
+
+```powershell
+python tools/deploy_testing.py --settings _work/testing-install.json
+python tools/deploy_testing.py --settings _work/testing-install.json --verify
+```
+
+Run `Play OpenRemix.cmd` in the staged game directory. Its updater reinstalls
+the selected package. To advance the installation, change the package and
+proxy paths together with the revision fields. Updates preserve game settings,
+mods and authored cubemaps.
 
 Native policy and GPU fixture tests do not require a Garry's Mod installation.
 Live map tests, replay inputs and sky captures require your own assets. The adapter
