@@ -34,6 +34,7 @@ namespace remix::scene {
     add(m.scroll);
     add(m.refractiveIndex);
     add(m.transmittanceDistance);
+    add(m.fogBody);
     if (m.roughnessTexture)
       add(m.roughnessTexture->fingerprint());
     if (m.metallicTexture)

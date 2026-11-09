@@ -96,8 +96,11 @@ namespace remix::trace::detail {
     // A translucent body: its refractive index and measurement distance, half
     // floats in pbr[3] (scene.glsl thickSheet); zero for everything else.
     if (material.transmission && material.transmittanceDistance > 0) {
-      const uint32_t packed = detail::halfBits(material.refractiveIndex) |
-                              detail::halfBits(std::min(material.transmittanceDistance, 65504.f)) << 16;
+      // A fog body (remixapi_MaterialTranslucentFogEXT): its fog end, negated
+      // (scene.glsl bodyTransmittance).
+      const float distance = std::min(material.transmittanceDistance, 65504.f);
+      const uint32_t packed =
+          detail::halfBits(material.refractiveIndex) | detail::halfBits(material.fogBody ? -distance : distance) << 16;
       std::memcpy(&pbr[3], &packed, 4);
     } else if (decode.flags & (scene::MaterialDecode::metalColor | scene::MaterialDecode::pbrBlur)) {
       // An opaque material's metal colour (unorm8 RGB) and roughness map blur

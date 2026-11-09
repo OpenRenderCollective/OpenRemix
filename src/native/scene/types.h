@@ -245,6 +245,9 @@ namespace remix {
       // A translucent body (remixapi_MaterialInfoTranslucentEXT without a thin
       // wall): its refractive index and measurement distance (0: a thin sheet).
       float refractiveIndex = 1.5f, transmittanceDistance = 0;
+      // remixapi_MaterialTranslucentFogEXT: the body fades linearly over
+      // transmittanceDistance (its fog end), untinted, instead of absorbing.
+      bool fogBody = false;
       // A thin-film coating (remixapi_MaterialIridescenceEXT, or the opaque
       // info's thinFilmThickness): strength 0 means none. Thicknesses in nm.
       struct Iridescence {

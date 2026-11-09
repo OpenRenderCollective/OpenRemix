@@ -404,6 +404,7 @@ namespace remix {
                 merged->transmission = mod->transmission;
                 merged->refractiveIndex = mod->refractiveIndex;
                 merged->transmittanceDistance = mod->transmittanceDistance;
+                merged->fogBody = mod->fogBody;
               }
               if (p & ModParts::roughness) {
                 merged->roughness = mod->roughness;

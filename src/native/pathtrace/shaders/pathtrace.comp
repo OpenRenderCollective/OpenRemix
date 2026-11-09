@@ -1260,8 +1260,8 @@ vec3 continuation(Hit primary,int lobe,float probability,out vec3 firstDirection
       if(++layers>=32){profilePath(9u);break;}
       // A translucent body: its depth absorption over the segment, per pass taken.
       vec3 passed;
-      if(hit.thick.y>0){float f0=(hit.thick.x-1)/(hit.thick.x+1);
-        passed=(1-f0*f0)*pow(clamp(hit.color.rgb,vec3(1e-4),vec3(1)),vec3(hit.t/hit.thick.y))/max(1-hit.color.a,1e-3);}
+      if(hit.thick.y!=0){float f0=(hit.thick.x-1)/(hit.thick.x+1);
+        passed=(1-f0*f0)*bodyTransmittance(hit.color.rgb,hit.t,hit.thick.y)/max(1-hit.color.a,1e-3);}
       else passed=transmissionColor(hit.color.rgb,hit.tinted);
       throughput*=passed;emissiveWeight*=passed;
       origin=offsetRay(hit.p,-hit.ng);leavingNormal=vec3(0);continue;
@@ -1939,7 +1939,7 @@ vec3 sheetFilm(Hit hit,float ior) {
 // A thin film (sheetFilm) takes the place of the body's Fresnel.
 bool thickSheet(Hit hit,inout vec3 direction,inout float alpha,inout vec3 through) {
   vec2 body=sheetBody(hit,direction);
-  if(body.x<1||body.y<=0)return false;
+  if(body.x<1||body.y==0)return false;
   bool inside=frame.cameraMedium.w>0;
   float f0=(body.x-1)/(body.x+1);f0*=f0;
   vec3 fresnel=hit.film.x>0?sheetFilm(hit,body.x):vec3(f0+(1-f0)*pow(1-clamp(abs(dot(hit.n,hit.wo)),0,1),5));
@@ -1950,7 +1950,12 @@ bool thickSheet(Hit hit,inout vec3 direction,inout float alpha,inout vec3 throug
   vec3 passed=vec3(1);
   if(!inside) {
     Hit behind=cameraHit(offsetRay(hit.p,-hit.ng),bent);
-    passed=behind.t<1e30?pow(clamp(hit.color.rgb,vec3(1e-4),vec3(1)),vec3(behind.t/body.y)):vec3(0);
+    // Fog (body.y < 0) by the depth behind the surface along the line of
+    // sight as Source measures it, unbent: the refracted ray's depth over the
+    // view's cosine (at most 20 times the depth).
+    float t=behind.t;
+    if(body.y<0)t*=abs(dot(bent,n))/max(abs(dot(direction,n)),.05);
+    passed=behind.t<1e30?bodyTransmittance(hit.color.rgb,t,body.y):vec3(0);
   }
   through=(1-fresnel)*passed;
   alpha=1-dot(through,vec3(.2126,.7152,.0722));

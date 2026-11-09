@@ -1633,6 +1633,21 @@ typedef struct remixapi_MaterialBlendModulationEXT {
   float transform[2][3];
 } remixapi_MaterialBlendModulationEXT;
 
+// Optional pNext on a translucent MaterialInfo that makes a body (a
+// measurement distance above zero, no thin wall: water): what lies behind its
+// surface fades as Source's water fog fades it instead of being absorbed by
+// its colour. Over a length t inside the body a share 1 - t / fogEnd passes
+// (none past fogEnd) untinted; the rest is the body's own colour (its
+// transmittance colour, lit), as Source's water fades into its $fogcolor
+// between $fogstart and $fogend. fogEnd (world units) above zero and finite;
+// its measurement distance is then not used.
+#define REMIXAPI_STRUCT_TYPE_MATERIAL_TRANSLUCENT_FOG_EXT ((remixapi_StructType)0x7fff1035)
+typedef struct remixapi_MaterialTranslucentFogEXT {
+  remixapi_StructType sType;
+  const void *pNext;
+  float fogEnd;
+} remixapi_MaterialTranslucentFogEXT;
+
 // Optional pNext on opaque or translucent MaterialInfo: a thin-film coating
 // whose interference colours the reflection (iridescence), evaluated
 // spectrally. On a translucent material (glass, water) the surface becomes a

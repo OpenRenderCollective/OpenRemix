@@ -540,11 +540,19 @@ vec3 transmissionColor(vec3 color, bool tinted) { return tinted ? color : vec3(1
 // measurement distance (the ray's length inside it, as from a surface under
 // water), less its Fresnel reflection at normal incidence; any other sheet
 // its tinted coverage rule.
+// A translucent body's transmittance over a length t inside it, by its
+// measurement distance d (frame_tables.h materialFields): its colour to the
+// power of t / d; or, d negative (remixapi_MaterialTranslucentFogEXT), Source's
+// water fog: nothing coloured on the way, a share 1 - t / |d| passing (the
+// rest is the body's own colour, as the water fades into its fog colour).
+vec3 bodyTransmittance(vec3 color, float t, float d) {
+  return d<0 ? vec3(clamp(1+t/d,0,1)) : pow(clamp(color,vec3(1e-4),vec3(1)),vec3(t/max(d,1e-3)));
+}
 vec3 sheetTransmission(Surface s, vec4 color, float t) {
   if ((s.state.w&8)!=0 && s.pbr.w!=0) {
     vec2 body=unpackHalf2x16(floatBitsToUint(s.pbr.w));
     float f0=(body.x-1)/(body.x+1);
-    return (1-f0*f0)*pow(clamp(color.rgb,vec3(1e-4),vec3(1)),vec3(t/max(body.y,1e-3)));
+    return (1-f0*f0)*bodyTransmittance(color.rgb,t,body.y);
   }
   return transmissionColor(color.rgb,(s.state.w&32)!=0)*(1-color.a);
 }

@@ -180,6 +180,14 @@ namespace remix {
         material->roughness = .04f; // a smooth surface, shaded as PBR for its reflection
         material->metallic = 0;
       }
+      if (const auto *fog = static_cast<const remixapi_MaterialTranslucentFogEXT *>(
+              extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_TRANSLUCENT_FOG_EXT))) {
+        finite(&fog->fogEnd, 1);
+        if (material->transmittanceDistance <= 0 || !(fog->fogEnd > 0))
+          throw invalid;
+        material->transmittanceDistance = fog->fogEnd;
+        material->fogBody = true;
+      }
     }
     finite(material->tint, 4);
     if (material->tint[3] < 0 || material->tint[3] > 1) {
@@ -462,7 +470,8 @@ namespace remix {
              a.normalEncoding == b.normalEncoding && a.roughness == b.roughness && a.metallic == b.metallic &&
              a.remap[0] == b.remap[0] && a.remap[1] == b.remap[1] && a.scrollLayers == b.scrollLayers &&
              std::equal(a.scroll, a.scroll + 6, b.scroll) && a.refractiveIndex == b.refractiveIndex &&
-             a.transmittanceDistance == b.transmittanceDistance && a.iridescence == b.iridescence &&
+             a.transmittanceDistance == b.transmittanceDistance && a.fogBody == b.fogBody &&
+             a.iridescence == b.iridescence &&
              a.subsurface == b.subsurface && a.metalColored == b.metalColored &&
              std::equal(a.metalColor, a.metalColor + 3, b.metalColor) && a.pbrBlur == b.pbrBlur &&
              (a.gradient == b.gradient || (a.gradient && b.gradient && *a.gradient == *b.gradient)) &&
