@@ -551,10 +551,24 @@ vec3 sheetTransmission(Surface s, vec4 color, float t) {
 // Candidate intersections need opacity only. In particular, do not linearize
 // vertex RGB or evaluate the color combiner before knowing the closest hit.
 // Bit 0: the combiner reads the texture; bit 1: it reads vertex alpha.
+// remixapi_MaterialBlendModulationEXT (material.x bit 13; frame_tables.h
+// blendModulationFields): coverage shaped per texel as Source's
+// WorldVertexTransition with a $blendmodulatetexture, by the mask's red (half
+// width) and green (centre) at the mesh coordinates through its transform.
+bool blendModulated(Surface s) { return (s.material.x&8192u)!=0u; }
+float blendModulation(Surface s, vec2 uv, float alpha) {
+  if(!blendModulated(s))return alpha;
+  vec2 at=vec2(dot(s.film.yz,uv)+s.film.w,dot(uintBitsToFloat(s.filmMaps.yz),uv)+uintBitsToFloat(s.filmMaps.w));
+  vec2 m=textureLod(textures[nonuniformEXT(s.filmMaps.x)],at,0).rg;
+  float low=clamp(m.y-m.x,0,1),high=clamp(m.y+m.x,0,1);
+  return high>low?smoothstep(low,high,alpha):step(low,alpha);
+}
+// Which operands the coverage reads: bit 0 the texture (its coordinates),
+// bit 1 the vertex alpha. Blend modulation reads the coordinates as well.
 uint alphaOperands(Surface s) {
   uint op=s.state.x,first=(op>>8)&3,second=(op>>10)&3,combineOp=((op>>6)&3)|((op>>11)&4);
   uint a=combineOp==2?0u:first,b=combineOp==1?0u:second;
-  return uint(a==1||b==1)|uint(a==2||b==2)<<1;
+  return uint(a==1||b==1||blendModulated(s))|uint(a==2||b==2)<<1;
 }
 // materialColor's alpha from the texture's alpha (texel) and the vertex's.
 float materialAlphaOf(Surface s, float texel, float vertex) {
@@ -571,7 +585,7 @@ float materialAlphaOf(Surface s, float texel, float vertex) {
 float materialAlpha(Surface s, vec2 uv, float vertex, bool sampled) {
   if ((s.state.w&1)!=0) return 1;
   float texel=sampled?textureLod(textures[nonuniformEXT(s.textureState.x)],uv*s.uv.xy+s.uv.zw,0).a:1;
-  return materialAlphaOf(s,texel,vertex);
+  return blendModulation(s,uv,materialAlphaOf(s,texel,vertex));
 }
 vec4 materialColor(Surface s, vec4 texel, vec4 vertex) {
   vertex.rgb = linearColor(vertex.rgb);
@@ -584,7 +598,9 @@ vec4 materialColor(Surface s, vec4 texel, vec4 vertex) {
   return clamp(result,0,1);
 }
 vec4 materialColor(Surface s, vec2 uv, vec4 vertex) {
-  return materialColor(s, albedoTexel(s, uv), vertex);
+  vec4 color = materialColor(s, albedoTexel(s, uv), vertex);
+  color.a = blendModulation(s, uv, color.a);
+  return color;
 }
 // The colour a surface reflects, what it emits (when `emissive`) and `self`,
 // the part of its colour that emits instead of reflecting
@@ -610,6 +626,7 @@ vec4 materialSurface(Surface s, vec2 uv, vec4 vertex, bool emissive, out vec3 em
   }
   vec4 texel = albedoTexel(s, uv);
   vec4 color = materialColor(s, texel, vertex);
+  color.a = blendModulation(s, uv, color.a);
   self = vec3(0);
   if ((s.material.x&32u)==0) { emission = emissive ? materialEmission(s, uv) : vec3(0); return color; }
   uint mask = (s.material.x>>6)&3u;

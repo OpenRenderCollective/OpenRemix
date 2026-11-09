@@ -181,6 +181,16 @@ namespace remix::trace::detail {
     maps[0] = ramp;
     maps[1] = maps[2] = maps[3] = 0;
   }
+  // remixapi_MaterialBlendModulationEXT (MaterialDecode::blendModulation) in
+  // the film's fields, which such a material lacks (film[0] stays 0): film[1..3]
+  // the transform's u row, maps[1..3] its v row (float bits), maps[0] the
+  // mask's texture slot (scene.glsl blendModulated).
+  inline void blendModulationFields(const scene::BlendModulation &b, uint32_t mask, float film[4], uint32_t maps[4]) {
+    film[0] = 0;
+    std::copy_n(b.transform[0], 3, film + 1);
+    std::memcpy(maps + 1, b.transform[1], 3 * sizeof(float));
+    maps[0] = mask;
+  }
   // remixapi_MaterialSolidEnergyEXT (MaterialDecode::solidEnergy) in the
   // film's fields, which such a material lacks (film[0] stays 0), as half
   // floats: film[1] the intensity and the sway's period, film[2] the base's
@@ -867,6 +877,9 @@ namespace remix::trace {
         const uint32_t detail1 = sampled(e.detail1Sampler), detail2 = sampled(e.detail2Sampler);
         detail::solidEnergyFields(e, detail1, detail2, value.film, value.filmMaps);
       }
+      if (material.blendModulation)
+        detail::blendModulationFields(*material.blendModulation, sampled(material.blendModulation->sampler),
+                                      value.film, value.filmMaps);
       if (material.gradient) {
         const auto &g = *material.gradient;
         const uint32_t gradient = sampled(g.gradientSampler);

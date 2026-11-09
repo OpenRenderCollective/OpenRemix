@@ -178,6 +178,16 @@ namespace remix {
                same(detail2Scroll, o.detail2Scroll) && same(detail1Sway, o.detail1Sway);
       }
     };
+    // remixapi_MaterialBlendModulationEXT: the mask (a data texture: read as
+    // stored) and its sampler material, and the mesh UV -> mask UV rows.
+    struct BlendModulation {
+      std::shared_ptr<Texture> mask;
+      std::shared_ptr<Material> sampler;
+      float transform[2][3] = {{1, 0, 0}, {0, 1, 0}};
+      bool operator==(const BlendModulation &o) const {
+        return mask == o.mask && std::equal(&transform[0][0], &transform[0][0] + 6, &o.transform[0][0]);
+      }
+    };
     // remixapi_InstanceInfoWoundCutEXT, validated. A description keeps the
     // texture's name (path); the draws built from it hold the texture and
     // its sampler material (bilinear, clipped: black outside 0..1).
@@ -226,6 +236,8 @@ namespace remix {
       std::shared_ptr<const PortalRim> portalRim;
       // remixapi_MaterialSolidEnergyEXT (null: none).
       std::shared_ptr<const SolidEnergy> solidEnergy;
+      // remixapi_MaterialBlendModulationEXT (null: none).
+      std::shared_ptr<const BlendModulation> blendModulation;
       // remixapi_MaterialNormalScrollEXT (normal encoding 5): layers, then the
       // base, layer 1 and layer 2 rates.
       uint32_t scrollLayers = 1;
@@ -307,6 +319,10 @@ namespace remix {
       // remixapi_MaterialSolidEnergyEXT (frame_tables.h solidEnergyFields:
       // its details and rates in the film's fields, likewise).
       static constexpr uint32_t solidEnergy = 4096;
+      // remixapi_MaterialBlendModulationEXT (frame_tables.h
+      // blendModulationFields: the mask and its transform in the film's
+      // fields, which such a material lacks as well).
+      static constexpr uint32_t blendModulation = 8192;
       uint32_t flags = 0, pbrWord = 0;
       float selfIlluminationScale = 0;
     };
