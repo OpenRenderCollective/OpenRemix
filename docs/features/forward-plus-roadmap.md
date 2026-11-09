@@ -1,3 +1,21 @@
+# Forward+ roadmap
+
+## Review branch status
+
+- Forward+ is opt-in. Within Forward+, Source 2 is the default preset. It uses
+  baked surface and probe lighting, mixed shadows and parallax cubemaps.
+  SSR defaults off. See the [controls catalog](forward-plus-controls.md).
+- The [paired checkout guide](forward-plus-setup.md) covers the two draft PRs.
+  Merge OpenRemix first so SourcePT can build against its new public headers.
+- The proposed merge omits the viewmodel depth prepass, compact RGB atlas,
+  packed style composition and split cluster experiments. Their dated entries
+  below record previous trials. Overlapping and styled lights still use the
+  qualified indexed path.
+- Keep actual-game HDR matching, abrupt Construct prop lighting transitions,
+  and moving local shadow quality in the follow-up queue. Keep foreground,
+  full-quality 1440p and 4K captures separate from standalone replays and smoke
+  tests when comparing performance.
+
 ## Next performance isolation
 
 - Reusing selected probe-visibility vectors in water preserved the checked frame
@@ -832,12 +850,11 @@ See [setup](forward-plus-setup.md) for tracked build tools and external prerequi
 
 # Forward+ delivery roadmap
 
-## Current queue - handoff checkpoint 2026-10-29
+## Handoff checkpoint from 2026-10-29
 
 Start with the [handoff](forward-plus-handoff.md) and
-[lighting architecture](../architecture/forward-lighting.md). This queue supersedes
-old experimental/default/deployment labels in the dated notes below. Historical
-requirements and investigations are retained; they are not all completed features.
+[lighting architecture](../architecture/forward-lighting.md). This checkpoint describes the state on that date. The review branch status above
+tracks the merge scope. The remaining tasks below retain their original context.
 
 The modular shader foundation, Source 2 / Custom selector, centralized baked/live
 ownership and shared cubemap normalization exist on the source branch. Provider
@@ -5342,13 +5359,13 @@ These are work-reduction paths, not quality presets. General native 1080p 300-40
 ### Source 2 architecture trials
 
 - [x] Trace the CS2 Vulkan capture's subgroup mask traversal to the tile and depth-bin compute producers. The inspected world draw intersected the masks and visited set bits for parallax cubemaps. Its projected-volume loop had zero active words. Capture a scene with active local lights before drawing conclusions about direct lighting.
-- [x] Prototype a filterable packed style contribution during composition handoffs. Cache the largest surface group and retain independent sparse evaluation for other groups. Construct, Black Mesa and Crossfire show transition improvements and other frame-time regressions. Keep the path opt-in.
+- [x] Prototype a filterable packed style contribution during composition handoffs. Cache the largest surface group and retain independent sparse evaluation for other groups. Construct, Black Mesa and Crossfire showed transition improvements and other frame-time regressions. The draft excludes this trial.
 - [x] Remove screenshot-mode pacing from timed style replays and correlate pass timings with sampled GPU clocks. The large earlier switch-off gaps coincide with differing power states and mostly disappear uncapped.
-- [ ] Resolve the Crossfire hybrid's slower pre-transition frames with a GPU-saturated warmup, then qualify memory headroom and frame-time tails before promotion.
+- [ ] If the packed style trial is revived, resolve its slower Crossfire pre-transition frames with a GPU-saturated warmup and qualify memory headroom and frame-time tails.
 - [ ] Measure actual local-light visits and mixed-shadow corrections on Construct's white room and Crossfire, including a style fade and a receiver with at least five genuinely overlapping lights. Record opaque GPU time, candidate counts, and sparse style fallback coverage separately. Include a view with no mixed corrections to measure fast-path overhead.
 - [ ] Compare a compact common-case baked-light index and filtered scalar field against the existing chart/cluster mask intersection. Keep exact spill for additional contributing lights and retain the separate probe receiver path. Reuse scalar layers only where filtered footprints are disjoint, including borders and padding. Check moving casters and style fades at chart seams.
 - [ ] Compare the existing depth batches with VRF-style visibility and indirect submission in a large, visibility-limited scene. Measure CPU recording, depth and opaque draw counts, and total frame time. Keep camera visibility separate from offscreen shadow casters, reflections, and bake inputs. A fixed Construct hall view already shows effective early depth rejection.
-- [x] Compare a VRF-style RGB directional decoder with full SH on the existing atlas in fixed native 4K Construct and Black Mesa replays. The shader-only trial showed modest median savings and reproduced its image differences across repeats. Keep it opt-in.
+- [x] Compare a VRF-style RGB directional decoder with full SH on the existing atlas in fixed native 4K Construct and Black Mesa replays. The shader-only trial showed modest median savings and reproduced its image differences across repeats. The draft excludes this trial.
 - [ ] Pack the compact diffuse field separately from the exact mixed-sun response in GPU publication. Retain indexed local-light visibility and attribution. Qualify normal maps, grazing angles, chart seams and moving mixed shadows before considering a default change. Evaluate probe interpolation separately on moving props across doorways and near walls.
 - [ ] Profile cubemap selection and composition with SSR off, including the cost of preparing shared inputs. Compare any fast path with the same probe blend, normalisation and roughness response.
 - [ ] Judge each trial with repeated native 3840×2160 measurements at matched settings, plus a live armed comparison. Track median and p95 frame times and image differences. At 360 FPS the full presented-frame budget is 2.78 ms.
