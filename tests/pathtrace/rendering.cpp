@@ -208,10 +208,16 @@ int main(int argc, char **argv) {
     for (const char *accumulate : {"1", "0", "1"}) {
       ok(api.SetConfigVariable("rtx.native.pathtrace.accumulate", accumulate));
       frame();
+      frame();
       const auto before = statistics();
       SDL_Delay(20);
       frame();
       const auto after = statistics();
+      std::fprintf(stderr, "Water accumulate=%s: samples %llu -> %llu, scene %llu -> %llu\n", accumulate,
+                   static_cast<unsigned long long>(before.accumulationCount),
+                   static_cast<unsigned long long>(after.accumulationCount),
+                   static_cast<unsigned long long>(before.sceneGeneration),
+                   static_cast<unsigned long long>(after.sceneGeneration));
       if (*accumulate == '1')
         require(after.accumulationCount == before.accumulationCount + 1 &&
                     after.sceneGeneration == before.sceneGeneration,

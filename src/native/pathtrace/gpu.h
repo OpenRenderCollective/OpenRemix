@@ -250,6 +250,7 @@ namespace remix::trace::detail {
     // radius (rtx.subsurface.diffusionProfileScale in them) and the thickness scale.
     uint64_t woundVertices = 0;
     float subsurfaceUnits = 0, subsurfaceThickness = 1;
+    uint32_t rayPortalPadding[2] = {}; // The frame signature compares these bytes too.
     // remixapi_MaterialInfoPortalEXT by index (scene::RayPortals): the rows of
     // the map to the partner portal, then the front's normal with flags (w: 1
     // the pair is open, plus 2 when it moved since the last frame: what is
@@ -262,7 +263,8 @@ namespace remix::trace::detail {
     float rayPortalPlanes[scene::rayPortalSlots] = {};
   };
   static_assert(offsetof(Frame, sheetMaterials) == 2320 && offsetof(Frame, woundVertices) == 2328 &&
-                offsetof(Frame, subsurfaceUnits) == 2336 && offsetof(Frame, rayPortals) == 2352 && offsetof(Frame, rayPortalPlanes) == 2880 && sizeof(Frame) == 2912 &&
+                offsetof(Frame, subsurfaceUnits) == 2336 && offsetof(Frame, rayPortalPadding) == 2344 &&
+                offsetof(Frame, rayPortals) == 2352 && offsetof(Frame, rayPortalPlanes) == 2880 && sizeof(Frame) == 2912 &&
                 offsetof(Frame, screenCameras) == 1808 && offsetof(Frame, srgbTextures) == 1280 &&
                 offsetof(Frame, pathDebug) == 1792 && offsetof(Frame, localProbeRead) == 1168 &&
                 offsetof(Frame, localProbeParams) == 1184 && offsetof(Frame, volumeLightScales) == 1200 &&
