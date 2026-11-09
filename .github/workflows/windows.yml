@@ -42,8 +42,9 @@ jobs:
 
       # --accept-msvc-license: xwin downloads Microsoft's CRT and Windows SDK,
       # whose license this accepts on the repository's behalf.
+      # Keep large runtime translation units within the hosted runner's memory budget.
       - name: Build
-        run: python3 scripts/linux/build-windows-remix.py --accept-msvc-license --jobs "$(nproc)"
+        run: python3 scripts/linux/build-windows-remix.py --accept-msvc-license --jobs 2
 
       - name: Upload
         uses: actions/upload-artifact@v4
