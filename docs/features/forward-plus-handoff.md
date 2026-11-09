@@ -12,7 +12,8 @@ investigations. Confirm current behavior against the revisions under review.
 - [SourcePT](https://github.com/sambow23/SourcePT) owns the game adapter and
   Source-specific capture and material translation.
 - Check out the matching native and adapter revisions from the review before
-  building. Installed game binaries, caches and launchers are local to each
+  building. The setup guide includes the paired draft checkout commands.
+  Installed game binaries, caches and launchers are local to each
   developer. Use an isolated test installation for live comparisons.
 
 Path tracing remains the configured backend default. Source 2 is the default

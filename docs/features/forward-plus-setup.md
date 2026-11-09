@@ -13,8 +13,21 @@ git clone https://github.com/sambow23/SourcePT.git garrys-mod-rtx-remixed-2
 git -C OpenRemix submodule update --init third_party/numos/numos-sky third_party/fidelityfx/FidelityFX-SDK third_party/xess/xess
 ```
 
-For pre-merge testing, check out the matching revisions from the review and
-rerun the submodule command at the selected native revision.
+To test the paired draft PRs before merge, fetch each PR head into its clone:
+
+```sh
+git -C OpenRemix fetch origin refs/pull/42/head:refs/heads/review-forward-plus
+git -C garrys-mod-rtx-remixed-2 fetch origin refs/pull/123/head:refs/heads/review-forward-plus
+git -C OpenRemix switch review-forward-plus
+git -C garrys-mod-rtx-remixed-2 switch review-forward-plus
+git -C OpenRemix submodule update --init third_party/numos/numos-sky third_party/fidelityfx/FidelityFX-SDK third_party/xess/xess
+git -C OpenRemix rev-parse HEAD
+git -C garrys-mod-rtx-remixed-2 rev-parse HEAD
+```
+
+Record both printed hashes with results. The SourcePT build must use the public
+headers from the selected OpenRemix checkout. For a pinned pair, use the exact
+hashes recorded on the PRs.
 
 The last command initializes pinned sky, FidelityFX and XeSS dependencies without recursion.
 FidelityFX and XeSS are required by the current Windows build; sky is optional.
