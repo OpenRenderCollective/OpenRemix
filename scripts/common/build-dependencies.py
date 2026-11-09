@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import shutil
 import subprocess
 import tarfile
 import urllib.request
@@ -57,7 +58,13 @@ def main():
         options += ['-DCMAKE_TOOLCHAIN_FILE=' + str(args.ndk.resolve() / 'build/cmake/android.toolchain.cmake'),
                     '-DANDROID_ABI=arm64-v8a', '-DANDROID_PLATFORM=android-29']
     elif platform.system() == 'Windows':
-        options += ['-DCMAKE_C_COMPILER=clang-cl', '-DCMAKE_CXX_COMPILER=clang-cl']
+        # Name the LLVM tools explicitly so CMake never falls back to an MSYS2 ld/ar on PATH.
+        tools = {name: shutil.which(name) for name in ('lld-link', 'llvm-lib')}
+        missing = [name for name, path in tools.items() if not path]
+        if missing:
+            raise RuntimeError('Missing LLVM tools on PATH: ' + ', '.join(missing))
+        options += ['-DCMAKE_C_COMPILER=clang-cl', '-DCMAKE_CXX_COMPILER=clang-cl',
+                    '-DCMAKE_LINKER=' + tools['lld-link'], '-DCMAKE_AR=' + tools['llvm-lib']]
     else:
         options += ['-DCMAKE_C_COMPILER=clang', '-DCMAKE_CXX_COMPILER=clang++']
         if platform.system() == 'Darwin':

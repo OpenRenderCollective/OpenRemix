@@ -1,6 +1,6 @@
 // Repeatable renderer benchmark built only on the public SDK.
 //   remix-bench LIBRARY FRAMES BACKEND [grid=N] [foliage=N] [textures=N] [size=N] [format=bc|rgba] [stats=0|1]
-//   [work=MS] [async=0|1] [churn=N] [churnTris=N]
+//   [work=MS] [async=0|1] [churn=N] [churnTris=N] [still=0|1] [shot=PATH] [lights=N] [glass=N] [paint=N]
 // Draws a grid of one-sided textured cubes and double-sided alpha-tested
 // foliage cards, then reports texture creation, first frame and steady Present
 // timings. Measurement starts once the requested backend reports GPU timings
@@ -16,6 +16,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <map>
 #include <string>
 #include <vector>
 #if !defined(_WIN32)
@@ -39,6 +40,16 @@ namespace {
     // Meshes re-created every frame under their hash with new vertices (MESH_UPDATE_EXT
     // with motion, as a capture host updates animated geometry), churnTris triangles each.
     unsigned churn = 0, churnTris = 5000;
+    // still: the camera holds its first pose. shot: an absolute path the
+    // last measured frame is saved to (RequestPresentedScreenshot).
+    bool still = false;
+    std::string shot;
+    // lights: coloured sphere lights over the grid (local light sampling).
+    // glass: translucent cards among the cubes (blended layers paths pass).
+    unsigned lights = 0, glass = 0;
+    // paint: half-transparent decal paint over four faces of the N cubes
+    // nearest the camera's line of sight (bounce rays meet it).
+    unsigned paint = 0;
   };
 
   uint16_t rgb565(unsigned r, unsigned g, unsigned b) { return uint16_t((r >> 3) << 11 | (g >> 2) << 5 | b >> 3); }
@@ -161,10 +172,15 @@ namespace {
 } // namespace
 
 int main(int argc, char **argv) {
+  // Unbuffered: the results are printed after the runtime unloads, and a
+  // crash in a driver's exit handler (seen with paint or glass and many
+  // lights) lost a buffered report.
+  std::setvbuf(stdout, nullptr, _IONBF, 0);
   if (argc < 4) {
     std::fprintf(stderr,
                  "usage: %s LIBRARY FRAMES BACKEND [grid=N] [foliage=N] [textures=N] [size=N] [format=bc|rgba] "
-                 "[stats=0|1] [work=MS] [async=0|1] [churn=N] [churnTris=N]\n",
+                 "[stats=0|1] [work=MS] [async=0|1] [churn=N] [churnTris=N] [still=0|1] [shot=PATH] [lights=N] "
+                 "[glass=N] [paint=N]\n",
                  argv[0]);
     return 2;
   }
@@ -194,6 +210,16 @@ int main(int argc, char **argv) {
       options.churn = number;
     else if (key == "churnTris")
       options.churnTris = std::max(2u, number);
+    else if (key == "still")
+      options.still = value != "0";
+    else if (key == "shot")
+      options.shot = value;
+    else if (key == "lights")
+      options.lights = number;
+    else if (key == "glass")
+      options.glass = number;
+    else if (key == "paint")
+      options.paint = number;
     else {
       std::fprintf(stderr, "unknown option %s\n", arg.c_str());
       return 2;
@@ -324,6 +350,58 @@ int main(int argc, char **argv) {
     light.radiance = {3.14159265f, 3.14159265f, 3.14159265f};
     check(api.CreateLight(&light, &sun), "CreateLight");
   }
+  // Sphere lights: radius .2, near the ground among the nearer cubes in front
+  // of the camera, so they light what it sees directly and through bounces.
+  std::vector<remixapi_LightHandle> lights(options.lights);
+  {
+    uint32_t lightSeed = 11;
+    for (unsigned i = 0; i < options.lights && status == REMIXAPI_ERROR_CODE_SUCCESS; ++i) {
+      remixapi_LightInfoSphereEXT sphere = {};
+      sphere.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT;
+      sphere.position = {(random(lightSeed) * 2 - 1) * 12, .3f + 1.2f * random(lightSeed), -1 + random(lightSeed) * 24};
+      sphere.radius = .2f;
+      sphere.volumetricRadianceScale = 1;
+      remixapi_LightInfo light = {};
+      light.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
+      light.pNext = &sphere;
+      light.hash = 0x6000 + i;
+      light.radiance = {200 * (.3f + random(lightSeed)), 200 * (.3f + random(lightSeed)), 200 * (.3f + random(lightSeed))};
+      check(api.CreateLight(&light, &lights[i]), "CreateLight sphere");
+    }
+  }
+  // Glass: a translucent material on a tall double-sided quad.
+  remixapi_MeshHandle glassMesh = nullptr;
+  if (options.glass && status == REMIXAPI_ERROR_CODE_SUCCESS) {
+    remixapi_MaterialInfoTranslucentEXT translucent = {};
+    translucent.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_TRANSLUCENT_EXT;
+    translucent.refractiveIndex = 1.3f;
+    translucent.transmittanceColor = {.8f, .9f, .85f};
+    translucent.transmittanceMeasurementDistance = 1;
+    translucent.thinWallThickness_hasvalue = 1;
+    translucent.thinWallThickness_value = .01f;
+    remixapi_MaterialInfo material = {};
+    material.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
+    material.pNext = &translucent;
+    material.hash = 0x7000;
+    materials.emplace_back();
+    if (check(api.CreateMaterial(&material, &materials.back()), "CreateMaterial glass")) {
+      Mesh pane;
+      float p[4][3] = {{-1, 0, 0}, {1, 0, 0}, {1, 2, 0}, {-1, 2, 0}};
+      pane.quad(p);
+      remixapi_MeshInfoSurfaceTriangles surface = {};
+      surface.vertices_values = pane.vertices.data();
+      surface.vertices_count = pane.vertices.size();
+      surface.indices_values = pane.indices.data();
+      surface.indices_count = pane.indices.size();
+      surface.material = materials.back();
+      remixapi_MeshInfo mesh = {};
+      mesh.sType = REMIXAPI_STRUCT_TYPE_MESH_INFO;
+      mesh.hash = 0x7001;
+      mesh.surfaces_count = 1;
+      mesh.surfaces_values = &surface;
+      check(api.CreateMeshBatched(&mesh, &glassMesh), "CreateMesh glass");
+    }
+  }
 
   // Churn: a grid sheet per mesh, re-created each frame with displaced vertices.
   const unsigned churnSide = unsigned(std::ceil(std::sqrt(options.churnTris / 2.0)));
@@ -373,6 +451,8 @@ int main(int argc, char **argv) {
     churnMesh(i, 0);
   std::vector<double> uploadPass, assemblyPass, gpuFrame;
   uint64_t lastPassFrame = 0;
+  // Each timed pass's self time summed over the measured GPU frames.
+  std::map<std::string, double> passTotals;
   // Fixed layout: static cubes on a grid with foliage clumps between them.
   struct Placement {
     remixapi_MeshHandle mesh;
@@ -406,6 +486,53 @@ int main(int argc, char **argv) {
     p.transform.matrix[2][3] = 4 + random(seed) * options.grid * spacing;
     placements.push_back(p);
   }
+  // Paint: a quad just off four faces of a cube (its transform), drawn as a
+  // blended decal instance (as in tests/pathtrace/pbr_denoise.cpp).
+  remixapi_MeshHandle paintMesh = nullptr;
+  std::vector<remixapi_Transform> painted;
+  if (options.paint && status == REMIXAPI_ERROR_CODE_SUCCESS && !materials.empty()) {
+    Mesh layer;
+    constexpr float o = 1.01f;
+    const float faces[4][4][3] = {{{-1, -1, -o}, {-1, 1, -o}, {1, 1, -o}, {1, -1, -o}},
+                                  {{-1, -1, o}, {1, -1, o}, {1, 1, o}, {-1, 1, o}},
+                                  {{-o, -1, -1}, {-o, -1, 1}, {-o, 1, 1}, {-o, 1, -1}},
+                                  {{o, -1, -1}, {o, 1, -1}, {o, 1, 1}, {o, -1, 1}}};
+    for (const auto &face : faces)
+      layer.quad(face);
+    remixapi_MeshInfoSurfaceTriangles surface = {};
+    surface.vertices_values = layer.vertices.data();
+    surface.vertices_count = layer.vertices.size();
+    surface.indices_values = layer.indices.data();
+    surface.indices_count = layer.indices.size();
+    surface.material = materials[1 % materials.size()];
+    remixapi_MeshInfo mesh = {};
+    mesh.sType = REMIXAPI_STRUCT_TYPE_MESH_INFO;
+    mesh.hash = 0x8000;
+    mesh.surfaces_count = 1;
+    mesh.surfaces_values = &surface;
+    check(api.CreateMeshBatched(&mesh, &paintMesh), "CreateMesh paint");
+    // The cubes nearest the line of sight (x = 0), front rows first.
+    std::vector<std::pair<float, size_t>> nearest;
+    for (size_t i = 0; i < placements.size(); ++i)
+      if (!placements[i].doubleSided)
+        nearest.push_back({std::abs(placements[i].transform.matrix[0][3]) + placements[i].transform.matrix[2][3] * .5f, i});
+    std::sort(nearest.begin(), nearest.end());
+    for (size_t i = 0; i < nearest.size() && i < options.paint; ++i)
+      painted.push_back(placements[nearest[i].second].transform);
+  }
+  for (unsigned i = 0; i < options.glass && glassMesh; ++i) {
+    Placement p{glassMesh, {}, true};
+    const float angle = random(seed) * 6.2831853f, scale = 1 + random(seed);
+    p.transform.matrix[0][0] = std::cos(angle) * scale;
+    p.transform.matrix[0][2] = std::sin(angle) * scale;
+    p.transform.matrix[1][1] = scale;
+    p.transform.matrix[2][0] = -std::sin(angle) * scale;
+    p.transform.matrix[2][2] = std::cos(angle) * scale;
+    p.transform.matrix[0][3] = (random(seed) * 2 - 1) * half;
+    p.transform.matrix[1][3] = -1;
+    p.transform.matrix[2][3] = 4 + random(seed) * options.grid * spacing;
+    placements.push_back(p);
+  }
 
   std::vector<double> presents, framesMs, gpuTrace, gpuBuild;
   // CPU phases of Present, as reported by the runtime.
@@ -425,9 +552,12 @@ int main(int argc, char **argv) {
     if (!check(api.GetWindowState(&window), "GetWindowState") || window.closeRequested)
       break;
     check(api.DrawLightInstance(sun), "DrawLightInstance");
+    for (auto light : lights)
+      if (light)
+        check(api.DrawLightInstance(light), "DrawLightInstance sphere");
     remixapi_CameraInfoParameterizedEXT params = {};
     params.sType = REMIXAPI_STRUCT_TYPE_CAMERA_INFO_PARAMETERIZED_EXT;
-    const float sway = std::sin(frame * .01f) * .15f;
+    const float sway = options.still ? 0.f : std::sin(frame * .01f) * .15f;
     params.position = {0, 3, -2};
     params.forward = {std::sin(sway), -.25f, std::cos(sway)};
     const float length = std::hypot(params.forward.x, params.forward.y, params.forward.z);
@@ -460,6 +590,30 @@ int main(int argc, char **argv) {
       instance.doubleSided = placements[i].doubleSided;
       check(api.DrawInstance(&instance), "DrawInstance");
     }
+    for (size_t i = 0; i < painted.size() && paintMesh && status == REMIXAPI_ERROR_CODE_SUCCESS; ++i) {
+      remixapi_InstanceInfoBlendEXT blend = {};
+      blend.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_BLEND_EXT;
+      blend.alphaBlendEnabled = 1;
+      blend.srcColorBlendFactor = blend.srcAlphaBlendFactor = 6; // source alpha
+      blend.dstColorBlendFactor = blend.dstAlphaBlendFactor = 7; // one minus source alpha
+      blend.textureAlphaOperation = 3;                           // modulate
+      blend.textureAlphaArg1Source = 1;                          // texture
+      blend.textureAlphaArg2Source = 3;                          // texture factor
+      blend.tFactor = 0x80ffffff;
+      remixapi_InstanceIdentityEXT identity = {};
+      identity.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_IDENTITY_EXT;
+      identity.pNext = &blend;
+      identity.instanceId = 0x200000 + i;
+      identity.rasterVisible = true;
+      remixapi_InstanceInfo instance = {};
+      instance.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO;
+      instance.pNext = &identity;
+      instance.categoryFlags = REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_STATIC;
+      instance.mesh = paintMesh;
+      instance.transform = painted[i];
+      instance.doubleSided = 1;
+      check(api.DrawInstance(&instance), "DrawInstance paint");
+    }
     for (unsigned i = 0; i < options.churn && status == REMIXAPI_ERROR_CODE_SUCCESS; ++i) {
       churnMesh(i, frame);
       remixapi_InstanceIdentityEXT identity = {};
@@ -480,6 +634,8 @@ int main(int argc, char **argv) {
       check(api.DrawInstance(&instance), "DrawInstance churn");
     }
     const auto presentStart = Clock::now();
+    if (!options.shot.empty() && ready && measured + 3 == frames && frame >= ready + warmup)
+      check(api.RequestPresentedScreenshot(options.shot.c_str()), "RequestPresentedScreenshot");
     check(api.Present(nullptr), "Present");
     const auto now = Clock::now();
     remixapi_TracingStatisticsEXT trace = {};
@@ -523,6 +679,7 @@ int main(int argc, char **argv) {
             upload += passes.passes[i].selfMilliseconds;
           if (std::strcmp(passes.passes[i].name, "Delta vertex assembly") == 0)
             assembly += passes.passes[i].selfMilliseconds;
+          passTotals[passes.passes[i].name] += passes.passes[i].selfMilliseconds;
         }
         uploadPass.push_back(upload);
         assemblyPass.push_back(assembly);
@@ -557,5 +714,7 @@ int main(int argc, char **argv) {
     std::printf("gpu_pass_ms frame=%.3f uploads=%.3f assembly=%.3f (churn=%u x %zu triangles)\n",
                 summarize(gpuFrame).mean, summarize(uploadPass).mean, summarize(assemblyPass).mean, options.churn,
                 churnIndices.size() / 3);
+  for (const auto &[name, total] : passTotals)
+    std::printf("pass_ms %.4f %s\n", total / double(gpuFrame.size()), name.c_str());
   return 0;
 }

@@ -470,9 +470,11 @@ namespace remix::trace {
       // (static, smoother than the policy's roughness) or sharcDynamicSurfaces
       // (moving; sharp ones need both).
       bool sharpReceivers = false, dynamicReceivers = false, dynamicSharpReceivers = false;
+      bool subsurface = false; // a material scatters below its surface (scene::Material::subsurface)
       Flags &operator|=(const Flags &o) {
         blended |= o.blended;
         decal |= o.decal;
+        subsurface |= o.subsurface;
         receivers |= o.receivers;
         usesAnimationTime |= o.usesAnimationTime;
         sharpReceivers |= o.sharpReceivers;
@@ -814,6 +816,7 @@ namespace remix::trace {
       f.usesAnimationTime = detail::hasScrollingNormals(material) || detail::hasScrollingTint(material) ||
                             material.portalRim || (material.iridescence.strength > 0 &&
                             material.iridescence.flowAmplitude != 0 && material.iridescence.flowSpeed != 0);
+      f.subsurface = material.subsurface.weight > 0;
       const bool rough =
           !material.pbr || material.roughnessTexture || material.roughness >= REMIX_SHARC_PBR_MIN_ROUGHNESS;
       const bool opaque = !surface.blend.enabled, fixed = surface.classification == 0;
@@ -923,10 +926,11 @@ namespace remix::trace {
         detail::solidEnergyFields(e, detail1, detail2, value.film, value.filmMaps);
       }
       if (decode.flags & scene::MaterialDecode::refractTint) {
-        // A fog body's refraction tint in the film's fields (scene.glsl
-        // sheetBody); a fog body has no film.
+        // A fog body's refraction tint and fog start in the film's fields
+        // (pathtrace.comp sheetBody); a fog body has no film.
         value.film[0] = 0;
         std::copy_n(material.refractTint, 3, value.film + 1);
+        std::memcpy(&value.filmMaps[0], &material.fogStart, sizeof(float));
       }
       if (material.blendModulation)
         detail::blendModulationFields(*material.blendModulation, sampled(material.blendModulation->sampler),

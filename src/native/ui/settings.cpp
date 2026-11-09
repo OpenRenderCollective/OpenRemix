@@ -1393,7 +1393,7 @@ namespace remix {
                           "Outside the world everything is shown. Lighting is unchanged.\n"
                           "rtx.native.pathtrace.cameraVisibilityCulling");
     }
-    // Path tracing GPU cost; each is off by default and renders the same image.
+    // Path tracing GPU cost; each renders the same image (within noise).
     if (ui::Panel panel{"GPU optimizations"}) {
       ui::Checkbox("Hardware face culling", &options.hardwareFaceCulling);
       if (ImGui::IsItemHovered())
@@ -1416,6 +1416,25 @@ namespace remix {
                           "in, as before. SIGMA's sun shadow ray keeps its nearest-blocker search. Same image.\n"
                           "Applies at the next frame (the specialized shaders compile in the background).\n"
                           "rtx.native.pathtrace.shadowEarlyOut");
+      ui::Checkbox("Wavefront indirect lighting", &options.wavefrontIndirect);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("The separate indirect pass as small kernels: the paths' start, then each bounce's\n"
+                          "rays and shading only for the paths still going, then their results. Needs the\n"
+                          "denoiser and one sample per pixel; otherwise, and while its shaders compile, the\n"
+                          "single kernel runs. Same image within noise. Applies at the next frame.\n"
+                          "rtx.native.pathtrace.wavefrontIndirect");
+      if (options.wavefrontIndirect) {
+        ui::Checkbox("Wavefront shadow queue", &options.wavefrontShadowQueue);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("The split bounces' sun and sky shadow rays run in a kernel of their own.\n"
+                            "rtx.native.pathtrace.wavefrontShadowQueue");
+        int bounces = int(options.wavefrontBounces);
+        if (ui::SliderInt("Wavefront split bounces", &bounces, 1, 16))
+          options.wavefrontBounces = uint32_t(bounces);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("Bounces traced and shaded in kernels of their own; the later bounces of the paths\n"
+                            "left run in one kernel. rtx.native.pathtrace.wavefrontBounces");
+      }
       const bool micromaps = opacityMicromapsSupported();
       ImGui::BeginDisabled(!micromaps);
       ui::Checkbox("Opacity micromaps", &options.opacityMicromaps);
@@ -1425,7 +1444,8 @@ namespace remix {
                                     ? "Alpha-tested surfaces (foliage, fences, grates) carry opacity micromaps:\n"
                                       "traversal skips the parts proven cut out and accepts the parts proven\n"
                                       "solid, so fewer rays run the shader's alpha test. Same image. Applies at\n"
-                                      "the next frame: alpha-tested meshes are proved again and rebuild their BLAS.\n"
+                                      "the next frame; micromaps bake in the background and reach each mesh's BLAS\n"
+                                      "a few frames later.\n"
                                       "rtx.native.pathtrace.opacityMicromaps"
                                     : "This GPU or driver does not support VK_EXT_opacity_micromap.\n"
                                       "rtx.native.pathtrace.opacityMicromaps");

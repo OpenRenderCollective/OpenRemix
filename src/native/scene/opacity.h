@@ -3,6 +3,8 @@
 #include "scene/micromap.h"
 #include "scene/types.h"
 #include <map>
+#include <memory>
+#include <mutex>
 #include <tuple>
 
 namespace remix::scene {
@@ -32,6 +34,9 @@ namespace remix::scene {
     // The non-opaque triangles' micro-triangles, proved like the triangles
     // (OpacityCache::setMicromapLevel); null when none is proved.
     std::shared_ptr<const OpacityMicromap> micromap;
+    // Its micromap is still being baked (OpacityCache::setAsyncMicromaps):
+    // once collected, find() returns a replacement carrying it.
+    bool micromapPending = false;
     bool opaque(uint32_t triangle) const {
       return key[0] == 1 || (key[0] == 2 && (uint8_t(key[1 + triangle / 8]) & (1u << (triangle % 8))));
     }
@@ -61,11 +66,49 @@ namespace remix::scene {
       std::weak_ptr<Texture> texture;
       std::shared_ptr<const OpacityPartition> partition;
       std::map<Region, bool> regions;
+      uint64_t bakeEpoch = 0; // Baker epoch its pending micromap was queued in
     };
     struct SurfaceEntries {
       std::weak_ptr<Surface> owner;
       std::map<Key, Entry> entries;
     };
+    // Micromaps by surface content: a hash of the indices, texture
+    // coordinates and vertex alpha (all a bake reads of a surface), with the
+    // cache key and the triangle partition. A mesh uploaded again with new
+    // positions only (swaying foliage, every frame) reuses the micromap baked
+    // for an earlier copy instead of baking again, which in the background
+    // would never catch up with the next copy.
+    struct Waiter {
+      std::weak_ptr<Surface> owner;
+      const Surface *surface;
+      Key key;
+      std::shared_ptr<const OpacityPartition> partition;
+    };
+    struct ContentEntry {
+      std::weak_ptr<Texture> texture;
+      bool textured = false;
+      Key key;
+      std::string partition; // OpacityPartition::key
+      std::shared_ptr<const OpacityMicromap> micromap;
+      bool ready = false;
+      // Background baking: the bake in flight (its partition and epoch) and
+      // the pending partitions of other copies waiting for it.
+      std::shared_ptr<const OpacityPartition> baking;
+      uint64_t epoch = 0;
+      std::vector<Waiter> waiters;
+    };
+    std::unordered_map<uint64_t, ContentEntry> contents;
+    std::vector<float> contentScratch;
+    uint64_t contentHash(const Surface &surface);
+    // The content entry a proof can use (same texture, key and partition; a
+    // bake in flight only from the current epoch), or null.
+    ContentEntry *content(uint64_t hash, const std::shared_ptr<Texture> &texture, const Key &key,
+                          const OpacityPartition &partition);
+    // Gives the cache entry a waiter was proved for its micromap, if the
+    // entry still holds that pending partition.
+    bool install(const Waiter &waiter, const std::shared_ptr<const OpacityMicromap> &micromap);
+    // Immutable once built, apart from the alpha pyramid built at most once:
+    // background bakes keep their own reference.
     struct TextureEntries {
       std::weak_ptr<Texture> owner;
       uint32_t width = 0;
@@ -75,11 +118,16 @@ namespace remix::scene {
       // remixapi_TextureInfoDynamicEXT: pixels change in place, so no texel is
       // ever proven opaque (and none is read here).
       bool dynamic = false;
-      // Mip 0's alpha (min, max) per 2^k-texel cell at level k, from 1x1 up;
-      // built when a micromap first needs it (empty for compressed textures).
-      std::vector<std::vector<std::array<uint8_t, 2>>> alpha;
-      std::vector<uint32_t> alphaWidths;
-      void buildAlpha(const Texture &texture);
+      // Mip 0's alpha (min, max) per 2^(alphaShift + k)-texel cell at level k;
+      // built when a micromap first needs it. Decoded textures start from 1x1
+      // texels; compressed ones from their 4x4 blocks (alphaShift 2).
+      mutable std::vector<std::vector<std::array<uint8_t, 2>>> alpha;
+      mutable std::vector<uint32_t> alphaWidths;
+      mutable uint32_t alphaShift = 0;
+      mutable std::once_flag alphaBuilt;
+      // Thread-safe; the first call builds the pyramid.
+      void buildAlpha(const Texture &texture) const;
+      void buildAlphaOnce(const Texture &texture) const;
       // The alpha (0-1) that sampling within r can return.
       std::array<float, 2> alphaRange(const Region &r) const;
       bool solid(const Region &r) const {
@@ -94,20 +142,34 @@ namespace remix::scene {
       }
     };
     std::unordered_map<const Surface *, SurfaceEntries> surfaces;
-    std::unordered_map<const Texture *, TextureEntries> textures;
-    TextureEntries &coverage(const std::shared_ptr<Texture> &texture);
+    std::unordered_map<const Texture *, std::shared_ptr<TextureEntries>> textures;
+    const std::shared_ptr<TextureEntries> &coverage(const std::shared_ptr<Texture> &texture);
     // The cache key of a draw; false for non-finite inputs (never cached).
     bool key(const Draw &draw, const std::array<float, 4> &uv, Key &out, std::array<uint32_t, 2> &dimensions) const;
     // The texel rectangles (up to four, across a wrap) that filtered samples
     // between these texture coordinates can read, before the draw's UV transform.
-    OpacityPartition::Reason footprint(const Draw &draw, const std::array<float, 4> &uv,
-                                       const std::array<std::array<float, 2>, 3> &corners, std::array<Region, 4> &out,
-                                       unsigned &count) const;
+    // texelMargin: the cache's sub-texel rounding margin.
+    static OpacityPartition::Reason footprint(float texelMargin, const Draw &draw, const std::array<float, 4> &uv,
+                                              const std::array<std::array<float, 2>, 3> &corners,
+                                              std::array<Region, 4> &out, unsigned &count);
     OpacityPartition::Reason opaqueTexels(const Draw &draw, const std::array<float, 4> &uv, uint32_t triangle,
                                           TextureEntries *texture, std::map<Region, bool> &regions);
-    std::shared_ptr<const OpacityMicromap> bakeMicromap(const Draw &draw, const std::array<float, 4> &uv,
-                                                        const OpacityPartition &partition, TextureEntries *texture,
-                                                        bool usesTexture);
+    // Reads only its arguments, so background threads can run it.
+    static std::shared_ptr<const OpacityMicromap> bakeMicromap(float texelMargin, uint32_t micromapLevel,
+                                                               const Draw &draw, const std::array<float, 4> &uv,
+                                                               const OpacityPartition &partition,
+                                                               const TextureEntries *texture, bool usesTexture);
+    struct Baker;
+    std::shared_ptr<Baker> baker; // setAsyncMicromaps
+    // Returns the epoch the bake was queued in (Entry::bakeEpoch).
+    // Also registers the bake as the content entry's (content: contentHash).
+    uint64_t queueBake(const Draw &draw, const std::array<float, 4> &uv, const Key &key,
+                       std::shared_ptr<const OpacityPartition> partition,
+                       std::shared_ptr<const TextureEntries> texture, bool usesTexture, uint64_t content);
+    // A pending partition whose bake a level change dropped: lookups treat it
+    // as a miss, so partition() queues the bake again.
+    bool abandoned(const Entry &entry) const;
+    uint64_t micromapInstalls = 0, micromapBakes = 0;
 
   public:
     explicit OpacityCache(uint32_t subTexelPrecisionBits = 4, bool profile = false);
@@ -132,8 +194,26 @@ namespace remix::scene {
     // rtx.native.pathtrace.opacityMicromaps: the deepest micromap subdivision
     // level (0: none). Alpha-tested partitions get a micromap; part of the
     // cache key like oneSidedOpaque. Set only while no lookup is running.
-    void setMicromapLevel(uint32_t level) { micromapLevel = std::min(level, OpacityMicromap::maxLevel); }
+    // A change abandons the bakes still queued for the previous level.
+    void setMicromapLevel(uint32_t level);
     uint32_t micromapLevelEnabled() const { return micromapLevel; }
+    // Bake micromaps on background threads (the tracer): partition() then
+    // returns an alpha-tested partition at once, without its micromap and
+    // marked micromapPending, and collectMicromaps() installs the finished
+    // ones. Synchronous by default (results within the same call). Set only
+    // while no lookup is running.
+    void setAsyncMicromaps(bool value);
+    bool asyncMicromapsEnabled() const { return baker != nullptr; }
+    // Replaces each finished bake's pending partition in the cache with one
+    // carrying the micromap (or none, if nothing was proved): later find() and
+    // partition() calls return it. Returns how many were installed. Call while
+    // no lookup is running.
+    size_t collectMicromaps();
+    // Counts collectMicromaps() installs, so holders of pending partitions
+    // (the persistent static set) know when to look them up again.
+    uint64_t micromapInstallCount() const { return micromapInstalls; }
+    // Bakes queued so far (diagnostics).
+    uint64_t micromapBakeCount() const { return micromapBakes; }
 
   private:
     bool oneSidedOpaque = false;

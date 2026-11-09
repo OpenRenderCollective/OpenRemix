@@ -135,6 +135,7 @@ layout(set=0,binding=3,std140) uniform Frame {
   vec4 rayPortals[32]; // remixapi_MaterialInfoPortalEXT, 4 per index: the map to the partner (3 rows), the front's normal (w: 1 open pair, +2 moved)
   uvec4 rayPortalConfig; // teleports per camera ray, exit offset (float bits, world units), reserved
   vec4 rayPortalPlanes[2]; // per index: dot(front normal, p) at its opening's plane (local x = 0)
+  uint64_t wavefrontPaths; uint wavefrontStride,wavefrontFlags; // wavefront indirect records (pathtrace.comp WavefrontPlanes), plane stride in 16 bytes, bit 0: shadow queue
 } frame;
 // Instance mask bit of view models (pathtrace/tlas_policy.h).
 const uint viewModelInstanceMask=64u;
@@ -576,7 +577,7 @@ vec3 sheetTransmission(Surface s, vec4 color, uint triangle, vec2 bary, float co
   if ((s.state.w&8)!=0 && s.pbr.w!=0) {
     vec2 body=unpackHalf2x16(floatBitsToUint(s.pbr.w));
     float f0=(body.x-1)/(body.x+1);
-    return (1-f0*f0)*bodyTransmittance(color.rgb,t,body.y);
+    return (1-f0*f0)*(body.y<0?vec3(1):bodyTransmittance(color.rgb,t,body.y));
   }
   return transmissionColor(color.rgb,(s.state.w&32)!=0)*(1-color.a);
 }

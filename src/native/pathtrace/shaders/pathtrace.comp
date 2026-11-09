@@ -25,6 +25,13 @@
 #define NRD_GLSL 1
 #include "NRD.hlsli"
 #endif
+// The wavefront indirect pass's kernel (traceIndirect, wavefrontStart); 0: none.
+#ifndef WAVEFRONT_PASS
+#define WAVEFRONT_PASS 0
+#endif
+#ifdef WAVEFRONT_PASS
+#extension GL_KHR_shader_subgroup_ballot : require // wavefrontEnqueue
+#endif
 #ifdef SPARSE_COMPACT_PASS
 // One group per 16x16 pixel tile (see the pass in main).
 layout(local_size_x=16, local_size_y=16) in;
@@ -64,7 +71,13 @@ layout(set=0,binding=15,rgba16f) uniform image2D meterMaterial;
 // specialization constants: as variants each cost a 20-45 s compile, while
 // trimming code only, not registers (168 on Turing with all five dynamic).
 layout(push_constant) uniform Features { layout(offset=28) uint bits; } features;
-#define enableDecals ((features.bits&1u)!=0u)
+// Paint and subsurface scattering are variants too (Gpu::selectLightingPipeline
+// turns them off in scenes without either): compiled in, the decal peel in
+// every closest() and the subsurface copy of a Hit spill on every trace
+// (the separate indirect pass 272 -> 176 bytes; RTX 5080, 6% of a frame).
+layout(constant_id=14) const bool paintCapable=true;
+layout(constant_id=15) const bool subsurfaceCapable=true;
+#define enableDecals (paintCapable&&(features.bits&1u)!=0u)
 #define enableRussianRoulette ((features.bits&2u)!=0u)
 #define enablePbrReuse ((features.bits&4u)!=0u)
 #define enableAngularEmitters ((features.bits&8u)!=0u)
@@ -275,6 +288,11 @@ vec3 leavingNormal=vec3(0);
 // took the big stages from 168 to 255 registers.
 // wound: W at it (a wound cut's, as its candidate test found it; else 0).
 struct Intersection { float t; uint surface; uint primitive; vec2 bary; mat4x3 model; float wound; };
+// The wavefront shade kernel's bounce receiver, found by its trace kernel
+// (closest() takes it in place of its first query).
+#if WAVEFRONT_PASS==3
+Intersection wavefrontReceiver;
+#endif
 void queryScene(accelerationStructureEXT scene, vec3 origin, vec3 direction, inout Intersection x,float minimum) {
   rayQueryEXT query;
   profileRay(0);
@@ -328,7 +346,7 @@ vec3 burleyScaling(vec3 color,float g) {
 // lobe (negated where it is too thin to be a volume), and minus the weight.
 void surfaceSubsurface(Surface s,vec2 uv,inout Hit hit) {
   hit.sss=vec4(0);
-  if(!subsurfaced(s))return;
+  if(!subsurfaceCapable||!subsurfaced(s))return;
   uvec3 maps=(frame.pathConfig.w&0x2000u)==0u?s.subsurfaceMaps.xyz:uvec3(0);
   vec3 color=maps.x!=0u?materialTexel(s,maps.x-1,uv).rgb:s.subsurfaceColor.rgb;
   if(s.subsurfaceMaps.w==1u) {
@@ -475,13 +493,25 @@ Hit closest(vec3 origin,vec3 direction,float maximum,bool motion) {
   float lastDecal=0,minimum=0,end=maximum;
   const float attach=frame.visibilityProbe.y;
   const uint mask=traceMask;
+#ifdef WAVEFRONT_PLAIN
+  // The unpainted shade kernel's: the trace kernel found no paint before the
+  // receiver (wavefrontTrace), so the peel finds none either.
+  const bool paint=false;
+#else
   const bool paint=enableDecals&&(mask&decalInstanceMask)!=0u;
+#endif
   uint layers=0u;
   // Step 0 finds the receiver; the steps after it, up to 32 layers of paint.
   for(uint step=0;step<33;++step) {
     traceMask=step==0u?(paint?mask&~decalInstanceMask:mask):decalInstanceMask;
     if(step==0u) {
+#if WAVEFRONT_PASS==3
+      // A shade kernel's one closest() (it stops at a blended layer): its
+      // bounce ray's receiver, found by the trace kernel.
+      receiver=wavefrontReceiver;
+#else
       receiver=nearest(origin,direction,maximum,0);
+#endif
       if(!paint)break;
       end=receiver.t;
       // Floored like the attachment test below (at most 20 x attach).
@@ -764,18 +794,18 @@ vec3 offsetRay(vec3 p,vec3 n) {
 // A translucent body's refractive index and measurement distance at a sheet
 // (zero: none). A sheet from the raster G-buffer carries no material record:
 // its ray is traced again for it.
-// tint: a fog body's refraction tint (MaterialDecode::refractTint in the
-// film's fields; one when none).
-vec2 sheetBody(Hit hit,vec3 direction,out vec3 tint) {
-  tint=vec3(1);
-  if(hit.sheetIndex!=0u)return vec2(0);
+// tint: a fog body's refraction tint, w its fog start (MaterialDecode::
+// refractTint in the film's fields; one and zero when none).
+vec2 sheetBody(Hit hit,vec3 direction,out vec4 tint) {
+  if(hit.sheetIndex!=0u){tint=vec4(1,1,1,0);return vec2(0);}
   vec2 body=hit.thick;int surface=hit.surface;
   if(body.x==0&&frame.target.w!=0&&hit.tinted) {
     Hit traced=cameraHit(offsetRay(hit.p,hit.ng),direction);
     if(traced.t<1e30&&traced.blended){body=traced.thick;surface=traced.surface;}
   }
-  tint=vec3(1);
-  if(body.y<0&&surface>=0&&(surfaces[surface].material.x&16384u)!=0u)tint=surfaces[surface].film.yzw;
+  tint=vec4(1,1,1,0);
+  if(body.y<0&&surface>=0&&(surfaces[surface].material.x&16384u)!=0u)
+    tint=vec4(surfaces[surface].film.yzw,uintBitsToFloat(surfaces[surface].filmMaps.x));
   return body;
 }
 // A camera ray's direction past a translucent body's surface: refracted by
@@ -946,12 +976,24 @@ vec3 sunVisibility(Hit receiver,ivec2 pixel,out float blockerDistance) {
 #endif
 #include "pbr_reuse.glsl"
 bool skipSheetLocal=false; // set around direct() for PBR sheets (see sheetLocalLights)
+#ifdef WAVEFRONT_DEFER_SHADOWS
+// The wavefront shade kernel's sun, sky and local light at its vertex before
+// their shadow rays, which the shadow kernel traces (wavefrontShadow): the
+// light unshadowed (cloud shadow and sky radiance in; the local light's
+// estimate times the material factor), the rays' origin, the sky ray's
+// direction (the local light's endpoint: wavefrontLocalEndpoint).
+vec3 wavefrontSun=vec3(0),wavefrontSky=vec3(0),wavefrontLocal=vec3(0),wavefrontShadowOrigin=vec3(0),
+     wavefrontSkyDirection=vec3(0);
+#endif
 #include "subsurface.glsl"
 vec3 direct(Hit hit,bool primary,out vec3 specular,out float distance) {
   vec3 toLight=-frame.lightDirection.xyz;
   float cosine=max(0,dot(hit.n,toLight));
   distance=0;
   vec3 local=vec3(0);specular=vec3(0);
+#ifdef WAVEFRONT_DEFER_SHADOWS
+  wavefrontShadowOrigin=shadowOrigin(hit);wavefrontLocalEstimate=vec3(0);wavefrontLocal=vec3(0);
+#endif
   // PBR transparent sheets (water) may skip local-light sampling at their own
   // surface (rtx.native.pathtrace.sheetLocalLights=0); their traced paths still
   // carry local light reflected from the scene. Sun and sky stay.
@@ -961,6 +1003,9 @@ vec3 direct(Hit hit,bool primary,out vec3 specular,out float distance) {
     local=materialFactor(hit)*localLighting(hit,rng,primary?frame.localConfig.y:1u,distance,false,specular,primary?frame.firefly.x:0);
     regirLookup=true;
     specular*=materialFactor(hit);
+#ifdef WAVEFRONT_DEFER_SHADOWS
+    wavefrontLocal=materialFactor(hit)*wavefrontLocalEstimate;
+#endif
   }
   // The sun (0) and the sky (1) share one shadow() call site: each inlined
   // copy is a set of visibility queries.
@@ -975,6 +1020,11 @@ vec3 direct(Hit hit,bool primary,out vec3 specular,out float distance) {
       if(frame.skyRadiance.w==0||(primary&&hit.sheetIndex!=0u))continue;
       weight=materialSample(hit,direction,lobeSpecular);
     }
+#ifdef WAVEFRONT_DEFER_SHADOWS
+    if(source==0)wavefrontSun=weight*cloudShadow(hit.p);
+    else{wavefrontSky=weight*environmentRadiance(direction);wavefrontSkyDirection=direction;}
+    continue;
+#endif
     vec3 visibility=shadow(shadowOrigin(hit),direction);
     if(source==0)visibility*=cloudShadow(hit.p);
     if(source==1)visibility*=environmentRadiance(direction);
@@ -1144,36 +1194,63 @@ vec2 firstSurfaceNoise(uint ray) {
   uint rotation=hash((firstSurfacePaths*16u+ray)^0x736b7921u);
   return fract(blue+vec2(rotation>>8,hash(rotation)>>8)*(1.0/16777216.0));
 }
-vec3 continuation(Hit primary,int lobe,float probability,out vec3 firstDirection,out float pathDistance,out vec3 specular,
-                  bool lightPrimary,uint maxBounces,out vec3 primaryLight,out vec3 primarySpecular,out float primaryDistance) {
+#if WAVEFRONT_PASS==1
+// The wavefront start kernel leaves its path's sky rays to the sky kernel
+// (wavefrontSky): ray k's direction, its light without the shadow ray, and
+// the extra rays' specular part or, for a path training the sky guide, the
+// environment over the ray's PDF. wavefrontSkyTraining: the guide's face and
+// key for it.
+void wavefrontSkyRay(uint k,vec3 direction,vec3 light,vec3 extra);
+bool wavefrontSkyTraining=false;uint wavefrontSkyFace=0u,wavefrontSkyKey=0u,wavefrontIndex=0u;
+#endif
+// A path past its start: what continuation's steps read and leave for the
+// next (with the globals rng, coneWidth, coneSpread and leavingNormal). The
+// wavefront indirect passes (WAVEFRONT_PASS) carry it between their kernels.
+// going: false once a step ended the path (pathSteps).
+struct PathState {
+  vec3 origin,direction,throughput,emissiveWeight,result,previousVertex,specularWeight,weight;
+  vec3 factor; // the first vertex's material factor (roulette)
+  float pathDistance,diffuseMotion,footprintScale,specularShare;
+  uint rouletteState,bounce,layers;
+  bool atPrimary,dead,shortPath,going;
+};
+// The path's first direction (firstDirection), its sky rays (the extra ones
+// returned apart) and the state its first step starts from. lobe and
+// probability become -1 and 1 where the mixture is sampled.
+PathState pathStart(Hit primary,inout int lobe,inout float probability,bool lightPrimary,uint maxBounces,
+                    out vec3 firstDirection,out vec3 extraSky,out vec3 extraSkySpecular) {
+  PathState s;
   profilePath(0u);
   ++firstSurfacePaths;
-  primaryLight=vec3(0);primarySpecular=vec3(0);primaryDistance=0;
-  uint rouletteState=enableRussianRoulette?hash(rng^0x726f756cu):0u;
-  vec3 specularWeight=vec3(0),weight;
+  s.rouletteState=enableRussianRoulette?hash(rng^0x726f756cu):0u;
+  s.specularWeight=vec3(0);
   directionSample=firstSurfaceNoise(0u);
   if(lobe<0||!primary.pbr) {
     lobe=-1;probability=1;
-    weight=materialSample(primary,firstDirection,specularWeight);
+    s.weight=materialSample(primary,firstDirection,s.specularWeight);
   } else {
-    weight=lobeSample(primary,lobe==0,firstDirection)/probability;
-    if(lobe==1)specularWeight=weight;
+    s.weight=lobeSample(primary,lobe==0,firstDirection)/probability;
+    if(lobe==1)s.specularWeight=s.weight;
   }
+  vec3 weight=s.weight,specularWeight=s.specularWeight;
   coneWidth=cameraPixelAngle()*(primary.t<1e30?primary.t:0);
   coneSpread=min(cameraPixelAngle()+coneExpansion(samplePdf),2*3.14159265);
   directionSample=vec2(-1);
-  pathDistance=0;specular=vec3(0);
+  s.pathDistance=0;
   firstSpecularShare=dot(specularWeight,vec3(.2126,.7152,.0722))/max(dot(weight,vec3(.2126,.7152,.0722)),1e-20);
+  s.specularShare=firstSpecularShare;s.factor=materialFactor(primary);
   // The emission the next hit shows through the specular lobe, where the
   // primary's light sampling leaves it to this path (pathEmissiveSpecular:
   // the primary is lit with emissiveSpecularFromPaths whenever bounces follow).
   emissiveSpecularFromPaths=maxBounces>0;
-  vec3 emissiveWeight=pathEmissiveSpecular(primary)?specularWeight/max(materialFactor(primary),vec3(1e-6)):vec3(0);
+  s.emissiveWeight=pathEmissiveSpecular(primary)?specularWeight/max(materialFactor(primary),vec3(1e-6)):vec3(0);
   emissiveSpecularFromPaths=false;
-  bool dead=primary.pbr&&!any(greaterThan(weight,vec3(0)));
-  vec3 direction=firstDirection,origin=offsetRay(primary.p,primary.ng);
+  s.dead=primary.pbr&&!any(greaterThan(weight,vec3(0)));
+  vec3 origin=offsetRay(primary.p,primary.ng);
+  s.direction=firstDirection;s.origin=origin;
   leavingNormal=primary.ng;
-  vec3 throughput=primary.pbr?weight/max(materialFactor(primary),vec3(1e-6)):vec3(1),result=vec3(0);
+  s.throughput=primary.pbr?weight/max(materialFactor(primary),vec3(1e-6)):vec3(1);
+  vec3 result=vec3(0);
   // Explicit environment visibility also evaluates dome lighting at zero
   // diffuse bounces. Continuation misses then contribute only non-dome skies.
   // The sky takes `skyRays` directions from the path's lobe and averages them:
@@ -1181,7 +1258,7 @@ vec3 continuation(Hit primary,int lobe,float probability,out vec3 firstDirection
   // added once the path is done. They count even when the path's sample died.
   // A translucent layer takes its own count (sheetSkySamples).
   uint skyRays=max(1u,(frame.pathConfig.z>>(primary.blended?16:8))&31u);
-  vec3 extraSky=vec3(0),extraSkySpecular=vec3(0);
+  extraSky=vec3(0);extraSkySpecular=vec3(0);
   // Sky guiding (sky_guiding.glsl) on a diffuse or legacy surface: every sky
   // ray trains its cell's guide, and the extra ones draw from the guide with
   // its share, the rest from the diffuse BRDF, weighted by the mixture PDF.
@@ -1221,7 +1298,26 @@ vec3 continuation(Hit primary,int lobe,float probability,out vec3 firstDirection
       directionSample=vec2(-1);
       if(lobe==0)skySpecular=vec3(0);else if(lobe==1)skySpecular=skyWeight;
     }
-    if((primary.pbr||(guided&&k!=0u))&&!any(greaterThan(skyWeight,vec3(0))))continue;
+    if((primary.pbr||(guided&&k!=0u))&&!any(greaterThan(skyWeight,vec3(0)))) {
+#if WAVEFRONT_PASS==1
+      wavefrontSkyRay(k,skyDirection,vec3(0),vec3(0));
+#endif
+      continue;
+    }
+#if WAVEFRONT_PASS==1
+    {
+      // The sky kernel traces the shadow ray (and adds k 0's light to the
+      // path's radiance before its first bounce).
+      vec3 environment=environmentRadiance(skyDirection);
+      vec3 light=(primary.pbr?skyWeight/max(materialFactor(primary),vec3(1e-6)):guided&&k!=0u?skyWeight:vec3(1))
+                 *environment/float(skyRays);
+      wavefrontSkyTraining=training;wavefrontSkyFace=skyFace;
+      if(training)wavefrontSkyKey=skyGuideKey(primary);
+      wavefrontSkyRay(k,skyDirection,light,training?(skyPdf>0?environment/skyPdf:vec3(0))
+                                       :k!=0u&&primary.pbr?light*skySpecular/max(skyWeight,vec3(1e-20)):vec3(0));
+      continue;
+    }
+#endif
     vec3 skyLight=environmentRadiance(skyDirection)*shadow(origin,skyDirection);
     if(training&&skyPdf>0)trainSkyGuide(primary,skyDirection,dot(skyLight,vec3(.2126,.7152,.0722))/skyPdf);
     vec3 sky=(primary.pbr?skyWeight/max(materialFactor(primary),vec3(1e-6)):guided&&k!=0u?skyWeight:vec3(1))
@@ -1232,96 +1328,112 @@ vec3 continuation(Hit primary,int lobe,float probability,out vec3 firstDirection
       if(primary.pbr)extraSkySpecular+=sky*skySpecular/max(skyWeight,vec3(1e-20));
     }
   }
-  if(dead&&!lightPrimary) {
-    coneWidth=0;coneSpread=-1;leavingNormal=vec3(0);
-    profilePath(6u);specular=extraSkySpecular;
-    clampLighting(primary,extraSky,specular,frame.firefly.y/probability);
-    return extraSky;
-  }
-  vec3 previousVertex=primary.p;
-#ifdef SHARC_QUERY
+  s.result=result;
+  s.previousVertex=primary.p;
   // A diffuse-lobe ray has the footprint of a diffuse surface.
-  float footprintScale=lobe==0?1.:cacheFootprint(primary);
+#ifdef SHARC_QUERY
+  s.footprintScale=lobe==0?1.:cacheFootprint(primary);
+#else
+  s.footprintScale=1;
 #endif
-  const vec3 luma=vec3(.2126,.7152,.0722);
-  float diffuseMotion=0;
-  uint bounce=0,layers=0;
-  if(maxBounces==0)profilePath(8u);
-  bool atPrimary=lightPrimary;
+  s.diffuseMotion=0;
+  s.bounce=0;s.layers=0;
+  s.atPrimary=lightPrimary;
   // A translucent layer's path (rtx.native.pathtrace.shortSheetPaths) ends
   // at its first hit: the radiance cache's light there however narrow the
   // path, else the hit's direct light. The layer's own light sampling stays;
   // its reflection loses the deeper bounces a miss would have traced (the NRD
   // sample shades the hits seen through glass from its caches alone).
-  bool shortPath=primary.blended&&(frame.pathConfig.z&8u)!=0;
-  // Steps: up to 16 bounces, each through up to 32 blended layers (and the
-  // primary's own vertex first).
-  for(uint step=0;step<561&&(atPrimary||bounce<maxBounces);++step) {
+  s.shortPath=primary.blended&&(frame.pathConfig.z&8u)!=0;
+  s.going=true;
+  return s;
+}
+// The path's steps until its bounce reaches `untilBounce` (at most
+// maxBounces) or it ends: a bounce through up to 32 blended layers takes a
+// step per layer (and the primary's own vertex first). primary: the path's
+// first vertex (only its material factor once that is lit).
+void pathSteps(Hit primary,inout PathState s,uint maxBounces,uint untilBounce,
+               inout vec3 primaryLight,inout vec3 primarySpecular,inout float primaryDistance) {
+  const vec3 luma=vec3(.2126,.7152,.0722);
+  // `going` is set again by every step that does not end the path.
+  for(uint step=0;step<561u&&(s.atPrimary||s.bounce<untilBounce);s.going=true,++step) {
+    s.going=false;
     Hit hit=primary;
-    if(!atPrimary) {
-    if(layers==0)profilePath(1u+min(bounce,3u)); // Four depth counters: the last takes every deeper segment.
-    pathEmission=any(greaterThan(emissiveWeight,vec3(0)));
-    hit=secondaryHit(origin,direction);
+    if(!s.atPrimary) {
+    if(s.layers==0)profilePath(1u+min(s.bounce,3u)); // Four depth counters: the last takes every deeper segment.
+    pathEmission=any(greaterThan(s.emissiveWeight,vec3(0)));
+    hit=secondaryHit(s.origin,s.direction);
     pathEmission=false;
     if(hit.t<1e30)coneWidth+=coneSpread*hit.t;
     // Also through blended layers, and to the sky (a reflection distance).
-    pathDistance+=hit.t*(1-smoothstep(0.,.2,diffuseMotion));
-    if(hit.t==1e30) { if(frame.skyRadiance.w==0)result+=throughput*environmentRadiance(direction);profilePath(5u);break; }
+    s.pathDistance+=hit.t*(1-smoothstep(0.,.2,s.diffuseMotion));
+    if(hit.t==1e30) { if(frame.skyRadiance.w==0)s.result+=s.throughput*environmentRadiance(s.direction);profilePath(5u);break; }
     if(hit.sheetIndex!=0u) {
-      DielectricSheet optics=sheetOptics(hit,abs(dot(hit.n,direction)));
+      DielectricSheet optics=sheetOptics(hit,abs(dot(hit.n,s.direction)));
       float reflected=sheetReflectionProbability(optics);
       if(random()>=reflected) {
-        if(++layers>=32){profilePath(9u);break;}
-        throughput*=optics.transmission/max(1-reflected,1e-20);
-        vec3 next=sheetOrigin(hit,direction);
-        pathDistance+=length(next-hit.p)*(1-smoothstep(0.,.2,diffuseMotion));
-        origin=next;
-        if(!any(greaterThan(throughput,vec3(0))))break;
+        if(++s.layers>=32){profilePath(9u);break;}
+        vec3 passed=optics.transmission/max(1-reflected,1e-20);
+        s.throughput*=passed;s.emissiveWeight*=passed;
+        vec3 next=sheetOrigin(hit,s.direction);
+        s.pathDistance+=length(next-hit.p)*(1-smoothstep(0.,.2,s.diffuseMotion));
+        s.origin=next;leavingNormal=vec3(0);
+        if(!any(greaterThan(s.throughput,vec3(0))))break;
+#if WAVEFRONT_PASS==3
+        // Reclassify the next receiver before shading after a transmission.
+        s.going=true;break;
+#endif
         continue;
       }
-      throughput/=max(reflected,1e-20);
+      s.throughput/=max(reflected,1e-20);s.emissiveWeight/=max(reflected,1e-20);
     } else if(hit.blended&&random()>=hit.color.a) {
-      if(++layers>=32){profilePath(9u);break;}
+      if(++s.layers>=32){profilePath(9u);break;}
       // A translucent body: its depth absorption over the segment, per pass taken.
       vec3 passed;
       if(hit.thick.y!=0){float f0=(hit.thick.x-1)/(hit.thick.x+1);
-        passed=(1-f0*f0)*bodyTransmittance(hit.color.rgb,hit.t,hit.thick.y)/max(1-hit.color.a,1e-3);}
+        passed=(1-f0*f0)*(hit.thick.y<0?vec3(1):bodyTransmittance(hit.color.rgb,hit.t,hit.thick.y))/max(1-hit.color.a,1e-3);}
       else passed=transmissionColor(hit.color.rgb,hit.tinted);
-      throughput*=passed;emissiveWeight*=passed;
-      origin=offsetRay(hit.p,-hit.ng);leavingNormal=vec3(0);continue;
+      s.throughput*=passed;s.emissiveWeight*=passed;
+      s.origin=offsetRay(hit.p,-hit.ng);leavingNormal=vec3(0);
+#if WAVEFRONT_PASS==3
+      // The next layer's query may meet paint: a shade kernel leaves it to
+      // the next trace kernel (or the tail), which sorts the path again.
+      s.going=true;break;
+#endif
+      continue;
     }
-    if(any(greaterThan(emissiveWeight,vec3(0)))) {
-      pathDebugRecord(3,hit.p,0,vec4(emissiveWeight,0),vec4(hit.emission,0),vec4(0));
-      result+=emissiveWeight*hit.emission;emissiveWeight=vec3(0);
+    if(any(greaterThan(s.emissiveWeight,vec3(0)))) {
+      pathDebugRecord(3,hit.p,0,vec4(s.emissiveWeight,0),vec4(hit.emission,0),vec4(0));
+      s.result+=s.emissiveWeight*hit.emission;s.emissiveWeight=vec3(0);
     }
-    pathDebugRecord(1,hit.p,float(bounce+1),vec4(hit.n,hit.pbr?hit.rm.x:-1),vec4(throughput,hit.t),vec4(hit.emission,0));
+    pathDebugRecord(1,hit.p,float(s.bounce+1),vec4(hit.n,hit.pbr?hit.rm.x:-1),vec4(s.throughput,hit.t),vec4(hit.emission,0));
 #if defined(TEMPORAL) && defined(SHEET_LIGHTING_PASS)
     vec3 opaqueRadiance;
     if(translucentRadiance(hit,opaqueRadiance)) {
-      result+=throughput*opaqueRadiance;
+      s.result+=s.throughput*opaqueRadiance;
       break;
     }
 #endif
 #ifdef ORCA_SPARSE_PASS
-    if(bounce==0&&!orcaRecorded&&hit.sheetIndex==0u) {
-      orcaFirst=hit;orcaDirection=direction;orcaThroughput=throughput;orcaBefore=result;orcaRecorded=true;
+    if(s.bounce==0&&!orcaRecorded&&hit.sheetIndex==0u) {
+      orcaFirst=hit;orcaDirection=s.direction;orcaThroughput=s.throughput;orcaBefore=s.result;orcaRecorded=true;
     }
 #elif !defined(TRANSPARENCY_PASS)
     // This frame's ORCA cache answers the first bounce (orca.glsl).
-    if(bounce==0&&frame.orcaConfig.w!=0&&hit.sheetIndex==0u) {
+    if(s.bounce==0&&frame.orcaConfig.w!=0&&hit.sheetIndex==0u) {
       vec3 cachedRadiance;
-      if(orcaLookup(hit,direction,cachedRadiance)){result+=throughput*cachedRadiance;break;}
+      if(orcaLookup(hit,s.direction,cachedRadiance)){s.result+=s.throughput*cachedRadiance;break;}
     }
 #endif
 #ifdef SHARC_QUERY
     vec3 cached;
 #ifdef ORCA_SPARSE_PASS
     // Sparse paths measure the first vertex themselves; only tails use SHARC.
-    if(bounce>0&&cacheRadiance(hit,length(hit.p-previousVertex)*footprintScale,false,cached)) {
+    if(s.bounce>0&&cacheRadiance(hit,length(hit.p-s.previousVertex)*s.footprintScale,false,cached)) {
 #else
-    if(cacheRadiance(hit,length(hit.p-previousVertex)*footprintScale,shortPath,cached)) {
+    if(cacheRadiance(hit,length(hit.p-s.previousVertex)*s.footprintScale,s.shortPath,cached)) {
 #endif
-      result+=throughput*cached;profilePath(7u);break; // Cached outgoing radiance already includes this hit's direct light.
+      s.result+=s.throughput*cached;profilePath(7u);break; // Cached outgoing radiance already includes this hit's direct light.
     }
 #endif
     }
@@ -1329,61 +1441,78 @@ vec3 continuation(Hit primary,int lobe,float probability,out vec3 firstDirection
     // specular emission is left to the path wherever one follows.
     vec3 vertexSpecular;float vertexDistance;
     const bool savedFromPaths=emissiveSpecularFromPaths;
-    emissiveSpecularFromPaths=atPrimary?maxBounces>0:bounce+1<maxBounces&&!shortPath;
-    pathDebugVertex=!atPrimary;
-    vec3 vertexLight=direct(hit,atPrimary,vertexSpecular,vertexDistance);
+    emissiveSpecularFromPaths=s.atPrimary?maxBounces>0:s.bounce+1<maxBounces&&!s.shortPath;
+    pathDebugVertex=!s.atPrimary;
+    vec3 vertexLight=direct(hit,s.atPrimary,vertexSpecular,vertexDistance);
     pathDebugVertex=false;
     emissiveSpecularFromPaths=savedFromPaths;
-    if(atPrimary) {
+    if(s.atPrimary) {
       primaryLight=vertexLight;primarySpecular=vertexSpecular;primaryDistance=vertexDistance;
-      atPrimary=false;
-      if(dead){profilePath(6u);break;}
+      s.atPrimary=false;
+      if(s.dead){profilePath(6u);break;}
       continue;
     }
-    vec3 lighting=throughput*vertexLight;
-    result+=lighting;
-    if(diffuseMotion<.2) {
+    vec3 lighting=s.throughput*vertexLight,unshadowed=vec3(0);
+#ifdef WAVEFRONT_DEFER_SHADOWS
+    // The sun and sky light waits for its shadow rays; the motion below
+    // counts it unshadowed.
+    wavefrontSun*=s.throughput;wavefrontSky*=s.throughput;wavefrontLocal*=s.throughput;
+    unshadowed=wavefrontSun+wavefrontSky+wavefrontLocal;
+#endif
+    s.result+=lighting;
+    if(s.diffuseMotion<.2) {
       // The next segment counts by how much of the light so far comes from
       // this vertex and how mirror-like the path is here: the vertex itself
       // and the lobe that reached it (exact for a selected primary lobe).
-      float importance=dot(lighting,luma)/(dot(result,luma)+1e-6);
+      float importance=dot(lighting+unshadowed,luma)/(dot(s.result,luma)+dot(unshadowed,luma)+1e-6);
       float like=diffuseLikeMotion(hit);
-      if(bounce==0)like=mix(like,1.,1-dot(specularWeight,luma)/max(dot(weight,luma),1e-20));
-      diffuseMotion+=1-importance*(1-like);
+      if(s.bounce==0)like=mix(like,1.,1-s.specularShare);
+      s.diffuseMotion+=1-importance*(1-like);
     }
-    if(++bounce>=maxBounces||shortPath){profilePath(8u);break;}
+    if(++s.bounce>=maxBounces||s.shortPath){profilePath(8u);break;}
     vec3 hitSpecular;
-    vec3 hitWeight=materialSample(hit,direction,hitSpecular);
+    vec3 hitWeight=materialSample(hit,s.direction,hitSpecular);
     coneSpread=min(coneSpread+coneExpansion(samplePdf),2*3.14159265);
     emissiveSpecularFromPaths=true; // as direct() was lit above (a path follows)
-    emissiveWeight=pathEmissiveSpecular(hit)?throughput*hitSpecular:vec3(0);
+    s.emissiveWeight=pathEmissiveSpecular(hit)?s.throughput*hitSpecular:vec3(0);
     emissiveSpecularFromPaths=savedFromPaths;
     // A diffusely sampled continuation ends the distance as well.
-    diffuseMotion+=1-dot(hitSpecular,luma)/max(dot(hitWeight,luma),1e-20);
-    throughput*=hitWeight;previousVertex=hit.p;origin=offsetRay(hit.p,hit.ng);leavingNormal=hit.ng;layers=0;
+    s.diffuseMotion+=1-dot(hitSpecular,luma)/max(dot(hitWeight,luma),1e-20);
+    s.throughput*=hitWeight;s.previousVertex=hit.p;s.origin=offsetRay(hit.p,hit.ng);leavingNormal=hit.ng;s.layers=0;
 #ifdef SHARC_QUERY
-    footprintScale=cacheSpread(footprintScale,cacheFootprint(hit));
+    s.footprintScale=cacheSpread(s.footprintScale,cacheFootprint(hit));
 #endif
-    if(!any(greaterThan(throughput,vec3(0)))){profilePath(6u);break;}
-    if(enableRussianRoulette&&frame.pathConfig.x!=0&&bounce>=frame.pathConfig.y) {
+    if(!any(greaterThan(s.throughput,vec3(0)))){profilePath(6u);break;}
+    if(enableRussianRoulette&&frame.pathConfig.x!=0&&s.bounce>=frame.pathConfig.y) {
       // Undo primary material demodulation. This includes the next sampled
       // BRDF/PDF, transmission tint and compensation from earlier survivors.
-      vec3 beta=throughput*materialFactor(primary);
+      vec3 beta=s.throughput*materialFactor(primary);
       float maximum=max(beta.x,max(beta.y,beta.z));
       if(maximum<=0){profilePath(6u);break;}
       float p=max(.05,pow(clamp(maximum,0,1),.25));
       profilePath(10u);
       if(p<1) {
-        rouletteState=hash(rouletteState+0x9e3779b9u);
-        float choice=float(rouletteState>>8)*(1.0/16777216.0);
+        s.rouletteState=hash(s.rouletteState+0x9e3779b9u);
+        float choice=float(s.rouletteState>>8)*(1.0/16777216.0);
         if(choice>=p){profilePath(12u);break;}
-        throughput/=p;emissiveWeight/=p;
+        s.throughput/=p;s.emissiveWeight/=p;
       }
       profilePath(11u);
     }
   }
+}
+// The path's radiance once its steps are done (or its sample died at the
+// primary: `early`, only the extra sky rays), with its specular share.
+vec3 pathFinish(Hit primary,PathState s,bool early,vec3 extraSky,vec3 extraSkySpecular,float probability,
+                out vec3 specular) {
   coneWidth=0;coneSpread=-1;leavingNormal=vec3(0);
-  specular=result*specularWeight/max(weight,vec3(1e-20))+extraSkySpecular;
+  if(early) {
+    profilePath(6u);specular=extraSkySpecular;
+    clampLighting(primary,extraSky,specular,frame.firefly.y/probability);
+    return extraSky;
+  }
+  vec3 result=s.result;
+  specular=result*s.specularWeight/max(s.weight,vec3(1e-20))+extraSkySpecular;
 #ifdef ORCA_SPARSE_PASS
   // Radiance leaving the first vertex toward the primary surface.
   if(orcaRecorded&&all(greaterThan(orcaThroughput,vec3(0))))
@@ -1394,6 +1523,19 @@ vec3 continuation(Hit primary,int lobe,float probability,out vec3 firstDirection
   // for the pixels that sampled the other lobe.
   clampLighting(primary,result,specular,frame.firefly.y/probability);
   return result;
+}
+vec3 continuation(Hit primary,int lobe,float probability,out vec3 firstDirection,out float pathDistance,out vec3 specular,
+                  bool lightPrimary,uint maxBounces,out vec3 primaryLight,out vec3 primarySpecular,out float primaryDistance) {
+  primaryLight=vec3(0);primarySpecular=vec3(0);primaryDistance=0;
+  vec3 extraSky,extraSkySpecular;
+  PathState s=pathStart(primary,lobe,probability,lightPrimary,maxBounces,firstDirection,extraSky,extraSkySpecular);
+  const bool early=s.dead&&!lightPrimary;
+  if(!early) {
+    if(maxBounces==0)profilePath(8u);
+    pathSteps(primary,s,maxBounces,maxBounces,primaryLight,primarySpecular,primaryDistance);
+  }
+  pathDistance=s.pathDistance;
+  return pathFinish(primary,s,early,extraSky,extraSkySpecular,probability,specular);
 }
 vec3 continuation(Hit primary,int lobe,float probability,out vec3 firstDirection,out float pathDistance,out vec3 specular) {
   vec3 primaryLight,primarySpecular;float primaryDistance;
@@ -1433,10 +1575,13 @@ float nearestDistance(float a,float b) { return a>0&&b>0?min(a,b):max(a,b); }
 // one BRDF-mixture sample (legacy surfaces; no REBLUR; DLSS-RR; and while the
 // local firefly filter keeps REBLUR's diffuse prepass off, which probabilistic
 // signals require).
-int primaryLobe(Hit primary,ivec2 pixel,uint sequence,uint sampleIndex,out float probability) {
+// The diffuse lobe's probability at a primary, negative without a selection.
+float primaryDiffuseProbability(Hit primary) {
+  return !primary.pbr||temporal.translucency.w==0?-1:1-specularProbability(primary);
+}
+int primaryLobe(float diffuseProbability,ivec2 pixel,uint sequence,uint sampleIndex,out float probability) {
   probability=1;
-  if(!primary.pbr||temporal.translucency.w==0)return -1;
-  float diffuseProbability=1-specularProbability(primary);
+  if(diffuseProbability<0)return -1;
   uvec2 p=uvec2(pixel)&3u;
   uint bayer=(((p.y&1u)<<2)|((p.x&1u)<<3)|((p.y&2u)>>1)|(p.x&2u))+(bitfieldReverse(sequence)>>28);
   // Several samples of one pixel are spread evenly over the choice.
@@ -1445,6 +1590,9 @@ int primaryLobe(Hit primary,ivec2 pixel,uint sequence,uint sampleIndex,out float
   bool diffuseLobe=choice<diffuseProbability;
   probability=diffuseLobe?diffuseProbability:1-diffuseProbability;
   return diffuseLobe?0:1;
+}
+int primaryLobe(Hit primary,ivec2 pixel,uint sequence,uint sampleIndex,out float probability) {
+  return primaryLobe(primaryDiffuseProbability(primary),pixel,sequence,sampleIndex,probability);
 }
 // Local NEE's specular lobe on a PBR surface joins the PBR specular history,
 // which the specular denoiser needs (the local pass is diffuse only). Its
@@ -1620,80 +1768,597 @@ void clearIndirect(ivec2 pixel,float specularHit) {
 // packed signal stays live across the next sample's ray queries. A zero hit
 // distance marks a sample its lobe did not receive; several samples keep the
 // nearest valid one.
+// Past the paths' start only the primary's few values below stay live (not
+// the Hit beside the one its paths carry: both across the path queries
+// spilled the indirect pass).
+struct IndirectPrimary {
+  vec3 factor,diffuseFactor,specularFactor,sssTint;
+  float roughness,z,diffuseProbability,sssSpecular;
+  bool pbr,sssMoved;
+};
+// Them, and the surface the paths start from (lit).
+IndirectPrimary indirectPrimary(Hit primary,vec3 diffuseFactor,vec3 specularFactor,out Hit lit) {
+  IndirectPrimary p;
+  p.pbr=primary.pbr;p.factor=materialFactor(primary);p.roughness=primary.rm.x;
+  p.diffuseFactor=diffuseFactor;p.specularFactor=specularFactor;
+#ifdef TEMPORAL
+  p.z=abs((temporal.view*vec4(primary.p,1)).z);p.diffuseProbability=primaryDiffuseProbability(primary);
+#else
+  p.z=0;p.diffuseProbability=-1;
+#endif
+  // Subsurface scattering (subsurface.glsl): the sky and the light bounced
+  // from the scene enter where the profile carries them from too, as the
+  // primary's direct light does. One probe for the pixel's samples.
+  lit=primary;p.sssTint=vec3(1);p.sssSpecular=1;p.sssMoved=false;
+  if(subsurfaceCapable&&primary.sss.w!=0&&random()<abs(primary.sss.w))p.sssMoved=subsurfaceMove(lit,p.sssTint,p.sssSpecular);
+  return p;
+}
+// Sample i's path radiance into the pixel's result and REBLUR inputs.
+void indirectSample(ivec2 pixel,uint i,IndirectPrimary p,vec3 sampleLight,vec3 sampleSpecular,vec3 firstDir,
+                    float pathDistance,inout IndirectResult result) {
+  if(p.sssMoved) {
+    vec3 diffuse=p.sssTint*max(sampleLight-sampleSpecular,vec3(0));
+    sampleSpecular*=p.sssSpecular;
+    sampleLight=sampleSpecular+diffuse;
+  }
+  // A NaN passes the firefly limit (its comparison is false) and would
+  // stay in the denoiser's history.
+  if(any(isnan(sampleLight))||any(isinf(sampleLight))||any(isnan(sampleSpecular))||any(isinf(sampleSpecular)))
+    sampleLight=sampleSpecular=vec3(0);
+  result.radiance+=sampleLight/float(frame.config.x);
+#ifdef TEMPORAL
+  // The selection is a function of the pixel and frame: not carried
+  // through the path either.
+  float probability;
+  int lobe=primaryLobe(p.diffuseProbability,pixel,frame.config.z,i,probability);
+  // DLSS-RR's specular hit distance: a mixture sample counts only where
+  // the specular lobe carries most of its weight (mostly a diffuse ray's
+  // distance otherwise). Pixels without one are filled from neighbours
+  // (denoise.comp, mode 6).
+  if(p.pbr&&(lobe==1||(lobe<0&&firstSpecularShare>=.5)))result.distance=nearestDistance(result.distance,pathDistance);
+  if(temporal.hitDistance.w!=0)return;
+  // A surface seen in a mirror is denoised in its virtual space, like its guides.
+  Mirror mirror=loadMirror(pixel);
+  if(mirror.replaced)firstDir=mirrorVector(mirror,firstDir);
+  Screen screen=loadScreen(pixel);
+  if(portalView(screen))firstDir=portalVirtualVector(screen,firstDir);
+  float scale=1/float(frame.config.x);
+  vec4 diffuse0=vec4(0),diffuse1=vec4(0),specular0=vec4(0),specular1=vec4(0);
+  if(lobe!=1) {
+    vec3 diffuse=p.pbr?max(sampleLight-sampleSpecular,vec3(0))*p.factor/p.diffuseFactor:sampleLight;
+    diffuse0=REBLUR_FrontEnd_PackSh(diffuse,REBLUR_FrontEnd_GetNormHitDist(pathDistance,p.z,temporal.hitDistance.xyz,1),firstDir,diffuse1,true);
+    diffuse0.rgb*=scale;diffuse1*=scale;
+  }
+  if(p.pbr&&lobe!=0) {
+    specular0=REBLUR_FrontEnd_PackSh(sampleSpecular*p.factor/p.specularFactor,
+      REBLUR_FrontEnd_GetNormHitDist(pathDistance,p.z,temporal.hitDistance.xyz,p.roughness),firstDir,specular1,true);
+    specular0.rgb*=scale;specular1*=scale;
+  }
+  if(i!=0) {
+    vec4 before=imageLoad(sh0,pixel);
+    diffuse0=vec4(before.rgb+diffuse0.rgb,nearestDistance(before.a,diffuse0.a));diffuse1+=imageLoad(sh1,pixel);
+    before=imageLoad(pbrSpecularInput,pixel);
+    specular0=vec4(before.rgb+specular0.rgb,nearestDistance(before.a,specular0.a));
+    if(temporal.flags.y!=0)specular1+=imageLoad(pbrSpecularSh1,pixel);
+  }
+  imageStore(sh0,pixel,diffuse0);imageStore(sh1,pixel,diffuse1);
+  imageStore(pbrSpecularInput,pixel,specular0);
+  if(temporal.flags.y!=0)imageStore(pbrSpecularSh1,pixel,specular1);
+#endif
+}
+// After the pixel's samples: the REBLUR inputs of a DLSS-RR frame.
+void indirectEnd(ivec2 pixel,IndirectPrimary p,IndirectResult result) {
+#ifdef TEMPORAL
+  if(temporal.hitDistance.w!=0)
+    clearIndirect(pixel,p.pbr?REBLUR_FrontEnd_GetNormHitDist(result.distance,p.z,temporal.hitDistance.xyz,p.roughness):0);
+#endif
+}
 IndirectResult traceIndirect(Hit primary,ivec2 pixel,vec3 diffuseFactor,vec3 specularFactor) {
   IndirectResult result=IndirectResult(vec3(0),rng,0);
   if(primary.t<1e30&&!primary.blended) {
-    // Subsurface scattering (subsurface.glsl): the sky and the light bounced
-    // from the scene enter where the profile carries them from too, as the
-    // primary's direct light does. One probe for the pixel's samples.
-    Hit lit=primary;vec3 sssTint=vec3(1);float sssSpecular=1;bool sssMoved=false;
-    if(primary.sss.w!=0&&random()<abs(primary.sss.w))sssMoved=subsurfaceMove(lit,sssTint,sssSpecular);
+    Hit lit;IndirectPrimary p=indirectPrimary(primary,diffuseFactor,specularFactor,lit);
     for(uint i=0;i<frame.config.x;++i) {
       vec3 firstDir,sampleSpecular;float pathDistance;
 #ifdef TEMPORAL
       float probability;
-      int lobe=primaryLobe(primary,pixel,frame.config.z,i,probability);
+      int lobe=primaryLobe(p.diffuseProbability,pixel,frame.config.z,i,probability);
       vec3 sampleLight=continuation(lit,lobe,probability,firstDir,pathDistance,sampleSpecular);
 #else
       vec3 sampleLight=continuation(lit,firstDir,pathDistance,sampleSpecular);
 #endif
-      if(sssMoved) {
-        vec3 diffuse=sssTint*max(sampleLight-sampleSpecular,vec3(0));
-        sampleSpecular*=sssSpecular;
-        sampleLight=sampleSpecular+diffuse;
-      }
-      // A NaN passes the firefly limit (its comparison is false) and would
-      // stay in the denoiser's history.
-      if(any(isnan(sampleLight))||any(isinf(sampleLight))||any(isnan(sampleSpecular))||any(isinf(sampleSpecular)))
-        sampleLight=sampleSpecular=vec3(0);
-      result.radiance+=sampleLight/float(frame.config.x);
-#ifdef TEMPORAL
-      // The selection is a function of the pixel and frame: not carried
-      // through the path either.
-      lobe=primaryLobe(primary,pixel,frame.config.z,i,probability);
-      // DLSS-RR's specular hit distance: a mixture sample counts only where
-      // the specular lobe carries most of its weight (mostly a diffuse ray's
-      // distance otherwise). Pixels without one are filled from neighbours
-      // (denoise.comp, mode 6).
-      if(primary.pbr&&(lobe==1||(lobe<0&&firstSpecularShare>=.5)))result.distance=nearestDistance(result.distance,pathDistance);
-      if(temporal.hitDistance.w!=0)continue;
-      // A surface seen in a mirror is denoised in its virtual space, like its guides.
-      Mirror mirror=loadMirror(pixel);
-      if(mirror.replaced)firstDir=mirrorVector(mirror,firstDir);
-      Screen screen=loadScreen(pixel);
-      if(portalView(screen))firstDir=portalVirtualVector(screen,firstDir);
-      float z=abs((temporal.view*vec4(primary.p,1)).z),scale=1/float(frame.config.x);
-      vec4 diffuse0=vec4(0),diffuse1=vec4(0),specular0=vec4(0),specular1=vec4(0);
-      if(lobe!=1) {
-        vec3 diffuse=primary.pbr?max(sampleLight-sampleSpecular,vec3(0))*materialFactor(primary)/diffuseFactor:sampleLight;
-        diffuse0=REBLUR_FrontEnd_PackSh(diffuse,REBLUR_FrontEnd_GetNormHitDist(pathDistance,z,temporal.hitDistance.xyz,1),firstDir,diffuse1,true);
-        diffuse0.rgb*=scale;diffuse1*=scale;
-      }
-      if(primary.pbr&&lobe!=0) {
-        specular0=REBLUR_FrontEnd_PackSh(sampleSpecular*materialFactor(primary)/specularFactor,
-          REBLUR_FrontEnd_GetNormHitDist(pathDistance,z,temporal.hitDistance.xyz,primary.rm.x),firstDir,specular1,true);
-        specular0.rgb*=scale;specular1*=scale;
-      }
-      if(i!=0) {
-        vec4 before=imageLoad(sh0,pixel);
-        diffuse0=vec4(before.rgb+diffuse0.rgb,nearestDistance(before.a,diffuse0.a));diffuse1+=imageLoad(sh1,pixel);
-        before=imageLoad(pbrSpecularInput,pixel);
-        specular0=vec4(before.rgb+specular0.rgb,nearestDistance(before.a,specular0.a));
-        if(temporal.flags.y!=0)specular1+=imageLoad(pbrSpecularSh1,pixel);
-      }
-      imageStore(sh0,pixel,diffuse0);imageStore(sh1,pixel,diffuse1);
-      imageStore(pbrSpecularInput,pixel,specular0);
-      if(temporal.flags.y!=0)imageStore(pbrSpecularSh1,pixel,specular1);
-#endif
+      indirectSample(pixel,i,p,sampleLight,sampleSpecular,firstDir,pathDistance,result);
     }
-#ifdef TEMPORAL
-    if(temporal.hitDistance.w!=0)
-      clearIndirect(pixel,primary.pbr?REBLUR_FrontEnd_GetNormHitDist(result.distance,abs((temporal.view*vec4(primary.p,1)).z),temporal.hitDistance.xyz,primary.rm.x):0);
-#endif
+    indirectEnd(pixel,p,result);
   }
   result.state=rng;
   return result;
 }
+#if WAVEFRONT_PASS!=0
+// The wavefront indirect pass (rtx.native.pathtrace.wavefrontIndirect): the
+// separate indirect pass's one sample a pixel as small kernels, so the
+// path's start, each bounce's ray and each bounce's shading compile alone
+// and launch only for the paths still going. start (1, over the screen: up
+// to the first bounce ray; a pixel without a path gets its result), then per
+// bounce: arguments (5, the indirect dispatch over the bounce's list), trace
+// (2, the bounce ray's receiver query), shade (3, the bounce with that
+// receiver, appending the paths that go on to the next list; the paths whose
+// receiver has paint before it in a variant that peels it, the rest in a
+// WAVEFRONT_PLAIN one without the peel; both stop at a blended layer, left
+// to the next trace kernel or the tail); after
+// wavefrontBounces of those, the tail (6: the remaining bounces of the paths
+// left, after its arguments); finish (4, over the screen: the results
+// traceIndirect writes). With rtx.native.pathtrace.wavefrontShadowQueue
+// (frame.wavefrontFlags bit 0) the shade kernel (its WAVEFRONT_DEFER_SHADOWS
+// variant) leaves its vertex's sun and sky shadow rays to the shadow kernel
+// (7, after the next arguments kernel), which adds the light that arrives to
+// the path's before its next bounce. The start kernel leaves its sky rays'
+// shadow rays to the sky kernel (8, after it, over the paths with sky rays). Neither nearest() nor
+// the candidate tests draw random numbers, so resuming from the saved rng
+// and roulette state continues the inline pass's path; the records keep what
+// the next ray depends on exactly (origin, direction, throughput, radiance,
+// random state) and the rest as halves.
+// The records (frame.wavefrontPaths): planes of 16 bytes per pixel,
+// frame.wavefrontStride apart, so a group's accesses to a plane are
+// contiguous. 0-5 (96 bytes): the PathState and the globals its steps read
+// (written by the start and shade kernels); 6-8 (48 bytes): what the finish
+// kernel needs of the start; 9-12 (64 bytes): the receiver the trace kernel
+// found, by the path's place in the bounce's list (the shade kernel at that
+// place reads it), so a group's accesses stay contiguous.
+const uint wavefrontPathPlanes=0u,wavefrontFinishPlanes=6u,wavefrontReceiverPlanes=9u;
+layout(buffer_reference,std430,buffer_reference_align=16) buffer WavefrontPlanes { uvec4 v[]; };
+uvec4 wavefrontLoad(uint plane,uint index) {
+  return WavefrontPlanes(frame.wavefrontPaths).v[plane*frame.wavefrontStride+index];
+}
+void wavefrontStore(uint plane,uint index,uvec4 value) {
+  WavefrontPlanes(frame.wavefrontPaths).v[plane*frame.wavefrontStride+index]=value;
+}
+uvec4 wavefrontPack(vec3 v,uint w) { return uvec4(floatBitsToUint(v),w); }
+uint packHalves(float a,float b) { return packHalf2x16(clamp(vec2(a,b),vec2(-65504),vec2(65504))); }
+// Plane 0's w: 1 going, 2 dead at the primary, 4 short path, 8 a view model
+// path, 16 the pixel has a path, 32 a leaving normal; the bounce << 6, the
+// layers << 11; the first direction's specular share (bounce 0's motion,
+// 11 bits) << 17; from the start kernel to the sky kernel, a path training
+// the sky guide << 28 and the guide's face << 29.
+void storePath(uint index,PathState s) {
+  bool leaving=dot(leavingNormal,leavingNormal)>0;
+  uint flags=(s.going?1u:0u)|(s.dead?2u:0u)|(s.shortPath?4u:0u)|(viewModelPath?8u:0u)|16u|(leaving?32u:0u)|
+             min(s.bounce,31u)<<6|min(s.layers,63u)<<11|uint(round(clamp(s.specularShare,0.,1.)*2047.))<<17;
+#if WAVEFRONT_PASS==1
+  flags|=(wavefrontSkyTraining?1u<<28:0u)|wavefrontSkyFace<<29;
+#endif
+  vec3 previous=s.previousVertex-s.origin;
+  wavefrontStore(0u,index,wavefrontPack(s.origin,flags));
+  wavefrontStore(1u,index,wavefrontPack(s.direction,rng));
+  wavefrontStore(2u,index,wavefrontPack(s.throughput,s.rouletteState));
+  wavefrontStore(3u,index,wavefrontPack(s.result,floatBitsToUint(s.pathDistance)));
+  wavefrontStore(4u,index,uvec4(packHalves(s.emissiveWeight.r,s.emissiveWeight.g),packHalves(s.emissiveWeight.b,coneSpread),
+                               packHalves(s.diffuseMotion,s.footprintScale),leaving?packSnorm2x16(encodeGeometricNormal(leavingNormal)):0u));
+  wavefrontStore(5u,index,uvec4(packHalves(previous.x,previous.y),packHalves(previous.z,s.factor.r),
+                               packHalves(s.factor.g,s.factor.b),floatBitsToUint(coneWidth)));
+}
+// traced: the pixel has a path (else only rng is set).
+PathState loadPath(uint index,out bool traced) {
+  PathState s;
+  uvec4 a=wavefrontLoad(0u,index),b=wavefrontLoad(1u,index);
+  uint flags=a.w;
+  traced=(flags&16u)!=0u;
+  rng=b.w;
+  s.going=(flags&1u)!=0u;s.dead=(flags&2u)!=0u;s.shortPath=(flags&4u)!=0u;viewModelPath=(flags&8u)!=0u;
+  s.bounce=(flags>>6)&31u;s.layers=(flags>>11)&63u;s.specularShare=float((flags>>17)&2047u)/2047.;s.atPrimary=false;
+  if(!traced)return s;
+  s.origin=uintBitsToFloat(a.xyz);s.direction=uintBitsToFloat(b.xyz);
+  uvec4 c=wavefrontLoad(2u,index);s.throughput=uintBitsToFloat(c.xyz);s.rouletteState=c.w;
+  c=wavefrontLoad(3u,index);s.result=uintBitsToFloat(c.xyz);s.pathDistance=uintBitsToFloat(c.w);
+  c=wavefrontLoad(4u,index);
+  vec2 h0=unpackHalf2x16(c.x),h1=unpackHalf2x16(c.y),h2=unpackHalf2x16(c.z);
+  s.emissiveWeight=vec3(h0,h1.x);coneSpread=h1.y;s.diffuseMotion=h2.x;s.footprintScale=h2.y;
+  leavingNormal=(flags&32u)!=0u?decodeGeometricNormal(unpackSnorm2x16(c.w)):vec3(0);
+  c=wavefrontLoad(5u,index);
+  h0=unpackHalf2x16(c.x);h1=unpackHalf2x16(c.y);h2=unpackHalf2x16(c.z);
+  s.previousVertex=s.origin+vec3(h0,h1.x);s.factor=vec3(h1.y,h2);coneWidth=uintBitsToFloat(c.w);
+  return s;
+}
+// Whether the path takes another step (the trace kernel's ray first).
+bool wavefrontSteps(PathState s) { return s.going&&s.bounce<frame.config.y; }
+// The path's first vertex as its steps use it: its material factor.
+Hit wavefrontPrimary(PathState s) {
+  Hit hit;hit.pbr=false;hit.color=vec4(s.factor,1);hit.sheetIndex=0u;hit.sheetDepth=vec3(0);
+  return hit;
+}
+// Planes 6-8: the extra sky rays, IndirectPrimary and the lobe's results.
+// The NRD factors are kept over the material factor (the finish multiplies
+// by their inverse); the roughness as a half, the other half holding the
+// flags, the selected lobe and the lobe's probability (the firefly limit's,
+// to 1/2047); the mixture's specular share as whether it is at least half
+// (all indirectSample asks of it); the subsurface tint with a shared
+// exponent (packShared). The view depth stays exact: as 8 bits of mantissa
+// it moved the denoised image (REBLUR's hit distance normalization).
+// RGB9E5: three 9-bit mantissas over one 5-bit exponent (0 to 65408).
+uint packShared(vec3 c) {
+  c=clamp(c,vec3(0),vec3(65408));
+  float m=max(c.r,max(c.g,c.b));
+  int e=max(-16,int(floor(log2(max(m,1e-30)))))+16;
+  float scale=exp2(float(e-24));
+  if(floor(m/scale+.5)>=512.){scale*=2;++e;}
+  uvec3 q=uvec3(floor(c/scale+.5));
+  return q.r|q.g<<9|q.b<<18|uint(e)<<27;
+}
+vec3 unpackShared(uint v) {
+  return vec3(v&511u,(v>>9)&511u,(v>>18)&511u)*exp2(float(int(v>>27)-24));
+}
+void storeFinish(uint index,IndirectPrimary p,int lobe,vec3 extraSky,vec3 extraSkySpecular,vec3 firstDir,
+                 float probability,vec3 specularRatio) {
+  uint bits=(p.pbr?1u:0u)|(p.sssMoved?2u:0u)|uint(lobe+1)<<2|(firstSpecularShare>=.5?16u:0u);
+  vec3 diffuse=p.diffuseFactor/p.factor,specular=p.specularFactor/p.factor;
+  wavefrontStore(6u,index,uvec4(packHalves(extraSky.r,extraSky.g),packHalves(extraSky.b,extraSkySpecular.r),
+                               packHalves(extraSkySpecular.g,extraSkySpecular.b),packSnorm2x16(encodeGeometricNormal(firstDir))));
+  wavefrontStore(7u,index,uvec4(floatBitsToUint(p.z),
+                               (packHalf2x16(vec2(p.roughness,0))&0xffffu)|(bits|uint(round(clamp(probability,0.,1.)*2047.))<<5)<<16,
+                               packHalves(specularRatio.r,specularRatio.g),packHalves(specularRatio.b,diffuse.r)));
+  wavefrontStore(8u,index,uvec4(packHalves(diffuse.g,diffuse.b),packHalves(specular.r,specular.g),
+                               packHalves(specular.b,p.sssSpecular),p.sssMoved?packShared(p.sssTint):
+#if WAVEFRONT_PASS==1
+                               wavefrontSkyKey
+#else
+                               0u
+#endif
+                               ));
+}
+IndirectPrimary loadFinish(uint index,out vec3 extraSky,out vec3 extraSkySpecular,out vec3 firstDir,
+                           out float probability,out vec3 specularRatio) {
+  IndirectPrimary p;
+  uvec4 a=wavefrontLoad(6u,index),b=wavefrontLoad(7u,index),c=wavefrontLoad(8u,index);
+  vec2 a0=unpackHalf2x16(a.x),a1=unpackHalf2x16(a.y),a2=unpackHalf2x16(a.z);
+  extraSky=vec3(a0,a1.x);extraSkySpecular=vec3(a1.y,a2);firstDir=decodeGeometricNormal(unpackSnorm2x16(a.w));
+  uint bits=(b.y>>16)&31u;
+  vec2 b1=unpackHalf2x16(b.y),b2=unpackHalf2x16(b.z),b3=unpackHalf2x16(b.w);
+  vec2 c0=unpackHalf2x16(c.x),c1=unpackHalf2x16(c.y),c2=unpackHalf2x16(c.z);
+  p.z=uintBitsToFloat(b.x);probability=float((b.y>>21)&2047u)/2047.;
+  p.roughness=b1.x;specularRatio=vec3(b2,b3.x);
+  p.factor=vec3(1);p.diffuseFactor=vec3(b3.y,c0);p.specularFactor=vec3(c1,c2.x);p.sssSpecular=c2.y;
+  p.pbr=(bits&1u)!=0u;p.sssMoved=(bits&2u)!=0u;firstSpecularShare=(bits&16u)!=0u?1.:0.;
+  p.sssTint=p.sssMoved?unpackShared(c.w):vec3(1);
+  // The start's lobe, as indirectSample selects it again: -1 mixture,
+  // 0 diffuse (any choice passes), 1 specular (none does).
+  int lobe=int((bits>>2)&3u)-1;
+  p.diffuseProbability=lobe<0?-1.:lobe==0?2.:0.;
+  return p;
+}
+// The path start for the pixel (a pixel without one gets its result here);
+// whether the path's first bounce follows.
+bool wavefrontStart(Hit primary,ivec2 pixel,uint index,vec3 diffuseFactor,vec3 specularFactor,out bool sky) {
+  sky=false;
+  if(!(primary.t<1e30&&!primary.blended)) {
+    wavefrontStore(0u,index,uvec4(0));
+    IndirectResults(frame.indirectResults).pixels[index]=packIndirect(vec3(0),0,rng);
+    clearIndirect(pixel,0);
+    return false;
+  }
+  Hit lit;IndirectPrimary p=indirectPrimary(primary,diffuseFactor,specularFactor,lit);
+  float probability;
+  int lobe=primaryLobe(p.diffuseProbability,pixel,frame.config.z,0u,probability),selected=lobe;
+  vec3 firstDir,extraSky,extraSkySpecular;
+#if WAVEFRONT_PASS==1
+  wavefrontIndex=index;
+#endif
+  PathState s=pathStart(lit,lobe,probability,false,frame.config.y,firstDir,extraSky,extraSkySpecular);
+#if WAVEFRONT_PASS==1
+  // A subsurface path's tint takes the guide key's word: it trains nothing.
+  wavefrontSkyTraining=wavefrontSkyTraining&&!p.sssMoved;
+#endif
+  sky=frame.skyRadiance.w!=0;
+  // Dead at the primary: only the extra sky rays (pathFinish).
+  if(s.dead)s.going=false;
+  else if(frame.config.y==0)profilePath(8u);
+  storePath(index,s);
+  storeFinish(index,p,selected,extraSky,extraSkySpecular,firstDir,probability,s.specularWeight/max(s.weight,vec3(1e-20)));
+  return wavefrontSteps(s);
+}
+// The live paths of each bounce (after the planes): a header, then three
+// lists, frame.wavefrontStride each: path indices of the current bounce and
+// the next, and the places in the current list of the paths whose bounce ray
+// meets paint (the painted list, count at word 76, dispatch at 152; their
+// entries in the current list get bit 31); then the shadow rays of a shade
+// kernel's vertices (three planes of 16 bytes). Header: the two lists' counts (appended by the start and shade
+// kernels), the current bounce's count and number, the next bounce's number,
+// its dispatch's group columns (x); the shadow rays' count (appended by the
+// shade kernel) and the count the shadow kernel takes; each bounce's indirect
+// dispatch arguments from word 8 (four words each), the shadow kernel's
+// group columns at 72 and its arguments from word 80. The host zeroes it
+// every frame.
+const uint wavefrontPlaneCount=13u,wavefrontHeaderWords=256u,wavefrontLists=3u;
+layout(buffer_reference,std430,buffer_reference_align=4) buffer WavefrontQueue {
+  uint header[wavefrontHeaderWords]; uint list[];
+};
+layout(buffer_reference,std430,buffer_reference_align=16) buffer WavefrontShadows { uvec4 v[]; };
+WavefrontQueue wavefrontQueue() {
+  return WavefrontQueue(frame.wavefrontPaths+uint64_t(wavefrontPlaneCount)*frame.wavefrontStride*16u);
+}
+WavefrontShadows wavefrontShadows() {
+  return WavefrontShadows(frame.wavefrontPaths+uint64_t(wavefrontPlaneCount)*frame.wavefrontStride*16u+
+                          wavefrontHeaderWords*4u+((uint64_t(frame.wavefrontStride)*wavefrontLists*4u+15u)&~uint64_t(15u)));
+}
+// A place in the list counted by header word `counter` for each invocation
+// that adds: one atomic for the subgroup, so the list keeps a subgroup's
+// neighbouring pixels together.
+uint wavefrontAppend(uint counter,bool add) {
+  uvec4 ballot=subgroupBallot(add);
+  uint total=subgroupBallotBitCount(ballot);
+  if(total==0u)return 0u;
+  uint base=0u;
+  if(subgroupElect())base=atomicAdd(wavefrontQueue().header[counter],total);
+  return subgroupBroadcastFirst(base)+subgroupBallotExclusiveBitCount(ballot);
+}
+// Adds the path to the list if `add`.
+void wavefrontEnqueue(uint list,uint index,bool add) {
+  uint at=wavefrontAppend(list,add);
+  if(add)wavefrontQueue().list[list*frame.wavefrontStride+at]=index;
+}
+// Indirect dispatch arguments for `count` invocations at header word `slot`
+// (groups of 64 in columns, their count at word `columns`).
+void wavefrontDispatch(uint count,uint slot,uint columns) {
+  WavefrontQueue q=wavefrontQueue();
+  uint groups=(count+63u)/64u,x=min(groups,32768u);
+  q.header[columns]=max(x,1u);
+  q.header[slot]=x;q.header[slot+1u]=x==0u?0u:(groups+x-1u)/x;q.header[slot+2u]=1u;
+}
+// The arguments kernel (one invocation, before each bounce's kernels): the
+// bounce's, and the shadow kernel's for the bounce before.
+void wavefrontArgs() {
+  WavefrontQueue q=wavefrontQueue();
+  // Pushed bit 31: the sky kernel's, over list 1 (count at 74, columns at
+  // 73, arguments at 144), which the first shade kernel then fills.
+  if((features.bits&0x80000000u)!=0u) {
+    uint count=q.header[1];
+    q.header[1]=0u;q.header[74]=count;
+    wavefrontDispatch(count,144u,73u);
+    return;
+  }
+  uint bounce=q.header[4],list=bounce&1u,count=q.header[list],shadows=q.header[6];
+  // This list takes the bounce after next's paths.
+  q.header[list]=0u;q.header[2]=count;q.header[3]=bounce;q.header[4]=bounce+1u;
+  q.header[6]=0u;q.header[7]=shadows;
+  // The painted list: its count and dispatch (the trace kernel's atomicMax).
+  q.header[76]=0u;q.header[152]=0u;q.header[153]=0u;q.header[154]=1u;
+  wavefrontDispatch(count,8u+4u*min(bounce,15u),5u);
+  wavefrontDispatch(shadows,80u+4u*min(bounce,15u),72u);
+}
+// The shadow kernel: a shade kernel vertex's sun, sky and local light shadow rays; their
+// light that arrives, added to the path's radiance (plane 3) before its next
+// bounce reads it.
+void wavefrontShadow() {
+  WavefrontQueue q=wavefrontQueue();
+  uint id=(gl_WorkGroupID.y*q.header[72]+gl_WorkGroupID.x)*64u+gl_LocalInvocationIndex;
+  if(id>=q.header[7])return;
+  WavefrontShadows items=wavefrontShadows();
+  uvec4 a=items.v[id],b=items.v[frame.wavefrontStride+id];
+  uint index=a.w&0x7fffffffu;
+  viewModelPath=(a.w>>31)!=0u;
+  shadingPixel=ivec2(index%frame.target.x,index/frame.target.x);
+  vec3 origin=uintBitsToFloat(a.xyz),skyDirection=decodeGeometricNormal(unpackSnorm2x16(b.x));
+  vec2 b1=unpackHalf2x16(b.y),b2=unpackHalf2x16(b.z),b3=unpackHalf2x16(b.w);
+  vec3 sun=vec3(b1,b2.x),sky=vec3(b2.y,b3),light=vec3(0);
+  // One shadow() call site for both (each inlined copy is a set of queries).
+  for(uint source=0u;source<2u;++source) {
+    vec3 weight=source==0u?sun:sky;
+    if(!any(greaterThan(weight,vec3(0))))continue;
+    light+=weight*shadow(origin,source==0u?-frame.lightDirection.xyz:skyDirection);
+  }
+  uvec4 c=items.v[2u*frame.wavefrontStride+id];
+  vec3 local=vec3(unpackHalf2x16(c.z),unpackHalf2x16(c.w).x);
+  if(any(greaterThan(local,vec3(0))))
+    light+=local*localVisibility(origin,origin+decodeGeometricNormal(unpackSnorm2x16(c.x))*uintBitsToFloat(c.y));
+  if(any(greaterThan(light,vec3(0)))) {
+    uvec4 result=wavefrontLoad(3u,index);
+    wavefrontStore(3u,index,wavefrontPack(uintBitsToFloat(result.xyz)+light,result.w));
+  }
+}
+#if WAVEFRONT_PASS==8
+// The sky kernel: the start's sky rays of a path (records in the shadow
+// rays' region, ray k's in its plane k): their light that arrives, ray 0's
+// added to the path's radiance and the extra rays' to the finish's extra sky
+// (plane 6); the sky guide trained with it.
+void wavefrontSky() {
+  WavefrontQueue q=wavefrontQueue();
+  uint id=(gl_WorkGroupID.y*q.header[73]+gl_WorkGroupID.x)*64u+gl_LocalInvocationIndex;
+  if(id>=q.header[74])return;
+  uint index=q.list[frame.wavefrontStride+id];
+  shadingPixel=ivec2(index%frame.target.x,index/frame.target.x);
+  uvec4 a=wavefrontLoad(0u,index);
+  viewModelPath=(a.w&8u)!=0u;
+  bool training=(a.w&(1u<<28))!=0u;
+  uint face=a.w>>29,key=training?wavefrontLoad(8u,index).w:0u;
+  vec3 origin=uintBitsToFloat(a.xyz),first=vec3(0),extra=vec3(0),extraSpecular=vec3(0);
+  WavefrontShadows records=wavefrontShadows();
+  uint skyRays=max(1u,(frame.pathConfig.z>>8)&31u);
+  // One shadow() call site for every ray.
+  for(uint k=0u;k<skyRays;++k) {
+    uvec4 r=records.v[k*frame.wavefrontStride+index];
+    vec2 r1=unpackHalf2x16(r.y),r2=unpackHalf2x16(r.z),r3=unpackHalf2x16(r.w);
+    vec3 light=vec3(r1,r2.x),other=vec3(r2.y,r3);
+    if(!any(greaterThan(light,vec3(0))))continue;
+    vec3 direction=decodeGeometricNormal(unpackSnorm2x16(r.x));
+    vec3 visibility=shadow(origin,direction);
+    if(training)trainSkyGuide(face,key,direction,dot(other*visibility,vec3(.2126,.7152,.0722)));
+    if(k==0u)first=light*visibility;
+    else {
+      extra+=light*visibility;
+      if(!training)extraSpecular+=other*visibility;
+    }
+  }
+  if(any(greaterThan(first,vec3(0)))) {
+    uvec4 result=wavefrontLoad(3u,index);
+    wavefrontStore(3u,index,wavefrontPack(uintBitsToFloat(result.xyz)+first,result.w));
+  }
+  if(any(greaterThan(extra,vec3(0)))) {
+    uvec4 f=wavefrontLoad(6u,index);
+    vec2 f0=unpackHalf2x16(f.x),f1=unpackHalf2x16(f.y),f2=unpackHalf2x16(f.z);
+    vec3 sky=vec3(f0,f1.x)+extra,specular=vec3(f1.y,f2)+extraSpecular;
+    wavefrontStore(6u,index,uvec4(packHalves(sky.r,sky.g),packHalves(sky.b,specular.r),packHalves(specular.g,specular.b),f.w));
+  }
+}
+#endif
+#if WAVEFRONT_PASS==1
+void wavefrontSkyRay(uint k,vec3 direction,vec3 light,vec3 extra) {
+  wavefrontShadows().v[k*frame.wavefrontStride+wavefrontIndex]=uvec4(packSnorm2x16(encodeGeometricNormal(direction)),
+    packHalves(light.r,light.g),packHalves(light.b,extra.r),packHalves(extra.g,extra.b));
+}
+#endif
+// This invocation's place in the bounce's list (id) and its path
+// (shadingPixel set).
+bool wavefrontQueued(out uint id,out uint index) {
+  WavefrontQueue q=wavefrontQueue();
+  id=(gl_WorkGroupID.y*q.header[5]+gl_WorkGroupID.x)*64u+gl_LocalInvocationIndex;
+  index=0u;
+  if(id>=q.header[2])return false;
+  index=q.list[(q.header[3]&1u)*frame.wavefrontStride+id];
+  shadingPixel=ivec2(index%frame.target.x,index/frame.target.x);
+  return true;
+}
+uint wavefrontNextList() { return (wavefrontQueue().header[3]&1u)^1u; }
+// The painted shade kernel's path: its place in the bounce's list (id) from
+// the painted list.
+bool wavefrontPainted(out uint id,out uint index) {
+  WavefrontQueue q=wavefrontQueue();
+  uint k=(gl_WorkGroupID.y*32768u+gl_WorkGroupID.x)*64u+gl_LocalInvocationIndex;
+  id=0u;index=0u;
+  if(k>=q.header[76])return false;
+  id=q.list[2u*frame.wavefrontStride+k];
+  index=q.list[(q.header[3]&1u)*frame.wavefrontStride+id]&0x7fffffffu;
+  shadingPixel=ivec2(index%frame.target.x,index/frame.target.x);
+  return true;
+}
+// secondaryHit's first query: closest()'s receiver, which leaves out paint,
+// then the peel's first (closest()'s step 1, same range and origin rule):
+// whether any paint lies before the receiver (painted). Kept: the
+// transform (each column with one more word), the surface, the primitive
+// and the barycentrics; the shade kernel works out the distance and the
+// wound's W again.
+bool wavefrontTrace(uint id,uint index) {
+  uvec4 a=wavefrontLoad(0u,index);
+  if((a.w&1u)==0u||((a.w>>6)&31u)>=frame.config.y)return false;
+  viewModelPath=(a.w&8u)!=0u;
+  vec3 origin=uintBitsToFloat(a.xyz),direction=uintBitsToFloat(wavefrontLoad(1u,index).xyz);
+  const uint mask=bounceMask();
+  const bool paint=enableDecals&&(mask&decalInstanceMask)!=0u;
+  traceMask=paint?mask&~decalInstanceMask:mask;
+  Intersection x=nearest(origin,direction,1e30,0);
+  bool painted=false;
+  if(paint) {
+    // The leaving normal as the shade kernel loads it (loadPath).
+    vec3 leaving=(a.w&32u)!=0u?decodeGeometricNormal(unpackSnorm2x16(wavefrontLoad(4u,index).w)):vec3(0);
+    const float attach=frame.visibilityProbe.y;
+    float minimum=dot(leaving,leaving)>0?attach/max(abs(dot(direction,leaving)),.05):0;
+    if(minimum<x.t) {
+      traceMask=decalInstanceMask;originPaint=attach;
+      painted=nearest(origin,direction,x.t,minimum).surface!=~0u;
+      originPaint=0;
+    }
+  }
+  traceMask=cameraMask;
+  const uint r=wavefrontReceiverPlanes;
+  wavefrontStore(r,id,wavefrontPack(x.model[0],x.surface));
+  if(x.surface==~0u)return painted;
+  wavefrontStore(r+1u,id,wavefrontPack(x.model[1],x.primitive));
+  wavefrontStore(r+2u,id,wavefrontPack(x.model[2],floatBitsToUint(x.bary.x)));
+  wavefrontStore(r+3u,id,wavefrontPack(x.model[3],floatBitsToUint(x.bary.y)));
+  return painted;
+}
+// A painted path to the painted list (its dispatch grows with it), its
+// entry in the bounce's list marked for the unpainted shade kernel to skip.
+void wavefrontPaint(uint id,uint index,bool painted) {
+  uint at=wavefrontAppend(76u,painted);
+  if(!painted)return;
+  WavefrontQueue q=wavefrontQueue();
+  q.list[2u*frame.wavefrontStride+at]=id;
+  q.list[(q.header[3]&1u)*frame.wavefrontStride+id]=index|0x80000000u;
+  uint groups=at/64u+1u;
+  atomicMax(q.header[152],min(groups,32768u));atomicMax(q.header[153],(groups+32767u)/32768u);
+}
+#if WAVEFRONT_PASS==6
+// The tail (rtx.native.pathtrace.wavefrontBounces): the path's remaining
+// bounces in one kernel, over the few paths left going.
+void wavefrontTail(uint index) {
+  bool traced;PathState s=loadPath(index,traced);
+  if(!traced||!wavefrontSteps(s))return;
+  Hit primary=wavefrontPrimary(s);
+  vec3 primaryLight,primarySpecular;float primaryDistance;
+  pathSteps(primary,s,frame.config.y,frame.config.y,primaryLight,primarySpecular,primaryDistance);
+  storePath(index,s);
+}
+#endif
+#if WAVEFRONT_PASS==3
+// The path's next bounce, from the receiver the trace kernel found (the
+// blended layers it passes on the way traced here); whether another follows.
+bool wavefrontShade(uint id,uint index,out bool shadowed) {
+  shadowed=false;
+  bool traced;PathState s=loadPath(index,traced);
+  if(!traced||!wavefrontSteps(s))return false;
+  const uint r=wavefrontReceiverPlanes;
+  uvec4 c0=wavefrontLoad(r,id);
+  Intersection x;x.surface=c0.w;x.primitive=0u;x.bary=vec2(0);x.t=1e30;x.model=mat4x3(1);x.wound=0;
+  if(x.surface!=~0u) {
+    uvec4 c1=wavefrontLoad(r+1u,id),c2=wavefrontLoad(r+2u,id),c3=wavefrontLoad(r+3u,id);
+    x.model=mat4x3(uintBitsToFloat(c0.xyz),uintBitsToFloat(c1.xyz),uintBitsToFloat(c2.xyz),uintBitsToFloat(c3.xyz));
+    x.primitive=c1.w;x.bary=uintBitsToFloat(uvec2(c2.w,c3.w));
+    // The distance along the ray to the point the barycentrics give, and a
+    // wounded surface's W there (as its candidate test found it).
+    Surface surface=surfaces[x.surface];
+    surface.indices=surface.traceIndices;
+    uint tri=x.primitive*3u;
+    vec3 a=surface.vertices.v[surface.indices.i[tri]].position.xyz;
+    vec3 point=x.model*vec4(a+x.bary.x*(surface.vertices.v[surface.indices.i[tri+1u]].position.xyz-a)+
+                            x.bary.y*(surface.vertices.v[surface.indices.i[tri+2u]].position.xyz-a),1);
+    x.t=dot(point-s.origin,s.direction);
+    if(surface.textureState.y!=0u)woundAt(surface,x.primitive,x.bary,x.wound);
+  }
+  wavefrontReceiver=x;
+  Hit primary=wavefrontPrimary(s);
+  vec3 primaryLight,primarySpecular;float primaryDistance;
+  pathSteps(primary,s,frame.config.y,s.bounce+1u,primaryLight,primarySpecular,primaryDistance);
+  storePath(index,s);
+#ifdef WAVEFRONT_DEFER_SHADOWS
+  shadowed=any(greaterThan(wavefrontSun+wavefrontSky+wavefrontLocal,vec3(0)));
+#endif
+  return wavefrontSteps(s);
+}
+#ifdef WAVEFRONT_DEFER_SHADOWS
+// The vertex's shadow rays for the shadow kernel.
+void wavefrontShadowEnqueue(uint index,bool add) {
+  uint at=wavefrontAppend(6u,add);
+  if(!add)return;
+  WavefrontShadows items=wavefrontShadows();
+  items.v[at]=wavefrontPack(wavefrontShadowOrigin,index|(viewModelPath?0x80000000u:0u));
+  items.v[frame.wavefrontStride+at]=uvec4(packSnorm2x16(encodeGeometricNormal(wavefrontSkyDirection)),
+    packHalves(wavefrontSun.r,wavefrontSun.g),packHalves(wavefrontSun.b,wavefrontSky.r),packHalves(wavefrontSky.g,wavefrontSky.b));
+  // The local light's ray: its direction and length from the origin.
+  vec3 delta=wavefrontLocalEndpoint-wavefrontShadowOrigin;
+  float distance=length(delta);
+  bool local=any(greaterThan(wavefrontLocal,vec3(0)))&&distance>0;
+  items.v[2u*frame.wavefrontStride+at]=uvec4(local?packSnorm2x16(encodeGeometricNormal(delta/distance)):0u,
+    floatBitsToUint(distance),local?packHalves(wavefrontLocal.r,wavefrontLocal.g):0u,local?packHalves(wavefrontLocal.b,0):0u);
+}
+#endif
+#endif
+// The pixel's result once its path is done; false without a path (the start
+// kernel wrote its result).
+bool wavefrontFinish(ivec2 pixel,uint index,out IndirectResult result) {
+  bool traced;PathState s=loadPath(index,traced);
+  result=IndirectResult(vec3(0),rng,0);
+  if(!traced)return false;
+  Hit primary=wavefrontPrimary(s);
+  vec3 extraSky,extraSkySpecular,firstDir,specularRatio;float probability;
+  IndirectPrimary p=loadFinish(index,extraSky,extraSkySpecular,firstDir,probability,specularRatio);
+  // The specular share as the ratio the start kept (pathFinish).
+  s.specularWeight=specularRatio;s.weight=vec3(1);
+  vec3 sampleSpecular;
+  vec3 sampleLight=pathFinish(primary,s,s.dead,extraSky,extraSkySpecular,probability,sampleSpecular);
+  indirectSample(pixel,0u,p,sampleLight,sampleSpecular,firstDir,s.pathDistance,result);
+  indirectEnd(pixel,p,result);
+  result.state=rng;
+  return true;
+}
+#endif
 #ifdef TEMPORAL
 // Local-light history confidence (NRD IN_DIFF_CONFIDENCE of the local pass).
 // A light that moved since the previous frame (a turning flashlight) changes
@@ -1987,7 +2652,7 @@ vec3 sheetFilm(Hit hit,float ior) {
 // through: what passes to the layers behind; direction: bent for them.
 // A thin film (sheetFilm) takes the place of the body's Fresnel.
 bool thickSheet(Hit hit,inout vec3 direction,inout float alpha,inout vec3 through) {
-  vec3 refractTint;
+  vec4 refractTint;
   vec2 body=sheetBody(hit,direction,refractTint);
   if(body.x<1||body.y==0)return false;
   bool inside=frame.cameraMedium.w>0;
@@ -2005,7 +2670,9 @@ bool thickSheet(Hit hit,inout vec3 direction,inout float alpha,inout vec3 throug
     // view's cosine (at most 20 times the depth).
     float t=behind.t;
     if(body.y<0)t*=abs(dot(bent,n))/max(abs(dot(direction,n)),.05);
-    passed=behind.t<1e30?bodyTransmittance(hit.color.rgb,t,body.y)*refractTint:vec3(0);
+    // A fog start (refractTint.w) moves where the fog begins: (t - start) / (end - start).
+    if(body.y<0)passed=behind.t<1e30?vec3(clamp((-body.y-t)/(-body.y-refractTint.w),0,1))*refractTint.rgb:vec3(0);
+    else passed=behind.t<1e30?bodyTransmittance(hit.color.rgb,t,body.y):vec3(0);
   }
   through=(1-fresnel)*passed;
   alpha=1-dot(through,vec3(.2126,.7152,.0722));
@@ -2144,7 +2811,50 @@ void main() {
   SheetResults(frame.sheetResults).pixels[index]=packSheet(light,specular,distance);
   return;
 #elif defined(INDIRECT_PASS)
+#if WAVEFRONT_PASS==5
+  if(gl_GlobalInvocationID==uvec3(0))wavefrontArgs();
+  return;
+#elif WAVEFRONT_PASS==7
+  wavefrontShadow();
+  return;
+#elif WAVEFRONT_PASS==8
+  wavefrontSky();
+  return;
+#elif WAVEFRONT_PASS==2 || WAVEFRONT_PASS==3 || WAVEFRONT_PASS==6
+  // Over the bounce's live paths (wavefrontArgs' indirect dispatch).
+  uint id,queued;
+  bool live=wavefrontQueued(id,queued);
+#if WAVEFRONT_PASS==2
+  bool painted=live&&wavefrontTrace(id,queued);
+  if(live)wavefrontPaint(id,queued,painted);
+#elif WAVEFRONT_PASS==6
+  if(live)wavefrontTail(queued);
+#else
+#ifdef WAVEFRONT_PLAIN
+  // The unpainted shade kernel skips the painted paths (bit 31).
+  live=live&&(queued&0x80000000u)==0u;
+#else
+  // The painted shade kernel: over the painted list.
+  live=wavefrontPainted(id,queued);
+#endif
+  bool shadowed=false,next=live&&wavefrontShade(id,queued,shadowed);
+  if(live) {
+    wavefrontEnqueue(wavefrontNextList(),queued,next);
+#ifdef WAVEFRONT_DEFER_SHADOWS
+    wavefrontShadowEnqueue(queued,shadowed);
+#endif
+  }
+#endif
+  return;
+#endif
   if(any(greaterThanEqual(pixel,ivec2(frame.target.xy))))return;
+  const uint index=uint(pixel.x)+uint(pixel.y)*frame.target.x;
+#if WAVEFRONT_PASS==4
+  IndirectResult finished;
+  if(wavefrontFinish(pixel,index,finished))
+    IndirectResults(frame.indirectResults).pixels[index]=packIndirect(finished.radiance,finished.distance,finished.state);
+  return;
+#endif
   rng=hash(uint(pixel.x)+uint(pixel.y)*frame.target.x+hash(frame.config.z));
   vec3 origin,direction;
   ray((vec2(pixel)+.5+frame.jitter.xy)/vec2(frame.target.xy)*2-1,frame.inverseCameraRelative,frame.eye.xyz,origin,direction);
@@ -2156,9 +2866,15 @@ void main() {
     NRD_MaterialFactors(primary.n,primary.wo,materialDiffuseAlbedo(primary),
       materialF0(primary),primary.rm.x,diffuseFactor,specularFactor);
 #endif
+#if WAVEFRONT_PASS==1
+  bool sky,going=wavefrontStart(primary,pixel,index,diffuseFactor,specularFactor,sky);
+  wavefrontEnqueue(0u,index,going);
+  // The sky kernel's list: list 1 until the first shade kernel.
+  wavefrontEnqueue(1u,index,sky);
+  return;
+#endif
   IndirectResult result=traceIndirect(primary,pixel,diffuseFactor,specularFactor);
-  IndirectResults(frame.indirectResults).pixels[uint(pixel.x)+uint(pixel.y)*frame.target.x]=
-    packIndirect(result.radiance,result.distance,result.state);
+  IndirectResults(frame.indirectResults).pixels[index]=packIndirect(result.radiance,result.distance,result.state);
 #ifdef TEMPORAL
   if(primary.t==1e30||primary.blended)clearIndirect(pixel,0);
 #endif
@@ -2199,7 +2915,7 @@ void main() {
     // carries them from, as direct() gathers the sun and the sky; reuse and
     // confidences stay with the visible point.
     Hit lit=hit;vec3 sssTint=vec3(1);float sssSpecular=1;bool sssMoved=false;
-    if(hit.sss.w!=0) {
+    if(subsurfaceCapable&&hit.sss.w!=0) {
       rng=hash(state^0x73737321u);
       if(random()<abs(hit.sss.w))sssMoved=subsurfaceMove(lit,sssTint,sssSpecular);
     }
@@ -2377,7 +3093,7 @@ void main() {
     // reflection kept, unless the light came through to a thin object's far
     // side (which also takes its own sun shadow).
     Hit lit=primary;vec3 sssTint=vec3(1);float sssSpecular=1;bool sssMoved=false;
-    if(primary.sss.w!=0&&random()<abs(primary.sss.w))sssMoved=subsurfaceMove(lit,sssTint,sssSpecular);
+    if(subsurfaceCapable&&primary.sss.w!=0&&random()<abs(primary.sss.w))sssMoved=subsurfaceMove(lit,sssTint,sssSpecular);
     sunTransmittance=sunVisibility(primary,pixel,blockerDistance);
     // Through to the far side (no reflection): that side's own sun shadow.
     if(sssSpecular==0)sunTransmittance=shadow(offsetRay(lit.p,lit.ng),-frame.lightDirection.xyz);

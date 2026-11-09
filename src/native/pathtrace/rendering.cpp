@@ -165,6 +165,18 @@ namespace remix {
          (flags.dynamicReceivers || (options.sharcGlossySurfaces && flags.dynamicSharpReceivers)));
     const bool hasBlendedGeometry = flags.blended;
     decalMaterialsActive = flags.decal;
+    subsurfaceActive = flags.subsurface && options.subsurface;
+    // Without paint or subsurface scattering in the scene, the lighting
+    // stages compile those out (selectLightingPipeline): prewarmed on a change.
+    if (const uint32_t lean = (decalMaterialsActive ? 0u : uint32_t(variantNoPaint)) |
+                              (subsurfaceActive ? 0u : uint32_t(variantNoSubsurface));
+        lean != leanLighting) {
+      leanLighting = lean;
+      prewarmPending = true;
+      if (std::getenv("REMIX_LEAN_DIAGNOSTICS"))
+        std::fprintf(stderr, "Lighting variants: paint %s, subsurface %s\n", decalMaterialsActive ? "on" : "off",
+                     subsurfaceActive ? "on" : "off");
+    }
     shadowEarlyOutActive = options.shadowEarlyOut;
     // Texture descriptors in first-use order: the static prefix's (resolved
     // again only when the prefix changes) and the frame's other materials.
@@ -1452,12 +1464,121 @@ namespace remix {
               VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT);
       indirectPipeline = selectLightingPipeline(indirectPass.pipeline);
       indirectKey = selectedLightingKey;
-      gpu::GpuScope scope(command,
-                          querySharc ? "Trace indirect (separate pass, SHARC query)" : "Trace indirect (separate pass)",
-                          extent);
-      bindSelected(command, indirectPipeline);
-      vkCmdDispatch(command, (extent.width + 7) / 8, (extent.height + 7) / 8, 1);
-      scope.close();
+      const auto indirectFeatures = selectedFeatures;
+      const auto indirectLayout = selectedLayout;
+      // The wavefront kernels (configureWavefront) run as a set or not at all:
+      // each reads the records the one before wrote.
+      // start, trace, shade, finish, tail, shadow, deferring shade, sky, unpainted shade, unpainted deferring
+      // shade; then the arguments kernel
+      constexpr size_t lit = 10;
+      VkPipeline kernels[lit] = {};
+      uint32_t kernelFeatures[lit] = {};
+      VkPipelineLayout kernelLayouts[lit] = {};
+      const VkPipeline arguments = indirectPass.wavefront[lit];
+      bool wavefront = indirectPass.wavefrontActive && arguments && indirectPass.paths;
+      for (size_t i = 0; wavefront && i < lit; ++i) {
+        kernels[i] = selectLightingPipeline(indirectPass.wavefront[i]);
+        kernelFeatures[i] = selectedFeatures;
+        kernelLayouts[i] = selectedLayout;
+        wavefront = kernels[i] != VK_NULL_HANDLE;
+      }
+      if (wavefront) {
+        constexpr auto computeWrite = VK_ACCESS_SHADER_WRITE_BIT;
+        constexpr auto computeAccess = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+        constexpr auto compute = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+        constexpr auto indirect = VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT;
+        const VkDeviceSize pixels = VkDeviceSize(extent.width) * extent.height;
+        const VkDeviceSize header = pixels * IndirectPass::wavefrontPlanes * 16;
+        const VkBuffer paths = indirectPass.paths->handle;
+        const uint32_t screenX = (extent.width + 7) / 8, screenY = (extent.height + 7) / 8;
+        // The queue's counters start at zero (last frame's kernels done with them).
+        barrier(command, compute | indirect, computeAccess | VK_ACCESS_INDIRECT_COMMAND_READ_BIT,
+                VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT);
+        vkCmdFillBuffer(command, paths, header, IndirectPass::wavefrontQueueHeader, 0);
+        barrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, compute, computeAccess);
+        {
+          gpu::GpuScope scope(command, "Trace indirect (wavefront start)", extent);
+          bindTrace(command, kernels[0], kernelLayouts[0], kernelFeatures[0]);
+          vkCmdDispatch(command, screenX, screenY, 1);
+        }
+        // The start's sky rays: their arguments (pushed bit 31), then the sky
+        // kernel over the paths that have them.
+        barrier(command, compute, computeWrite, compute, computeAccess);
+        bindTrace(command, arguments, temporalLayout, 0x80000000u);
+        vkCmdDispatch(command, 1, 1, 1);
+        barrier(command, compute, computeWrite, compute | indirect, computeAccess | VK_ACCESS_INDIRECT_COMMAND_READ_BIT);
+        {
+          gpu::GpuScope scope(command, "Trace indirect (wavefront sky)", extent);
+          bindTrace(command, kernels[7], kernelLayouts[7], kernelFeatures[7]);
+          vkCmdDispatchIndirect(command, paths, header + 144 * 4);
+        }
+        // Each split bounce over the paths the one before left going: its
+        // arguments, the shadow rays of the bounce before, its rays'
+        // receivers, its shading (dispatches of no groups once every path has
+        // ended). Then the tail: the remaining bounces of the few paths left,
+        // in one kernel (each bounce's own kernels cost more in launches and
+        // barriers than its paths do), also after the last bounce: a shade
+        // kernel leaves the layer after a blended one to the next kernels.
+        const uint32_t bounces = std::min(options.bounces, IndirectPass::wavefrontMaxBounces);
+        const uint32_t split = std::clamp(options.wavefrontBounces, 1u, bounces);
+        for (uint32_t bounce = 0;; ++bounce) {
+          barrier(command, compute, computeWrite, compute, computeAccess);
+          bindTrace(command, arguments, temporalLayout, defaultFeatures);
+          vkCmdDispatch(command, 1, 1, 1);
+          barrier(command, compute, computeWrite, compute | indirect,
+                  computeAccess | VK_ACCESS_INDIRECT_COMMAND_READ_BIT);
+          const uint32_t argument = std::min(bounce, IndirectPass::wavefrontMaxBounces - 1);
+          const VkDeviceSize slot = header + (8 + 4 * argument) * 4, shadowSlot = header + (80 + 4 * argument) * 4;
+          if (bounce && options.wavefrontShadowQueue) {
+            gpu::GpuScope scope(command, "Trace indirect (wavefront shadow)", extent);
+            bindTrace(command, kernels[5], kernelLayouts[5], kernelFeatures[5]);
+            vkCmdDispatchIndirect(command, paths, shadowSlot);
+          }
+          if (bounce == split) {
+            barrier(command, compute, computeWrite, compute, computeAccess);
+            gpu::GpuScope scope(command, "Trace indirect (wavefront tail)", extent);
+            bindTrace(command, kernels[4], kernelLayouts[4], kernelFeatures[4]);
+            vkCmdDispatchIndirect(command, paths, slot);
+            break;
+          }
+          barrier(command, compute, computeWrite, compute, computeAccess);
+          {
+            gpu::GpuScope scope(command, "Trace indirect (wavefront trace)", extent);
+            bindTrace(command, kernels[1], kernelLayouts[1], kernelFeatures[1]);
+            vkCmdDispatchIndirect(command, paths, slot);
+          }
+          // The trace kernel sorted the paths: those with paint before the
+          // receiver to the painted list (its dispatch at word 152), the rest
+          // for the shade kernel without the paint peel. The two write
+          // different paths.
+          barrier(command, compute, computeWrite, compute | indirect,
+                  computeAccess | VK_ACCESS_INDIRECT_COMMAND_READ_BIT);
+          {
+            gpu::GpuScope scope(command, "Trace indirect (wavefront shade unpainted)", extent);
+            const size_t shade = options.wavefrontShadowQueue ? 9 : 8;
+            bindTrace(command, kernels[shade], kernelLayouts[shade], kernelFeatures[shade]);
+            vkCmdDispatchIndirect(command, paths, slot);
+          }
+          {
+            gpu::GpuScope scope(command, "Trace indirect (wavefront shade painted)", extent);
+            const size_t shade = options.wavefrontShadowQueue ? 6 : 2;
+            bindTrace(command, kernels[shade], kernelLayouts[shade], kernelFeatures[shade]);
+            vkCmdDispatchIndirect(command, paths, header + 152 * 4);
+          }
+        }
+        barrier(command, compute, computeWrite, compute, computeAccess);
+        {
+          gpu::GpuScope scope(command, "Trace indirect (wavefront finish)", extent);
+          bindTrace(command, kernels[3], kernelLayouts[3], kernelFeatures[3]);
+          vkCmdDispatch(command, screenX, screenY, 1);
+        }
+      } else {
+        gpu::GpuScope scope(command,
+                            querySharc ? "Trace indirect (separate pass, SHARC query)" : "Trace indirect (separate pass)",
+                            extent);
+        bindTrace(command, indirectPipeline, indirectLayout, indirectFeatures);
+        vkCmdDispatch(command, (extent.width + 7) / 8, (extent.height + 7) / 8, 1);
+      }
       barrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
               VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
     }
@@ -1758,6 +1879,9 @@ namespace remix {
       g.opacityCache.setMicromapLevel(micromapLevel);
       g.statics.invalidate();
     }
+    // Micromaps baked in the background since the last frame replace their
+    // pending partitions before this frame looks any up.
+    g.opacityCache.collectMicromaps();
     // View models move into the world camera's view (Draw::viewModel) before
     // the tracer and the raster overlays see the frame's draws.
     if (options.viewModel)
@@ -1780,9 +1904,17 @@ namespace remix {
     const auto pruned = Clock::now();
     if (std::getenv("REMIX_OPACITY_DIAGNOSTICS")) {
       uint64_t reasons[scene::OpacityPartition::Count] = {}, mixed = 0;
+      // Micromaps and their micro-triangles, per surface like the reasons.
+      uint64_t micromaps = 0, microOpaque = 0, microTransparent = 0, microUnknown = 0;
       auto count = [&](const scene::TraceFrame::Surface &surface) {
         const auto &partition = surface.opacity;
         mixed += partition->key[0] == 2;
+        if (const auto &micromap = partition->micromap) {
+          ++micromaps;
+          microOpaque += micromap->opaque;
+          microTransparent += micromap->transparent;
+          microUnknown += micromap->unknown;
+        }
         for (unsigned i = 0; i < scene::OpacityPartition::Count; ++i)
           reasons[i] += partition->reasons[i];
       };
@@ -1799,7 +1931,13 @@ namespace remix {
                              "invalid", "missing_texture", "texture_boundary", "texture_cutout", "scrolling"};
       for (unsigned i = 0; i < scene::OpacityPartition::Count; ++i)
         std::fprintf(stderr, " %s=%llu", names[i], static_cast<unsigned long long>(reasons[i]));
-      std::fprintf(stderr, "\n");
+      std::fprintf(stderr,
+                   " micromaps=%llu micro_opaque=%llu micro_transparent=%llu micro_unknown=%llu bakes_queued=%llu"
+                   " bakes_installed=%llu\n",
+                   static_cast<unsigned long long>(micromaps), static_cast<unsigned long long>(microOpaque),
+                   static_cast<unsigned long long>(microTransparent), static_cast<unsigned long long>(microUnknown),
+                   static_cast<unsigned long long>(g.opacityCache.micromapBakeCount()),
+                   static_cast<unsigned long long>(g.opacityCache.micromapInstallCount()));
     }
     const auto stageStart = Clock::now();
     auto &staged = frame.lighting;

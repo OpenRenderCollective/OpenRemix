@@ -44,6 +44,9 @@ namespace remix {
         const size_t i = size_t(y) * width + x;
         return (transparent[i >> 6] >> (i & 63)) & 1;
       }
+      // Mip 0's decoded alpha (min, max) per 4x4 block (row-major, texels
+      // inside the image only), for micromap proofs. Empty with `transparent`.
+      std::vector<std::array<uint8_t, 2>> alphaBlocks;
       // Small decoded level (at most 64x64 texels) for CPU emission statistics:
       // RGBA8 like Pixels::mips, plus linear RGBA32F for BC6H.
       uint32_t previewWidth = 0, previewHeight = 0;
@@ -254,6 +257,7 @@ namespace remix {
       // transmittanceDistance (its fog end), untinted, instead of absorbing.
       bool fogBody = false;
       float refractTint[3] = {1, 1, 1}; // what passes, seen through it (fogBody)
+      float fogStart = 0;               // seen through it (fogBody)
       // A thin-film coating (remixapi_MaterialIridescenceEXT, or the opaque
       // info's thinFilmThickness): strength 0 means none. Thicknesses in nm.
       struct Iridescence {
@@ -332,8 +336,9 @@ namespace remix {
       // blendModulationFields: the mask and its transform in the film's
       // fields, which such a material lacks as well).
       static constexpr uint32_t blendModulation = 8192;
-      // A fog body's refraction tint (remixapi_MaterialTranslucentFogEXT)
-      // in the film's fields, which such a material lacks (frame_tables.h).
+      // A fog body's refraction tint and fog start
+      // (remixapi_MaterialTranslucentFogEXT) in the film's fields, which such
+      // a material lacks (frame_tables.h).
       static constexpr uint32_t refractTint = 16384;
       uint32_t flags = 0, pbrWord = 0;
       float selfIlluminationScale = 0;

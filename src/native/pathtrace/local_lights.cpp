@@ -46,6 +46,23 @@ namespace remix {
                          (rayProfile.path ? variantProfile : 0u) | (separateIndirect ? variantSeparateIndirect : 0u) |
                          (earlyOut ? variantEarlyOut : 0u) | sparse << variantSparseShift;
     selectedLightingKey = key;
+    // A scene without paint or subsurface scattering takes the role's lean
+    // variant once it has compiled, and the full one until then.
+    if (leanLighting) {
+      auto &[variant, attempted] = source.specialized[key | leanLighting];
+      if (!attempted) {
+        attempted = true;
+        const auto result = requestLightingVariant(source, key | leanLighting, &variant, false);
+        if (result == VK_NOT_READY)
+          attempted = false;
+        else if (result == VK_ERROR_DEVICE_LOST)
+          throw result;
+      }
+      if (variant) {
+        selectedLightingKey = key | leanLighting;
+        return variant;
+      }
+    }
     // The source itself: its own early-out and indirect role.
     if (key ==
         ((source.baseEarlyOut ? variantEarlyOut : 0u) | (source.baseSeparateIndirect ? variantSeparateIndirect : 0u)))
@@ -80,15 +97,23 @@ namespace remix {
     if (result != VK_SUCCESS)
       return result;
     const auto bit = [key](uint32_t mask) { return VkBool32((key & mask) != 0); };
-    const VkBool32 enabled[] = {VkBool32(source.supportsGuiding), bit(variantSplit),    bit(variantProfile),
-                                bit(variantSeparateIndirect),     bit(variantEarlyOut), key >> variantSparseShift};
+    const VkBool32 enabled[] = {VkBool32(source.supportsGuiding),
+                                bit(variantSplit),
+                                bit(variantProfile),
+                                bit(variantSeparateIndirect),
+                                bit(variantEarlyOut),
+                                (key >> variantSparseShift) & 3u,
+                                !bit(variantNoPaint),
+                                !bit(variantNoSubsurface)};
     const VkSpecializationMapEntry entries[] = {{1, 0, sizeof(VkBool32)},
                                                 {4, sizeof(VkBool32), sizeof(VkBool32)},
                                                 {7, 2 * sizeof(VkBool32), sizeof(VkBool32)},
                                                 {9, 3 * sizeof(VkBool32), sizeof(VkBool32)},
                                                 {12, 4 * sizeof(VkBool32), sizeof(VkBool32)},
-                                                {13, 5 * sizeof(VkBool32), sizeof(uint32_t)}};
-    const VkSpecializationInfo specialization{6, entries, sizeof(enabled), enabled};
+                                                {13, 5 * sizeof(VkBool32), sizeof(uint32_t)},
+                                                {14, 6 * sizeof(VkBool32), sizeof(VkBool32)},
+                                                {15, 7 * sizeof(VkBool32), sizeof(VkBool32)}};
+    const VkSpecializationInfo specialization{8, entries, sizeof(enabled), enabled};
     const VkComputePipelineCreateInfo create{.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
                                              .stage = {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
                                                        .stage = VK_SHADER_STAGE_COMPUTE_BIT,
@@ -122,16 +147,22 @@ namespace remix {
       roles = source.splitDirect
                   ? std::vector<uint32_t>{o.separateLocalLighting == 3 ? variantCombinedDirect : variantSplit}
                   : std::vector<uint32_t>{0u, variantSplit};
-    for (const uint32_t role : roles) {
-      const uint32_t key = earlyOut | role;
-      if (key == base)
-        continue;
-      auto &[variant, attempted] = source.specialized[key];
-      if (variant || attempted)
-        continue;
-      VkPipeline none{};
-      requestLightingVariant(source, key, &none, true);
-    }
+    // Each role's full variant (what a scene with paint or subsurface
+    // scattering takes) and the current scene's lean one.
+    std::vector<uint32_t> leans{0u};
+    if (leanLighting)
+      leans.push_back(leanLighting);
+    for (const uint32_t role : roles)
+      for (const uint32_t lean : leans) {
+        const uint32_t key = earlyOut | role | lean;
+        if (key == base)
+          continue;
+        auto &[variant, attempted] = source.specialized[key];
+        if (variant || attempted)
+          continue;
+        VkPipeline none{};
+        requestLightingVariant(source, key, &none, true);
+      }
   }
 
   void PathTracer::Gpu::bindTrace(VkCommandBuffer command, VkPipeline pipeline, VkPipelineLayout pipelineLayout,

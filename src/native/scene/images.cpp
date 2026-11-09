@@ -353,8 +353,10 @@ namespace remix::scene {
       return uint32_t(value & ((1ull << count) - 1));
     }
     // 16-bit mask of the block's texels whose decoded alpha is not 255, without
-    // decoding blocks whose encoding proves them opaque.
-    uint32_t transparentTexels(uint32_t block, bool bc1Alpha, const uint8_t *data) {
+    // decoding blocks whose encoding proves them opaque. alpha receives every
+    // texel's decoded alpha (all 255 when the mask is 0).
+    uint32_t transparentTexels(uint32_t block, bool bc1Alpha, const uint8_t *data, uint8_t (&alpha)[16]) {
+      std::memset(alpha, 255, sizeof(alpha));
       uint32_t mask = 0;
       if (block == 1) {
         // Only the three-color mode (color0 <= color1) has a transparent index.
@@ -363,13 +365,14 @@ namespace remix::scene {
         const uint32_t indices =
             uint32_t(data[4]) | uint32_t(data[5]) << 8 | uint32_t(data[6]) << 16 | uint32_t(data[7]) << 24;
         for (unsigned i = 0; i < 16; ++i)
-          if (((indices >> (2 * i)) & 3) == 3)
+          if (((indices >> (2 * i)) & 3) == 3) {
             mask |= 1u << i;
+            alpha[i] = 0;
+          }
         return mask;
       }
       if (block == 3) {
         alignas(8) uint8_t source[8];
-        uint8_t alpha[16];
         std::memcpy(source, data, 8);
         bcdec_bc4(source, alpha, 4); // BC3's alpha half is a BC4 block.
         for (unsigned i = 0; i < 16; ++i)
@@ -397,9 +400,11 @@ namespace remix::scene {
         return 0;
       uint8_t rgba[64];
       decodeBlock(7, false, data, rgba, nullptr);
-      for (unsigned i = 0; i < 16; ++i)
-        if (rgba[i * 4 + 3] != 255)
+      for (unsigned i = 0; i < 16; ++i) {
+        alpha[i] = rgba[i * 4 + 3];
+        if (alpha[i] != 255)
           mask |= 1u << i;
+      }
       return mask;
     }
     // Word-at-a-time content hash. Byte-wise FNV over a multi-megabyte chain
@@ -520,14 +525,28 @@ namespace remix::scene {
     const size_t stride = blockBytes(c->block);
     const uint32_t blocksWide = (width + 3) / 4, blocksHigh = (height + 3) / 4;
     if (c->block == 3 || c->block == 7 || (c->block == 1 && c->bc1Alpha)) {
+      uint8_t alpha[16];
       for (uint32_t by = 0; by < blocksHigh; ++by)
         for (uint32_t bx = 0; bx < blocksWide; ++bx) {
-          const uint32_t mask =
-              transparentTexels(c->block, c->bc1Alpha, c->upload.data() + (size_t(by) * blocksWide + bx) * stride);
+          const size_t index = size_t(by) * blocksWide + bx;
+          const uint32_t mask = transparentTexels(c->block, c->bc1Alpha, c->upload.data() + index * stride, alpha);
           if (!mask)
             continue;
-          if (c->transparent.empty())
+          std::array<uint8_t, 2> range{255, 0};
+          for (uint32_t i = 0; i < 16; ++i) {
+            const uint32_t x = bx * 4 + i % 4, y = by * 4 + i / 4;
+            if (x < width && y < height)
+              range = {std::min(range[0], alpha[i]), std::max(range[1], alpha[i])};
+          }
+          if (range[0] == 255)
+            continue; // Only padding texels outside the image are not opaque.
+          if (c->transparent.empty()) {
             c->transparent.assign((size_t(width) * height + 63) / 64, 0);
+            c->alphaBlocks.assign(size_t(blocksWide) * blocksHigh, {255, 255});
+          }
+          // One step of slack: hardware may interpolate BC3/BC7 alpha with
+          // other rounding than bcdec (0 and 255 are exact either way).
+          c->alphaBlocks[index] = {uint8_t(std::max(0, range[0] - 1)), uint8_t(std::min(255, range[1] + 1))};
           for (uint32_t i = 0; i < 16; ++i) {
             const uint32_t x = bx * 4 + i % 4, y = by * 4 + i / 4;
             if ((mask >> i & 1) && x < width && y < height) {

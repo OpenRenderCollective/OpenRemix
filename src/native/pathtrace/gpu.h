@@ -261,10 +261,17 @@ namespace remix::trace::detail {
     alignas(16) float rayPortals[scene::rayPortalSlots][4][4] = {};
     uint32_t rayPortalConfig[4] = {};
     float rayPortalPlanes[scene::rayPortalSlots] = {};
+    // rtx.native.pathtrace.wavefrontIndirect: the wavefront indirect kernels'
+    // path records (pathtrace.comp WavefrontPlanes; 0: off), the distance
+    // between their planes in 16-byte elements and flags (bit 0: the shadow
+    // queue, rtx.native.pathtrace.wavefrontShadowQueue).
+    uint64_t wavefrontPaths = 0;
+    uint32_t wavefrontStride = 0, wavefrontFlags = 0;
   };
   static_assert(offsetof(Frame, sheetMaterials) == 2320 && offsetof(Frame, woundVertices) == 2328 &&
                 offsetof(Frame, subsurfaceUnits) == 2336 && offsetof(Frame, rayPortalPadding) == 2344 &&
-                offsetof(Frame, rayPortals) == 2352 && offsetof(Frame, rayPortalPlanes) == 2880 && sizeof(Frame) == 2912 &&
+                offsetof(Frame, rayPortals) == 2352 && offsetof(Frame, rayPortalPlanes) == 2880 &&
+                offsetof(Frame, wavefrontPaths) == 2912 && sizeof(Frame) == 2928 &&
                 offsetof(Frame, screenCameras) == 1808 && offsetof(Frame, srgbTextures) == 1280 &&
                 offsetof(Frame, pathDebug) == 1792 && offsetof(Frame, localProbeRead) == 1168 &&
                 offsetof(Frame, localProbeParams) == 1184 && offsetof(Frame, volumeLightScales) == 1200 &&
@@ -388,8 +395,30 @@ namespace remix {
       }();
       const char *modeFile = std::getenv("REMIX_INDIRECT_MODE_FILE");
       uint64_t controlReset = UINT64_MAX;
+      // rtx.native.pathtrace.wavefrontIndirect: the pass as small kernels
+      // (pathtrace.comp WAVEFRONT_PASS: start; per bounce arguments, trace
+      // and shade over the bounce's live paths; finish) over the path records
+      // in `paths`: wavefrontPlanes 16-byte planes a pixel, then the queue
+      // header, three lists of 4 bytes a pixel and a region the start kernel's
+      // sky rays (16 bytes each) and, with the shadow queue, the shade
+      // kernels' shadow rays (48 bytes a pixel) take in turn (pathtrace.comp
+      // WavefrontQueue).
+      // Dispatched only while every kernel exists, else the single kernel
+      // runs. Temporal (denoised) lighting, one sample a pixel.
+      static constexpr uint32_t wavefrontPlanes = 13, wavefrontQueueHeader = 1024, wavefrontMaxBounces = 16;
+      // start, trace, shade, finish, tail, shadow, shade leaving its shadow
+      // rays, sky, the two shade kernels without the paint peel, arguments
+      static constexpr size_t wavefrontKernels = 11;
+      static VkDeviceSize wavefrontBytes(VkDeviceSize pixels, bool shadows, uint32_t skyRays) {
+        return pixels * wavefrontPlanes * 16 + wavefrontQueueHeader + (pixels * 3 * 4 + 15) / 16 * 16 +
+               pixels * std::max<VkDeviceSize>(shadows ? 48 : 0, 16 * skyRays);
+      }
+      VkPipeline wavefront[wavefrontKernels] = {};
+      std::unique_ptr<Buffer> paths;
+      bool wavefrontActive = false, wavefrontFailed = false;
     } indirectPass;
     void configureIndirect(Frame &frame, const TraceOptions &options, bool querySharc);
+    void configureWavefront(Frame &frame, const TraceOptions &options);
     // Whether the separate indirect pass is built for these options.
     bool indirectPlanned(const TraceOptions &options) const {
       return indirectPass.mode != 0 && !indirectPass.failed && options.bounces != 0 && !options.sparseRendering;
@@ -414,7 +443,8 @@ namespace remix {
     };
     std::unordered_map<VkPipeline, LightingPipeline> lightingPipelines;
     // Variant key bits (selectedLightingKey). Sparse launch mode occupies the
-    // two bits from variantSparseShift.
+    // two bits from variantSparseShift. variantNoPaint and variantNoSubsurface
+    // compile paint and subsurface scattering out (scenes without either).
     enum VariantBit : uint32_t {
       variantSplit = 8,
       variantCombinedDirect = 16,
@@ -422,6 +452,8 @@ namespace remix {
       variantSeparateIndirect = 1024,
       variantEarlyOut = 8192,
       variantSparseShift = 14,
+      variantNoPaint = 1u << 16,
+      variantNoSubsurface = 1u << 17,
     };
     // The options the lighting pipelines were last configured with
     // (beginFrame): the settings the scene variants are prewarmed for.
@@ -477,6 +509,8 @@ namespace remix {
     void finishPbrReuse(VkCommandBuffer command);
     bool localFirstHitActive = false;
     bool decalMaterialsActive = false;
+    bool subsurfaceActive = false; // a subsurface material in the frame, subsurface scattering on
+    uint32_t leanLighting = 0;     // variantNoPaint | variantNoSubsurface for the frame's scene
     bool shadowEarlyOutActive = false; // rtx.native.pathtrace.shadowEarlyOut
     bool localIlluminationActive = false;
     bool localResamplingActive = false;
@@ -1164,6 +1198,8 @@ namespace remix {
     };
     std::vector<LightingRequest> temporalRequests(bool split, bool sigma, bool local, bool restirPasses, bool reblur,
                                                   bool separateIndirect, const TemporalTargets &targets) const;
+    // The wavefront indirect kernels' requests (configureWavefront).
+    std::vector<LightingRequest> wavefrontRequests();
     // Queues the other configurations' temporal pipelines for idle compiler
     // workers (rtx.native.pathtrace.precompileConfigurations).
     void prewarmTemporalConfigurations(bool separateIndirect);

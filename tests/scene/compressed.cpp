@@ -82,6 +82,24 @@ namespace {
         check(c.transparentTexel(x, y, decoded.width) ==
                   (decoded.mips[0][4 * (size_t(y) * decoded.width + x) + 3] != 255),
               "alpha coverage differs from decoded alpha");
+    // Block alpha ranges: the decoded in-image texels' (min, max), one step wider.
+    const uint32_t blocksWide = (decoded.width + 3) / 4, blocksHigh = (decoded.height + 3) / 4;
+    check(c.alphaBlocks.empty() == c.transparent.empty(), "alpha ranges without coverage bits");
+    check(c.alphaBlocks.empty() || c.alphaBlocks.size() == size_t(blocksWide) * blocksHigh, "alpha range count");
+    for (uint32_t by = 0; by < blocksHigh && !c.alphaBlocks.empty(); ++by)
+      for (uint32_t bx = 0; bx < blocksWide; ++bx) {
+        int low = 255, high = 0;
+        for (uint32_t y = by * 4; y < std::min(decoded.height, by * 4 + 4); ++y)
+          for (uint32_t x = bx * 4; x < std::min(decoded.width, bx * 4 + 4); ++x) {
+            const int alpha = decoded.mips[0][4 * (size_t(y) * decoded.width + x) + 3];
+            low = std::min(low, alpha);
+            high = std::max(high, alpha);
+          }
+        const auto range = c.alphaBlocks[size_t(by) * blocksWide + bx];
+        const bool expected = low == 255 ? range[0] == 255 && range[1] == 255
+                                         : range[0] == std::max(0, low - 1) && range[1] == std::min(255, high + 1);
+        check(expected, "block alpha range differs from decoded alpha");
+      }
     // Preview: the first level <= 64 texels, point-sampled if the chain is short.
     uint32_t level = 0, lw = decoded.width, lh = decoded.height;
     while (level + 1 < decoded.mips.size() && std::max(lw, lh) > 64) {
@@ -219,6 +237,47 @@ int main() {
     const auto solid =
         partition(compressTexture(textureInfo(REMIXAPI_FORMAT_BC7_UNORM, 8, 8, 1, opaqueData)), {1, 1, 0, 0});
     require(solid.reasons[OpacityPartition::Solid] == solid.triangles, "Opaque compressed texture not solid");
+  }
+
+  // Micromaps from block alpha ranges: a 32x32 BC1 texture whose right half is
+  // cut out proves opaque and transparent micro-triangles, never one the
+  // decoded texture does not prove.
+  {
+    std::vector<uint8_t> data(8 * 8 * 8);
+    for (uint32_t i = 0; i < 64; ++i) {
+      uint8_t *block = &data[i * 8];
+      const bool cut = i % 8 >= 4;
+      // Four-color mode (color0 > color1) is opaque; three-color mode with
+      // every index 3 is transparent black.
+      block[0] = cut ? 0x00 : 0xff, block[1] = cut ? 0x00 : 0xff;
+      block[2] = cut ? 0xff : 0x00, block[3] = cut ? 0xff : 0x00;
+      for (unsigned b = 4; b < 8; ++b)
+        block[b] = cut ? 0xff : uint8_t(rng());
+    }
+    const auto info = textureInfo(REMIXAPI_FORMAT_BC1_RGBA_UNORM_EXT, 32, 32, 1, data);
+    auto micromap = [&](Pixels pixels) {
+      OpacityCache cache;
+      cache.setMicromapLevel(4);
+      Draw draw;
+      draw.doubleSided = true;
+      draw.surface = std::make_shared<Surface>();
+      draw.surface->vertices = {{{0, 0, 0}, {.05f, .05f}, {1, 1, 1, 1}},
+                                {{1, 0, 0}, {.95f, .05f}, {1, 1, 1, 1}},
+                                {{0, 1, 0}, {.05f, .95f}, {1, 1, 1, 1}}};
+      draw.surface->indices = {0, 1, 2};
+      draw.material = std::make_shared<Material>();
+      draw.material->compare = 4;
+      draw.material->reference = .5f;
+      draw.material->wrapU = draw.material->wrapV = 0;
+      draw.material->texture = std::make_shared<Texture>();
+      draw.material->texture->pixels = std::move(pixels);
+      return cache.partition(draw, {1, 1, 0, 0})->micromap;
+    };
+    const auto packed = micromap(compressTexture(info)), decoded = micromap(decodeTexture(info));
+    require(packed && packed->opaque && packed->transparent,
+            "Compressed cut-out texture produced no opaque and transparent micro-triangles");
+    require(decoded && packed->opaque <= decoded->opaque && packed->transparent <= decoded->transparent,
+            "Compressed micromap proved more than the decoded texture");
   }
 
   // Emission: for textures within the preview size the triangle averages are

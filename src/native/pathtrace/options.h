@@ -367,12 +367,24 @@ namespace remix {
     bool combinedTlas = true;
     // Boolean shadow and local-light rays stop at their first blocker.
     bool shadowEarlyOut = true;
+    // The separate indirect pass as wavefront kernels (path start, each
+    // bounce's ray and shading over the paths still going, the result) over
+    // per-pixel path records (docs/features/gpu-optimizations.md). Denoised
+    // lighting with one sample a pixel; otherwise, and while its kernels
+    // compile, the single kernel runs.
+    bool wavefrontIndirect = true;
+    // Its bounces traced and shaded in kernels of their own; the bounces
+    // after them run in one kernel over the paths still going.
+    uint32_t wavefrontBounces = 1;
+    // Its split bounces' sun and sky shadow rays in a kernel of their own.
+    bool wavefrontShadowQueue = true;
     // Alpha-tested geometry carries VK_EXT_opacity_micromap data, so
     // traversal settles proved micro-triangles without the shader's alpha
     // test (docs/features/gpu-optimizations.md). No effect without device
-    // support. opacityMicromapLevel: the deepest subdivision (1-8).
+    // support. opacityMicromapLevel: the deepest subdivision (1-8); micromaps
+    // bake in the background and attach a few frames after their surfaces.
     bool opacityMicromaps = false;
-    uint32_t opacityMicromapLevel = 4;
+    uint32_t opacityMicromapLevel = 8;
     // DLSS 5 Neural Uplift (DLSS-NR)
     bool neuralUplift = false;
     uint32_t neuralUpliftPasses = 1;

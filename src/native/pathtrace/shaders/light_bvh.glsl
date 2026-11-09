@@ -218,6 +218,22 @@ vec3 localVisibility(vec3 origin,vec3 endpoint) {
   }
   return vec3(0);
 }
+#ifdef WAVEFRONT_DEFER_SHADOWS
+// The wavefront shade kernel's local light sample (pathtrace.comp): its
+// visibility ray waits for the shadow kernel, which adds the estimate where
+// the endpoint is visible. One sample at a bounce vertex.
+vec3 wavefrontLocalEndpoint=vec3(0),wavefrontLocalEstimate=vec3(0);
+#endif
+// A light sample's visibility from the surface (the bounce vertices' and
+// unguided samples' call sites).
+vec3 sampleVisibility(Hit hit,vec3 endpoint,vec3 estimate) {
+#ifdef WAVEFRONT_DEFER_SHADOWS
+  wavefrontLocalEndpoint=endpoint;wavefrontLocalEstimate=estimate;
+  return vec3(0);
+#else
+  return localVisibility(shadowOrigin(hit),endpoint);
+#endif
+}
 #include "light_guiding.glsl"
 #include "regir.glsl"
 // A sphere candidate includes solid-angle weighting, but not discrete selection.
@@ -379,7 +395,7 @@ vec3 smallLocalLighting(LightNodes nodes,LightEmitters emitters,Hit hit,uint sta
     if(guided) {selected=preferredSample;selectedIndex=preferred;}
     float pdf=(1-mixWeight)*localLuminance(selected.physical)/total+(selectedIndex==preferred?mixWeight:0);
     vec3 estimate=selected.physical/pdf;
-    vec3 visibility=localVisibility(shadowOrigin(hit),selected.endpoint);
+    vec3 visibility=sampleVisibility(hit,selected.endpoint,estimate);
     noteLocalProbe(visibility,estimate);
     vec3 contribution=estimate*visibility,specularContribution=selected.specular/pdf*visibility;
     clampLighting(hit,contribution,specularContribution,threshold);
@@ -727,7 +743,7 @@ vec3 localLighting(Hit hit,uint state,uint samples,out float lightDistance,bool 
     // A spot light facing away or a back-facing response: no visibility ray.
     if(localLuminance(physical)<=0)continue;
     vec3 estimate=physical/selectionPdf;
-    vec3 visibility=localVisibility(shadowOrigin(hit),endpoint);
+    vec3 visibility=sampleVisibility(hit,endpoint,estimate);
     noteLocalProbe(visibility,estimate);
     vec3 contribution=estimate*visibility,specularContribution=physicalSpecular/selectionPdf*visibility;
     pathDebugRecord(pathDebugVertex?4:2,endpoint,float(emitter),vec4(estimate,selectionPdf),vec4(visibility,distance),vec4(physical,0));

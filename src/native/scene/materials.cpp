@@ -38,7 +38,7 @@ namespace remix::scene {
       d.flags |= MaterialDecode::solidEnergy;
     if (m.blendModulation)
       d.flags |= MaterialDecode::blendModulation;
-    if (m.fogBody && (m.refractTint[0] != 1 || m.refractTint[1] != 1 || m.refractTint[2] != 1))
+    if (m.fogBody && (m.refractTint[0] != 1 || m.refractTint[1] != 1 || m.refractTint[2] != 1 || m.fogStart != 0))
       d.flags |= MaterialDecode::refractTint;
     return d;
   }
@@ -199,14 +199,16 @@ namespace remix {
               extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_TRANSLUCENT_FOG_EXT))) {
         const float tint[3] = {fog->refractTint.x, fog->refractTint.y, fog->refractTint.z};
         finite(&fog->fogEnd, 1);
+        finite(&fog->fogStart, 1);
         finite(tint, 3);
-        if (material->transmittanceDistance <= 0 || !(fog->fogEnd > 0) ||
+        if (material->transmittanceDistance <= 0 || !(fog->fogEnd > 0) || !(fog->fogStart < fog->fogEnd) ||
             extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_IRIDESCENCE_EXT) ||
             std::any_of(tint, tint + 3, [](float v) { return v < 0 || v > 1; }))
           throw invalid;
         material->transmittanceDistance = fog->fogEnd;
         material->fogBody = true;
         std::copy_n(tint, 3, material->refractTint);
+        material->fogStart = fog->fogStart;
       }
     }
     if (const auto *scroll = static_cast<const remixapi_MaterialTransmittanceScrollEXT *>(
@@ -529,7 +531,7 @@ namespace remix {
              a.remap[0] == b.remap[0] && a.remap[1] == b.remap[1] && a.scrollLayers == b.scrollLayers &&
              std::equal(a.scroll, a.scroll + 6, b.scroll) && a.refractiveIndex == b.refractiveIndex &&
              a.transmittanceDistance == b.transmittanceDistance && a.fogBody == b.fogBody &&
-             std::equal(a.refractTint, a.refractTint + 3, b.refractTint) &&
+             std::equal(a.refractTint, a.refractTint + 3, b.refractTint) && a.fogStart == b.fogStart &&
              a.bakeSmoothBoundary == b.bakeSmoothBoundary &&
              a.thinWallThickness == b.thinWallThickness &&
              std::equal(a.transmittanceScroll, a.transmittanceScroll + 2, b.transmittanceScroll) &&

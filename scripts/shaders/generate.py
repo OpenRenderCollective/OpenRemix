@@ -55,7 +55,7 @@ BACKENDS = {
     'postfx': ('postfx', 'vulkan1.1', ('meter', 'resolve', 'down', 'up')),
     'upscale': ('upscale', 'vulkan1.2', ('comp', 'vert', 'frag', 'hdr10', 'hdrUi')),
     'raster': ('raster', 'vulkan1.1', ('vert', 'frag', 'haloMask', 'haloVert', 'haloBlur', 'haloComposite', 'maskWithin', 'maskOverlay', 'spriteVert', 'spriteFrag', 'skyComposite', 'infectedVert', 'infectedFrag')),
-    'pathtrace': ('trace', 'vulkan1.2', ('vert', 'frag', 'comp', 'temporal', 'transparency', 'temporalTransparency', 'frontGuides', 'psr', 'regirPresample', 'volumeUpdate', 'orcaSparse', 'sharcOrcaSparse', 'singleTransparency', 'singleTemporalTransparency', 'sharcSingleTransparency', 'sharcSingleTemporalTransparency', 'confidence', 'gbufferVert', 'gbufferFrag', 'depthFrag', 'sharcUpdate', 'sharcResolve', 'sharcQuery', 'sharcTransparency', 'sharcTemporal', 'sharcTemporalTransparency', 'sharcConfidence', 'sigmaTemporal', 'sharcSigmaTemporal', 'localTemporal', 'localSigmaTemporal', 'sharcLocalTemporal', 'sharcLocalSigmaTemporal', 'splitLocalTemporal', 'splitLocalSigmaTemporal', 'sharcSplitLocalTemporal', 'sharcSplitLocalSigmaTemporal', 'splitLocalDirect', 'splitRestirInitial', 'splitRestirSpatial', 'indirectTemporal', 'sharcIndirectTemporal', 'vertexAssemble', 'vertexSkin', 'vertexWound', 'sparseCompact', 'sparseArgs', 'indirect', 'sharcIndirect', 'sheetLighting', 'sheetLightingTemporal', 'sharcSheetLighting', 'sharcSheetLightingTemporal')),
+    'pathtrace': ('trace', 'vulkan1.2', ('vert', 'frag', 'comp', 'temporal', 'transparency', 'temporalTransparency', 'frontGuides', 'psr', 'regirPresample', 'volumeUpdate', 'orcaSparse', 'sharcOrcaSparse', 'singleTransparency', 'singleTemporalTransparency', 'sharcSingleTransparency', 'sharcSingleTemporalTransparency', 'confidence', 'gbufferVert', 'gbufferFrag', 'depthFrag', 'sharcUpdate', 'sharcResolve', 'sharcQuery', 'sharcTransparency', 'sharcTemporal', 'sharcTemporalTransparency', 'sharcConfidence', 'sigmaTemporal', 'sharcSigmaTemporal', 'localTemporal', 'localSigmaTemporal', 'sharcLocalTemporal', 'sharcLocalSigmaTemporal', 'splitLocalTemporal', 'splitLocalSigmaTemporal', 'sharcSplitLocalTemporal', 'sharcSplitLocalSigmaTemporal', 'splitLocalDirect', 'splitRestirInitial', 'splitRestirSpatial', 'indirectTemporal', 'sharcIndirectTemporal', 'vertexAssemble', 'vertexSkin', 'vertexWound', 'sparseCompact', 'sparseArgs', 'indirect', 'sharcIndirect', 'sheetLighting', 'sheetLightingTemporal', 'sharcSheetLighting', 'sharcSheetLightingTemporal', 'wavefrontStartTemporal', 'wavefrontTraceTemporal', 'wavefrontShadeTemporal', 'wavefrontFinishTemporal', 'sharcWavefrontStartTemporal', 'sharcWavefrontTraceTemporal', 'sharcWavefrontShadeTemporal', 'sharcWavefrontFinishTemporal', 'wavefrontTailTemporal', 'sharcWavefrontTailTemporal', 'wavefrontArgs', 'wavefrontShadowTemporal', 'sharcWavefrontShadowTemporal', 'wavefrontShadeDeferTemporal', 'sharcWavefrontShadeDeferTemporal', 'wavefrontSkyTemporal', 'sharcWavefrontSkyTemporal', 'wavefrontShadePlainTemporal', 'sharcWavefrontShadePlainTemporal', 'wavefrontShadeDeferPlainTemporal', 'sharcWavefrontShadeDeferPlainTemporal')),
     'denoise': ('denoise', 'vulkan1.2', ('comp', 'sigma', 'local', 'localSigma', 'splitLocal', 'splitLocalSigma')),
     'particles': ('particles', 'vulkan1.1', ('simulate', 'spawn', 'args', 'vert', 'frag', 'light', 'spawnTraced')),
 }
@@ -147,6 +147,25 @@ def defines_for(backend, stage, stages):
     if stage in ('sigmaTemporal', 'sharcSigmaTemporal'): defines += ['-DTEMPORAL=1']
     if stage in ('indirectTemporal', 'sharcIndirectTemporal'): defines += ['-DTEMPORAL=1', '-DINDIRECT_PASS=1']
     if stage in ('indirect', 'sharcIndirect'): defines += ['-DINDIRECT_PASS=1']
+    # The wavefront indirect pass's kernels (pathtrace.comp WAVEFRONT_PASS).
+    for kernel, name in enumerate(('Start', 'Trace', 'Shade', 'Finish'), 1):
+        if stage in ('wavefront' + name + 'Temporal', 'sharcWavefront' + name + 'Temporal'):
+            defines += ['-DTEMPORAL=1', '-DINDIRECT_PASS=1', '-DWAVEFRONT_PASS=' + str(kernel)]
+    if stage in ('wavefrontTailTemporal', 'sharcWavefrontTailTemporal'):
+        defines += ['-DTEMPORAL=1', '-DINDIRECT_PASS=1', '-DWAVEFRONT_PASS=6']
+    if stage in ('wavefrontShadeDeferTemporal', 'sharcWavefrontShadeDeferTemporal'):
+        defines += ['-DTEMPORAL=1', '-DINDIRECT_PASS=1', '-DWAVEFRONT_PASS=3', '-DWAVEFRONT_DEFER_SHADOWS=1']
+    # The shade kernels without the paint peel (the trace kernel's unpainted paths).
+    if stage in ('wavefrontShadePlainTemporal', 'sharcWavefrontShadePlainTemporal'):
+        defines += ['-DTEMPORAL=1', '-DINDIRECT_PASS=1', '-DWAVEFRONT_PASS=3', '-DWAVEFRONT_PLAIN=1']
+    if stage in ('wavefrontShadeDeferPlainTemporal', 'sharcWavefrontShadeDeferPlainTemporal'):
+        defines += ['-DTEMPORAL=1', '-DINDIRECT_PASS=1', '-DWAVEFRONT_PASS=3', '-DWAVEFRONT_PLAIN=1',
+                    '-DWAVEFRONT_DEFER_SHADOWS=1']
+    if stage in ('wavefrontSkyTemporal', 'sharcWavefrontSkyTemporal'):
+        defines += ['-DTEMPORAL=1', '-DINDIRECT_PASS=1', '-DWAVEFRONT_PASS=8']
+    if stage in ('wavefrontShadowTemporal', 'sharcWavefrontShadowTemporal'):
+        defines += ['-DTEMPORAL=1', '-DINDIRECT_PASS=1', '-DWAVEFRONT_PASS=7']
+    if stage == 'wavefrontArgs': defines += ['-DTEMPORAL=1', '-DINDIRECT_PASS=1', '-DWAVEFRONT_PASS=5']
     if stage in ('sheetLighting', 'sharcSheetLighting'): defines += ['-DSHEET_LIGHTING_PASS=1']
     if stage in ('sheetLightingTemporal', 'sharcSheetLightingTemporal'): defines += ['-DTEMPORAL=1', '-DSHEET_LIGHTING_PASS=1']
     if stage == 'frontGuides': defines += ['-DTEMPORAL=1', '-DFRONT_GUIDES_PASS=1']
