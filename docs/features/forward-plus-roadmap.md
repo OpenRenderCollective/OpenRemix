@@ -15,6 +15,16 @@
   and moving local shadow quality in the follow-up queue. Keep foreground,
   full-quality 1440p and 4K captures separate from standalone replays and smoke
   tests when comparing performance.
+- Recheck Trainstation's playground wall overlays across camera angles and
+  the leaf litter against foreground grass. Compare the storefront and courtyard
+  wall-floor seams with a fresh bake before changing visibility or depth bias.
+- Prototype receiver-focused probe placement from playable bounds. Share region
+  hints with cubemap placement, keep diffuse coverage independent of reflection
+  assets, and retain coarse coverage at gaps and boundaries. Compare density,
+  prop continuity and memory at equal bake budgets.
+- After merge, profile Trainstation at 1080p with and without
+  `gmod_mcore_test 1`, then isolate native 4K GPU pass costs with the same view,
+  settings and warmed bake.
 
 ## Next performance isolation
 
