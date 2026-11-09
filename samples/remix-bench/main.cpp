@@ -1,6 +1,6 @@
 // Repeatable renderer benchmark built only on the public SDK.
 //   remix-bench LIBRARY FRAMES BACKEND [grid=N] [foliage=N] [textures=N] [size=N] [format=bc|rgba] [stats=0|1]
-//   [work=MS] [async=0|1] [churn=N] [churnTris=N] [still=0|1] [shot=PATH] [lights=N] [glass=N]
+//   [work=MS] [async=0|1] [churn=N] [churnTris=N] [still=0|1] [shot=PATH] [lights=N] [glass=N] [paint=N]
 // Draws a grid of one-sided textured cubes and double-sided alpha-tested
 // foliage cards, then reports texture creation, first frame and steady Present
 // timings. Measurement starts once the requested backend reports GPU timings
@@ -47,6 +47,9 @@ namespace {
     // lights: coloured sphere lights over the grid (local light sampling).
     // glass: translucent cards among the cubes (blended layers paths pass).
     unsigned lights = 0, glass = 0;
+    // paint: half-transparent decal paint over four faces of the N cubes
+    // nearest the camera's line of sight (bounce rays meet it).
+    unsigned paint = 0;
   };
 
   uint16_t rgb565(unsigned r, unsigned g, unsigned b) { return uint16_t((r >> 3) << 11 | (g >> 2) << 5 | b >> 3); }
@@ -169,11 +172,15 @@ namespace {
 } // namespace
 
 int main(int argc, char **argv) {
+  // Unbuffered: the results are printed after the runtime unloads, and a
+  // crash in a driver's exit handler (seen with paint or glass and many
+  // lights) lost a buffered report.
+  std::setvbuf(stdout, nullptr, _IONBF, 0);
   if (argc < 4) {
     std::fprintf(stderr,
                  "usage: %s LIBRARY FRAMES BACKEND [grid=N] [foliage=N] [textures=N] [size=N] [format=bc|rgba] "
                  "[stats=0|1] [work=MS] [async=0|1] [churn=N] [churnTris=N] [still=0|1] [shot=PATH] [lights=N] "
-                 "[glass=N]\n",
+                 "[glass=N] [paint=N]\n",
                  argv[0]);
     return 2;
   }
@@ -211,6 +218,8 @@ int main(int argc, char **argv) {
       options.lights = number;
     else if (key == "glass")
       options.glass = number;
+    else if (key == "paint")
+      options.paint = number;
     else {
       std::fprintf(stderr, "unknown option %s\n", arg.c_str());
       return 2;
@@ -477,6 +486,40 @@ int main(int argc, char **argv) {
     p.transform.matrix[2][3] = 4 + random(seed) * options.grid * spacing;
     placements.push_back(p);
   }
+  // Paint: a quad just off four faces of a cube (its transform), drawn as a
+  // blended decal instance (as in tests/pathtrace/pbr_denoise.cpp).
+  remixapi_MeshHandle paintMesh = nullptr;
+  std::vector<remixapi_Transform> painted;
+  if (options.paint && status == REMIXAPI_ERROR_CODE_SUCCESS && !materials.empty()) {
+    Mesh layer;
+    constexpr float o = 1.01f;
+    const float faces[4][4][3] = {{{-1, -1, -o}, {-1, 1, -o}, {1, 1, -o}, {1, -1, -o}},
+                                  {{-1, -1, o}, {1, -1, o}, {1, 1, o}, {-1, 1, o}},
+                                  {{-o, -1, -1}, {-o, -1, 1}, {-o, 1, 1}, {-o, 1, -1}},
+                                  {{o, -1, -1}, {o, 1, -1}, {o, 1, 1}, {o, -1, 1}}};
+    for (const auto &face : faces)
+      layer.quad(face);
+    remixapi_MeshInfoSurfaceTriangles surface = {};
+    surface.vertices_values = layer.vertices.data();
+    surface.vertices_count = layer.vertices.size();
+    surface.indices_values = layer.indices.data();
+    surface.indices_count = layer.indices.size();
+    surface.material = materials[1 % materials.size()];
+    remixapi_MeshInfo mesh = {};
+    mesh.sType = REMIXAPI_STRUCT_TYPE_MESH_INFO;
+    mesh.hash = 0x8000;
+    mesh.surfaces_count = 1;
+    mesh.surfaces_values = &surface;
+    check(api.CreateMeshBatched(&mesh, &paintMesh), "CreateMesh paint");
+    // The cubes nearest the line of sight (x = 0), front rows first.
+    std::vector<std::pair<float, size_t>> nearest;
+    for (size_t i = 0; i < placements.size(); ++i)
+      if (!placements[i].doubleSided)
+        nearest.push_back({std::abs(placements[i].transform.matrix[0][3]) + placements[i].transform.matrix[2][3] * .5f, i});
+    std::sort(nearest.begin(), nearest.end());
+    for (size_t i = 0; i < nearest.size() && i < options.paint; ++i)
+      painted.push_back(placements[nearest[i].second].transform);
+  }
   for (unsigned i = 0; i < options.glass && glassMesh; ++i) {
     Placement p{glassMesh, {}, true};
     const float angle = random(seed) * 6.2831853f, scale = 1 + random(seed);
@@ -546,6 +589,30 @@ int main(int argc, char **argv) {
       instance.transform = placements[i].transform;
       instance.doubleSided = placements[i].doubleSided;
       check(api.DrawInstance(&instance), "DrawInstance");
+    }
+    for (size_t i = 0; i < painted.size() && paintMesh && status == REMIXAPI_ERROR_CODE_SUCCESS; ++i) {
+      remixapi_InstanceInfoBlendEXT blend = {};
+      blend.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_BLEND_EXT;
+      blend.alphaBlendEnabled = 1;
+      blend.srcColorBlendFactor = blend.srcAlphaBlendFactor = 6; // source alpha
+      blend.dstColorBlendFactor = blend.dstAlphaBlendFactor = 7; // one minus source alpha
+      blend.textureAlphaOperation = 3;                           // modulate
+      blend.textureAlphaArg1Source = 1;                          // texture
+      blend.textureAlphaArg2Source = 3;                          // texture factor
+      blend.tFactor = 0x80ffffff;
+      remixapi_InstanceIdentityEXT identity = {};
+      identity.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_IDENTITY_EXT;
+      identity.pNext = &blend;
+      identity.instanceId = 0x200000 + i;
+      identity.rasterVisible = true;
+      remixapi_InstanceInfo instance = {};
+      instance.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO;
+      instance.pNext = &identity;
+      instance.categoryFlags = REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_STATIC;
+      instance.mesh = paintMesh;
+      instance.transform = painted[i];
+      instance.doubleSided = 1;
+      check(api.DrawInstance(&instance), "DrawInstance paint");
     }
     for (unsigned i = 0; i < options.churn && status == REMIXAPI_ERROR_CODE_SUCCESS; ++i) {
       churnMesh(i, frame);
