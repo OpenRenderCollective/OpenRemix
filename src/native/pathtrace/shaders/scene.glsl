@@ -26,7 +26,7 @@ struct Surface {
   vec4 emission;
   vec4 pbr;
   uvec4 pbrTextures;
-  // scene::MaterialDecode: x flags (self-illumination; bit 8 measured sheet).
+  // scene::MaterialDecode: x flags (self-illumination, measured sheet, etc.).
   uvec4 material;
   // A thin film (frame_tables.h filmFields): strength (0: none), film index,
   // thickness in nm, structural colour; then half2(min, max) of the thickness

@@ -379,9 +379,9 @@ void surfaceHit(Intersection x,vec3 direction,inout Hit hit,bool motion) {
   hit.color=albedo(s,tri/3,bary,motion||pathEmission,hit.emission,hit.self);
   hit.lift=0;
   hit.identity=motion&&frame.splitLocal.w==3?debugTriangle(s.debugIdentity,originalTriangle(s,tri/3)):0;
+  vec3 w=vec3(1-bary.x-bary.y,bary);
+  vec2 uv=s.vertices.v[s.indices.i[tri]].uv.xy*w.x+s.vertices.v[s.indices.i[tri+1]].uv.xy*w.y+s.vertices.v[s.indices.i[tri+2]].uv.xy*w.z;
   {
-    vec3 w=vec3(1-bary.x-bary.y,bary);
-    vec2 uv=s.vertices.v[s.indices.i[tri]].uv.xy*w.x+s.vertices.v[s.indices.i[tri+1]].uv.xy*w.y+s.vertices.v[s.indices.i[tri+2]].uv.xy*w.z;
     hit.ng=hit.n;hit.horizon=hit.ng;hit.wo=-direction;hit.rm=materialParameters(s,uv,hit.color.rgb);hit.pbr=s.pbr.z!=0;hit.metal=materialMetal(s);
     vec2 ua=s.vertices.v[s.indices.i[tri]].uv.xy;
     vec2 ub=s.vertices.v[s.indices.i[tri+1]].uv.xy;
@@ -405,7 +405,7 @@ void surfaceHit(Intersection x,vec3 direction,inout Hit hit,bool motion) {
   hit.tinted=(s.state.w&32)!=0;
   // A translucent body: refractive index, measurement distance (frame_tables.h materialFields).
   hit.thick=(s.state.w&8)!=0&&s.pbr.w!=0?unpackHalf2x16(floatBitsToUint(s.pbr.w)):vec2(0);
-  loadSheet(hit, s, intersectionUV(s, tri / 3, bary));
+  loadSheet(hit, s, uv);
   hit.previousPosition=hit.p;hit.previousNormal=hit.n;hit.historyValid=false;
 // The visibility pass captures foreground and background motion before shading.
 #if defined(TEMPORAL) && !defined(TRANSPARENCY_PASS)
