@@ -112,13 +112,14 @@ needs, and the bounce kernels launch only for the paths still going:
   transport, as the single kernel writes them.
 
 `rtx.native.pathtrace.wavefrontShadowQueue` (0/1, default 1) moves the split
-bounces' sun and sky shadow rays into a **shadow** kernel over their own list.
+bounces' sun, sky and local light shadow rays into a **shadow** kernel over
+their own list (the local light's sample is still drawn in the shade kernel).
 
 The path state between kernels (origin, direction, throughput, radiance and
 random state exact, the rest as halves) is in per-pixel records, allocated
-while the option is on: 216 bytes a pixel, plus 16 a sky sample or 32 with
-the shadow queue, whichever is more (248 by default: 123 MiB at 960x540,
-872 MiB at 2560x1440). Neither the receiver query nor the alpha test draws
+while the option is on: 216 bytes a pixel, plus 16 a sky sample or 48 with
+the shadow queue, whichever is more (264 by default: 131 MiB at 960x540,
+928 MiB at 2560x1440). Neither the receiver query nor the alpha test draws
 random numbers, so a path continues as the single kernel's would; images
 match within noise. The kernels compile with the temporal lighting passes, or
 in the background when the option is turned on later; until all have, the
