@@ -316,6 +316,14 @@ struct Intersection { float t; uint surface; uint primitive; vec2 bary; mat4x3 m
 #if WAVEFRONT_PASS==3
 Intersection wavefrontReceiver;
 #endif
+// closest()'s receiver query also looks for paint (foldPaint; the paint
+// instances in its mask): it tests no candidate of an instance that is paint
+// alone (state.w bit 26), only notes the nearest from paintFloor on
+// (paintNearest). Paint before the receiver is then peeled by the paint
+// queries; a ray with none (most) is traversed once, where the receiver
+// query and one paint query traversed it twice. The note may exceed what the
+// paint queries find (no origin, coverage or facing test): they decide.
+bool foldPaint=false;float paintFloor=0,paintNearest=1e30;
 void queryScene(accelerationStructureEXT scene, vec3 origin, vec3 direction, inout Intersection x,float minimum) {
   rayQueryEXT query;
   profileRay(0);
@@ -328,6 +336,11 @@ void queryScene(accelerationStructureEXT scene, vec3 origin, vec3 direction, ino
     Surface s=surfaces[rayQueryGetIntersectionInstanceCustomIndexEXT(query,false)+rayQueryGetIntersectionGeometryIndexEXT(query,false)];
     if(cameraCut!=0u&&cutSurface(s.state.w,cameraCut))continue;
     if(cameraRay&&cameraCulled(s.state.w,rayQueryGetIntersectionFrontFaceEXT(query,false),origin,direction,rayQueryGetIntersectionTEXT(query,false)))continue;
+    if(foldPaint&&(s.state.w&0x4000000u)!=0u) {
+      float t=rayQueryGetIntersectionTEXT(query,false);
+      if(t>=paintFloor)paintNearest=min(paintNearest,t);
+      continue;
+    }
     s.indices=s.traceIndices;
     if ((s.state.w&4)==0 && !rayQueryGetIntersectionFrontFaceEXT(query,false)) {profileRay(4);continue;}
     if(originPaint>0) {
@@ -522,23 +535,35 @@ Hit closest(vec3 origin,vec3 direction,float maximum,bool motion) {
   const bool paint=enableDecals&&(mask&decalInstanceMask)!=0u;
 #endif
   uint layers=0u;
+#if WAVEFRONT_PASS==3
+  const bool fold=false; // the trace kernel's query noted the paint
+#else
+  // (traversalDebug 1 would commit the paint the query sees.)
+  const bool fold=paint&&(frame.target.z&8u)==0u;
+#endif
+  // Floored like the attachment test below (at most 20 x attach).
+  if(paint&&!motion&&dot(leavingNormal,leavingNormal)>0)
+    minimum=attach/max(abs(dot(direction,leavingNormal)),.05);
   // Step 0 finds the receiver; the steps after it, up to 32 layers of paint.
   for(uint step=0;step<33;++step) {
-    traceMask=step==0u?(paint?mask&~decalInstanceMask:mask):decalInstanceMask;
+    traceMask=step==0u?(paint&&!fold?mask&~decalInstanceMask:mask):decalInstanceMask;
     if(step==0u) {
 #if WAVEFRONT_PASS==3
       // A shade kernel's one closest() (it stops at a blended layer): its
       // bounce ray's receiver, found by the trace kernel.
       receiver=wavefrontReceiver;
 #else
+      foldPaint=fold;paintFloor=minimum;paintNearest=1e30;
       receiver=nearest(origin,direction,maximum,0);
+      foldPaint=false;
 #endif
       if(!paint)break;
       end=receiver.t;
-      // Floored like the attachment test below (at most 20 x attach).
-      if(!motion&&dot(leavingNormal,leavingNormal)>0)
-        minimum=attach/max(abs(dot(direction,leavingNormal)),.05);
       if(minimum>=end)break;
+      // No paint before the receiver: no paint query. (A receiver nearer
+      // than two contact gaps: the paint query starts nearer than the
+      // receiver query did, and looks.)
+      if(fold&&!(paintNearest<end)&&(cameraRay||contactGap(end)>=contactGap(1e30)))break;
       continue;
     }
     originPaint=passOriginPaint?attach:0;
@@ -2203,9 +2228,8 @@ bool wavefrontPainted(out uint id,out uint index) {
   shadingPixel=ivec2(index%frame.target.x,index/frame.target.x);
   return true;
 }
-// secondaryHit's first query: closest()'s receiver, which leaves out paint,
-// then the peel's first (closest()'s step 1, same range and origin rule):
-// whether any paint lies before the receiver (painted). Kept: the
+// secondaryHit's first query: closest()'s receiver, which notes the paint
+// before it (foldPaint): whether any lies there (painted). Kept: the
 // transform (each column with one more word), the surface, the primitive
 // and the barycentrics; the shade kernel works out the distance and the
 // wound's W again.
@@ -2216,14 +2240,18 @@ bool wavefrontTrace(uint id,uint index) {
   vec3 origin=uintBitsToFloat(a.xyz),direction=uintBitsToFloat(wavefrontLoad(1u,index).xyz);
   const uint mask=bounceMask();
   const bool paint=enableDecals&&(mask&decalInstanceMask)!=0u;
-  traceMask=paint?mask&~decalInstanceMask:mask;
+  const bool fold=paint&&(frame.target.z&8u)==0u; // as closest()
+  // The leaving normal as the shade kernel loads it (loadPath).
+  vec3 leaving=paint&&(a.w&32u)!=0u?decodeGeometricNormal(unpackSnorm2x16(wavefrontLoad(4u,index).w)):vec3(0);
+  const float attach=frame.visibilityProbe.y;
+  float minimum=dot(leaving,leaving)>0?attach/max(abs(dot(direction,leaving)),.05):0;
+  traceMask=paint&&!fold?mask&~decalInstanceMask:mask;
+  foldPaint=fold;paintFloor=minimum;paintNearest=1e30;
   Intersection x=nearest(origin,direction,1e30,0);
-  bool painted=false;
-  if(paint) {
-    // The leaving normal as the shade kernel loads it (loadPath).
-    vec3 leaving=(a.w&32u)!=0u?decodeGeometricNormal(unpackSnorm2x16(wavefrontLoad(4u,index).w)):vec3(0);
-    const float attach=frame.visibilityProbe.y;
-    float minimum=dot(leaving,leaving)>0?attach/max(abs(dot(direction,leaving)),.05):0;
+  foldPaint=false;
+  // (Paint nearer than the query's start: as closest().)
+  bool painted=fold&&minimum<x.t&&(paintNearest<x.t||contactGap(x.t)<contactGap(1e30));
+  if(paint&&!fold) {
     if(minimum<x.t) {
       traceMask=decalInstanceMask;originPaint=attach;
       painted=nearest(origin,direction,x.t,minimum).surface!=~0u;
