@@ -69,7 +69,8 @@ namespace remix::forward {
     VkRenderPass worldPass = VK_NULL_HANDLE, shadowPass = VK_NULL_HANDLE;
     VkRenderPass opaqueResumePass = VK_NULL_HANDLE;
     VkDescriptorSetLayout visibilitySetLayout = VK_NULL_HANDLE;
-    VkPipelineLayout visibilityLayout = VK_NULL_HANDLE;
+    VkPipelineLayout visibilityLayout = VK_NULL_HANDLE, coveredClusterLayout = VK_NULL_HANDLE;
+    VkPipeline coveredClusterPipeline = VK_NULL_HANDLE;
     VkPipeline tileDepthPipeline = VK_NULL_HANDLE, visibilityPipeline = VK_NULL_HANDLE;
     VkDescriptorPool visibilityPool = VK_NULL_HANDLE;
     VkFramebuffer worldFramebuffer = VK_NULL_HANDLE;

@@ -50,7 +50,7 @@ BACKENDS = {
     'live_ray': ('forward::ray', 'vulkan1.2', ('launch', 'merge')),
     'bake': ('forward::bake', 'vulkan1.2', ('atlas', 'transport', 'parallel', 'radianceParallel', 'visibility', 'aggregate', 'aggregateParallel', 'receiverDirect', 'receiverDirectParallel', 'depth')),
     'forward_test': ('forward::test', 'vulkan1.2', ('comp', 'probes', 'water', 'coarseTransfer')),
-    'forward': ('forward', 'vulkan1.1', ('vert', 'lightmapVert', 'frag', 'prepassedFrag', 'inlineFrag', 'inlinePrepassedFrag', 'viewModelFrag', 'viewModelEarlyFrag', 'cluster', 'shadowVert', 'shadowFrag', 'opaqueDepthFrag', 'localShadowVert', 'localShadowFrag', 'depthBatchVert', 'depthBatchFrag', 'compositeVert', 'compositeFrag', 'compositeSingle', 'ssrFrag', 'prepassedSsrFrag', 'ssrResolve', 'ssrResolveSingle', 'ssrReduce', 'ssrTrace', 'ssrFilter', 'ssrFilterSingle', 'opaqueCull', 'opaqueTiles', 'opaqueTilesSingle')),
+    'forward': ('forward', 'vulkan1.1', ('vert', 'lightmapVert', 'frag', 'prepassedFrag', 'inlineFrag', 'inlinePrepassedFrag', 'viewModelFrag', 'viewModelEarlyFrag', 'cluster', 'clusterCovered', 'shadowVert', 'shadowFrag', 'opaqueDepthFrag', 'localShadowVert', 'localShadowFrag', 'depthBatchVert', 'depthBatchFrag', 'compositeVert', 'compositeFrag', 'compositeSingle', 'ssrFrag', 'prepassedSsrFrag', 'ssrResolve', 'ssrResolveSingle', 'ssrReduce', 'ssrTrace', 'ssrFilter', 'ssrFilterSingle', 'opaqueCull', 'opaqueTiles', 'opaqueTilesSingle')),
     # Shared with the raster fallback, which supports Vulkan 1.1 devices.
     'postfx': ('postfx', 'vulkan1.1', ('meter', 'resolve', 'down', 'up')),
     'upscale': ('upscale', 'vulkan1.2', ('comp', 'vert', 'frag', 'hdr10', 'hdrUi')),
@@ -233,7 +233,7 @@ def defines_for(backend, stage, stages):
         source = directory / ('ray-scene.comp' if stage == 'comp' else stage + '.comp')
     if backend == 'forward':
         source = directory / {
-            'vert': 'forward.vert', 'lightmapVert': 'forward.vert', 'frag': 'forward.frag', 'cluster': 'cluster.comp',
+            'vert': 'forward.vert', 'lightmapVert': 'forward.vert', 'frag': 'forward.frag', 'cluster': 'cluster.comp', 'clusterCovered': 'cluster.comp',
             'shadowVert': 'forward.vert', 'shadowFrag': 'forward.frag', 'opaqueDepthFrag': 'depth.frag',
             'localShadowVert': 'forward.vert', 'localShadowFrag': 'forward.frag',
             'depthBatchVert': 'depth-batch.vert', 'depthBatchFrag': 'depth-batch.frag',
@@ -247,6 +247,7 @@ def defines_for(backend, stage, stages):
             'opaqueCull': 'opaque-visibility.comp', 'opaqueTiles': 'opaque-visibility.comp',
             'opaqueTilesSingle': 'opaque-visibility.comp',
         }[stage]
+        if stage == 'clusterCovered': defines = ['-DCOVERED_CLUSTERS=1']
         if stage == 'lightmapVert': defines = ['-DSURFACE_LIGHTMAP=1']
         if stage in ('shadowVert', 'shadowFrag'): defines = ['-DSHADOW_PASS=1']
         if stage in ('localShadowVert', 'localShadowFrag'): defines = ['-DSHADOW_PASS=1', '-DLOCAL_SHADOW_PASS=1']
