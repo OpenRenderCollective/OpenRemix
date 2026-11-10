@@ -1711,15 +1711,21 @@ void updateCache(ivec2 pixel) {
     lighting=cacheValid(lighting);
     // The light passed back to the path's earlier cells, limited against
     // this vertex's cell (cacheLimit).
-    vec3 carried=cacheLimit(parameters,cacheCell(parameters,data),lighting,1/data.materialDemodulation);
+    uint cell=cacheCell(parameters,data);
+    vec3 carried=cacheLimit(parameters,cell,lighting,1/data.materialDemodulation);
     if(store) {
       data.radianceDirectionWeight=cacheDirectionWeight(hit,lighting,directSpecular);
       // The SDK adds one value to the cell and to the earlier cells: the
-      // limited one, then the cell gets the rest of its own light.
-      if(!SharcUpdateHit(parameters,state,data,carried,random()))break;
-      if(any(greaterThan(lighting,carried)))
-        SharcAddVoxelData(parameters,state.cacheIndices[0],lighting-carried,1/data.materialDemodulation,
+      // limited one. The cell gets the rest of its own light first, unless the
+      // SDK will resample it and add none (its test, repeated; a limited
+      // sample means the cell has its mean). Adding it after the SDK call
+      // spilled registers.
+      float resample=random();
+      if(any(greaterThan(lighting,carried))&&
+         uint(round(mix(float(SHARC_RESAMPLING_DEPTH_MIN),float(SHARC_PROPAGATION_DEPTH),resample)))>state.pathLength)
+        SharcAddVoxelData(parameters,cell,lighting-carried,1/data.materialDemodulation,
                           SharcGetRadianceDirection(data),SharcGetRadianceDirectionWeight(data),0u);
+      if(!SharcUpdateHit(parameters,state,data,carried,resample))break;
     } else {
       // Surfaces without an entry of their own (blended ones; moving and
       // sharp ones unless enabled) still light the path's cached vertices,
