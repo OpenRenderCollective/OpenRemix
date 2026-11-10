@@ -1,6 +1,7 @@
 // Repeatable renderer benchmark built only on the public SDK.
 //   remix-bench LIBRARY FRAMES BACKEND [grid=N] [foliage=N] [textures=N] [size=N] [format=bc|rgba] [stats=0|1]
 //   [work=MS] [async=0|1] [churn=N] [churnTris=N] [still=0|1] [shot=PATH] [lights=N] [glass=N] [paint=N]
+//   [sun=0|1] [lamp=R] [room=0|1]
 // Draws a grid of one-sided textured cubes and double-sided alpha-tested
 // foliage cards, then reports texture creation, first frame and steady Present
 // timings. Measurement starts once the requested backend reports GPU timings
@@ -47,6 +48,14 @@ namespace {
     // lights: coloured sphere lights over the grid (local light sampling).
     // glass: translucent cards among the cubes (blended layers paths pass).
     unsigned lights = 0, glass = 0;
+    // sun=0: no distant light (only the sphere lights light the scene).
+    // lamp: the first sphere light's radiance times this, in front of the
+    // camera (one bright lamp among many dim lights).
+    bool sun = true;
+    float lamp = 1;
+    // room: a closed box around the camera (x -4..4, y -1..4, z -5..3) that
+    // shuts it in with the lamp; the other lights stay outside.
+    bool room = false;
     // paint: half-transparent decal paint over four faces of the N cubes
     // nearest the camera's line of sight (bounce rays meet it).
     unsigned paint = 0;
@@ -214,6 +223,12 @@ int main(int argc, char **argv) {
       options.still = value != "0";
     else if (key == "shot")
       options.shot = value;
+    else if (key == "sun")
+      options.sun = value != "0";
+    else if (key == "room")
+      options.room = value != "0";
+    else if (key == "lamp")
+      options.lamp = float(std::strtod(value.c_str(), nullptr));
     else if (key == "lights")
       options.lights = number;
     else if (key == "glass")
@@ -359,6 +374,14 @@ int main(int argc, char **argv) {
       remixapi_LightInfoSphereEXT sphere = {};
       sphere.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT;
       sphere.position = {(random(lightSeed) * 2 - 1) * 12, .3f + 1.2f * random(lightSeed), -1 + random(lightSeed) * 24};
+      if (options.room) {
+        // Just outside the room's walls, all around it (as the lights of
+        // neighbouring rooms): near, as bright as the lamp, and hidden.
+        const float angle = random(lightSeed) * 6.2831853f, reach = 1.f + 3 * random(lightSeed);
+        const float c = std::cos(angle), s = std::sin(angle);
+        const float scale = std::min(4 / std::max(std::abs(c), 1e-3f), 4 / std::max(std::abs(s), 1e-3f));
+        sphere.position = {c * (scale + reach), .3f + 2.5f * random(lightSeed), -1 + s * (scale + reach)};
+      }
       sphere.radius = .2f;
       sphere.volumetricRadianceScale = 1;
       remixapi_LightInfo light = {};
@@ -366,6 +389,11 @@ int main(int argc, char **argv) {
       light.pNext = &sphere;
       light.hash = 0x6000 + i;
       light.radiance = {200 * (.3f + random(lightSeed)), 200 * (.3f + random(lightSeed)), 200 * (.3f + random(lightSeed))};
+      if (i == 0 && options.lamp != 1) {
+        sphere.position = {1.5f, 1.2f, 2.f};
+        for (float *c : {&light.radiance.x, &light.radiance.y, &light.radiance.z})
+          *c = 200 * options.lamp;
+      }
       check(api.CreateLight(&light, &lights[i]), "CreateLight sphere");
     }
   }
@@ -520,6 +548,38 @@ int main(int argc, char **argv) {
     for (size_t i = 0; i < nearest.size() && i < options.paint; ++i)
       painted.push_back(placements[nearest[i].second].transform);
   }
+  if (options.room && status == REMIXAPI_ERROR_CODE_SUCCESS && !materials.empty()) {
+    // Six faces facing inward, drawn double-sided.
+    Mesh box;
+    const float x0 = -4, x1 = 4, y0 = -1, y1 = 4, z0 = -5, z1 = 3;
+    const float faces[6][4][3] = {{{x0, y0, z1}, {x1, y0, z1}, {x1, y1, z1}, {x0, y1, z1}},
+                                  {{x1, y0, z0}, {x0, y0, z0}, {x0, y1, z0}, {x1, y1, z0}},
+                                  {{x0, y0, z0}, {x0, y0, z1}, {x0, y1, z1}, {x0, y1, z0}},
+                                  {{x1, y0, z1}, {x1, y0, z0}, {x1, y1, z0}, {x1, y1, z1}},
+                                  {{x0, y0, z0}, {x1, y0, z0}, {x1, y0, z1}, {x0, y0, z1}},
+                                  {{x0, y1, z1}, {x1, y1, z1}, {x1, y1, z0}, {x0, y1, z0}}};
+    for (const auto &face : faces)
+      box.quad(face);
+    remixapi_MeshInfoSurfaceTriangles surface = {};
+    surface.vertices_values = box.vertices.data();
+    surface.vertices_count = box.vertices.size();
+    surface.indices_values = box.indices.data();
+    surface.indices_count = box.indices.size();
+    surface.material = materials[0];
+    remixapi_MeshInfo mesh = {};
+    mesh.sType = REMIXAPI_STRUCT_TYPE_MESH_INFO;
+    mesh.hash = 0xA000;
+    mesh.surfaces_count = 1;
+    mesh.surfaces_values = &surface;
+    remixapi_MeshHandle handle = nullptr;
+    if (check(api.CreateMeshBatched(&mesh, &handle), "CreateMesh room")) {
+      meshes.push_back(handle);
+      Placement p{handle, {}, true};
+      for (int axis = 0; axis < 3; ++axis)
+        p.transform.matrix[axis][axis] = 1;
+      placements.push_back(p);
+    }
+  }
   for (unsigned i = 0; i < options.glass && glassMesh; ++i) {
     Placement p{glassMesh, {}, true};
     const float angle = random(seed) * 6.2831853f, scale = 1 + random(seed);
@@ -551,7 +611,8 @@ int main(int argc, char **argv) {
     remixapi_WindowState window = {};
     if (!check(api.GetWindowState(&window), "GetWindowState") || window.closeRequested)
       break;
-    check(api.DrawLightInstance(sun), "DrawLightInstance");
+    if (options.sun)
+      check(api.DrawLightInstance(sun), "DrawLightInstance");
     for (auto light : lights)
       if (light)
         check(api.DrawLightInstance(light), "DrawLightInstance sphere");
