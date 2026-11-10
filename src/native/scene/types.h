@@ -316,6 +316,10 @@ namespace remix {
       // remixapi_MaterialInfoPortalEXT: the ray portal index + 1 its surface
       // opens (0: none; scene/portals.h).
       uint8_t rayPortal = 0;
+      // The portal extends an opaque material (its look where it does not
+      // open): a draw of a standalone portal of the index, when there is one,
+      // gives the portal its frame instead (scene/portals.h).
+      bool rayPortalOverOpaque = false;
       // Wrap modes in RTX Remix's MDL encoding: 0 clamp, 1 repeat, 2 mirrored
       // repeat, 3 clip.
       uint8_t filter = 0, wrapU = 1, wrapV = 1;

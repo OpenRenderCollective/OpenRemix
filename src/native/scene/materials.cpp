@@ -83,8 +83,10 @@ namespace remix {
       throw invalid;
     }
     // Indices past remixapi_GetRayPortalCapabilities' count open nothing.
-    if (portal && portal->rayPortalIndex < scene::rayPortalSlots)
+    if (portal && portal->rayPortalIndex < scene::rayPortalSlots) {
       material->rayPortal = uint8_t(portal->rayPortalIndex + 1);
+      material->rayPortalOverOpaque = opaque != nullptr;
+    }
     remixapi_Path texture = info.albedoTexture;
     if (opaque) {
       finite(&opaque->roughnessConstant, 1);
