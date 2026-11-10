@@ -569,8 +569,10 @@ namespace remix::metal {
           // rays), decals under theirs (shadow rays pass them; reflection-only
           // paint too: closest() lays it only on reflection-only receivers),
           // reflection-only instances under theirs (bounce rays), blended
-          // layers under theirs (secondary rays may skip them).
+          // layers under theirs (secondary rays may skip them), camera-only
+          // instances under theirs (camera rays only).
           instance.mask = input.viewModel        ? remix::trace::viewModelInstanceMask
+                          : input.cameraOnly     ? remix::trace::cameraOnlyInstanceMask
                           : input.decal          ? remix::trace::decalInstanceMask
                           : input.reflectionOnly ? remix::trace::reflectionOnlyInstanceMask
                           : input.blended        ? remix::trace::blendedInstanceMask
@@ -1071,12 +1073,13 @@ namespace remix::metal {
                           std::clamp(options.skySamples, 1u, 16u) << 8 |
                           std::clamp(std::min(options.sheetSkySamples, options.skySamples), 1u, 16u) << 16;
     // Bits 0-7: the instance mask of shadow, light-visibility and bounce rays
-    // (view models never; blended layers unless skipBlendedSecondaryRays is
-    // off). Bit 8: a traced view model is in the frame (camera rays look for
-    // it first).
+    // (view models and camera-only instances never; blended layers unless
+    // skipBlendedSecondaryRays is off). Bit 8: a traced view model is in the
+    // frame (camera rays look for it first).
     frame.pathConfig[3] =
         (options.skipBlendedSecondaryRays ? 0xffu & ~uint32_t(remix::trace::blendedInstanceMask) : 0xffu) &
-        ~uint32_t(remix::trace::viewModelInstanceMask) & ~uint32_t(remix::trace::reflectionOnlyInstanceMask);
+        ~uint32_t(remix::trace::viewModelInstanceMask) & ~uint32_t(remix::trace::reflectionOnlyInstanceMask) &
+        ~uint32_t(remix::trace::cameraOnlyInstanceMask);
     if (prepared.viewModel)
       frame.pathConfig[3] |= 0x100u;
     if (!options.iridescence)

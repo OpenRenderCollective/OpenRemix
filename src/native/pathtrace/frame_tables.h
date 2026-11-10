@@ -1056,6 +1056,10 @@ namespace remix::trace {
           })};
       input.viewModel = draw.viewModel;
       input.reflectionOnly = draw.reflectionOnly;
+      input.cameraOnly = std::all_of(instance.begin(), instance.end(), [](const auto &surface) {
+        const auto &material = *surface.draw.material;
+        return material.rayPortal && !material.rayPortalOverOpaque;
+      });
       input.decal =
           std::all_of(instance.begin(), instance.end(), [](const auto &surface) { return surface.draw.decal; });
       // A wound cut is tested at every candidate: never opaque in traversal.

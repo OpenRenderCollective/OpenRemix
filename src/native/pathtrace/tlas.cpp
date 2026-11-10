@@ -19,6 +19,7 @@ namespace remix {
       // Paint stays paint when reflection-only: the paint queries find it, and
       // closest() lays it only on a reflection-only receiver (state bit 15).
       instance.mask = input.viewModel        ? trace::viewModelInstanceMask
+                      : input.cameraOnly     ? trace::cameraOnlyInstanceMask
                       : input.decal          ? trace::decalInstanceMask
                       : input.reflectionOnly ? trace::reflectionOnlyInstanceMask
                       : input.blended        ? trace::blendedInstanceMask

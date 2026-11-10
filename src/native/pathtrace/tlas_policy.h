@@ -26,6 +26,9 @@ namespace remix::trace {
     // A wound cut (remixapi_InstanceInfoWoundCutEXT): every candidate is
     // tested (FORCE_NO_OPAQUE), whatever its geometry's opacity.
     bool noOpaque = false;
+    // Every surface is a standalone ray portal's opening (Material::rayPortal
+    // without rayPortalOverOpaque): cameraOnlyInstanceMask only.
+    bool cameraOnly = false;
     bool operator==(const InstanceInput &) const = default;
   };
   // VkGeometryInstanceFlagBitsKHR values (static_assert-ed in tlas.cpp):
@@ -67,6 +70,10 @@ namespace remix::trace {
   // ground probes: NUMOS's shaders hard-code this bit (OBJECT_MASK_OPAQUE).
   // Blended, decal, view-model and reflection-only instances lack it.
   constexpr uint8_t skyOccluderInstanceMask = 8;
+  // Standalone ray portal openings: only camera rays include this bit (they
+  // teleport there); shadow, light-visibility and bounce rays pass through the
+  // opening as through the open doorway it stands in.
+  constexpr uint8_t cameraOnlyInstanceMask = 128;
   constexpr uint8_t allInstancesMask = 0xff & ~viewModelInstanceMask & ~reflectionOnlyInstanceMask,
                     staticInstanceMask = 1, dynamicInstanceMask = 2, blendedInstanceMask = 4, decalInstanceMask = 32;
   inline uint8_t instanceMask(bool combined, bool dynamic) {

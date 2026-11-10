@@ -70,6 +70,13 @@ namespace {
                 !((viewModelInstanceMask | reflectionOnlyInstanceMask | blendedInstanceMask | decalInstanceMask) &
                   skyOccluderInstanceMask),
             "Instance masks");
+    // Ray portal openings: a bit of their own, in camera rays' mask (every bit
+    // but view models' and reflection-only bodies') and in no other part's.
+    require((allInstancesMask & cameraOnlyInstanceMask) &&
+                !((viewModelInstanceMask | reflectionOnlyInstanceMask | blendedInstanceMask | decalInstanceMask |
+                   skyOccluderInstanceMask | staticInstanceMask | dynamicInstanceMask) &
+                  cameraOnlyInstanceMask),
+            "Ray portal openings' instance mask");
     using Combined = CombinedTlasPolicy;
     Combined combined;
     std::vector<InstanceInput> statics = {{1, 10, 0, 0, remix::scene::identity(), 2},
