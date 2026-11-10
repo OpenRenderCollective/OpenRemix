@@ -1,4 +1,5 @@
 #include "forward/bake/job.h"
+#include "forward/lightmap/denoise.h"
 #include <atomic>
 #include <cstdio>
 #include <stdexcept>
@@ -19,7 +20,9 @@ namespace remix::forward::bake {
       job.ticket = m_pipelines->prepare(
           "forward-style-" + std::to_string(++styleGeneration),
           [owner, config, storageRange] {
-            owner->styles->encode(config.denoiseLightmaps, owner->cancellation.get_token());
+            // Without OIDN in the build the styles keep raw transport, as the base lightmap does.
+            owner->styles->encode(config.denoiseLightmaps && lightmap::denoiserVersion(),
+                                  owner->cancellation.get_token());
             if (owner->styles->complete()) {
               owner->styleWords = owner->styles->finish(owner->cancellation.get_token());
               owner->styles.reset();
