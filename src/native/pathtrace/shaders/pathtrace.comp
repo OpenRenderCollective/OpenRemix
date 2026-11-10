@@ -1131,14 +1131,21 @@ float cacheSpread(float before,float bounce) {
 }
 #endif
 #ifdef SHARC_UPDATE_PASS
+// Samples that are not numbers are dropped: the query refuses them, but only
+// after they have spoiled the cell.
+vec3 cacheValid(vec3 radiance) { return any(isnan(radiance))||any(isinf(radiance))?vec3(0):radiance; }
 // One sample far above what a cell holds stays in it for the whole
-// accumulation window, a blotch the size of the cell. A sample (times the
-// weight it is added with) is limited to sharcGrid.y times the cell's
-// resolved mean, as dxvk-remix limits it; a cell without a mean yet takes
-// anything. Samples that are not numbers are dropped: the query refuses them,
-// but only after they have spoiled the cell.
+// accumulation window, a blotch the size of the cell. Light a path carries
+// back to its earlier cells (times the weight it is added with) is limited
+// to sharcGrid.y times the resolved mean of `cell`, the cell of the vertex the
+// light leaves (sharcFireflyClamp); a cell without a mean yet passes
+// anything. That cell's mean is never built from samples limited against it:
+// a cell's own direct light goes in whole (updateCache). Limited against the
+// cell it fed, a sample lowered the mean that limits it: light arriving as
+// rare bright samples (a lamp NEE seldom picks among many lights, a sky seen
+// through a small opening) drove its cells to black.
 vec3 cacheLimit(SharcParameters parameters,uint cell,vec3 radiance,vec3 weight) {
-  if(any(isnan(radiance))||any(isinf(radiance)))return vec3(0);
+  radiance=cacheValid(radiance);
   if(frame.sharcGrid.y<=0||cell==HASH_GRID_INVALID_CACHE_INDEX)return radiance;
   SharcVoxelData voxel=SharcGetVoxelData(parameters.resolvedBuffer,cell);
   if(voxel.accumulatedSampleNum<=SHARC_SAMPLE_NUM_THRESHOLD)return radiance;
@@ -1153,11 +1160,6 @@ uint cacheCell(SharcParameters parameters,SharcHitData data) {
   HashGridKey key=HashGridComputeSpatialHash(data.positionWorld,data.normalWorld,parameters.hashGridParameters);
   uint cell,offset;
   return HashGridFind(parameters.hashGridData,key,HashGridGetBaseSlot(key,parameters.hashGridData.capacity),HASH_GRID_HASH_MAP_BUCKET_SIZE,cell,offset)?cell:HASH_GRID_INVALID_CACHE_INDEX;
-}
-// Light that reaches the path's cached vertices without a cell of its own.
-vec3 cacheLimitPrevious(SharcParameters parameters,SharcState state,vec3 radiance) {
-  if(state.pathLength==0)return radiance;
-  return cacheLimit(parameters,state.cacheIndices[0],radiance,vec3(state.sampleWeights[0]));
 }
 #endif
 #ifdef SHARC_QUERY
@@ -1674,7 +1676,8 @@ void updateCache(ivec2 pixel) {
   uint maxBounces=min(frame.config.y,8u);
   for(uint step=0;step<560&&bounce<=maxBounces;++step) {
     Hit hit=secondaryHit(origin,direction);
-    if(hit.t==1e30) { SharcUpdateMiss(parameters,state,cacheLimitPrevious(parameters,state,frame.skyRadiance.w!=0?vec3(0):environmentRadiance(direction)));break; }
+    // The environment's radiance, bounded, goes back unlimited.
+    if(hit.t==1e30) { SharcUpdateMiss(parameters,state,cacheValid(frame.skyRadiance.w!=0?vec3(0):environmentRadiance(direction)));break; }
     // Transparent sheets never hold cache entries, and their lighting no longer
     // queries the cache: update paths pass through them to the surfaces behind,
     // weighted by transmission. This also trains surfaces reached from water
@@ -1704,15 +1707,24 @@ void updateCache(ivec2 pixel) {
     // through a narrow PBR reflection which the production query would reject.
     if(store&&state.pathLength!=0&&footprintScale<1)
       store=cacheFootprintFits(hit,length(hit.p-previousVertex)*footprintScale);
+    SharcHitData data=cacheHit(hit);
+    lighting=cacheValid(lighting);
+    // The light passed back to the path's earlier cells, limited against
+    // this vertex's cell (cacheLimit).
+    vec3 carried=cacheLimit(parameters,cacheCell(parameters,data),lighting,1/data.materialDemodulation);
     if(store) {
-      SharcHitData data=cacheHit(hit);
-      lighting=cacheLimit(parameters,cacheCell(parameters,data),lighting,1/data.materialDemodulation);
       data.radianceDirectionWeight=cacheDirectionWeight(hit,lighting,directSpecular);
-      if(!SharcUpdateHit(parameters,state,data,lighting,random()))break;
+      // The SDK adds one value to the cell and to the earlier cells: the
+      // limited one, then the cell gets the rest of its own light.
+      if(!SharcUpdateHit(parameters,state,data,carried,random()))break;
+      if(any(greaterThan(lighting,carried)))
+        SharcAddVoxelData(parameters,state.cacheIndices[0],lighting-carried,1/data.materialDemodulation,
+                          SharcGetRadianceDirection(data),SharcGetRadianceDirectionWeight(data),0u);
     } else {
       // Surfaces without an entry of their own (blended ones; moving and
-      // sharp ones unless enabled) still light the path's cached vertices.
-      SharcUpdateMiss(parameters,state,cacheLimitPrevious(parameters,state,lighting));
+      // sharp ones unless enabled) still light the path's cached vertices,
+      // limited against the cell other paths keep there, if any.
+      SharcUpdateMiss(parameters,state,carried);
     }
     if(++bounce>maxBounces)break;
     vec3 specularWeight;
