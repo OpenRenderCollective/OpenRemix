@@ -7,7 +7,8 @@ python "$PSScriptRoot/../common/build-dependencies.py" --output $Deps
 if ($LASTEXITCODE) { exit $LASTEXITCODE }
 $prefix = (Resolve-Path "$Deps/prefix").Path
 $env:PATH = "$prefix/bin;$env:PATH"
-$setup = @("setup", $Build, "$PSScriptRoot/../..", "-Ddeps_root=$prefix", "-Dbuildtype=release", "-Dwerror=true")
+$oidn = (Resolve-Path "$Deps/oidn").Path
+$setup = @("setup", $Build, "$PSScriptRoot/../..", "-Ddeps_root=$prefix", "-Doidn_root=$oidn", "-Dbuildtype=release", "-Dwerror=true")
 if (Test-Path "$Build/meson-private/coredata.dat") { $setup += "--reconfigure" }
 meson @setup
 if ($LASTEXITCODE) { exit $LASTEXITCODE }

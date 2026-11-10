@@ -46,7 +46,8 @@ Set-Location OpenRemix
 ./scripts/windows/build-remix.ps1
 ```
 
-The tracked script builds pinned SDL3 into `_work/deps/windows`, builds the runtime
+The tracked script builds pinned SDL3 and fetches Intel's prebuilt Open Image Denoise
+2.5.1 SDK (lightmap denoising, `-Doidn_root`) into `_work/deps/windows`, builds the runtime
 in `_work/build/windows`, then runs enabled tests. Shader tools are fetched and
 built automatically at pinned revisions. First-time builds need network access;
 no generated shaders or private build wrapper are required. To choose output
@@ -88,10 +89,11 @@ loaded by the Windows game proxy.
 
 ## Optional runtime features
 
-The baseline does not include OpenUSD replacement support or an external Open Image
-Denoise SDK. For those, install compatible dependencies and configure your own
+The baseline does not include OpenUSD replacement support, and only the Windows
+build scripts (`build-remix.ps1` and the Linux cross-build) fetch an Open Image
+Denoise SDK. For the others, install compatible dependencies and configure your own
 prefixes using `usd`, `usd_root`, `json_include`, `usd_tbb_root` and `oidn_root` in
-`meson_options.txt`. See [platform builds](../platforms.md). Do not copy an owner's
+`meson_options.txt`; without OIDN, bakes keep their raw indirect lighting. See [platform builds](../platforms.md). Do not copy an owner's
 absolute SDK paths. A baseline without these features is not equivalent to a
 replacement-enabled, denoised playable package.
 

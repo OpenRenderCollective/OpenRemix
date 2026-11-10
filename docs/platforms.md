@@ -47,13 +47,16 @@ python3 scripts/linux/build-windows-remix.py --accept-msvc-license   # the first
 python3 scripts/linux/build-windows-remix.py --output /path/to/game/bin/win64/openremix
 ```
 
-The build has OpenUSD and DLSS (both need the MSVC ABI), FSR and XeSS. On its first run
-the script splats the CRT and SDK (accepting Microsoft's license is up to you, hence
-the flag), then builds the pinned SDL3, oneTBB 2021.13.0 and OpenUSD 25.11 (patched
-for clang-cl, `scripts/linux/openusd-25.11-clang-cl.patch`) into `_work/deps/xwin`;
-later runs reuse them. It collects the runtime in `--output` (default
-`_work/dist/windows/openremix`) as a game loads it: `remix.dll` and its PDB, SDL3,
-TBB and the `usd_*.dll` side by side, OpenUSD's plugins in `usd/`, DLSS in
+The build has OpenUSD, Open Image Denoise and DLSS (all need the MSVC ABI), FSR and XeSS.
+On its first run the script splats the CRT and SDK (accepting Microsoft's license is up to
+you, hence the flag), then builds the pinned SDL3, oneTBB 2021.13.0 and OpenUSD 25.11 (patched
+for clang-cl, `scripts/linux/openusd-25.11-clang-cl.patch`) into `_work/deps/xwin`, and
+fetches Intel's prebuilt Open Image Denoise 2.5.1 SDK (pinned in
+`scripts/common/build-dependencies.py`) for lightmap denoising; later runs reuse them. It
+collects the runtime in `--output` (default `_work/dist/windows/openremix`) as a game loads
+it: `remix.dll` and its PDB, SDL3, the `usd_*.dll` and OIDN's DLLs (its device plugins
+and its newer oneTBB, which OpenUSD shares) side by side, OIDN's notices in
+`licenses/OIDN/`, OpenUSD's plugins in `usd/`, DLSS in
 `dlss/310.9.1/`, Ray Reconstruction's CNN model in `dlss/310.2.1/`, AMD's FSR libraries in
 `fidelityfx/` and Intel's XeSS library in `xess/`. Files already in the folder that the build does not make (profiles,
 caches, logs) are kept. `--tests` runs the CPU tests in an isolated Wine prefix.

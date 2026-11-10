@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Cross-build the Windows x64 runtime with clang-cl and the MSVC CRT/SDK (xwin),
-with OpenUSD and DLSS, and collect it in a folder laid out as a game loads it."""
+with OpenUSD, Open Image Denoise and DLSS, and collect it in a folder laid out as a
+game loads it."""
 import argparse
 import hashlib
 import importlib.util
@@ -156,10 +157,12 @@ def main():
         subprocess.run([args.cmake, '--build', str(deps / 'build-usd'), '--parallel', str(args.jobs)], check=True)
         subprocess.run([args.cmake, '--install', str(deps / 'build-usd')], check=True)
     download(PINS['json']['url'], PINS['json']['sha256'], deps / 'json/nlohmann/json.hpp')
+    # Lightmap denoising: Intel's prebuilt SDK (MSVC ABI, C API).
+    oidn = dependency_builder.fetch_oidn(deps)
 
     wrapper = deps / 'wine-run.sh'
     wine_paths = ';'.join('Z:' + str(p).replace('/', '\\')
-                          for p in (prefix / 'bin', tbb / 'bin', usd / 'lib', build / 'src/native'))
+                          for p in (prefix / 'bin', oidn / 'bin', tbb / 'bin', usd / 'lib', build / 'src/native'))
     wrapper.write_text('#!/usr/bin/env bash\nset -euo pipefail\n' +
         'export WINEPREFIX=' + shlex.quote(str(deps / 'wine-prefix')) + '\n' +
         'export WINEPATH=' + shlex.quote(wine_paths) + '\n' +
@@ -203,7 +206,8 @@ pkg_config_libdir = '{prefix}/lib/pkgconfig'
     setup = ['meson', 'setup', str(build), str(root), '--cross-file', str(cross),
              '-Dbuildtype=release', '-Dwerror=true', '-Ddeps_root=' + str(prefix),
              '-Dusd=true', '-Dusd_root=' + str(usd), '-Dusd_tbb_root=' + str(tbb),
-             '-Djson_include=' + str(deps / 'json'), '-Ddlss=true', '-Dgpu_tests=false',
+             '-Djson_include=' + str(deps / 'json'), '-Doidn_root=' + str(oidn),
+             '-Ddlss=true', '-Dgpu_tests=false',
              '-Dshader_jobs=' + str(shader_jobs),
              '-Denable_tests=' + ('true' if args.tests else 'false'),
              '-Dc_args=/Z7', '-Dcpp_args=/Z7', '-Dc_link_args=/DEBUG', '-Dcpp_link_args=/DEBUG']
@@ -222,11 +226,18 @@ pkg_config_libdir = '{prefix}/lib/pkgconfig'
         raise RuntimeError('The build has no DLSS')
     output.mkdir(parents=True, exist_ok=True)
     native = build / 'src/native'
-    files = [native / 'remix.dll', native / 'remix.pdb', prefix / 'bin/SDL3.dll', tbb / 'bin/tbb12.dll']
+    files = [native / 'remix.dll', native / 'remix.pdb', prefix / 'bin/SDL3.dll']
     files += sorted((usd / 'lib').glob('usd_*.dll'))
+    # OIDN's DLLs, its device plugins (loaded at run time) included. Its
+    # oneTBB is the newer one, so it also serves OpenUSD (package-runtime.py).
+    files += sorted((oidn / 'bin').glob('*.dll'))
     for path in files:
         shutil.copy2(path, output / path.name)
     shutil.copytree(usd / 'lib/usd', output / 'usd', dirs_exist_ok=True)
+    notices = output / 'licenses/OIDN'
+    notices.mkdir(parents=True, exist_ok=True)
+    for path in sorted((oidn / 'doc').glob('*.txt')):
+        shutil.copy2(path, notices / path.name)
     runtime = output / 'dlss' / manifest['version']
     runtime.mkdir(parents=True, exist_ok=True)
     for name in ['nvngx_dlss.dll', 'nvngx_dlssd.dll', 'nvngx_dlssg.dll']:

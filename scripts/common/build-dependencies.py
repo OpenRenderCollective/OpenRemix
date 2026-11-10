@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Build the pinned SDL3 shared library; Vulkan comes from the platform SDK."""
+"""Build the pinned SDL3 shared library, and on Windows fetch the pinned Open Image
+Denoise SDK; Vulkan comes from the platform SDK."""
 import argparse
 import hashlib
 import json
@@ -10,6 +11,12 @@ import shutil
 import subprocess
 import tarfile
 import urllib.request
+import zipfile
+
+# Intel's prebuilt Open Image Denoise SDK for Windows x64 (-Doidn_root):
+# lightmap denoising, with its CPU, CUDA, HIP and SYCL devices.
+OIDN_WINDOWS = {'url': 'https://github.com/RenderKit/oidn/releases/download/v2.5.1/oidn-2.5.1.x64.windows.zip',
+                'sha256': 'f11f91bc072a5e3a564515724cb72ab8fcfbc445c84a84c197ff9b16cc01396f'}
 
 def fetch(output, name, pin, strip_root=True):
     archive = output / (name + '.tar.gz')
@@ -37,6 +44,37 @@ def fetch(output, name, pin, strip_root=True):
             if destination.resolve() not in target.parents or member.issym() or member.islnk():
                 raise RuntimeError('Unexpected archive member: ' + member.name)
             source.extract(member, destination)
+    marker.write_text(pin['sha256'])
+    return destination
+
+
+def fetch_oidn(output):
+    """The OIDN SDK unpacked in output/oidn (include, lib, bin, doc)."""
+    archive = output / 'oidn.zip'
+    pin = OIDN_WINDOWS
+    if not archive.exists() or hashlib.sha256(archive.read_bytes()).hexdigest() != pin['sha256']:
+        temporary = archive.with_suffix('.download')
+        urllib.request.urlretrieve(pin['url'], temporary)
+        if hashlib.sha256(temporary.read_bytes()).hexdigest() != pin['sha256']:
+            raise RuntimeError('oidn: archive checksum mismatch')
+        temporary.replace(archive)
+    destination = output / 'oidn'
+    marker = destination / '.remix-pin'
+    if marker.exists() and marker.read_text() == pin['sha256']:
+        return destination
+    if destination.exists():
+        shutil.rmtree(destination)
+    destination.mkdir(parents=True)
+    with zipfile.ZipFile(archive) as source:
+        for member in source.infolist():
+            parts = member.filename.split('/', 1)
+            if len(parts) != 2 or not parts[1] or member.is_dir():
+                continue
+            target = (destination / parts[1]).resolve()
+            if destination.resolve() not in target.parents:
+                raise RuntimeError('Unexpected archive member: ' + member.filename)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(source.read(member))
     marker.write_text(pin['sha256'])
     return destination
 
@@ -76,6 +114,8 @@ def main():
         '-DSDL_TEST_LIBRARY=OFF', '-DSDL_TESTS=OFF', '-DSDL_EXAMPLES=OFF', *options], check=True)
     subprocess.run(['cmake', '--build', str(build), '--parallel', str(args.jobs)], check=True)
     subprocess.run(['cmake', '--install', str(build)], check=True)
+    if not args.ndk and platform.system() == 'Windows':
+        fetch_oidn(output)
 
 if __name__ == '__main__':
     main()

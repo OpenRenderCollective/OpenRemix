@@ -67,6 +67,15 @@ if system == 'Windows':
         shutil.copy2(path, output / 'bin' / path.name)
     for path in (deps / 'prefix/bin').glob('lib*.dll'):
         shutil.copy2(path, output / 'bin' / path.name)
+    # Open Image Denoise (lightmap denoising), which remix.dll imports, with
+    # its device plugins (loaded at run time) and notices.
+    oidn = next((o['value'] for o in options if o['name'] == 'oidn_root'), '')
+    if oidn:
+        for path in Path(oidn, 'bin').glob('*.dll'):
+            shutil.copy2(path, output / 'bin' / path.name)
+        (licenses / 'OIDN').mkdir()
+        for path in Path(oidn, 'doc').glob('*.txt'):
+            shutil.copy2(path, licenses / 'OIDN' / path.name)
     # FSR: AMD's signed ffx-api DLLs, loaded from fidelityfx/ beside remix.dll
     # (src/native/upscale/ffx_library.cpp), with the license they require.
     fidelityfx = root / 'third_party/fidelityfx/FidelityFX-SDK/Kits/FidelityFX'
