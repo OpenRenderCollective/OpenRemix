@@ -3015,6 +3015,15 @@ uvec4 replaceScreen(ivec2 pixel,vec3 origin,vec3 direction,float kind) {
   kind-=32;if(kind>=16)kind-=16;
   traceMask=kind>=8?viewModelInstanceMask:cameraMask;
   Intersection x=nearest(origin,direction,1e30,0);
+  // Glass or water over a portal's opening (a pool's surface) is passed: up to
+  // four blended, transmissive or tinted surfaces that are neither a screen nor
+  // a portal, as the rays past a portal pass glass. Nothing opening behind
+  // them, the pixel stays the raster's.
+  for(uint layer=0u;layer<4u&&x.surface!=~0u;++layer) {
+    uint w=surfaces[x.surface].state.w;
+    if((w&0x3c07000u)!=0u||(w&(2u|8u|32u))==0u)break;
+    x=nearest(origin,direction,1e30,x.t+max(1e-4,x.t*1e-5));
+  }
   traceMask=cameraMask;
   if(x.surface==~0u)return uvec4(0);
   Surface s=surfaces[x.surface];
