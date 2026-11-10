@@ -2,8 +2,53 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 
 namespace remix::scene {
+  VisibilityPartition::SegmentResult VisibilityPartition::firstSolid(
+      const float start[3], const float end[3], uint32_t budget) const {
+    if (!closed || nodes.empty() || !budget || budget > 4096) return {};
+    for (uint32_t c = 0; c < 3; ++c)
+      if (!std::isfinite(start[c]) || !std::isfinite(end[c])) return {};
+    struct Interval { int32_t node; double low, high; };
+    std::vector<Interval> stack{{0, 0, 1}};
+    while (!stack.empty()) {
+      if (!budget) return {};
+      --budget;
+      const auto interval = stack.back(); stack.pop_back();
+      if (interval.node < 0) {
+        const auto leaf = size_t(-1 - int64_t(interval.node));
+        if (leaf >= leafClusters.size()) return {};
+        const auto cluster = leafClusters[leaf];
+        if (cluster == -1) return {SegmentState::Solid, interval.low};
+        if (cluster < -1) return {};
+        if (uint32_t(cluster) >= clusterCount) return {};
+        continue;
+      }
+      if (size_t(interval.node) >= nodes.size()) return {};
+      const auto &node = nodes[interval.node];
+      double distance = -double(node.plane[3]), slope = 0, normalSquared = 0;
+      for (uint32_t c = 0; c < 3; ++c) {
+        normalSquared += double(node.plane[c]) * node.plane[c];
+        distance += double(node.plane[c]) * start[c];
+        slope += double(node.plane[c]) * (double(end[c]) - start[c]);
+      }
+      const double a = distance + slope * interval.low, b = distance + slope * interval.high;
+      if (!(normalSquared > 0) || !std::isfinite(a) || !std::isfinite(b)) return {};
+      if (a >= 0 && b >= 0) stack.push_back({node.children[0], interval.low, interval.high});
+      else if (a < 0 && b < 0) stack.push_back({node.children[1], interval.low, interval.high});
+      else {
+        const double split = std::clamp(interval.low + (interval.high - interval.low) * a / (a - b),
+                                        interval.low, interval.high);
+        const uint32_t nearChild = a >= 0 ? 0 : 1;
+        // Reverse push order keeps traversal near-to-far, including thin solids
+        // whose entry and exit both precede an otherwise playable endpoint.
+        stack.push_back({node.children[1 - nearChild], split, interval.high});
+        stack.push_back({node.children[nearChild], interval.low, split});
+      }
+    }
+    return {SegmentState::Clear, 1};
+  }
   int32_t VisibilityPartition::cluster(const float p[3]) const {
     if (nodes.empty())
       return -1;

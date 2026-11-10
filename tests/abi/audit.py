@@ -17,7 +17,13 @@ for manifest, base in [(root / 'tests/abi/headers.sha256', root),
                        (root / 'third_party/xz-embedded/sources.sha256', root / 'third_party/xz-embedded')]:
     for line in manifest.read_text().splitlines():
         checksum, filename = line.split('  ', 1)
-        assert hashlib.sha256((base / filename).read_bytes()).hexdigest() == checksum, filename
+        content = (base / filename).read_bytes()
+        digest = hashlib.sha256(content).hexdigest()
+        # Git can check LF text sources out with CRLF on Windows. Preserve
+        # exact matches and binary pins before trying canonical text endings.
+        if digest != checksum and b'\0' not in content:
+            digest = hashlib.sha256(content.replace(b'\r\n', b'\n')).hexdigest()
+        assert digest == checksum, filename
 # A submodule has no checksum manifest: its gitlink and checkout must match the pin.
 numos = json.loads((root / 'third_party/numos/upstream.json').read_text())
 fidelityfx = json.loads((root / 'third_party/fidelityfx/upstream.json').read_text())

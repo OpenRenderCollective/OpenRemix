@@ -1,0 +1,166 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+#ifdef PREPASSED_WORLD
+// Coverage and depth were written by the matching alpha-tested prepass.
+// This variant must use a read-only depth pipeline: discard cannot undo an
+// early depth write, including at coplanar cutout boundaries.
+layout(early_fragment_tests) in;
+#endif
+#ifdef EARLY_OPAQUE
+// The host selects this variant only for ALWAYS alpha comparison and disabled
+// camera backface rejection. No discard can invalidate its early depth writes.
+layout(early_fragment_tests) in;
+#endif
+#if defined(LIVE_GI) || defined(WATER_RAY)
+#extension GL_EXT_ray_query : require
+#endif
+#include "bindings.glsl"
+#include "material.glsl"
+#ifndef SHADOW_PASS
+#include "brdf-values.glsl"
+#include "light-contribution.glsl"
+#include "emitter.glsl"
+#include "surface.glsl"
+#include "reflection-guide-reference.glsl"
+#include "receiver-coverage.glsl"
+#include "sun-composition.glsl"
+#ifdef VIEWMODEL_PASS
+#include "../viewmodel/shaders/reflections.glsl"
+#elif defined(INLINE_WORLD_REFLECTIONS)
+#define PROBE_BINDING 12
+#define PROBE_IMAGE_BINDING 19
+#define MASKED_REFLECTION_PROBES
+#include "reflection-lighting.glsl"
+#endif
+#endif
+layout(location = 0) in vec3 worldPosition;
+layout(location = 1) in vec2 uv;
+layout(location = 2) in vec4 vertexColor;
+layout(location = 3) in vec3 worldNormal;
+layout(location = 4) centroid in vec4 surfaceLightmapInput;
+layout(location = 5) flat in uvec4 surfaceLights;
+layout(location = 6) flat in uint surfaceChart;
+layout(location = 7) flat in uvec4 surfaceDirectLights;
+layout(location = 8) flat in vec4 surfaceBounds;
+layout(push_constant) uniform Draw {
+  uint index;
+  uint cascade;
+#ifdef INLINE_WORLD_REFLECTIONS
+  uvec2 reflectionCandidates;
+#endif
+#if defined(WATER_SURFACE) && defined(LIVE_GI)
+  float reflectionDistance;
+  uint reflectionBounces;
+#endif
+}
+draw;
+#ifndef SHADOW_PASS
+layout(location = 0) out vec4 result;
+#if !defined(VIEWMODEL_PASS) && !defined(WATER_SURFACE)
+// Pass-owned material guide for the shared automatic exposure meter.
+layout(location = 3) out vec4 outMeterMaterial;
+#endif
+#ifdef REFLECTION_GUIDES
+layout(location = 1) out vec4 outNormalRoughness;
+layout(location = 2) out vec4 outReflectance;
+#endif
+#include "receiver.glsl"
+#include "local-light-composition.glsl"
+#include "receiver-lighting.glsl"
+#include "local-lighting.glsl"
+#include "sun-lighting.glsl"
+// Match LightingView in forward/options.h. Specialization removes diagnostic
+// branches from ordinary world shading.
+const uint ViewShaded = 0u;
+const uint ViewBakedIrradiance = 1u;
+const uint ViewAnalyticDiffuse = 2u;
+const uint ViewDirectSpecular = 3u;
+const uint ViewAlbedo = 4u;
+const uint ViewIrradianceWithoutNormalMaps = 5u;
+const uint ViewBakeCoverage = 6u;
+const uint ViewTotalDiffuse = 7u;
+const uint ViewLocalLightWork = 8u;
+const uint ViewLocalLightEarlyMisses = 9u;
+const uint ViewLocalLightLateMisses = 10u;
+const uint ViewLocalLightMembers = 11u;
+const uint ViewLocalDirectionalOwnership = 12u;
+layout(constant_id = 1) const uint LightingView = ViewShaded;
+#ifndef WATER_SURFACE
+#include "shading-model.glsl"
+#endif
+#endif
+#ifdef WATER_SURFACE
+#include "../water/shaders/surface.glsl"
+#else
+void main() {
+  Material m = materials[draw.index];
+#if !defined(SHADOW_PASS) && !defined(EARLY_OPAQUE)
+  // Camera visibility is independent of double-sided light transport. Walls
+  // still occlude bake/GI/shadow rays when viewed from their hidden side.
+  if ((m.state.w & 16u) != 0u && !gl_FrontFacing)
+    discard;
+#endif
+#ifdef SHADOW_PASS
+  // Opaque casters need depth only. Avoid fetching/composing their albedo just
+  // to evaluate an alpha comparison whose result is already known.
+  if (m.state.y == 0u) discard;
+  if (m.state.y != 7u) alphaTest(m, surfaceAlpha(m, uv, vertexColor.a));
+#else
+  vec4 albedo = texture(albedoMap, uv);
+  vec4 surface = surfaceColor(m, albedo, vertexColor);
+#ifndef EARLY_OPAQUE
+  alphaTest(m, surface.a);
+#endif
+#endif
+#ifdef LOCAL_SHADOW_PASS
+  vec4 lightPosition = frame.localPositions[draw.cascade / 6u];
+  gl_FragDepth = min(length(worldPosition - lightPosition.xyz) / lightPosition.w, 1);
+#endif
+#ifndef SHADOW_PASS
+  if (LightingView == ViewAlbedo) {
+    result = vec4(surface.rgb, m.pbr.w > .5 ? surface.a : 1);
+#if !defined(VIEWMODEL_PASS) && !defined(WATER_SURFACE)
+    outMeterMaterial = result;
+#endif
+#ifdef REFLECTION_GUIDES
+    outNormalRoughness = packReflectionGuide(vec3(0, 0, 1), 1, -1);
+    outReflectance = vec4(0);
+#endif
+    return;
+  }
+  vec3 v = normalize(frame.cameraPosition.xyz - worldPosition);
+  vec3 positionDx = dFdx(worldPosition), positionDy = dFdy(worldPosition);
+  vec3 geometric = cross(positionDx, positionDy);
+  Surface evaluated = evaluateStandardSurface(m, surface, albedo, uv, positionDx, positionDy,
+                                              worldNormal, geometric, v, LightingView != ViewIrradianceWithoutNormalMaps);
+  ShadingReceiver receiver;
+  receiver.position = worldPosition;
+  receiver.geometric = geometric;
+  receiver.viewDirection = v;
+  receiver.screenPosition = gl_FragCoord.xy;
+  receiver.depth = abs((frame.view * vec4(worldPosition, 1)).z);
+  vec4 coordinate = UnmappedReceiver ? vec4(0) : surfaceLightmapInput;
+  coordinate.xy = clamp(coordinate.xy, surfaceBounds.xy, surfaceBounds.zw);
+  receiver.baked = BakedReceiver(coordinate, surfaceBounds, surfaceLights, surfaceDirectLights, surfaceChart);
+  receiver.directChannels = (m.maps.x & 16u) == 0u;
+  receiver.reflectionLayer = (m.maps.x >> 8u) & 127u;
+#ifdef INLINE_WORLD_REFLECTIONS
+  receiver.reflectionCandidates = draw.reflectionCandidates;
+#endif
+  receiver.opacity = m.pbr.w > .5 ? evaluated.color.a : 1;
+  ShadingResult shaded = shadeSurface(evaluated, receiver);
+  result = shaded.color;
+#if !defined(VIEWMODEL_PASS) && !defined(WATER_SURFACE)
+  outMeterMaterial = vec4(surface.rgb, receiver.opacity);
+#endif
+#ifdef REFLECTION_GUIDES
+  outNormalRoughness = packReflectionGuide(shaded.normal, shaded.roughness, shaded.reflectionReference);
+  // Pass-owned RGBA8 encoding: alpha retains ordinary selection or a
+  // one-based cubemap layer from this same covered MSAA sample.
+  outReflectance = shaded.hasReflectance
+      ? vec4(shaded.reflectance, float(255u - receiver.reflectionLayer) / 255) : vec4(0);
+#endif
+#endif
+}
+
+#endif // WATER_SURFACE

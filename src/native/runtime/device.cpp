@@ -21,6 +21,7 @@
  */
 
 #include "runtime/runtime.h"
+#include "forward/probes/cube_storage.h"
 #include "upscale/ngx.h"
 #include "upscale/xess.h"
 
@@ -208,6 +209,20 @@ namespace remix {
     vkGetPhysicalDeviceQueueFamilyProperties(selection.physicalDevice, &queueCount, nullptr);
     std::vector<VkQueueFamilyProperties> queues(queueCount);
     vkGetPhysicalDeviceQueueFamilyProperties(selection.physicalDevice, &queueCount, queues.data());
+    {
+      VkFormatProperties color{}, depth{};
+      vkGetPhysicalDeviceFormatProperties(selection.physicalDevice, VK_FORMAT_R16G16B16A16_SFLOAT, &color);
+      vkGetPhysicalDeviceFormatProperties(selection.physicalDevice, VK_FORMAT_D32_SFLOAT, &depth);
+      const auto colorFeatures = VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
+      const auto depthFeatures = VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
+      m_forwardSupported = (queues[selection.family].queueFlags & VK_QUEUE_COMPUTE_BIT) &&
+                           (color.optimalTilingFeatures & colorFeatures) == colorFeatures &&
+                           (depth.optimalTilingFeatures & depthFeatures) == depthFeatures &&
+                           properties.limits.maxPerStageDescriptorStorageBuffers >= 4 &&
+                           properties.limits.maxDescriptorSetStorageBuffers >= 4 &&
+                           properties.limits.maxComputeWorkGroupSize[0] >= 64 &&
+                           properties.limits.maxComputeWorkGroupInvocations >= 64;
+    }
     missing((queues[selection.family].queueFlags & VK_QUEUE_COMPUTE_BIT) != 0, "graphics/compute/present queue");
     if (version12 && extensionsSupported) {
       vkGetPhysicalDeviceFeatures2(selection.physicalDevice, &features);
@@ -255,6 +270,8 @@ namespace remix {
               "RGBA32F sky attachment blending");
     }
     m_traceSupported = m_traceUnavailable.empty();
+    m_forwardRaySupported = m_forwardSupported && version12 && extensionsSupported &&
+                            acceleration.accelerationStructure && ray.rayQuery && vulkan12.bufferDeviceAddress;
     m_denoiseCapabilities = denoise::capabilities(selection.physicalDevice);
     const bool sharcSupported = REMIX_HAS_SHARC && m_traceSupported && vulkan11.storageBuffer16BitAccess &&
                                 vulkan12.shaderFloat16 && vulkan12.shaderBufferInt64Atomics;
@@ -273,12 +290,14 @@ namespace remix {
     vulkan12 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, .pNext = &acceleration};
     acceleration = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR, .pNext = &ray};
     ray = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR};
-    if (m_traceSupported) {
+    if (m_traceSupported || m_forwardRaySupported) {
       extensions.insert(extensions.end(), std::begin(traceExtensions), std::end(traceExtensions));
-      features.features.shaderInt64 = VK_TRUE;
       vulkan12.bufferDeviceAddress = VK_TRUE;
-      vulkan12.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
       acceleration.accelerationStructure = ray.rayQuery = VK_TRUE;
+      if (m_traceSupported) {
+        features.features.shaderInt64 = VK_TRUE;
+        vulkan12.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
+      }
       if (sharcSupported) {
         vulkan11.storageBuffer16BitAccess = VK_TRUE;
         vulkan12.shaderFloat16 = vulkan12.shaderBufferInt64Atomics = VK_TRUE;
@@ -316,6 +335,10 @@ namespace remix {
       features.features.samplerAnisotropy = available.samplerAnisotropy;
       // Line polygon mode for wireframe instances (remixapi_InstanceInfoWireframeEXT).
       features.features.fillModeNonSolid = available.fillModeNonSolid;
+      // Query capability alone changes no rendering. Private Forward diagnostics
+      // allocate query pools only when explicitly requested.
+      features.features.pipelineStatisticsQuery = available.pipelineStatisticsQuery;
+      features.features.occlusionQueryPrecise = available.occlusionQueryPrecise;
     }
     // Physical-device queries need only support, not device enablement.
     m_memoryBudget = m_instanceApiVersion >= VK_API_VERSION_1_1 &&
@@ -358,8 +381,14 @@ namespace remix {
     // NVIDIA Reflex. Its sleep is signalled on a timeline semaphore (core in
     // Vulkan 1.2, enabled through the 1.2 features the tracer's chain holds).
     m_lowLatencySupported = !m_headless && m_traceSupported && m_instanceApiVersion >= VK_API_VERSION_1_2 &&
-                            supportsDeviceExtension(selection.physicalDevice, VK_NV_LOW_LATENCY_2_EXTENSION_NAME);
+                            supportsDeviceExtension(selection.physicalDevice, VK_NV_LOW_LATENCY_2_EXTENSION_NAME) &&
+                            supportsDeviceExtension(selection.physicalDevice, VK_KHR_PRESENT_ID_EXTENSION_NAME);
     if (m_lowLatencySupported) {
+      // low_latency2 depends on present_id even when this frame's Reflex mode
+      // is off. Enabling the extension does not enable the optional ID feature.
+      if (std::none_of(extensions.begin(), extensions.end(),
+                       [](auto p) { return std::strcmp(p, VK_KHR_PRESENT_ID_EXTENSION_NAME) == 0; }))
+        extensions.push_back(VK_KHR_PRESENT_ID_EXTENSION_NAME);
       vulkan12.timelineSemaphore = VK_TRUE;
       if (std::none_of(extensions.begin(), extensions.end(),
                        [](auto p) { return std::strcmp(p, VK_NV_LOW_LATENCY_2_EXTENSION_NAME) == 0; }))
@@ -369,7 +398,12 @@ namespace remix {
     // generated and rendered images itself (presentImages).
     VkPhysicalDevicePresentMeteringFeaturesNV metering = {.sType = presentMeteringFeaturesType};
     m_presentMeteringSupported = false;
-    if (!m_headless && m_instanceApiVersion >= VK_API_VERSION_1_1 &&
+    // The diagnostic switch must also omit the device feature, rather than
+    // merely disabling metered presents after enabling the extension. Older
+    // validation layers may not understand this optional provisional feature.
+    const char *meteringOption = std::getenv("REMIX_FG_PRESENT_METERING");
+    const bool meteringAllowed = !meteringOption || meteringOption[0] != '0';
+    if (meteringAllowed && !m_headless && m_instanceApiVersion >= VK_API_VERSION_1_1 &&
         supportsDeviceExtension(selection.physicalDevice, VK_NV_PRESENT_METERING_EXTENSION_NAME)) {
       VkPhysicalDeviceFeatures2 available = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, .pNext = &metering};
       vkGetPhysicalDeviceFeatures2(selection.physicalDevice, &available);
@@ -409,6 +443,7 @@ namespace remix {
     }
     // Last: libxess sets fields of the finished chain and links its own
     // structures (upscale/xess.h).
+    features.features.imageCubeArray = forward::probes::nativeCubeStorage(selection.physicalDevice);
     void *featureChain = &features;
     const auto xessUnavailable = upscale::xess::enableDevice(m_instance, selection.physicalDevice, m_instanceApiVersion,
                                                              extensions, featureChain);

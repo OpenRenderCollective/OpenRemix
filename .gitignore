@@ -21,6 +21,12 @@
 /src/native/*/shaders/embedded.h
 /src/native/*/shaders/embedded.bin
 /src/native/*/shaders/embedded_data.cpp
+/src/native/forward/**/embedded.h
+/tests/forward/**/embedded.h
+
+# Python interpreter caches are generated locally.
+__pycache__/
+*.py[cod]
 
 # Runtime profiles and pipeline cache written when the renderer runs from the repo root.
 /openremix/

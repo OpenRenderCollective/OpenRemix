@@ -142,8 +142,8 @@ namespace remix {
     };
     FrameGenerationInputs frameGeneration() const;
     void setNgx(std::shared_ptr<upscale::Ngx> ngx);
-    void prepareConfiguration(const TraceOptions &options, bool perspective, bool local, uint32_t failedBackends = 0,
-                              const std::string &failure = {});
+    void prepareConfiguration(const TraceOptions &options, bool perspective, bool local, bool emissive,
+                              uint32_t failedBackends = 0, const std::string &failure = {});
     bool finishPreparation(VkQueue queue);
     // Submits the setup of reconstruction recreated in place (a Ray
     // Reconstruction model or preset change in beginFrame) ahead of the frame.

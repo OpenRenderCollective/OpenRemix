@@ -1,0 +1,65 @@
+#pragma once
+#include "forward/bake/data.h"
+#include "forward/bake/radiance_projection.h"
+#include <filesystem>
+#include <optional>
+#include <span>
+
+namespace remix::forward::bake {
+  // Private offline diagnostic, independent of probe placement/publication.
+  // Input: sample count then XYZ sites (SH), or "hemisphere", sample count and
+  // XYZ/unit-normal sites (cosine-weighted radiance integration, without SH).
+  // "sphere", sample count and XYZ sites projects incoming radiance into SH
+  // on the CPU, without analytic receiver lighting or probe interpolation.
+  // The same rays also accumulate six positive cosine-weighted ambient faces.
+  // "sphere-offsets" adds a per-site first-sample phase for matched-stream studies.
+  // "geometry" followed by XYZ/unit-direction rays captures HWRT first hits
+  // with material coverage; no lighting samples or invented SH values. Refractive
+  // interfaces can be first hits too; this mode does not integrate transmission.
+  // "surface", sample count and XYZ/unit-normal sites uses the surface bake
+  // estimator, including aggregate analytic direct lighting and SH anchoring.
+  // Hemisphere rays alone do not include analytic direct light at the receiver.
+  // "sh-offsets", sample count, then XYZ/first-sample sites compares multiple
+  // deterministic streams at identical locations without moving the receiver.
+  // "surface-offsets" adds a first-sample index after each XYZ/unit-normal site
+  // to measure surface-estimator variance with analytic direct lighting intact.
+  // "incoming-sh" or "incoming-sh-offsets" uses the same SH transport while
+  // omitting analytic direct NEE at the receiver; bounced/path lighting remains.
+  // Prefix any input with "base" to exclude separately attributed lighting
+  // components when comparing the base surface atlas or base probe grid.
+  // SH output includes six distance-moment vec4s (+/-X, +/-Y, +/-Z) and
+  // transport statistics so offline placement studies can reconstruct visibility.
+  struct Grid;
+  struct ReferenceCapture {
+    static std::optional<ReferenceCapture> fromEnvironment();
+    static ReferenceCapture load(const std::filesystem::path &path);
+    void classify(const scene::BakeScene &source);
+    void consume(uint32_t first, std::span<const Result> values);
+    void reportGrid(const Grid &grid, bool gridAnalyticDirectPolicy) const noexcept;
+    uint32_t tasks() const { return uint32_t(points.size()) * (usesRadianceRays() ? samples : 1); }
+    bool usesRadianceRays() const { return hemisphere || sphere; }
+    std::vector<Point> batch(uint32_t first, uint32_t count) const;
+    std::vector<Point> points;
+    std::vector<uint32_t> sampleOffsets; // empty for the original SH/hemisphere formats
+    uint32_t samples = 0, next = 0, received = 0;
+    uint32_t bounces = 0;
+    uint64_t sceneHash = 0;
+    bool combinedLighting = false;
+    bool analyticReceiverDirectPolicy = false; // enabled policy, not a guarantee of nonzero direct light
+    bool baseLightingOnly = false;
+    bool hemisphere = false;
+    bool sphere = false;
+    bool surface = false;
+    bool geometry = false;
+    bool incomingIrradiance = false;
+    float maximumGeometryDistance = 0; // scene units, configured by transport owner
+
+  private:
+    std::filesystem::path m_output;
+    std::vector<Result> m_results;
+    std::vector<bool> m_completed;
+    std::vector<int32_t> m_partitionClusters; // -2 unknown, -1 solid/unplayable
+    std::vector<std::array<double, 3>> m_sums;
+    std::vector<RadianceProjection> m_sphereProjection;
+  };
+}

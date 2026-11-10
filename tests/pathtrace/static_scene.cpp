@@ -152,7 +152,7 @@ namespace {
     bool changed = false;
     scene::TemporalEpoch epoch{};
     bool filterEmission = false;
-    std::vector<scene::TraceFrame::Surface> traced;   // the frame's instances with the set's, in trace order
+    std::vector<scene::TraceFrame::Surface> traced; // the frame's instances with the set's, in trace order
     std::vector<scene::TraceFrame::Emitter> emitters; // the frame's with the set's, in trace order
     std::string validation;
 
@@ -229,9 +229,16 @@ namespace {
       check(x.opacity->key == y.opacity->key, "opacity partition");
     }
     const auto &p = a.tables, &q = b.tables;
+    const auto optics = p.sheetMaterials();
+    check(optics == q.sheetMaterials(), "descriptor-indexed sheet optics");
     check(p.surfaceCount() == q.surfaceCount(), "surface table size");
-    for (size_t i = 0; i < p.surfaceCount(); ++i)
+    for (size_t i = 0; i < p.surfaceCount(); ++i) {
       check(!std::memcmp(&p.surface(i), &q.surface(i), sizeof(trace::TraceSurface)), "surface table entry");
+      const auto &surface = p.surface(i);
+      if (surface.material[0] & trace::measuredSheetMaterialFlag)
+        check(surface.textureState[0] < optics.size() && optics[surface.textureState[0]].parameters[1] > 0,
+              "measured surface addresses its material's optical data");
+    }
     check(p.primaryCount() == q.primaryCount(), "primary draw count");
     for (size_t i = 0; i < p.primaryCount(); ++i) {
       const auto &x = p.primary(i), &y = q.primary(i);
@@ -491,6 +498,25 @@ namespace {
       case 7:
         red = material(r, 1, .5f, 0, 0); // Material replacement.
         break;
+      case 10:
+      case 13: {
+        remixapi_MaterialInfoTranslucentEXT optical{};
+        optical.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_TRANSLUCENT_EXT;
+        optical.refractiveIndex = 1.5f;
+        optical.transmittanceColor = {.25f, .5f, 1};
+        optical.transmittanceMeasurementDistance = 1;
+        optical.thinWallThickness_hasvalue = 1;
+        optical.thinWallThickness_value = frame == 10 ? .25f : .5f;
+        remixapi_MaterialInfo info{};
+        info.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
+        info.hash = 1;
+        info.pNext = &optical;
+        r.createMaterial(info, red);
+        break;
+      }
+      case 17:
+        red = material(r, 1, .5f, 0, 0);
+        break;
       case 8:
       case 9: {
         const auto u = moveTo(handles[5], float(frame)); // Demoted to dynamic until it settles.
@@ -577,7 +603,7 @@ namespace {
       scene.after(resources, frame);
       legacyScene.after(legacy, frame);
       if (frame == 10)
-        kept.epoch.reset = rebuilt.epoch.reset = 1;               // A history reset.
+        kept.epoch.reset = rebuilt.epoch.reset = 1; // A history reset.
       kept.filterEmission = rebuilt.filterEmission = frame >= 30; // Animated emission layouts.
       if (frame == 13 || frame == 27) {
         // BLAS compaction moves a mesh's acceleration structure.
@@ -785,6 +811,34 @@ namespace {
     require(c.equal(d) && d.equal(c), "Strided and packed records differ");
   }
 
+  void normalAnimation() {
+    scene::Material material;
+    material.normalEncoding = 5;
+    material.scroll[0] = .1f;
+    require(!trace::detail::hasScrollingNormals(material), "Missing normal map advanced animation");
+    material.normalTexture = std::make_shared<scene::Texture>();
+    require(trace::detail::hasScrollingNormals(material), "First normal layer did not animate");
+    material.normalEncoding = 0;
+    require(!trace::detail::hasScrollingNormals(material), "Ordinary normal encoding consumed scroll rates");
+    material.normalEncoding = 5;
+    material.scroll[0] = 0;
+    material.scroll[5] = -.2f;
+    require(!trace::detail::hasScrollingNormals(material), "Unused water layer advanced animation");
+    material.scrollLayers = 3;
+    require(trace::detail::hasScrollingNormals(material), "Third normal layer did not animate");
+    material.scroll[5] = 0;
+    require(!trace::detail::hasScrollingNormals(material), "Stationary water advanced animation");
+    material.transmittanceScroll[0] = .25f;
+    require(!trace::detail::hasScrollingTint(material), "Opaque tint metadata does not advance animation");
+    material.transmission = true;
+    material.transmittanceDistance = 1;
+    material.thinWallThickness = .1f;
+    require(!trace::detail::hasScrollingTint(material), "A missing tint texture does not advance animation");
+    material.texture = std::make_shared<scene::Texture>();
+    require(trace::detail::hasScrollingTint(material), "A measured textured sheet advances its tint clock");
+    material.transmittanceScroll[0] = 0;
+    require(!trace::detail::hasScrollingTint(material), "Stationary optical tint preserves the fixed clock");
+  }
   // remixapi_InstanceInfoWoundCutEXT and remixapi_MaterialGradientMapEXT in
   // the surface table: each wounded surface's record after the frame's
   // surfaces (frame_tables.h woundFields), its instance never opaque in
@@ -991,6 +1045,7 @@ void textureMotion() {
 }
 
 int main() {
+  normalAnimation();
   textureMotion();
   signatures();
   woundTables();

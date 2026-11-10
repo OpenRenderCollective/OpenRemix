@@ -218,6 +218,7 @@ namespace remix {
     }
     struct Material {
       uint64_t sourceHash = 0;
+      std::vector<uint64_t> replacementKeys;
       // A mod material whose textures stream (usd/submission.h): a draw that
       // resolves to it sets 1, or 2 when a scene instance keeps it. The mod
       // loader reads and clears it. Guarded by the API mutex.
@@ -255,9 +256,13 @@ namespace remix {
       // base, layer 1 and layer 2 rates.
       uint32_t scrollLayers = 1;
       float scroll[6] = {};
-      // A translucent body (remixapi_MaterialInfoTranslucentEXT without a thin
-      // wall): its refractive index and measurement distance (0: a thin sheet).
+      // Measured optical properties in scene units. Zero measurement distance
+      // retains legacy tinted-sheet shading; positive thickness denotes a sheet.
       float refractiveIndex = 1.5f, transmittanceDistance = 0;
+      float thinWallThickness = 0;       // positive: measured parallel sheet, not a containing volume
+      float transmittanceScroll[2] = {}; // actual tint UV rates; bake-averaged axes ignore the clock
+      uint32_t bakeTintAxes = 0;         // explicitly averaged transmission-tint UV axes; live shading ignores this
+      bool bakeSmoothBoundary = false;   // explicit mean interface; live ripple normals are excluded
       // remixapi_MaterialTranslucentFogEXT: the body fades linearly over
       // transmittanceDistance (its fog end), untinted, instead of absorbing.
       bool fogBody = false;
@@ -408,12 +413,15 @@ namespace remix {
       // Emitter of an instance the host identified as dynamic
       // (remixapi_InstanceIdentityEXT): kept in the light tree's dynamic part.
       bool dynamic = false;
+      uint32_t style = 0;    // captured stationary style; excluded from shared indirect transport
+      uint32_t bakeHint = 0; // optional engine-agnostic static representation preference
       // Triangle emitters: the surface draw they belong to (0 for sphere
       // lights) and their place in a spatial order of its emitters. The light
       // tree keeps a surface's emitters together in that order and makes
       // leaves of runs of them (LightBvh::setClusterSize).
       uint64_t group = 0;
       uint32_t rank = 0;
+      float forwardCutoff = 0; // explicit Forward+ cutoff, in scene units
       bool operator==(const SphereLight &) const = default;
     };
     struct DomeLight {
@@ -432,6 +440,7 @@ namespace remix {
       bool operator==(const DistantLight &) const = default;
     };
     struct Draw {
+      uint64_t reflectionMaterial = 0; // original receiver material key, independent of shading replacements
       std::shared_ptr<Mesh> mesh;
       uint64_t instanceId = 0;
       uint32_t instanceIndex = 0, surfaceIndex = 0;
@@ -450,6 +459,7 @@ namespace remix {
       bool depthWriteOverride = false, depthWrite = true, depthBias = false;
       uint32_t depthCompare = 3;
       bool decal = false;
+      bool terrain = false; // existing TERRAIN category; enables lit static paint in Forward+
       // remixapi_InstanceInfoWireframeEXT: drawn as its triangles' edges
       // (raster-only, line polygon mode).
       bool wireframe = false;

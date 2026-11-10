@@ -114,7 +114,15 @@ namespace remix {
     remixapi_LightInfo info{};
     info.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
     info.hash = hash;
-    info.pNext = const_cast<void *>(chain);
+    remixapi_LightInfoBakingEXT baking{REMIXAPI_STRUCT_TYPE_LIGHT_BAKING_EXT, chain,
+        found->second.emitters.empty() ? REMIXAPI_LIGHT_BAKING_DEFAULT_EXT
+            : remixapi_LightBakingHintEXT(found->second.emitters.front().bakeHint)};
+    info.pNext = &baking;
+    remixapi_LightInfoForwardCutoffEXT cutoff{REMIXAPI_STRUCT_TYPE_LIGHT_INFO_FORWARD_CUTOFF_EXT, &baking, 0};
+    if (merged.lightType == REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT && !found->second.emitters.empty()) {
+      cutoff.distance = found->second.emitters.front().forwardCutoff;
+      if (cutoff.distance > 0) info.pNext = &cutoff;
+    }
     remixapi_LightHandle handle{};
     createLight(info, handle);
     if (!replaceTransform) {
@@ -145,6 +153,15 @@ namespace remix {
     if (!info.hash)
       throw invalid;
     auto ext = [&](remixapi_StructType type) { return extension(info.pNext, type); };
+    const auto *baking = static_cast<const remixapi_LightInfoBakingEXT *>(
+        ext(REMIXAPI_STRUCT_TYPE_LIGHT_BAKING_EXT));
+    const uint32_t bakeHint = baking ? uint32_t(baking->hint) : 0;
+    if (bakeHint > REMIXAPI_LIGHT_BAKING_REQUIRE_MIXED_EXT)
+      throw invalid;
+    const auto *cutoff = static_cast<const remixapi_LightInfoForwardCutoffEXT *>(
+        ext(REMIXAPI_STRUCT_TYPE_LIGHT_INFO_FORWARD_CUTOFF_EXT));
+    if (cutoff && (!std::isfinite(cutoff->distance) || cutoff->distance < 0))
+      throw invalid;
     auto *usd = static_cast<const remixapi_LightInfoUSDEXT *>(ext(REMIXAPI_STRUCT_TYPE_LIGHT_INFO_USD_EXT));
     Vec position{}, x{1, 0, 0}, y{0, 1, 0}, z{0, 0, -1}, radiance = vec(info.radiance);
     float radius = .5f, width = 1, height = 1, span = 1, angle = .53f, volumetric = 1;
@@ -400,6 +417,13 @@ namespace remix {
     source.direction = shaped ? shaping.direction : remixapi_Float3D{z[0], z[1], z[2]};
     auto direction = unit(vec(source.direction));
     source.direction = {direction[0], direction[1], direction[2]};
+    definition.revision = ++m_lightRevision;
+    definition.dynamic = info.isDynamic != 0;
+    for (auto &emitter : definition.emitters) {
+      emitter.bakeHint = bakeHint;
+      if (cutoff && type == REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT)
+        emitter.forwardCutoff = cutoff->distance;
+    }
     m_lights[info.hash] = std::move(definition);
     handle = reinterpret_cast<remixapi_LightHandle>(uintptr_t(info.hash));
   }
@@ -423,12 +447,23 @@ namespace remix {
       m_frameLights.insert(key(handle));
   }
   std::vector<SphereLight> NativeResources::sphereLights() const {
-    if (m_lightsPublished)
-      return m_publishedLights;
     std::vector<SphereLight> result;
+    copySphereLights(result);
+    return result;
+  }
+  std::span<const SphereLight> NativeResources::sphereLightView(std::vector<SphereLight> &scratch) const {
+    if (m_lightsPublished) return m_publishedLights;
+    copySphereLights(scratch);
+    return scratch;
+  }
+  void NativeResources::copySphereLights(std::vector<SphereLight> &output) const {
+    if (m_lightsPublished) {
+      output = m_publishedLights;
+      return;
+    }
+    output.clear();
     for (auto id : m_frameLights)
       if (auto it = m_lights.find(id); it != m_lights.end())
-        result.insert(result.end(), it->second.emitters.begin(), it->second.emitters.end());
-    return result;
+        output.insert(output.end(), it->second.emitters.begin(), it->second.emitters.end());
   }
 } // namespace remix

@@ -132,9 +132,150 @@ namespace remix::config {
       static const std::vector<Entry> entries = [] {
         std::vector<Entry> result;
 #define FIELD(member) [](auto &s) -> auto & { return s.member; }
-#define TRACE(member, low, high)                                                                                       \
+#define TRACE(member, low, high)                                                                             \
   result.push_back(scalar("rtx.native.pathtrace." #member, FIELD(trace.member), low, high))
-        result.push_back(choices("rtx.native.backend", FIELD(backend), {"raster", "pathtrace"}));
+        result.push_back(choices("rtx.native.backend", FIELD(backend), {"raster", "pathtrace", "forwardplus"}));
+        result.push_back({"rtx.native.forward.samples", [](const Settings &s) { return number(s.forward.samples); },
+                          [](Settings &s, std::string_view text) {
+                            unsigned value;
+                            if (!readNumber(text, value) || (value != 1 && value != 2 && value != 4)) return false;
+                            s.forward.samples = value;
+                            return true;
+                          }});
+        result.push_back({"rtx.native.forward.shadowResolution", [](const Settings &s) { return number(s.forward.shadowResolution); },
+                          [](Settings &s, std::string_view text) {
+                            unsigned value;
+                            if (!readNumber(text, value) || value < 64 || value > 4096 || (value & (value-1))) return false;
+                            s.forward.shadowResolution = value;
+                            return true;
+                          }});
+        result.push_back(scalar("rtx.native.forward.shadowDistance", FIELD(forward.shadowDistance), 1, 10000));
+        result.push_back(scalar("rtx.native.forward.shadowBias", FIELD(forward.shadowBias), 0, .1));
+        result.push_back(scalar("rtx.native.forward.sceneScale", FIELD(forward.sceneScale), .0001, 1000));
+        result.push_back(scalar("rtx.native.forward.ambient", FIELD(forward.ambient), 0, 100));
+        result.push_back(scalar("rtx.native.forward.exposure", FIELD(forward.exposure), .0001, 10000));
+        result.push_back(scalar("rtx.native.forward.prism", FIELD(forward.prism), 0, 1));
+        result.push_back(scalar("rtx.native.forward.gamma22", FIELD(forward.gamma22), 0, 1));
+        result.push_back(scalar("rtx.native.forward.autoExposure", FIELD(forward.autoExposure), 0, 1));
+        result.push_back(scalar("rtx.native.forward.autoExposureTarget", FIELD(forward.autoExposureTarget), .02, .6));
+        result.push_back(scalar("rtx.native.forward.autoExposureSpeed", FIELD(forward.autoExposureSpeed), .1, 16));
+        result.push_back(scalar("rtx.native.forward.autoExposureCentre", FIELD(forward.autoExposureCentre), 0, 1));
+        result.push_back(scalar("rtx.native.forward.autoExposureMinEv", FIELD(forward.autoExposureMinEv), -24, 0));
+        result.push_back(scalar("rtx.native.forward.autoExposureMaxEv", FIELD(forward.autoExposureMaxEv), 0, 24));
+        result.push_back(scalar("rtx.native.forward.clusterLights", FIELD(forward.clusterLights), 0, 1024));
+        result.push_back(scalar("rtx.native.forward.debugView", FIELD(forward.debugView),
+                                0, uint32_t(forward::LightingView::TotalDiffuse)));
+        result.push_back(scalar("rtx.native.forward.lightCutoff", FIELD(forward.lightCutoff), .000001, 10));
+        result.push_back(scalar("rtx.native.forward.shadows", FIELD(forward.shadows), 0, 1));
+        result.push_back(scalar("rtx.native.forward.localShadows", FIELD(forward.localShadows), 0, 1));
+        result.push_back(scalar("rtx.native.forward.depthPrepass", FIELD(forward.depthPrepass), 0, 1));
+        result.push_back(scalar("rtx.native.forward.opaqueOcclusionCulling", FIELD(forward.opaqueOcclusionCulling), 0, 1));
+        result.push_back(scalar("rtx.native.forward.staticDepthBatch", FIELD(forward.staticDepthBatch), 0, 1));
+        result.push_back(scalar("rtx.native.forward.bicubicLightmaps", FIELD(forward.bicubicLightmaps), 0, 1));
+        result.push_back(scalar("rtx.native.forward.localShadowLights", FIELD(forward.localShadowLights), 0, 8));
+        result.push_back(scalar("rtx.native.forward.localShadowDistance", FIELD(forward.localShadowDistance), .1, 10000));
+        result.push_back(scalar("rtx.native.forward.localShadowBias", FIELD(forward.localShadowBias), 0, .1));
+          result.push_back(scalar("rtx.native.forward.localShadowFade", FIELD(forward.localShadowFade), 0, 10));
+        result.push_back({"rtx.native.forward.localShadowResolution", [](const Settings &s) { return number(s.forward.localShadowResolution); },
+                          [](Settings &s, std::string_view text) {
+                            unsigned value;
+                            if (!readNumber(text, value) || value < 64 || value > 1024 || (value & (value-1))) return false;
+                            s.forward.localShadowResolution = value;
+                            return true;
+                          }});
+        result.push_back(scalar("rtx.native.forward.ssr", FIELD(forward.ssr), 0, 1));
+        result.push_back(scalar("rtx.native.forward.authoredReflectionFallback", FIELD(forward.authoredReflectionFallback), 0, 1));
+        result.push_back(scalar("rtx.native.forward.water", FIELD(forward.water), 0, 1));
+        result.push_back(scalar("rtx.native.forward.waterDistance", FIELD(forward.waterDistance), .1, 10000));
+        result.push_back(scalar("rtx.native.forward.waterThickness", FIELD(forward.waterThickness), .001, 10));
+        result.push_back(scalar("rtx.native.forward.rtReflections", FIELD(forward.rtReflections), 0, 1));
+        result.push_back(scalar("rtx.native.forward.rtGI", FIELD(forward.rtGI), 0, 1));
+        result.push_back(scalar("rtx.native.forward.bakedDirectWithLiveGI", FIELD(forward.bakedDirectWithLiveGI), 0, 1));
+        result.push_back(scalar("rtx.native.forward.rtGISamples", FIELD(forward.rtGISamples), 1, 64));
+        result.push_back(scalar("rtx.native.forward.rtGIBounces", FIELD(forward.rtGIBounces), 1, 8));
+        result.push_back(scalar("rtx.native.forward.rtGIDistance", FIELD(forward.rtGIDistance), .1, 10000));
+        result.push_back(scalar("rtx.native.forward.rtReflectionDistance", FIELD(forward.rtReflectionDistance), .1, 10000));
+        result.push_back(scalar("rtx.native.forward.rtReflectionBounces", FIELD(forward.rtReflectionBounces), 1, 8));
+        result.push_back({"rtx.native.forward.rtTextureResolution", [](const Settings &s) { return number(s.forward.rtTextureResolution); },
+                          [](Settings &s, std::string_view text) {
+                            unsigned value;
+                            if (!readNumber(text, value) || value < 16 || value > 1024 || (value & (value-1))) return false;
+                            s.forward.rtTextureResolution = value;
+                            return true;
+                          }});
+        result.push_back({"rtx.native.forward.ssrScale", [](const Settings &s) { return number(s.forward.ssrScale); },
+                          [](Settings &s, std::string_view text) {
+                            unsigned value;
+                            if (!readNumber(text, value) || (value != 1 && value != 2 && value != 4)) return false;
+                            s.forward.ssrScale = value;
+                            return true;
+                          }});
+        result.push_back(scalar("rtx.native.forward.ssrSteps", FIELD(forward.ssrSteps), 16, 512));
+        result.push_back(scalar("rtx.native.forward.ssrDistance", FIELD(forward.ssrDistance), .1, 10000));
+        result.push_back(scalar("rtx.native.forward.ssrThickness", FIELD(forward.ssrThickness), .001, 10));
+        result.push_back(scalar("rtx.native.forward.ssrRoughness", FIELD(forward.ssrRoughness), .05, 1));
+        result.push_back(scalar("rtx.native.forward.bake", FIELD(forward.baking.enabled), 0, 1));
+        result.push_back(scalar("rtx.native.forward.bakeCache", FIELD(forward.baking.diskCache), 0, 1));
+        result.push_back(scalar("rtx.native.forward.lightmapDenoise", FIELD(forward.baking.denoiseLightmaps), 0, 1));
+        result.push_back(scalar("rtx.native.forward.lightmapModels", FIELD(forward.baking.modelLightmaps), 0, 1));
+        result.push_back(scalar("rtx.native.forward.styledIndirect", FIELD(forward.baking.styledIndirect), 0, 1));
+        result.push_back(scalar("rtx.native.forward.experimentalGroupedStyledDirect", FIELD(forward.baking.groupedStyledDirect), 0, 1));
+        result.push_back(scalar("rtx.native.forward.styleStorageMiB", FIELD(forward.baking.styleStorageMiB), 1, 512));
+        result.push_back(scalar("rtx.native.forward.bakeDirectDiffuse", FIELD(forward.baking.directDiffuse), 0, 1));
+        result.push_back(scalar("rtx.native.forward.experimentalAggregateDiffuse",
+                                FIELD(forward.baking.aggregateDiffuse), 0, 1));
+        result.push_back(scalar("rtx.native.forward.experimentalSelectedBakedLights",
+                                FIELD(forward.selectedBakedLights), 0, 1));
+        result.push_back(scalar("rtx.native.forward.bakedLighting",
+                                FIELD(forward.bakedLighting), 0, 1));
+        result.push_back(scalar("rtx.native.forward.bakedHighlightLights",
+                                FIELD(forward.bakedHighlightLights), 0, 32));
+        result.push_back(scalar("rtx.native.forward.bakedHighlightFade",
+                                FIELD(forward.bakedHighlightFade), 0, 10));
+        result.push_back(scalar("rtx.native.forward.experimentalFullyBakedLights",
+                                FIELD(forward.baking.fullyBakedLights), 0, 1));
+        result.push_back(scalar("rtx.native.forward.experimentalBakedGeometryLights",
+                                FIELD(forward.baking.bakedGeometryLights), 0, 1));
+        result.push_back(scalar("rtx.native.forward.bakeSunAntialiasing", FIELD(forward.baking.antialiasSun), 0, 1));
+        result.push_back(scalar("rtx.native.forward.bakeSpacing", FIELD(forward.baking.spacing), .1, 100));
+        result.push_back(scalar("rtx.native.forward.bakeProbes", FIELD(forward.baking.maxProbes), 64, 1048576));
+        result.push_back(scalar("rtx.native.forward.probeRelocation", FIELD(forward.baking.relocateProbes), 0, 1));
+        result.push_back(scalar("rtx.native.forward.bakeSamples", FIELD(forward.baking.samples), 64, 8192));
+        result.push_back(scalar("rtx.native.forward.bakeProbeSamples", FIELD(forward.baking.probeSamples), 0, 8192));
+        result.push_back(scalar("rtx.native.forward.bakeBounces", FIELD(forward.baking.bounces), 1, 8));
+        result.push_back(scalar("rtx.native.forward.bakeBatch", FIELD(forward.baking.batch), 1, 1024));
+        result.push_back(scalar("rtx.native.forward.bakeGpuBudget", FIELD(forward.baking.gpuBudgetMs), 0, 16));
+        result.push_back(scalar("rtx.native.forward.lightmapLuxelSize", FIELD(forward.baking.lightmapLuxelSize), .01, 16));
+        result.push_back(scalar("rtx.native.forward.lightmapFitBudget", FIELD(forward.baking.lightmapFitBudget), 0, 1));
+        result.push_back(scalar("rtx.native.forward.lightmapTexels", FIELD(forward.baking.lightmapTexels), 65536, 16777216));
+        result.push_back({"rtx.native.forward.lightmapPageSize",
+            [](const Settings &s) { return number(s.forward.baking.lightmapPageSize); },
+            [](Settings &s, std::string_view text) {
+              unsigned value;
+              if (!readNumber(text, value) || value < 64 || value > 4096 || (value & (value - 1))) return false;
+              s.forward.baking.lightmapPageSize = value;
+              return true;
+            }});
+        result.push_back(scalar("rtx.native.forward.reflectionDetailTolerance", FIELD(forward.baking.reflectionDetailTolerance), 0, 2));
+        result.push_back(scalar("rtx.native.forward.reflectionProbes", FIELD(forward.baking.reflectionProbes), 0, 64));
+        result.push_back({"rtx.native.forward.reflectionResolution",
+            [](const Settings &s) { return number(s.forward.baking.reflectionResolution); },
+            [](Settings &s, std::string_view text) {
+              unsigned value;
+              if (!readNumber(text, value) || value < 8 || value > 512 || (value & (value - 1)))
+                return false;
+              s.forward.baking.reflectionResolution = value;
+              return true;
+            }});
+        result.push_back({"rtx.native.forward.bakeTextureResolution",
+          [](const Settings &s) { return number(s.forward.baking.textureResolution); },
+            [](Settings &s, std::string_view text) {
+            unsigned value;
+              if (!readNumber(text, value) || value < 16 || value > 1024 || (value & (value - 1)))
+                return false;
+              s.forward.baking.textureResolution = value;
+              return true;
+          }});
         result.push_back({"rtx.native.vsync", [](const Settings &s) { return number(s.vsync); },
                           [](Settings &s, std::string_view value) {
                             std::string lower(value);
@@ -432,41 +573,41 @@ namespace remix::config {
         result.push_back(scalar("rtx.native.particles.followWeather", FIELD(particles.followWeather), 0, 1));
         result.push_back(scalar("rtx.native.particles.intensity", FIELD(particles.intensity), 0, 1));
         result.push_back({"rtx.hideInstanceTextures",
-                          [](const Settings &s) {
-                            std::string text;
-                            for (size_t i = 0; i < s.hideTextures.size(); ++i) {
-                              if (i > 0)
-                                text += ", ";
-                              char buf[32];
-                              snprintf(buf, sizeof(buf), "0x%llX", (unsigned long long)s.hideTextures[i]);
-                              text += buf;
-                            }
-                            return text;
-                          },
-                          [](Settings &s, std::string_view text) {
-                            s.hideTextures.clear();
-                            while (!text.empty()) {
-                              auto comma = text.find(',');
-                              auto item = trim(comma == text.npos ? text : text.substr(0, comma));
-                              if (comma == text.npos)
-                                text = {};
-                              else
-                                text = text.substr(comma + 1);
-                              if (item.empty())
-                                continue;
-                              uint64_t hash = 0;
-                              if (item.size() > 2 && item[0] == '0' && (item[1] == 'x' || item[1] == 'X')) {
-                                auto res = std::from_chars(item.data() + 2, item.data() + item.size(), hash, 16);
-                                if (res.ec == std::errc{})
-                                  s.hideTextures.push_back(hash);
-                              } else {
-                                auto res = std::from_chars(item.data(), item.data() + item.size(), hash, 10);
-                                if (res.ec == std::errc{})
-                                  s.hideTextures.push_back(hash);
-                              }
-                            }
-                            return true;
-                          }});
+            [](const Settings &s) {
+              std::string text;
+              for (size_t i = 0; i < s.hideTextures.size(); ++i) {
+                if (i > 0)
+                  text += ", ";
+                char buf[32];
+                snprintf(buf, sizeof(buf), "0x%llX", (unsigned long long)s.hideTextures[i]);
+                text += buf;
+              }
+              return text;
+            },
+            [](Settings &s, std::string_view text) {
+              s.hideTextures.clear();
+              while (!text.empty()) {
+                auto comma = text.find(',');
+                auto item = trim(comma == text.npos ? text : text.substr(0, comma));
+                if (comma == text.npos)
+                  text = {};
+                else
+                  text = text.substr(comma + 1);
+                if (item.empty())
+                  continue;
+                uint64_t hash = 0;
+                if (item.size() > 2 && item[0] == '0' && (item[1] == 'x' || item[1] == 'X')) {
+                  auto res = std::from_chars(item.data() + 2, item.data() + item.size(), hash, 16);
+                  if (res.ec == std::errc{})
+                    s.hideTextures.push_back(hash);
+                } else {
+                  auto res = std::from_chars(item.data(), item.data() + item.size(), hash, 10);
+                  if (res.ec == std::errc{})
+                    s.hideTextures.push_back(hash);
+                }
+              }
+              return true;
+            }});
 #undef TRACE
 #undef FIELD
         return result;

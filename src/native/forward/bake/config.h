@@ -1,0 +1,58 @@
+#pragma once
+#include "forward/bake/irradiance_contents.h"
+#include <cstdint>
+namespace remix::forward::bake {
+  struct Config {
+    bool enabled = true;
+    bool directDiffuse = true;
+    // Internal producer selection; the Source 2 recipe uses Combined by default.
+    IrradianceContents irradianceContents = IrradianceContents::Combined;
+    // Low-level transport/comparison controls. Options::lightingPlan
+    // derives aggregate/grouped policy when runtime baked lighting is enabled.
+    bool aggregateDiffuse = false;
+    bool fullyBakedLights = false; // experimental: static lights have no per-light baked-receiver work
+    bool bakedGeometryLights = false; // experimental: retain explicit lights as mixed, fully bake emitting geometry
+    bool antialiasSun = true; // bounded receiver-area refinement at detected shadow edges
+    bool diskCache = true;
+    bool denoiseLightmaps = true; // OIDN RTLightmap where available; unsupported builds retain raw transport
+    bool modelLightmaps = false; // runtime profiles enable eligible uncharted static mesh surfaces
+    bool styledIndirect = false; // runtime profiles enable attributed components; low-level callers opt in
+    bool groupedStyledDirect = false; // derive controllable direct groups from completed captures
+    uint32_t styleStorageMiB = 128; // encoded sparse SH, also bounded by device storage range
+    bool relocateProbes = true; // bounded recovery of otherwise unused BSP-solid slots
+    bool directionalProbeDepth = false; // private candidate until live quality/performance acceptance
+    float gpuBudgetMs = 8; // zero selects fixed batch size; otherwise a measured GPU-time target
+    float spacing = 2;     // metres; coarsened if necessary to respect maxProbes
+    uint32_t maxProbes = 32768, samples = 256, bounces = 3, batch = 64, textureResolution = 256;
+    uint32_t probeSamples = 0; // zero inherits samples; volume transport only, including styled components
+    uint32_t probeSampleCount() const { return probeSamples ? probeSamples : samples; }
+    uint32_t reflectionProbes = 64, reflectionResolution = 128;
+    float reflectionDetailTolerance = .5f; // metres; zero requires entirely empty boxes
+    uint32_t lightmapPageSize = 1024, lightmapTexels = 4194304;
+    bool lightmapFitBudget = true;
+    float lightmapLuxelSize = .125f; // manual spacing only when lightmapFitBudget is disabled
+    uint32_t lightmapPageSizeForBudget() const {
+      auto size = lightmapPageSize;
+      while (size > 8 && uint64_t(size) * size > lightmapTexels)
+        size /= 2;
+      return size;
+    }
+    bool operator==(const Config &) const = default;
+    bool sameDiffuse(const Config &other) const {
+      auto a = *this, b = other;
+      a.reflectionProbes = b.reflectionProbes = 0;
+      a.reflectionResolution = b.reflectionResolution = 0;
+      a.reflectionDetailTolerance = b.reflectionDetailTolerance = 0;
+      return a.sameLighting(b);
+    }
+    bool sameLighting(const Config &other) const {
+      auto a = *this, b = other;
+      a.probeSamples = a.probeSampleCount();
+      b.probeSamples = b.probeSampleCount();
+      a.batch = b.batch = 0;
+      a.gpuBudgetMs = b.gpuBudgetMs = 0;
+      a.diskCache = b.diskCache = false;
+      return a == b;
+    }
+  };
+} // namespace remix::forward::bake

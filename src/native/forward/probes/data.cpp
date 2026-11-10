@@ -1,0 +1,492 @@
+#include "forward/probes/data.h"
+#include "forward/probes/priority_order.h"
+#include "forward/probes/priority_bands.h"
+#include "platform/workers.h"
+#include <algorithm>
+#include <bit>
+#include <cmath>
+#include <cstring>
+#include <limits>
+#include <numbers>
+#include <stdexcept>
+
+namespace remix::forward::probes {
+  namespace {
+    constexpr float pi = std::numbers::pi_v<float>;
+    bool finite(Vec3 v) {
+      return std::all_of(v.begin(), v.end(), [](float x) { return std::isfinite(x); });
+    }
+    // Influence may extend outside the projection box. Only a ray intersecting
+    // all three slabs has a meaningful far-face point for box projection.
+    Vec3 parallaxDirection(const Record &record, Vec3 position, Vec3 reflected,
+                          Vec3 localPosition, Vec3 localRay) {
+      float entry = 0, exit = std::numeric_limits<float>::max();
+      for (uint32_t c = 0; c < 3; ++c) {
+        if (std::abs(localRay[c]) <= 1e-10f) {
+          if (localPosition[c] < record.minimum[c] || localPosition[c] > record.maximum[c])
+            return reflected;
+          continue;
+        }
+        const float a = (record.minimum[c] - localPosition[c]) / localRay[c];
+        const float b = (record.maximum[c] - localPosition[c]) / localRay[c];
+        entry = std::max(entry, std::min(a, b));
+        exit = std::min(exit, std::max(a, b));
+        if (exit < entry) return reflected;
+      }
+      Vec3 corrected;
+      for (uint32_t c = 0; c < 3; ++c)
+        corrected[c] = position[c] + reflected[c] * exit - record.position[c];
+      return exit <= 0 || dot(corrected, corrected) < 1e-10f ? reflected : corrected;
+    }
+    float priorityCoverage(const Record &record, const PriorityBands &bands, uint32_t probe, Vec3 local) {
+      float coverage = 1;
+      for (uint32_t c = 0; c < 3; ++c) {
+        if (local[c] < record.influenceMinimum[c] || local[c] > record.influenceMaximum[c]) return 0;
+        const float distance = std::min((local[c] - record.influenceMinimum[c]) * bands.minimum[probe][c],
+                                        (record.influenceMaximum[c] - local[c]) * bands.maximum[probe][c]);
+        const float t = std::clamp(distance, 0.f, 1.f);
+        coverage *= std::max(t * t * (3 - 2 * t), 1e-12f);
+      }
+      return coverage;
+    }
+    void validate(const Capture &capture) {
+      if (!validProjectionSpace(capture.worldToLocal) ||
+          capture.priority < -32768 || capture.priority > 32767 ||
+          !std::isfinite(capture.blendDistance) || capture.blendDistance < 0)
+        throw std::invalid_argument("Invalid reflection projection frame or priority");
+      const auto origin = projectionPoint(capture.worldToLocal, capture.position);
+      if (!finite(origin) || !capture.bounds.valid || !finite(capture.position) || !finite(capture.bounds.minimum) ||
+          !finite(capture.bounds.maximum) || capture.resolution < 8 || capture.resolution > 512 ||
+          !std::has_single_bit(capture.resolution))
+        throw std::invalid_argument("Invalid reflection capture bounds or resolution");
+      if (capture.influence.valid) {
+        if (!finite(capture.influence.minimum) || !finite(capture.influence.maximum))
+          throw std::invalid_argument("Invalid reflection influence bounds");
+        for (uint32_t c = 0; c < 3; ++c)
+          if (capture.influence.minimum[c] >= capture.influence.maximum[c] ||
+              !std::isfinite(capture.influence.maximum[c] - capture.influence.minimum[c]) ||
+              !std::isfinite(capture.influence.maximum[c] + capture.influence.minimum[c]))
+            throw std::invalid_argument("Invalid reflection influence extent");
+      }
+      for (uint32_t c = 0; c < 3; ++c)
+        if (capture.bounds.minimum[c] >= capture.bounds.maximum[c] ||
+            !std::isfinite(capture.bounds.maximum[c] - capture.bounds.minimum[c]) ||
+            !std::isfinite(capture.bounds.maximum[c] + capture.bounds.minimum[c]) ||
+            origin[c] < capture.bounds.minimum[c] ||
+            origin[c] > capture.bounds.maximum[c])
+          throw std::invalid_argument("Reflection capture origin must lie inside its volume");
+    }
+    const Bounds &influence(const Capture &capture) {
+      return capture.influence.valid ? capture.influence : capture.bounds;
+    }
+    Vec3 add(Vec3 a, Vec3 b, float weight) {
+      for (uint32_t c = 0; c < 3; ++c)
+        a[c] += b[c] * weight;
+      return a;
+    }
+    Vec3 texel(std::span<const Vec4> pixels, uint32_t size, uint32_t face, int x, int y) {
+      if ((x < 0 || x >= int(size)) && (y < 0 || y >= int(size))) {
+        // The diagonal tap at a cube corner belongs equally to three faces.
+        // Choosing one neighbour makes the result depend on which major axis
+        // won a floating-point tie in project(). These calls cross at most one
+        // edge each, so recursion stops immediately.
+        const int edgeX = std::clamp(x, 0, int(size)-1), edgeY = std::clamp(y, 0, int(size)-1);
+        const auto a = texel(pixels, size, face, edgeX, edgeY);
+        const auto b = texel(pixels, size, face, x, edgeY);
+        const auto c = texel(pixels, size, face, edgeX, y);
+        Vec3 result;
+        for (uint32_t channel = 0; channel < 3; ++channel)
+          result[channel] = (a[channel] + b[channel] + c[channel]) / 3;
+        return result;
+      }
+      // Reproject taps that cross an edge instead of clamping them to the
+      // original face. All mips use the same seam-aware lookup.
+      if (x < 0 || y < 0 || x >= int(size) || y >= int(size)) {
+        const auto adjacent =
+            project(direction(face, 2 * (float(x) + .5f) / size - 1, 2 * (float(y) + .5f) / size - 1));
+        face = adjacent.face;
+        x = std::clamp(int((adjacent.uv[0] * .5f + .5f) * size), 0, int(size) - 1);
+        y = std::clamp(int((adjacent.uv[1] * .5f + .5f) * size), 0, int(size) - 1);
+      }
+      const auto &p = pixels[(face * size + uint32_t(y)) * size + uint32_t(x)];
+      return {p[0], p[1], p[2]};
+    }
+    Vec3 lookup(std::span<const Vec4> pixels, uint32_t size, Vec3 ray) {
+      const auto face = project(ray);
+      const float x = (face.uv[0] * .5f + .5f) * size - .5f;
+      const float y = (face.uv[1] * .5f + .5f) * size - .5f;
+      const int ix = int(std::floor(x)), iy = int(std::floor(y));
+      const float fx = x - ix, fy = y - iy;
+      Vec3 value{};
+      for (uint32_t corner = 0; corner < 4; ++corner) {
+        const bool right = corner & 1u, bottom = corner & 2u;
+        value = add(value, texel(pixels, size, face.face, ix + right, iy + bottom),
+                    (right ? fx : 1 - fx) * (bottom ? fy : 1 - fy));
+      }
+      return value;
+    }
+    float radicalInverse(uint32_t bits) {
+      bits = (bits << 16) | (bits >> 16);
+      bits = ((bits & 0x55555555u) << 1) | ((bits & 0xaaaaaaaau) >> 1);
+      bits = ((bits & 0x33333333u) << 2) | ((bits & 0xccccccccu) >> 2);
+      bits = ((bits & 0x0f0f0f0fu) << 4) | ((bits & 0xf0f0f0f0u) >> 4);
+      bits = ((bits & 0x00ff00ffu) << 8) | ((bits & 0xff00ff00u) >> 8);
+      return float(bits) * (1.f / 4294967296.f);
+    }
+    struct FilterSample {
+      float sine, cosine, cosPhi, sinPhi;
+    };
+    std::vector<FilterSample> filterSamples(float roughness, uint32_t count) {
+      const float alpha = roughness * roughness, alphaSquared = alpha * alpha;
+      std::vector<FilterSample> result;
+      result.reserve(count);
+      for (uint32_t i = 0; i < count; ++i) {
+        const float phi = 2 * pi * float(i) / count, xi = radicalInverse(i);
+        const float cosine = std::sqrt((1 - xi) / (1 + (alphaSquared - 1) * xi));
+        const float sine = std::sqrt(std::max(0.f, 1 - cosine * cosine));
+        result.push_back({sine, cosine, std::cos(phi), std::sin(phi)});
+      }
+      return result;
+    }
+    Vec3 prefilter(const Capture &capture, Vec3 n, std::span<const FilterSample> samples) {
+      const Vec3 up = std::abs(n[2]) < .99f ? Vec3{0, 0, 1} : Vec3{1, 0, 0};
+      const Vec3 tangent = normalized(cross(up, n)), bitangent = cross(n, tangent);
+      Vec3 result{};
+      float total = 0;
+      for (const auto &sample : samples) {
+        Vec3 h{};
+        // Keep the original multiplication order: factoring sine*cosPhi into
+        // one coefficient changes rounding and can move a cube-face lookup.
+        for (uint32_t c = 0; c < 3; ++c)
+          h[c] = tangent[c] * sample.sine * sample.cosPhi +
+                 bitangent[c] * sample.sine * sample.sinPhi + n[c] * sample.cosine;
+        Vec3 light{};
+        for (uint32_t c = 0; c < 3; ++c)
+          light[c] = 2 * dot(n, h) * h[c] - n[c];
+        const float weight = std::max(0.f, dot(n, light));
+        if (weight <= 0)
+          continue;
+        result = add(result, lookup(capture.radiance, capture.resolution, light), weight);
+        total += weight;
+      }
+      for (auto &channel : result)
+        channel /= std::max(total, 1e-8f);
+      return result;
+    }
+  } // namespace
+  void validateCapture(const Capture &capture) { validate(capture); }
+  bool sameCaptureRays(const Capture &a, const Capture &b) {
+    return a.resolution == b.resolution &&
+           std::memcmp(a.position.data(), b.position.data(), sizeof(Vec3)) == 0;
+  }
+  Vec3 direction(uint32_t face, float u, float v) {
+    // Vulkan specification: Cube Map Face Selection and Transformations.
+    switch (face) {
+    case 0:
+      return normalized({1, -v, -u});
+    case 1:
+      return normalized({-1, -v, u});
+    case 2:
+      return normalized({u, 1, v});
+    case 3:
+      return normalized({u, -1, -v});
+    case 4:
+      return normalized({u, -v, 1});
+    case 5:
+      return normalized({-u, -v, -1});
+    default:
+      throw std::invalid_argument("Invalid cube face");
+    }
+  }
+  FaceUv project(Vec3 d) {
+    if (!finite(d))
+      throw std::invalid_argument("Non-finite cube direction");
+    const float x = std::abs(d[0]), y = std::abs(d[1]), z = std::abs(d[2]);
+    if (std::max({x, y, z}) < 1e-20f)
+      throw std::invalid_argument("Zero cube direction");
+    if (x >= y && x >= z)
+      return d[0] >= 0 ? FaceUv{0, {-d[2] / x, -d[1] / x}} : FaceUv{1, {d[2] / x, -d[1] / x}};
+    if (y >= z)
+      return d[1] >= 0 ? FaceUv{2, {d[0] / y, d[2] / y}} : FaceUv{3, {d[0] / y, -d[2] / y}};
+    return d[2] >= 0 ? FaceUv{4, {d[0] / z, -d[1] / z}} : FaceUv{5, {-d[0] / z, -d[1] / z}};
+  }
+  std::vector<bake::Point> rays(const Capture &capture) {
+    std::vector<bake::Point> result;
+    appendRays(capture, result);
+    return result;
+  }
+  // Emitted Point-bit changes require a CaptureWork::planHash format revision.
+  void appendRays(const Capture &capture, std::vector<bake::Point> &output, std::stop_token cancelled) {
+    validate(capture);
+    const uint32_t size = capture.resolution;
+    const auto start = output.size();
+    if (cancelled.stop_requested()) throw std::runtime_error("Reflection ray planning superseded");
+    output.reserve(start + 6ull * size * size);
+    try {
+      for (uint32_t face = 0; face < 6; ++face)
+        for (uint32_t y = 0; y < size; ++y) {
+          if (cancelled.stop_requested()) throw std::runtime_error("Reflection ray planning superseded");
+          for (uint32_t x = 0; x < size; ++x) {
+            const auto ray = direction(face, 2 * (float(x) + .5f) / size - 1, 2 * (float(y) + .5f) / size - 1);
+            output.push_back({{capture.position[0], capture.position[1], capture.position[2], 0},
+                              {ray[0], ray[1], ray[2], 0}});
+          }
+        }
+    } catch (...) {
+      output.resize(start);
+      throw;
+    }
+  }
+  uint32_t levelOffset(uint32_t resolution, uint32_t level) {
+    uint32_t result = 0;
+    for (uint32_t i = 0; i < level; ++i)
+      result += 6 * (resolution >> i) * (resolution >> i);
+    return result;
+  }
+  uint32_t imageCapacity(uint32_t resolution, uint32_t maximumDimension,
+                          uint32_t maximumLayers, uint64_t maximumMetadataBytes) {
+    if (resolution < 8 || resolution > 512 || !std::has_single_bit(resolution))
+      throw std::invalid_argument("Invalid reflection image resolution");
+    if (maximumMetadataBytes < sizeof(GpuHeader) || 6*resolution > maximumDimension) return 0;
+    return std::min(maxProbes, maximumLayers);
+  }
+  float projectionConfidence(const Capture &capture) {
+    const uint32_t size = capture.resolution;
+    if (!size || capture.radiance.size() != 6ull * size * size)
+      return 1;
+    double agreement = 0, total = 0;
+    const auto origin = projectionPoint(capture.worldToLocal, capture.position);
+    for (uint32_t face = 0; face < 6; ++face)
+      for (uint32_t y = 0; y < size; ++y)
+        for (uint32_t x = 0; x < size; ++x) {
+          const float u = 2 * (float(x) + .5f) / size - 1;
+          const float v = 2 * (float(y) + .5f) / size - 1;
+          const auto ray = projectionDirection(capture.worldToLocal, direction(face, u, v));
+          const double weight = std::pow(1. + double(u) * u + double(v) * v, -1.5);
+          float exit = std::numeric_limits<float>::max();
+          for (uint32_t axis = 0; axis < 3; ++axis)
+            if (std::abs(ray[axis]) > 1e-10f) {
+              const float plane = ray[axis] > 0 ? capture.bounds.maximum[axis]
+                                                : capture.bounds.minimum[axis];
+              exit = std::min(exit, (plane - origin[axis]) / ray[axis]);
+            }
+          const float distance = capture.radiance[(face * size + y) * size + x][3];
+          // The cube-map Jacobian avoids giving face corners disproportionate
+          // influence. A relative margin covers the inset proxy and sampling
+          // error without tying the result to metres or Source world units.
+          // Nearer props are expected inside a room; only beyond-box distances
+          // disagree. Missing depth in older/manual assets remains neutral.
+          const bool unknown = !std::isfinite(distance) || distance <= 0;
+          if (unknown || distance <= exit * 1.05f)
+            agreement += weight;
+          total += weight;
+        }
+    // A poorly approximated capture is still useful where it is the only one.
+    // Positive weights keep normalized blending and HDR energy well-defined.
+    return float(std::clamp(agreement / total, .05, 1.));
+  }
+  Record projectionInputRecord(const Capture &capture) {
+    validate(capture);
+    Record record;
+    record.minimum[3] = float(capture.priority);
+    record.worldToLocal = capture.worldToLocal;
+    for (uint32_t c = 0; c < 3; ++c) {
+      record.minimum[c] = capture.bounds.minimum[c];
+      record.maximum[c] = capture.bounds.maximum[c];
+      record.position[c] = capture.position[c];
+      record.influenceMinimum[c] = influence(capture).minimum[c];
+      record.influenceMaximum[c] = influence(capture).maximum[c];
+    }
+    Vec3 inverseWidth;
+    for (uint32_t c = 0; c < 3; ++c) {
+      const float half =
+          (record.influenceMaximum[c] - record.influenceMinimum[c]) * .5f;
+      const float width = capture.blendDistance > 0
+                              ? std::min(capture.blendDistance, half)
+                              : half * .2f;
+      inverseWidth[c] = 1 / std::max(width, 1e-20f);
+    }
+    record.maximum[3] = inverseWidth[0];
+    record.influenceMinimum[3] = inverseWidth[1];
+    record.influenceMaximum[3] = inverseWidth[2];
+    return record;
+  }
+  Record projectionRecord(const Capture &capture) {
+    auto record = projectionInputRecord(capture);
+    record.position[3] = projectionConfidence(capture);
+    return record;
+  }
+  Data filter(std::span<const Capture> captures, uint32_t samples, std::stop_token cancelled, WorkerPool *workers) {
+    if (cancelled.stop_requested())
+      throw std::runtime_error("Reflection filtering superseded");
+    if (captures.size() > maxProbes || !samples || samples > 4096)
+      throw std::invalid_argument("Invalid reflection probe/filter budget");
+    Data result;
+    if (captures.empty())
+      return result;
+    const uint32_t size = captures.front().resolution;
+    for (const auto &capture : captures) {
+      validate(capture);
+      if (capture.resolution != size || capture.radiance.size() != 6ull * size * size)
+        throw std::invalid_argument("Incomplete reflection capture faces");
+      for (const auto &pixel : capture.radiance)
+        for (uint32_t c = 0; c < 3; ++c)
+          if (!std::isfinite(pixel[c]) || pixel[c] < 0 || pixel[c] > 65000)
+            throw std::invalid_argument("Reflection capture radiance is outside the HDR range");
+    }
+    const uint32_t levels = std::bit_width(size), stride = levelOffset(size, levels);
+    result.header.parameters = {uint32_t(captures.size()), size, levels, stride};
+    result.texels.resize(captures.size() * stride);
+    // GGX quadrature depends only on mip roughness and sample count, not on
+    // probe radiance or output direction. Share its expensive scalar work.
+    std::vector<std::vector<FilterSample>> quadrature(levels);
+    for (uint32_t level = 1; level < levels; ++level)
+      quadrature[level] = filterSamples(float(level) / (levels - 1), samples);
+    for (uint32_t probe = 0; probe < captures.size(); ++probe) {
+      const auto &capture = captures[probe];
+      result.header.probes[probe] = projectionRecord(capture);
+      uint32_t shared = probe;
+      for (uint32_t previous = 0; previous < probe; ++previous)
+        if (sameCaptureRays(capture, captures[previous]) &&
+            std::memcmp(capture.radiance.data(), captures[previous].radiance.data(),
+                        capture.radiance.size() * sizeof(Vec4)) == 0) {
+          shared = previous;
+          break;
+        }
+      if (shared != probe) {
+        std::copy_n(result.texels.begin() + shared * stride, stride,
+                    result.texels.begin() + probe * stride);
+        continue;
+      }
+      std::copy(capture.radiance.begin(), capture.radiance.end(), result.texels.begin() + probe * stride);
+      for (uint32_t level = 1; level < levels; ++level) {
+        const uint32_t mipSize = size >> level, start = probe * stride + levelOffset(size, level);
+        const auto row = [&](size_t index) {
+          const uint32_t face = uint32_t(index) / mipSize, y = uint32_t(index) % mipSize;
+          for (uint32_t x = 0; x < mipSize; ++x) {
+            if (cancelled.stop_requested())
+              throw std::runtime_error("Reflection filtering superseded");
+            const auto n =
+                direction(face, 2 * (float(x) + .5f) / mipSize - 1, 2 * (float(y) + .5f) / mipSize - 1);
+            const auto color = prefilter(capture, n, quadrature[level]);
+            result.texels[start + (face * mipSize + y) * mipSize + x] = {color[0], color[1], color[2], 0};
+          }
+        };
+        if (workers && mipSize >= 4)
+          workers->run(6 * mipSize, row);
+        else
+          for (uint32_t index = 0; index < 6 * mipSize; ++index)
+            row(index);
+      }
+    }
+    return result;
+  }
+  std::vector<std::byte> serialize(const Data &data) {
+    std::vector<std::byte> result(sizeof(Header) + data.texels.size() * sizeof(Vec4));
+    std::memcpy(result.data(), &data.header, sizeof(Header));
+    if (!data.texels.empty())
+      std::memcpy(result.data() + sizeof(Header), data.texels.data(), data.texels.size() * sizeof(Vec4));
+    return result;
+  }
+  std::optional<Vec3> sample(const Data &data, Vec3 position, Vec3 reflected, float roughness) {
+    if (!data.header.parameters[0])
+      return {};
+    if (!finite(position) || !finite(reflected) || !std::isfinite(roughness))
+      return {};
+    const float lengthSquared = dot(reflected, reflected);
+    if (!std::isfinite(lengthSquared) || lengthSquared < 1e-10f)
+      return {};
+    reflected = normalized(reflected);
+    const auto &parameters = data.header.parameters;
+    const float lod = std::clamp(roughness, 0.f, 1.f) * (parameters[2] - 1);
+    const uint32_t low = uint32_t(lod), high = std::min(low + 1, parameters[2] - 1);
+    const auto order = priorityOrder(data.header);
+    const bool layered = data.header.probes[order[0]].minimum[3] !=
+                         data.header.probes[order[parameters[0] - 1]].minimum[3];
+    const auto bands = priorityBands(data.header);
+    float maximumCoverage = 1;
+    // The strongest tier becomes opaque and ends compositing, so one global
+    // maximum serves every visited tier. Ratios cancel shared floor/wall bands.
+    if (layered) {
+      maximumCoverage = 0;
+      for (uint32_t i = 0; i < parameters[0]; ++i) {
+        const auto &record = data.header.probes[i];
+        maximumCoverage = std::max(maximumCoverage,
+            priorityCoverage(record, bands, i, projectionPoint(record.worldToLocal, position)));
+      }
+      if (!maximumCoverage) return {};
+    }
+    Vec3 result{}, group{};
+    float total = 0, groupCoverage = 0, remaining = 1;
+    bool found = false;
+    float priority = std::numeric_limits<float>::infinity();
+    auto finishGroup = [&] {
+      if (!total) return;
+      const float opacity = layered ? std::clamp(groupCoverage / maximumCoverage, 0.f, 1.f) : 1;
+      for (uint32_t c = 0; c < 3; ++c) result[c] += (group[c] / total) * opacity * remaining;
+      remaining *= 1 - opacity;
+      found = true;
+      group = {};
+      total = groupCoverage = 0;
+    };
+    for (uint32_t index = 0; index < parameters[0]; ++index) {
+      const uint32_t probe = order[index];
+      const auto &record = data.header.probes[probe];
+      const auto localPosition = projectionPoint(record.worldToLocal, position);
+      const auto localRay = projectionDirection(record.worldToLocal, reflected);
+      bool inside = true;
+      float edge = 1;
+      const Vec3 inverseWidth{record.maximum[3], record.influenceMinimum[3],
+                              record.influenceMaximum[3]};
+      float smallestHalf = std::numeric_limits<float>::max();
+      for (uint32_t c = 0; c < 3; ++c) {
+        inside &= localPosition[c] >= record.influenceMinimum[c] && localPosition[c] <= record.influenceMaximum[c];
+        const float half = (record.influenceMaximum[c] - record.influenceMinimum[c]) * .5f;
+        smallestHalf = std::min(smallestHalf, half);
+        const float distance =
+            std::min(localPosition[c] - record.influenceMinimum[c],
+                     record.influenceMaximum[c] - localPosition[c]);
+        const float inverse =
+            inverseWidth[c] > 0 ? inverseWidth[c] : 1 / (half * .2f);
+        const float t = std::clamp(distance * inverse, 0.f, 1.f);
+        // Multiply independent face bands: a shared floor must not suppress
+        // feathering at a doorway. The small finite boundary weight cancels
+        // between touching captures and avoids black/undefined corner weights.
+        edge *= std::max(t * t * (3 - 2 * t), 1e-4f);
+      }
+      if (!inside) continue;
+      if (record.minimum[3] != priority) {
+        finishGroup();
+        if (!remaining) break;
+        priority = record.minimum[3];
+      }
+      const auto corrected = parallaxDirection(record, position, reflected, localPosition, localRay);
+      auto mip = [&](uint32_t level) {
+        const size_t start = probe * parameters[3] + levelOffset(parameters[1], level);
+        const uint32_t size = parameters[1] >> level;
+        return lookup(std::span(data.texels).subspan(start, 6 * size * size), size, corrected);
+      };
+      const auto a = mip(low), b = mip(high);
+      // Several room captures can share a solid floor/wall boundary. Their
+      // edge fades all reach zero there; capture distance preserves spatial
+      // preference instead of averaging every touching capture equally. A
+      // small room-relative core keeps the weight finite at capture origins.
+      Vec3 offset;
+      for (uint32_t c = 0; c < 3; ++c)
+        offset[c] = position[c] - record.position[c];
+      const float coreSquared = std::max(.01f * smallestHalf * smallestHalf, 1e-20f);
+      const float confidence = record.position[3] > 0 ? record.position[3] : 1;
+      const float spatialWeight =
+          confidence / std::max(dot(offset, offset), coreSquared);
+      const float weight = spatialWeight * edge;
+      for (uint32_t c = 0; c < 3; ++c) {
+        const float radiance = std::lerp(a[c], b[c], lod - low);
+        group[c] += weight * radiance;
+      }
+      total += weight;
+      if (layered) groupCoverage = std::max(groupCoverage, priorityCoverage(record, bands, probe, localPosition));
+    }
+    finishGroup();
+    return found ? std::optional<Vec3>{result} : std::nullopt;
+  }
+} // namespace remix::forward::probes

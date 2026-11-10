@@ -17,10 +17,10 @@
 
 namespace {
   void require(bool value, const char *message) {
-    if (!value) {
-      std::fprintf(stderr, "%s\n", message);
-      std::exit(1);
-    }
+  if (!value) {
+    std::fprintf(stderr, "%s\n", message);
+    std::exit(1);
+  }
   }
   void ok(remixapi_ErrorCode code) { require(code == REMIXAPI_ERROR_CODE_SUCCESS, "Torch stability API failure"); }
   using Image = std::vector<std::array<float, 3>>;
@@ -269,7 +269,7 @@ int main(int argc, char **argv) {
     return std::array<double, 4>{std::sqrt(mse / image.size()), mean / image.size(), truth / image.size(),
                                  excess[size_t(.999 * (excess.size() - 1))]};
   };
-  auto csv = std::fopen((directory / "metrics.csv").c_str(), "w");
+  auto csv = std::fopen((directory / "metrics.csv").string().c_str(), "w");
   require(csv, "Cannot open metrics");
   std::fputs("primary,signal,mode,pose,rmse,mean,reference,p999_excess,gpu_trace_ms,blue_noise,sequence\n", csv);
   const char *onlyPrimary = std::getenv("REMIX_TEST_PRIMARY");
@@ -477,7 +477,7 @@ int main(int argc, char **argv) {
       if (values >> tried >> reused) {
         attempts += tried;
         hits += reused;
-      }
+    }
     }
     std::printf("PBR reuse: %llu accepted / %llu eligible secondary hits\n", static_cast<unsigned long long>(hits),
                 static_cast<unsigned long long>(attempts));

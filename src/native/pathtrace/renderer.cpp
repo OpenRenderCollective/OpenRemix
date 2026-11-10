@@ -25,6 +25,7 @@ namespace remix {
     swap(timingPending, frame.timingPending);
     swap(traceState, frame.traceState);
     swap(table, frame.table);
+    swap(sheetMaterials, frame.sheetMaterials);
     swap(woundVertices, frame.woundVertices);
     swap(tableVersion, frame.tableVersion);
     swap(retiredStates, frame.retiredStates);
@@ -119,7 +120,7 @@ namespace remix {
 #if REMIX_HAS_NUMOS
     status.supported = m_gpu->skyUnavailable.empty();
     status.active = m_gpu->skyApplied;
-    status.reason = !status.supported            ? "The device lacks " + m_gpu->skyUnavailable + "."
+    status.reason = !status.supported          ? "The device lacks " + m_gpu->skyUnavailable + "."
                     : !m_gpu->skyFailure.empty() ? "Stopped: " + m_gpu->skyFailure
                                                  : m_gpu->skyReason;
 #else
@@ -253,7 +254,7 @@ namespace remix {
     VkMemoryRequirements requirements;
     vkGetImageMemoryRequirements(device, out->handle, &requirements);
     VkMemoryAllocateInfo allocate = {.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-                                     .allocationSize = requirements.size,
+        .allocationSize = requirements.size,
                                      .memoryTypeIndex =
                                          memoryType(requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
     check(vkAllocateMemory(device, &allocate, nullptr, &out->memory));
@@ -286,7 +287,7 @@ namespace remix {
     VkMemoryRequirements requirements;
     vkGetImageMemoryRequirements(device, out->handle, &requirements);
     VkMemoryAllocateInfo allocate = {.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-                                     .allocationSize = requirements.size,
+        .allocationSize = requirements.size,
                                      .memoryTypeIndex =
                                          memoryType(requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
     check(vkAllocateMemory(device, &allocate, nullptr, &out->memory));
@@ -339,21 +340,21 @@ namespace remix {
     tonemapDepth = depthImage(depthFormat, displayExtent);
 
     VkAttachmentDescription attachments[] = {{.format = VK_FORMAT_R16G16B16A16_SFLOAT,
-                                              .samples = VK_SAMPLE_COUNT_1_BIT,
-                                              .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-                                              .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-                                              .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-                                              .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-                                              .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-                                              .finalLayout = VK_IMAGE_LAYOUT_GENERAL},
-                                             {.format = depthFormat,
-                                              .samples = VK_SAMPLE_COUNT_1_BIT,
-                                              .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-                                              .storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-                                              .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-                                              .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-                                              .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-                                              .finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL}};
+         .samples = VK_SAMPLE_COUNT_1_BIT,
+         .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+         .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+         .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+         .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+         .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+         .finalLayout = VK_IMAGE_LAYOUT_GENERAL},
+        {.format = depthFormat,
+         .samples = VK_SAMPLE_COUNT_1_BIT,
+         .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+         .storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+         .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+         .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+         .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+         .finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL}};
     VkAttachmentReference color{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
         depthRef{1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
     VkSubpassDescription subpass{.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -414,8 +415,8 @@ namespace remix {
     check(vkAllocateDescriptorSets(device, &bai, &blitSet));
 
     VkDescriptorImageInfo blitImages[] = {{VK_NULL_HANDLE, tonemapTarget->view, VK_IMAGE_LAYOUT_GENERAL},
-                                          {VK_NULL_HANDLE, primary[4]->view, VK_IMAGE_LAYOUT_GENERAL},
-                                          {VK_NULL_HANDLE, world->view, VK_IMAGE_LAYOUT_GENERAL}};
+        {VK_NULL_HANDLE, primary[4]->view, VK_IMAGE_LAYOUT_GENERAL},
+        {VK_NULL_HANDLE, world->view, VK_IMAGE_LAYOUT_GENERAL}};
     VkWriteDescriptorSet blitWrites[3]{};
     for (unsigned i = 0; i < 3; ++i)
       blitWrites[i] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -440,13 +441,13 @@ namespace remix {
     check(pipeline::createShaderModule(device, &mi, nullptr, &blitFragModule));
 
     VkPipelineShaderStageCreateInfo blitStages[] = {{.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                                                     .stage = VK_SHADER_STAGE_VERTEX_BIT,
-                                                     .module = shaders[1],
-                                                     .pName = "main"},
-                                                    {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                                                     .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-                                                     .module = blitFragModule,
-                                                     .pName = "main"}};
+         .stage = VK_SHADER_STAGE_VERTEX_BIT,
+         .module = shaders[1],
+         .pName = "main"},
+        {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+         .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+         .module = blitFragModule,
+         .pName = "main"}};
 
     VkPipelineVertexInputStateCreateInfo vertex{.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
     VkPipelineInputAssemblyStateCreateInfo assembly{.sType =
@@ -564,9 +565,9 @@ namespace remix {
     VkPhysicalDeviceProperties2 properties = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
                                               .pNext = &g.asProperties};
     vkGetPhysicalDeviceProperties2(physical, &properties);
-#define LOAD(member, name)                                                                                             \
-  g.member = reinterpret_cast<PFN_##name>(vkGetDeviceProcAddr(device, #name));                                         \
-  if (!g.member)                                                                                                       \
+#define LOAD(member, name)                                                                                   \
+  g.member = reinterpret_cast<PFN_##name>(vkGetDeviceProcAddr(device, #name));                               \
+  if (!g.member)                                                                                             \
   throw VK_ERROR_EXTENSION_NOT_PRESENT
     LOAD(createAs, vkCreateAccelerationStructureKHR);
     LOAD(destroyAs, vkDestroyAccelerationStructureKHR);
@@ -597,9 +598,9 @@ namespace remix {
       bindings[i] = {.binding = i,
                      .descriptorCount = i == 6 ? textureLimit : 1u,
                      .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT |
-                                   ((i == 2 || i == 3) ? VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT
-                                    : (i == 4 || i == 5 || i == 6) ? VK_SHADER_STAGE_FRAGMENT_BIT
-                                                                   : 0u)};
+                         ((i == 2 || i == 3) ? VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT
+                          : (i == 4 || i == 5 || i == 6) ? VK_SHADER_STAGE_FRAGMENT_BIT
+                                                         : 0u)};
       bindings[i].descriptorType = i < 2    ? VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR
                                    : i == 2 ? VK_DESCRIPTOR_TYPE_STORAGE_BUFFER
                                    : i == 3 ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER
@@ -706,7 +707,7 @@ namespace remix {
           else
             rrPreset = cnn ? (rrCnnRequested ? 3u : 4u) : 5u;
         }
-        extent = dlss ? ngx->renderSize(displayExtent, fsrQuality, backend == upscale::Backend::DlssRr)
+        extent = dlss                                ? ngx->renderSize(displayExtent, fsrQuality, backend == upscale::Backend::DlssRr)
                  : backend == upscale::Backend::Xess ? upscale::xessRenderSize(displayExtent, fsrQuality)
                                                      : upscale::renderSize(displayExtent, fsrQuality);
         auto next = std::make_unique<upscale::Renderer>();
@@ -759,21 +760,21 @@ namespace remix {
       }
     }
     VkAttachmentDescription attachments[] = {{.format = VK_FORMAT_R32G32B32A32_SFLOAT,
-                                              .samples = VK_SAMPLE_COUNT_1_BIT,
-                                              .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-                                              .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-                                              .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-                                              .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-                                              .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-                                              .finalLayout = VK_IMAGE_LAYOUT_GENERAL},
-                                             {.format = depthFormat,
-                                              .samples = VK_SAMPLE_COUNT_1_BIT,
-                                              .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-                                              .storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-                                              .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-                                              .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-                                              .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-                                              .finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL}};
+         .samples = VK_SAMPLE_COUNT_1_BIT,
+         .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+         .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+         .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+         .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+         .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+         .finalLayout = VK_IMAGE_LAYOUT_GENERAL},
+        {.format = depthFormat,
+         .samples = VK_SAMPLE_COUNT_1_BIT,
+         .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+         .storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+         .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+         .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+         .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+         .finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL}};
     VkAttachmentReference color{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
         depthRef{1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
     VkSubpassDescription subpass{.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -821,22 +822,22 @@ namespace remix {
     VkPipelineVertexInputStateCreateInfo vertex = {.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
     VkPipelineInputAssemblyStateCreateInfo assembly = {.sType =
                                                            VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
-                                                       .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST};
+        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST};
     VkPipelineViewportStateCreateInfo viewport = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO, .viewportCount = 1, .scissorCount = 1};
     VkPipelineRasterizationStateCreateInfo raster = {.sType =
                                                          VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
-                                                     .polygonMode = VK_POLYGON_MODE_FILL,
-                                                     .cullMode = VK_CULL_MODE_NONE,
-                                                     .frontFace = VK_FRONT_FACE_CLOCKWISE,
-                                                     .lineWidth = 1};
+        .polygonMode = VK_POLYGON_MODE_FILL,
+        .cullMode = VK_CULL_MODE_NONE,
+        .frontFace = VK_FRONT_FACE_CLOCKWISE,
+        .lineWidth = 1};
     VkPipelineMultisampleStateCreateInfo samples = {.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-                                                    .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT};
+        .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT};
     VkPipelineDepthStencilStateCreateInfo depth = {.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-                                                   .depthTestEnable = VK_TRUE,
-                                                   .depthWriteEnable = VK_TRUE,
-                                                   .depthCompareOp = VK_COMPARE_OP_ALWAYS,
-                                                   .maxDepthBounds = 1};
+        .depthTestEnable = VK_TRUE,
+        .depthWriteEnable = VK_TRUE,
+        .depthCompareOp = VK_COMPARE_OP_ALWAYS,
+        .maxDepthBounds = 1};
     VkDynamicState states[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
     VkPipelineDynamicStateCreateInfo dynamic = {.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
                                                 .dynamicStateCount = 2,
@@ -855,8 +856,8 @@ namespace remix {
           .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT |
                             VK_COLOR_COMPONENT_A_BIT};
       VkPipelineColorBlendStateCreateInfo blending = {.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-                                                      .attachmentCount = 1,
-                                                      .pAttachments = &attachment};
+          .attachmentCount = 1,
+          .pAttachments = &attachment};
       depth.depthWriteEnable = !i;
       VkGraphicsPipelineCreateInfo pipeline = {.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
                                                .stageCount = 2,

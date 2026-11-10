@@ -2,6 +2,32 @@
 #pragma once
 #include "remix_c.h"
 
+// Optional LightInfo pNext. A backend may use this hint when choosing static
+// lighting representation. Absence preserves its normal policy. Moving and
+// styled lights remain live regardless of a baked preference.
+#define REMIXAPI_STRUCT_TYPE_LIGHT_BAKING_EXT ((remixapi_StructType)0x7fff1075)
+typedef enum remixapi_LightBakingHintEXT {
+  REMIXAPI_LIGHT_BAKING_DEFAULT_EXT = 0,
+  REMIXAPI_LIGHT_BAKING_PREFER_BAKED_EXT = 1,
+  REMIXAPI_LIGHT_BAKING_REQUIRE_MIXED_EXT = 2
+} remixapi_LightBakingHintEXT;
+
+typedef struct remixapi_LightInfoBakingEXT {
+  remixapi_StructType sType;
+  const void *pNext;
+  remixapi_LightBakingHintEXT hint;
+} remixapi_LightInfoBakingEXT;
+
+// Optional Forward+ sphere light cutoff in scene units, measured from the
+// emitter centre. Zero leaves its reach unchanged. Emitter size and falloff
+// inside the cutoff are independent.
+#define REMIXAPI_STRUCT_TYPE_LIGHT_INFO_FORWARD_CUTOFF_EXT ((remixapi_StructType)0x7fff1074)
+typedef struct remixapi_LightInfoForwardCutoffEXT {
+  remixapi_StructType sType;
+  const void* pNext;
+  float distance;
+} remixapi_LightInfoForwardCutoffEXT;
+
 // Optional pNext on opaque MaterialInfo. Nonzero roughness/metalness constants
 // or a roughness/metalness/normal map automatically select EON + GGX. Completely
 // zero-initialized legacy parameters retain Lambert shading. This override also
@@ -343,6 +369,18 @@ typedef struct remixapi_MaterialInfoReplacementHashEXT {
   uint64_t materialHash;
 } remixapi_MaterialInfoReplacementHashEXT;
 
+// Optional alternate USD material replacement keys, in preference order after
+// the material's own hash and MaterialInfoReplacementHashEXT, before its albedo
+// texture hash. CreateMaterial copies the array. At most 32 entries; zero keys
+// and duplicates are ignored. A null array is valid only when count is zero.
+#define REMIXAPI_STRUCT_TYPE_MATERIAL_REPLACEMENT_KEYS_EXT ((remixapi_StructType)0x7fff1076)
+typedef struct remixapi_MaterialReplacementKeysEXT {
+  remixapi_StructType sType;
+  const void *pNext;
+  uint32_t count;
+  const uint64_t *keys;
+} remixapi_MaterialReplacementKeysEXT;
+
 // Raw BC1 uploads with one-bit alpha. The retained BC1_RGB formats remain opaque.
 #define REMIXAPI_FORMAT_BC1_RGBA_UNORM_EXT ((remixapi_Format)133)
 #define REMIXAPI_FORMAT_BC1_RGBA_SRGB_EXT ((remixapi_Format)134)
@@ -525,11 +563,22 @@ typedef enum remixapi_RenderBackendEXT {
 // feature bits, denoising or upscaling are implied by this capability.
 typedef struct remixapi_BackendCapabilitiesEXT {
   uint32_t structSize;
-  uint32_t supportedBackends; // bit 0 raster, bit 1 pathtrace
+  uint32_t supportedBackends; // bit 0 raster, bit 1 pathtrace, bit 2 forwardplus
   uint32_t activeBackend;
   uint32_t requestedBackend;
   char unavailableReason[256];
 } remixapi_BackendCapabilitiesEXT;
+
+// Independent preparation diagnostics. An active backend can still compile
+// scene variants or prepare requested settings. Reference captures should wait
+// for pending/loading to clear as well as their backend/bake readiness checks.
+// Pipeline counters are cumulative since Startup. This export does not wait for
+// compilation or GPU completion; continue presenting normally while pending.
+typedef struct remixapi_PreparationStatisticsEXT {
+  uint32_t structSize, pending, loading, failed;
+  uint64_t pipelinesRequested, pipelinesCompleted, pipelinesFailed;
+  char failureReason[256];
+} remixapi_PreparationStatisticsEXT;
 typedef enum remixapi_RebuildReasonEXT {
   REMIXAPI_REBUILD_NONE_EXT = 0,
   REMIXAPI_REBUILD_MEMBERSHIP_EXT = 1,
@@ -1082,6 +1131,8 @@ REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetPresentationCount(uint64_t
 
 typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_GetBackendCapabilitiesEXT)(
     remixapi_BackendCapabilitiesEXT *capabilities);
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_GetPreparationStatisticsEXT)(
+    remixapi_PreparationStatisticsEXT *statistics);
 typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_GetLocalLightStatisticsEXT)(
     remixapi_LocalLightStatisticsEXT *statistics);
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL
@@ -1224,6 +1275,8 @@ typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_GetTracingStatisticsEXT)(
     remixapi_TracingStatisticsEXT *statistics);
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL
 remixapi_GetBackendCapabilitiesEXT(remixapi_BackendCapabilitiesEXT *capabilities);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL
+remixapi_GetPreparationStatisticsEXT(remixapi_PreparationStatisticsEXT *statistics);
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetTracingStatisticsEXT(remixapi_TracingStatisticsEXT *statistics);
 typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_GetFramePerformanceEXT)(remixapi_FramePerformanceEXT *statistics);
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetFramePerformanceEXT(remixapi_FramePerformanceEXT *statistics);
@@ -1382,6 +1435,9 @@ typedef struct remixapi_MaterialNormalEncodingEXT {
 // $bumptransform gets from a TextureScroll proxy) and, with multi-texture
 // layers (layers 3: $scroll1 set), averaged with samples at
 // 0.1 x (u + v, v - u) + layer1 x t and 0.45 x (v, u) + layer2 x t.
+// Progressive path-tracing accumulation evaluates these procedural scrolls at
+// time zero so history describes a fixed surface. Ordinary rendering advances
+// the runtime clock. Host texture/geometry updates still invalidate history.
 // Encoding 5 shares the material's packed fields with
 // remixapi_MaterialPbrRemapEXT: such a material has no roughness or metallic
 // map.
@@ -1392,6 +1448,36 @@ typedef struct remixapi_MaterialNormalScrollEXT {
   uint32_t layers; // 1 or 3
   float base[2], layer1[2], layer2[2];
 } remixapi_MaterialNormalScrollEXT;
+
+// Optional MaterialInfo pNext for a measured finite dielectric sheet. Its
+// transmission tint samples uv + rate * animationSeconds. A host can use the
+// same rate as its normal texture, without encoding engine-specific semantics.
+// Progressive rendering uses its fixed animation clock. Nonzero rates need a
+// matching MaterialBakeTintAverageEXT policy before entering a frozen bake.
+// Existing materials retain zero rates and their established cache identities.
+#define REMIXAPI_STRUCT_TYPE_MATERIAL_TRANSMITTANCE_SCROLL_EXT ((remixapi_StructType)0x7fff1070)
+typedef struct remixapi_MaterialTransmittanceScrollEXT {
+  remixapi_StructType sType;
+  const void *pNext;
+  float rate[2];
+} remixapi_MaterialTransmittanceScrollEXT;
+
+// Optional MaterialInfo pNext for a measured finite sheet. Static transport
+// samples its transmission-tint UV uniformly on each requested axis, averaging
+// optical interactions rather than pre-averaging colours or extinction. This
+// explicitly selects a stationary distribution; it does not infer an animation
+// period. Interactions sample independent phases, not a coherent global time.
+// Other UV axes retain their spatial detail. Live rendering ignores the
+// policy and uses the actual tint clock. Tint images must still be immutable.
+// Every scrolling tint axis must be averaged before accepting a frozen bake.
+#define REMIXAPI_STRUCT_TYPE_MATERIAL_BAKE_TINT_AVERAGE_EXT ((remixapi_StructType)0x7fff1071)
+#define REMIXAPI_MATERIAL_BAKE_TINT_U_EXT 0x1u
+#define REMIXAPI_MATERIAL_BAKE_TINT_V_EXT 0x2u
+typedef struct remixapi_MaterialBakeTintAverageEXT {
+  remixapi_StructType sType;
+  const void *pNext;
+  uint32_t axes; // zero, U, V, or U|V
+} remixapi_MaterialBakeTintAverageEXT;
 
 // Optional pNext on opaque MaterialInfo: how the roughness and metallic maps'
 // texels become values, so a game's own masks serve as PBR maps unconverted.

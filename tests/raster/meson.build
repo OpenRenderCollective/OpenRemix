@@ -1,6 +1,122 @@
 if get_option('gpu_tests')
   raster_test = executable('remix-raster-test', 'rendering.cpp',
-    include_directories : test_includes, dependencies : vulkan_dep, link_with : raster_library,
+    include_directories : test_includes, dependencies : vulkan_dep, link_with : [raster_library, forward_library],
     cpp_args : cpp.get_supported_arguments('-Wno-missing-field-initializers'))
+  raster_no_oidn_test = executable('remix-raster-no-oidn-test',
+    'rendering.cpp', '../../src/native/forward/lightmap/denoise.cpp',
+    include_directories : test_includes, dependencies : vulkan_dep, link_with : [raster_library, forward_library],
+    cpp_args : cpp.get_supported_arguments('-Wno-missing-field-initializers'))
+  test('Forward+ surface baking without optional OIDN', raster_no_oidn_test,
+    args : [meson.current_build_dir() / 'no-oidn-readback', 'no-oidn'], timeout : 180)
   test('Raster GPU pixel readback', raster_test, args : [meson.current_build_dir() / 'readback'], timeout : 90)
+  test('Forward+ GPU lighting, MSAA and compatibility readback', raster_test,
+    args : [meson.current_build_dir() / 'forward-readback', 'forward'], timeout : 120)
+  test('Forward+ viewmodel overlay lighting, world shadows and MSAA isolation', raster_test,
+    args : [meson.current_build_dir() / 'viewmodel-readback', 'viewmodel-lighting'], timeout : 120)
+  test('Forward+ viewmodels inherit baked probes without live light work', raster_test,
+    args : [meson.current_build_dir() / 'viewmodel-probe-readback', 'viewmodel-probes'], timeout : 120)
+  test('Forward+ authored cubemap edits preserve diffuse lighting and reuse captures', raster_test,
+    args : [meson.current_build_dir() / 'authored-reflections-readback', 'authored-reflections'], timeout : 120)
+  test('Forward+ viewmodel SSR uses world guides with MSAA', raster_test,
+    args : [meson.current_build_dir() / 'viewmodel-ssr-readback', 'viewmodel-ssr'], timeout : 120)
+  test('Forward+ viewmodel environment reflections match world materials', raster_test,
+    args : [meson.current_build_dir() / 'viewmodel-environment-readback', 'viewmodel-environment'], timeout : 120)
+  test('Forward+ skinned frame slots preserve animated geometry and shadows', raster_test,
+    args : [meson.current_build_dir() / 'forward-skinning-readback', 'forward-skinning'], timeout : 120)
+  test('Forward+ lighting component isolation and MSAA', raster_test,
+    args : [meson.current_build_dir() / 'lighting-view-readback', 'lighting-views'], timeout : 120)
+  test('Forward+ HDR black levels and shared display transfer', raster_test,
+    args : [meson.current_build_dir() / 'hdr-black-readback', 'hdr-black-levels'], timeout : 120)
+  test('Forward+ encoded, linear and HDR material color sampling', raster_test,
+    args : [meson.current_build_dir() / 'color-texture-readback', 'color-textures'], timeout : 120)
+  test('Forward+ automatic exposure transitions, manual mode and MSAA state', raster_test,
+      args : [meson.current_build_dir() / 'auto-exposure-readback', 'auto-exposure'], timeout : 120)
+  test('Forward+ measured water HDR, MSAA and frame-slot readback', raster_test,
+    args : [meson.current_build_dir() / 'water-readback', 'water'], timeout : 120)
+  test('Forward+ finite sheet absorption, opaque depth and MSAA readback', raster_test,
+    args : [meson.current_build_dir() / 'sheet-readback', 'sheet'], timeout : 120)
+  test('Forward+ finite sheet environment reflection and baked visibility', raster_test,
+    args : [meson.current_build_dir() / 'sheet-environment-readback', 'sheet-environment'], timeout : 120)
+  test('Forward+ water environment reflection and baked visibility', raster_test,
+    args : [meson.current_build_dir() / 'water-environment-readback', 'water-environment'], timeout : 120)
+  test('Forward+ automatic exposure with water HDR composition', raster_test,
+      args : [meson.current_build_dir() / 'water-exposure-readback', 'water-exposure'], timeout : 120)
+  test('Forward+ water shoreline coverage and refraction', raster_test,
+    args : [meson.current_build_dir() / 'water-shoreline-readback', 'water-shoreline'], timeout : 120)
+  test('Forward+ live dome background and MSAA coverage', raster_test,
+    args : [meson.current_build_dir() / 'sky-readback', 'sky'], timeout : 120)
+  test('Forward+ live GI replacement, dynamic transport and MSAA', raster_test,
+    args : [meson.current_build_dir() / 'live-gi-readback', 'live-gi'], timeout : 180)
+  test('Forward+ baked direct and live incoming composition across material passes', raster_test,
+    args : [meson.current_build_dir() / 'composed-gi-readback', 'composed-gi'], timeout : 180)
+  test('Forward+ composed incoming retains controllable direct and mixed shadows', raster_test,
+    args : [meson.current_build_dir() / 'composed-styled-readback', 'composed-styled'], timeout : 180)
+  test('Forward+ composed incoming retains seven-light surface and probe corrections', raster_test,
+    args : [meson.current_build_dir() / 'composed-directional-readback', 'composed-directionals'], timeout : 240)
+  test('Forward+ composed incoming retains baked sunlight and moving shadows', raster_test,
+    args : [meson.current_build_dir() / 'composed-sun-readback', 'composed-sun'], timeout : 240)
+  test('Forward+ composed viewmodel sunlight preserves probes and isolated shadows', raster_test,
+    args : [meson.current_build_dir() / 'composed-viewmodel-sun-readback', 'composed-viewmodel-sun'], timeout : 180)
+  test('Forward+ composed optical sunlight preserves probes and mixed shadows', raster_test,
+    args : [meson.current_build_dir() / 'composed-optical-sun-readback', 'composed-optical-sun'], timeout : 180)
+  test('Forward+ hardware reflection transport, current actors and MSAA', raster_test,
+    args : [meson.current_build_dir() / 'hardware-reflection-readback', 'hardware-reflections'], timeout : 180)
+  test('Forward+ SSR transport and MSAA guide readback', raster_test,
+    args : [meson.current_build_dir() / 'reflection-readback', 'reflections'], timeout : 120)
+  test('Forward+ sun depth cancellation, scene replacement and warm publication', raster_test,
+    args : [meson.current_build_dir() / 'sun-depth-lifecycle-readback', 'sun-depth-lifecycle'],
+    env : ['REMIX_DEBUG_BAKE_SUN_DEPTH=1'], timeout : 180)
+  test('Forward+ baked irradiance publication and surface readback', raster_test,
+    args : [meson.current_build_dir() / 'bake-readback', 'baking'], timeout : 120)
+  test('Forward+ mixed dynamic local shadows, cache and MSAA', raster_test,
+    args : [meson.current_build_dir() / 'local-shadow-readback', 'local-shadows'], timeout : 180)
+    test('Forward+ unbaked point-light planar self-shadow regression', raster_test,
+      args : [meson.current_build_dir() / 'local-shadow-plane-readback', 'local-shadow-plane'], timeout : 60)
+  test('Forward+ separable baked direct diffuse and mixed shadows', raster_test,
+    args : [meson.current_build_dir() / 'baked-direct-readback', 'baked-direct'], timeout : 180)
+  test('Forward+ aggregate diffuse publication, mixed corrections and cache', raster_test,
+    args : [meson.current_build_dir() / 'aggregate-direct-readback', 'aggregate-direct'], timeout : 180)
+  test('Forward+ seven-owner directional capture, cache, cancellation and MSAA', raster_test,
+    args : [meson.current_build_dir() / 'indexed-directional-readback', 'indexed-directionals'],
+    timeout : 180)
+  test('Forward+ selected aggregate corrections beyond four on surfaces and dynamic probes', raster_test,
+    args : [meson.current_build_dir() / 'selected-directional-readback', 'selected-directionals'],
+    timeout : 240)
+  test('Forward+ finite cone direct lighting and analytic rejection', raster_test,
+    args : [meson.current_build_dir() / 'finite-cone-readback', 'finite-cone'], timeout : 120)
+  test('Forward+ styled baked visibility, toggles, mixed shadows and cache', raster_test,
+    args : [meson.current_build_dir() / 'styled-mixed-readback', 'styled-mixed'], timeout : 180)
+    test('Forward+ styled indirect surfaces, dynamic probes, cache and cancellation', raster_test,
+      args : [meson.current_build_dir() / 'styled-indirect-readback', 'styled-indirect'], timeout : 180)
+  test('Forward+ grouped controllable direct surfaces, probes, cache and cancellation', raster_test,
+    args : [meson.current_build_dir() / 'styled-direct-readback', 'styled-direct'],
+    timeout : 180)
+  test('Forward+ combined controllable direct and indirect surfaces, probes and cache', raster_test,
+    args : [meson.current_build_dir() / 'styled-combined-readback', 'styled-combined'],
+    timeout : 180)
+  test('Forward+ stable composition toggles preserve rendered surfaces and props without rebaking', raster_test,
+    args : [meson.current_build_dir() / 'styled-composed-readback', 'styled-combined'],
+    env : ['REMIX_TEST_STYLE_COMPOSITION=1'], timeout : 180)
+  test('Forward+ per-light static visibility and live specular', raster_test,
+    args : [meson.current_build_dir() / 'mixed-readback', 'mixed'], timeout : 180)
+  test('Forward+ compact static occlusion and mixed-light overflow', raster_test,
+    args : [meson.current_build_dir() / 'compact-occlusion-readback', 'compact-occlusion'], timeout : 180)
+  test('Forward+ hidden metallic specular after partial visibility saturation', raster_test,
+    args : [meson.current_build_dir() / 'overflow-specular-readback', 'overflow-specular'], timeout : 180)
+  test('Forward+ sparse partial overflow masks retain exposed metallic lighting', raster_test,
+    args : [meson.current_build_dir() / 'overflow-mask-readback', 'overflow-masks'], timeout : 180)
+  test('Forward+ decals inherit receiver lightmaps without allocating charts', raster_test,
+    args : [meson.current_build_dir() / 'decal-readback', 'decal-lighting'], timeout : 180)
+  test('Forward+ terrain paint inherits lighting, coverage and baked shadows', raster_test,
+    args : [meson.current_build_dir() / 'terrain-readback', 'terrain-lighting'], timeout : 180)
+  test('Forward+ compact clear visibility and realtime caster shadows', raster_test,
+    args : [meson.current_build_dir() / 'clear-visibility-readback', 'clear-visibility'], timeout : 180)
+  test('Forward+ baked sunlight and independent moving-caster shadows', raster_test,
+    args : [meson.current_build_dir() / 'mixed-sun-readback', 'mixed-sun'], timeout : 180)
+  test('Forward+ surface lightmap publication, shadows and MSAA', raster_test,
+    args : [meson.current_build_dir() / 'lightmap-readback', 'lightmaps'], timeout : 180)
+  test('Forward+ SSR and parallax cubemap source blending', raster_test,
+    args : [meson.current_build_dir() / 'probe-blend-readback', 'probe-blend'], timeout : 120)
+  test('Forward+ visibility-gated sky reflection fallback', raster_test,
+    args : [meson.current_build_dir() / 'sky-reflection-readback', 'sky-reflections'], timeout : 120)
 endif

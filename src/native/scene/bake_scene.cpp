@@ -1,0 +1,691 @@
+#include "scene/bake_scene.h"
+#include "scene/bake_diagnostics.h"
+#include "scene/bake_material.h"
+#include "scene/resources.h"
+#include <algorithm>
+#include <cmath>
+#include <type_traits>
+#include <unordered_set>
+
+namespace remix::scene {
+  namespace {
+    constexpr auto invalid = REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
+    struct Hash {
+      uint64_t value = 1469598103934665603ull;
+      template <class T> void add(const T &v) {
+        static_assert(std::is_arithmetic_v<T> || std::is_enum_v<T>);
+        value = hashBytes(&v, sizeof(v), value);
+      }
+      template <class T, size_t N> void add(const T (&v)[N]) {
+        for (const auto &element : v)
+          add(element);
+      }
+      template <class T, size_t N> void add(const std::array<T, N> &v) {
+        for (const auto &element : v)
+          add(element);
+      }
+    };
+    // Compute both identities while freezing once. The complete transport key
+    // retains its historical byte order; direct visibility omits specular-only
+    // material inputs. This work belongs to snapshot creation, never the frame.
+    struct TransportHash {
+      Hash combined, direct;
+      template <class T> void add(const T &value, bool directDependency = true) {
+        combined.add(value);
+        if (directDependency) direct.add(value);
+      }
+    };
+    struct FrozenMaterial {
+      std::shared_ptr<Material> material;
+      uint64_t combined, direct;
+    };
+    struct Freezer {
+      std::unordered_map<const Texture *, uint64_t> textures;
+      std::unordered_map<const Material *, FrozenMaterial> materials;
+      std::unordered_map<const Surface *, std::pair<std::shared_ptr<Surface>, uint64_t>> surfaces;
+
+      uint64_t texture(const std::shared_ptr<Texture> &source) {
+        if (!source)
+          return 0;
+        if (source->dynamic || source->updates)
+          throw invalid;
+        if (auto found = textures.find(source.get()); found != textures.end())
+          return found->second;
+        // Never use a caller's texture hash as a content fingerprint. Do not
+        // mutate Texture::contentHash while a rendering thread may read it.
+        Hash hash;
+        const auto &pixels = source->pixels;
+        hash.add(pixels.width);
+        hash.add(pixels.height);
+        hash.add(pixels.srgb);
+        hash.add(pixels.twoChannel);
+        hash.add(pixels.levels());
+        for (const auto &mip : pixels.mips)
+          hash.value = fastHash(mip.data(), mip.size(), hash.value);
+        for (const auto &mip : pixels.hdrMips)
+          hash.value = fastHash(mip.data(), mip.size() * sizeof(float), hash.value);
+        if (pixels.compressed) {
+          hash.add(pixels.compressed->format);
+          hash.add(pixels.compressed->bc1Alpha);
+          hash.add(pixels.compressed->hash);
+        }
+        textures.emplace(source.get(), hash.value);
+        return hash.value;
+      }
+      FrozenMaterial material(const std::shared_ptr<Material> &source) {
+        if (!source || source->fps ||
+            (source->transmittanceScroll[0] != 0 && !(source->bakeTintAxes & 1u)) ||
+            (source->transmittanceScroll[1] != 0 && !(source->bakeTintAxes & 2u)) ||
+            (source->normalEncoding == 5 && !source->bakeSmoothBoundary) ||
+            (source->bakeSmoothBoundary && !validSmoothBoundary(*source)))
+          throw invalid;
+        if (auto found = materials.find(source.get()); found != materials.end())
+          return found->second;
+        auto result = std::make_shared<Material>();
+        TransportHash hash;
+        auto copy = [&]<class T>(T &out, const T &in, bool directDependency = true) {
+          if constexpr (std::is_array_v<T>)
+            std::copy(std::begin(in), std::end(in), std::begin(out));
+          else
+            out = in;
+          hash.add(in, directDependency);
+        };
+        // Copy transport/shading fields explicitly. Mutable emission caches and
+        // retirement flags belong to their source resource, never this snapshot.
+        result->sourceHash = source->sourceHash;
+        result->replacementKeys = source->replacementKeys;
+        auto map = [&](auto &out, const auto &in, bool directDependency = true) {
+          out = in;
+          hash.add(texture(in), directDependency);
+        };
+        map(result->texture, source->texture);
+        map(result->emissionTexture, source->emissionTexture);
+        map(result->roughnessTexture, source->roughnessTexture, false);
+        map(result->metallicTexture, source->metallicTexture);
+        // Mean optical boundaries own no ripple image, including dynamic normal
+        // frames. Other maps still pass the ordinary immutability checks.
+        if (!source->bakeSmoothBoundary)
+          map(result->normalTexture, source->normalTexture);
+        else
+          hash.add(uint64_t(0));
+        copy(result->roughness, source->roughness, false);
+        copy(result->metallic, source->metallic);
+        copy(result->pbr, source->pbr);
+        copy(result->normalEncoding, source->bakeSmoothBoundary ? 0u : source->normalEncoding);
+        copy(result->bakeSmoothBoundary, source->bakeSmoothBoundary);
+        for (uint32_t i = 0; i < 2; ++i) {
+          auto &out = result->remap[i];
+          const auto &in = source->remap[i];
+          copy(out.channel, in.channel, i != 0);
+          copy(out.curve, in.curve, i != 0);
+          copy(out.invert, in.invert, i != 0);
+          copy(out.exponent, in.exponent, i != 0);
+          copy(out.bias, in.bias, i != 0);
+          copy(out.scale, in.scale, i != 0);
+        }
+        copy(result->refractiveIndex, source->refractiveIndex);
+        copy(result->transmittanceDistance, source->transmittanceDistance);
+        result->thinWallThickness = source->thinWallThickness;
+        if (source->bakeTintAxes) {
+          if (!validSmoothBoundary(*source) || source->thinWallThickness <= 0 || (source->bakeTintAxes & ~3u))
+            throw invalid;
+          result->bakeTintAxes = source->bakeTintAxes;
+          std::copy_n(source->transmittanceScroll, 2, result->transmittanceScroll);
+          // The selected stationary distribution, not playback speed, determines
+          // baked transport. Preserve rates solely for live rays using this scene.
+          hash.add(uint32_t(0x74696e74));
+          hash.add(source->bakeTintAxes);
+        }
+        // Preserve existing body hashes. Sheets were not previously eligible
+        // for measured-boundary transport, and need a distinct optical identity.
+        if (source->thinWallThickness > 0) {
+          hash.add(uint32_t(0x73686565));
+          hash.add(source->thinWallThickness);
+        }
+        copy(result->emission, source->emission);
+        copy(result->suppressEmissionLight, source->suppressEmissionLight);
+        copy(result->selfIllumination, source->selfIllumination);
+        copy(result->selfIlluminationScale, source->selfIlluminationScale);
+        copy(result->tint, source->tint);
+        copy(result->compare, source->compare);
+        copy(result->reference, source->reference);
+        copy(result->drawAlpha, source->drawAlpha);
+        copy(result->translucent, source->translucent);
+        copy(result->transmission, source->transmission);
+        copy(result->filter, source->filter);
+        copy(result->wrapU, source->wrapU);
+        copy(result->wrapV, source->wrapV);
+        copy(result->rows, source->rows);
+        copy(result->columns, source->columns);
+        auto entry = FrozenMaterial{std::move(result), hash.combined.value, hash.direct.value};
+        materials.emplace(source.get(), entry);
+        return entry;
+      }
+      std::pair<std::shared_ptr<Surface>, uint64_t> surface(const std::shared_ptr<Surface> &source) {
+        if (!source || source->bonesPerVertex || !source->sprite.empty())
+          throw invalid;
+        if (auto found = surfaces.find(source.get()); found != surfaces.end())
+          return found->second;
+        auto result = std::make_shared<Surface>(*source);
+        Hash hash;
+        hash.add(uint64_t(result->vertices.size()));
+        hash.add(uint64_t(result->indices.size()));
+        for (const auto &vertex : result->vertices) {
+          hash.add(vertex.position);
+          hash.add(vertex.normal);
+          hash.add(vertex.uv);
+          hash.add(vertex.color);
+        }
+        for (auto index : result->indices)
+          hash.add(index);
+        auto entry = std::pair{std::move(result), hash.value};
+        surfaces.emplace(source.get(), entry);
+        return entry;
+      }
+    };
+    void lightHash(Hash &hash, const SphereLight &light, bool includeRadiance = true) {
+      hash.add(light.position);
+      hash.add(light.radius);
+      if (includeRadiance) hash.add(light.radiance);
+      hash.add(light.triangle);
+      hash.add(light.corners);
+      hash.add(light.direction);
+      hash.add(light.coneCos);
+      hash.add(light.softness);
+      hash.add(light.focus);
+      if (light.style) hash.add(light.style);
+      if (light.bakeHint) {
+        hash.add(uint32_t(0x42414b45u));
+        hash.add(light.bakeHint);
+      }
+      if (light.forwardCutoff > 0) {
+        hash.add(uint32_t(0x4355544fu));
+        hash.add(light.forwardCutoff);
+      }
+    }
+    uint64_t styledShapeHash(std::span<const SphereLight> lights) {
+      Hash hash;
+      hash.add(uint64_t(lights.size()));
+      for (const auto &light : lights) {
+        hash.add(light.id);
+        hash.add(light.dynamic);
+        lightHash(hash, light, false);
+      }
+      return hash.value;
+    }
+    bool sameStyledShape(SphereLight a, SphereLight b) {
+      a.id = b.id = 0;
+      std::fill_n(a.radiance, 3, 0.f);
+      std::fill_n(b.radiance, 3, 0.f);
+      return a == b;
+    }
+  } // namespace
+  void freezeBakeScene(BakeScene &scene) {
+    if (!scene.receiverDraws.empty() && (scene.receiverDraws.size() != scene.draws.size() ||
+        std::any_of(scene.receiverDraws.begin(), scene.receiverDraws.end(), [](auto role) { return role > 1; })))
+      throw REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
+    validateBakeCharts(scene.draws, scene.charts);
+    // Retain these triangles for bounce transport, without allocating primary
+    // receiver charts for surfaces the camera must never see.
+    std::erase_if(scene.charts, [&](const auto &chart) { return scene.draws[chart.draw].reflectionOnly; });
+    std::vector<std::vector<uint64_t>> chartHashes(scene.draws.size());
+    Hash chartOrder;
+    for (const auto &chart : scene.charts) {
+      Hash hash;
+      hash.add(chart.firstIndex);
+      hash.add(chart.width);
+      hash.add(chart.height);
+      hash.add(uint64_t(chart.texcoords.size()));
+      for (const auto &uv : chart.texcoords)
+        hash.add(uv);
+      chartHashes[chart.draw].push_back(hash.value);
+      chartOrder.add(chart.draw);
+      chartOrder.add(hash.value);
+    }
+    Freezer freezer;
+    std::shared_ptr<Material> receiverMaterial;
+    const bool diagnostics = bakeDiagnosticsEnabled();
+    std::vector<BakeDrawFingerprint> fingerprints;
+    std::array<uint64_t, 6> prefixes{};
+    scene.bindings.clear();
+    std::vector<uint64_t> records, directRecords;
+    for (size_t drawIndex = 0; drawIndex < scene.draws.size(); ++drawIndex) {
+      auto &draw = scene.draws[drawIndex];
+      if (!draw.traced() || draw.classification != REMIXAPI_INSTANCE_STATIC_EXT || draw.bones || !draw.mesh ||
+          draw.mesh->updateStream || draw.viewModel || draw.wireframe || draw.cutGroup)
+        throw invalid;
+      scene.bindings.push_back({draw.surface, draw.material});
+      auto [surface, geometryHash] = freezer.surface(draw.surface);
+      // Primary irradiance depends on position/normal, not the receiver's
+      // editable albedo, emission, tint or texture animation. A neutral frozen
+      // material keeps those assets out of transport and cache dependencies.
+      if (scene.receiverOnly(drawIndex)) {
+        if (!receiverMaterial) receiverMaterial = std::make_shared<Material>();
+        draw.material = receiverMaterial;
+      }
+      auto [material, materialHash, directMaterialHash] = freezer.material(draw.material);
+      draw.surface = std::move(surface);
+      draw.material = std::move(material);
+      // A backend needs only the frozen surface, not a mutable source mesh.
+      draw.mesh.reset();
+      TransportHash hash;
+      auto &charts = chartHashes[drawIndex];
+      std::sort(charts.begin(), charts.end());
+      hash.add(uint64_t(charts.size()));
+      for (auto chart : charts)
+        hash.add(chart);
+      const auto chartHash = hash.combined.value;
+      hash.add(geometryHash);
+      hash.combined.add(materialHash);
+      hash.direct.add(directMaterialHash);
+      if (scene.receiverOnly(drawIndex)) hash.add(uint32_t(0x52435652u));
+      hash.add(draw.model);
+      hash.add(draw.doubleSided);
+      // Ordinary scenes keep their established cache identity. Only a scene
+      // using the new ray-purpose category adds this tagged policy marker.
+      if (draw.reflectionOnly) hash.add(uint32_t(0x52464c4fu));
+      hash.add(draw.decal);
+      hash.add(draw.terrain);
+      hash.add(draw.ignoreAlpha);
+      hash.add(draw.alphaOverride);
+      hash.add(draw.compare);
+      hash.add(draw.reference);
+      hash.add(draw.firstIndex);
+      hash.add(draw.indexCount);
+      hash.add(draw.vertexOffset);
+      const auto &blend = draw.blend;
+      hash.add(blend.enabled);
+      hash.add(blend.src);
+      hash.add(blend.dst);
+      hash.add(blend.op);
+      hash.add(blend.srcAlpha);
+      hash.add(blend.dstAlpha);
+      hash.add(blend.alphaOp);
+      hash.add(blend.mask);
+      hash.add(blend.colorOp);
+      hash.add(blend.color1);
+      hash.add(blend.color2);
+      hash.add(blend.alphaOpTexture);
+      hash.add(blend.alpha1);
+      hash.add(blend.alpha2);
+      hash.add(blend.factor);
+      records.push_back(hash.combined.value);
+      directRecords.push_back(hash.direct.value);
+      if (diagnostics)
+        fingerprints.push_back({geometryHash, materialHash, chartHash, hash.combined.value});
+    }
+    for (const auto &light : scene.lights) {
+      if (light.dynamic || light.style > 127)
+        throw invalid;
+      Hash hash;
+      lightHash(hash, light);
+      records.push_back(hash.value);
+      directRecords.push_back(hash.value);
+    }
+    Hash bindings;
+    bindings.add(chartOrder.value);
+    for (auto record : directRecords) bindings.add(record);
+    for (const auto &draw : scene.draws) {
+      bindings.add(draw.instanceId);
+      bindings.add(draw.instanceIndex);
+      bindings.add(draw.surfaceIndex);
+    }
+    for (const auto &light : scene.lights) bindings.add(light.id);
+    scene.receiverBindingHash = bindings.value;
+    // Membership order and runtime handles are not content. Preserve duplicate
+    // placements/lights, because multiplicity can change transport.
+    std::sort(records.begin(), records.end());
+    std::sort(directRecords.begin(), directRecords.end());
+    Hash hash;
+    hash.add(uint32_t(5)); // serialized input schema; bump when transport fields change
+    hash.add(scene.sceneId);
+    hash.add(scene.sceneScale);
+    hash.add(scene.hasBounds);
+    if (scene.hasBounds) {
+      hash.add(scene.minimum);
+      hash.add(scene.maximum);
+    }
+    prefixes[0] = hash.value;
+    hash.add(bool(scene.partition));
+    if (scene.partition) {
+      hash.add(uint64_t(scene.partition->nodes.size()));
+      hash.add(uint64_t(scene.partition->leafClusters.size()));
+      hash.add(scene.partition->closed);
+      hash.add(scene.partition->clusterCount);
+      for (const auto &node : scene.partition->nodes) {
+        hash.add(node.plane);
+        hash.add(node.children);
+      }
+      for (auto cluster : scene.partition->leafClusters)
+        hash.add(cluster);
+    }
+    prefixes[1] = hash.value;
+    Hash receiverDirect = hash;
+    receiverDirect.add(uint32_t(0x52444932u)); // receiver-direct input domain, version 2
+    receiverDirect.add(uint64_t(scene.draws.size()));
+    receiverDirect.add(uint64_t(scene.lights.size()));
+    for (auto record : directRecords)
+      receiverDirect.add(record);
+    receiverDirect.add(scene.sun.direction);
+    receiverDirect.add(scene.sun.angularDiameterDegrees);
+    receiverDirect.add(scene.sun.isDistant);
+    scene.receiverDirectHash = receiverDirect.value ? receiverDirect.value : 1;
+    hash.add(uint64_t(scene.reflectionHints.size()));
+    for (const auto &position : scene.reflectionHints)
+      hash.add(position);
+    prefixes[2] = hash.value;
+    hash.add(uint64_t(scene.draws.size()));
+    hash.add(uint64_t(scene.lights.size()));
+    for (auto record : records)
+      hash.add(record);
+    prefixes[3] = hash.value;
+    hash.add(scene.sun.direction);
+    hash.add(scene.sun.radiance);
+    hash.add(scene.sun.angularDiameterDegrees);
+    hash.add(scene.sun.isDistant);
+    prefixes[4] = hash.value;
+    hash.add(scene.dome.enabled);
+    hash.add(scene.dome.radiance);
+    hash.add(scene.dome.worldToLocal);
+    const auto domeTextureHash = freezer.texture(scene.dome.texture);
+    hash.add(domeTextureHash);
+    prefixes[5] = hash.value;
+    scene.contentHash = hash.value ? hash.value : 1;
+    if (diagnostics)
+      dumpBakeFingerprint(scene, fingerprints, prefixes, domeTextureHash);
+  }
+} // namespace remix::scene
+
+namespace remix {
+  NativeResources::BakeLightValidity NativeResources::bakeLightValidity() const {
+    if (m_publishedBakeLightValidity)
+      return *m_publishedBakeLightValidity;
+    if (!m_bakeScene)
+      return {};
+    BakeLightValidity validity{true, true};
+    for (const auto &dependency : m_bakeLights) {
+      const auto found = m_lights.find(dependency.handle);
+      if (found == m_lights.end() || found->second.revision != dependency.revision) {
+        if (dependency.receiverDirect) return {};
+        validity.combined = false;
+      }
+    }
+    for (const auto &previous : m_bakeStyledLights) {
+      const auto authored = m_lights.find(uint64_t(reinterpret_cast<uintptr_t>(previous.info.authoredLight)));
+      const auto runtime = m_lights.find(uint64_t(reinterpret_cast<uintptr_t>(previous.info.runtimeLight)));
+      if (authored == m_lights.end() || runtime == m_lights.end() ||
+          authored->second.revision != previous.authoredRevision || runtime->second.dynamic ||
+          runtime->second.distant.isDistant || runtime->second.dome.enabled ||
+          scene::styledShapeHash(runtime->second.emitters) != previous.runtimeShape)
+        return {};
+    }
+    return validity;
+  }
+  bool NativeResources::bakeLightsCurrent(scene::BakeLightScope scope) const {
+    const auto validity = bakeLightValidity();
+    return scope == scene::BakeLightScope::ReceiverDirect ? validity.receiverDirect : validity.combined;
+  }
+  bool NativeResources::bakeRequestCurrent(const remixapi_BakeSceneInfoEXT &info) const {
+    const bool receivers = info.version == REMIXAPI_BAKE_SCENE_RECEIVERS_VERSION_EXT;
+    const bool styled = receivers || info.version == REMIXAPI_BAKE_SCENE_STYLED_LIGHTS_VERSION_EXT;
+    const bool reflections = styled || info.version == REMIXAPI_BAKE_SCENE_REFLECTIONS_VERSION_EXT;
+    const bool surfaces = reflections || info.version == REMIXAPI_BAKE_SCENE_SURFACES_VERSION_EXT;
+    const bool bounded = surfaces || info.version == REMIXAPI_BAKE_SCENE_BOUNDS_VERSION_EXT;
+    if (!m_bakeScene || m_bakeScene->hasBounds != bounded || m_bakeScene->partition != m_visibilityPartition)
+      return false;
+    const auto *receiverInfo = receivers ? reinterpret_cast<const remixapi_BakeSceneReceiversInfoEXT *>(&info) : nullptr;
+    if (m_bakeScene->receiverInstances.size() != (receivers ? receiverInfo->receiverCount : 0) ||
+        (receivers && !std::equal(m_bakeScene->receiverInstances.begin(), m_bakeScene->receiverInstances.end(),
+                                  receiverInfo->receivers))) return false;
+    if (reflections) {
+      const auto &request = *reinterpret_cast<const remixapi_BakeSceneReflectionsInfoEXT *>(&info);
+      if (m_bakeScene->reflectionRevision != request.reflectionRevision ||
+          m_bakeScene->reflectionHints.size() != request.positionCount)
+        return false;
+    } else if (m_bakeScene->reflectionRevision || !m_bakeScene->reflectionHints.empty()) {
+      return false;
+    }
+    if (surfaces) {
+      const auto &request = *reinterpret_cast<const remixapi_BakeSceneSurfacesInfoEXT *>(&info);
+      if (m_bakeScene->chartRevision != request.chartRevision ||
+          m_bakeScene->charts.size() != request.chartCount)
+        return false;
+    } else if (!m_bakeScene->charts.empty()) {
+      return false;
+    }
+    if (bounded) {
+      const auto &bounds = *reinterpret_cast<const remixapi_BakeSceneBoundsInfoEXT *>(&info);
+      if (!std::equal(std::begin(bounds.minimum), std::end(bounds.minimum), m_bakeScene->minimum.begin()) ||
+          !std::equal(std::begin(bounds.maximum), std::end(bounds.maximum), m_bakeScene->maximum.begin()))
+        return false;
+    }
+    if (!m_bakeScene || m_bakeScene->sceneId != info.sceneId || m_bakeScene->revision != info.revision ||
+        m_bakeScene->sceneScale != info.sceneScale ||
+        m_bakeScene->ready != (info.state == REMIXAPI_BAKE_SCENE_READY_EXT) ||
+        m_bakeInstances.size() != info.instanceCount || m_bakeLights.size() != info.lightCount)
+      return false;
+    const auto *styledInfo = styled ? reinterpret_cast<const remixapi_BakeSceneStyledLightsInfoEXT *>(&info) : nullptr;
+    if (m_bakeStyledLights.size() != (styled ? styledInfo->styledLightCount : 0)) return false;
+    for (size_t i = 0; i < m_bakeStyledLights.size(); ++i) {
+      const auto &previous = m_bakeStyledLights[i];
+      const auto &requested = styledInfo->styledLights[i];
+      if (previous.info.authoredLight != requested.authoredLight ||
+          previous.info.runtimeLight != requested.runtimeLight || previous.info.style != requested.style)
+        return false;
+    }
+    for (uint32_t i = 0; i < info.instanceCount; ++i) {
+      const auto [handle, revision] = m_bakeInstances[i];
+      if (handle != info.instances[i])
+        return false;
+      const auto *entry = retained(handle);
+      const bool receiver = std::find(m_bakeScene->receiverInstances.begin(), m_bakeScene->receiverInstances.end(),
+                                       handle) != m_bakeScene->receiverInstances.end();
+      if (!entry || entry->revision != revision || retainedStale(*entry) || (!entry->visible && !receiver) ||
+          entry->resolvedModGeneration != m_modGeneration)
+        return false;
+    }
+    for (uint32_t i = 0; i < info.lightCount; ++i) {
+      const auto handle = m_bakeLights[i].handle;
+      if (handle != uint64_t(reinterpret_cast<uintptr_t>(info.lights[i])))
+        return false;
+    }
+    return bakeLightsCurrent();
+  }
+  void NativeResources::setBakeScene(const remixapi_BakeSceneInfoEXT *info) {
+    constexpr auto invalid = REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
+    if (!info) {
+      m_bakeScene.reset();
+      m_bakeInstances.clear();
+      m_bakeLights.clear();
+      m_bakeStyledLights.clear();
+      m_publishedBakeLightValidity.reset();
+      return;
+    }
+    const bool receivers = info->version == REMIXAPI_BAKE_SCENE_RECEIVERS_VERSION_EXT &&
+                            info->structSize == sizeof(remixapi_BakeSceneReceiversInfoEXT);
+    const auto *receiverInfo = receivers ? reinterpret_cast<const remixapi_BakeSceneReceiversInfoEXT *>(info) : nullptr;
+    if (receivers && (receiverInfo->reserved || receiverInfo->receiverCount > info->instanceCount ||
+        (receiverInfo->receiverCount && !receiverInfo->receivers) ||
+        (info->state == REMIXAPI_BAKE_SCENE_LOADING_EXT && receiverInfo->receiverCount))) throw invalid;
+    const bool styled = receivers || (info->version == REMIXAPI_BAKE_SCENE_STYLED_LIGHTS_VERSION_EXT &&
+                         info->structSize == sizeof(remixapi_BakeSceneStyledLightsInfoEXT));
+    const auto *styledInfo = styled ? reinterpret_cast<const remixapi_BakeSceneStyledLightsInfoEXT *>(info) : nullptr;
+    if (styled && (styledInfo->reserved || styledInfo->styledLightCount > 4096 ||
+                   (styledInfo->styledLightCount && !styledInfo->styledLights) ||
+                   (info->state == REMIXAPI_BAKE_SCENE_LOADING_EXT && styledInfo->styledLightCount)))
+      throw invalid;
+    if (styled)
+      for (uint32_t i = 0; i < styledInfo->styledLightCount; ++i) {
+        const auto &light = styledInfo->styledLights[i];
+        if (!light.authoredLight || !light.runtimeLight || light.authoredLight == light.runtimeLight ||
+            !light.style || light.style > 127 || light.reserved)
+          throw invalid;
+      }
+    const bool reflections = styled || (info->version == REMIXAPI_BAKE_SCENE_REFLECTIONS_VERSION_EXT &&
+                                        info->structSize == sizeof(remixapi_BakeSceneReflectionsInfoEXT));
+    const auto *reflectionInfo =
+        reflections ? reinterpret_cast<const remixapi_BakeSceneReflectionsInfoEXT *>(info) : nullptr;
+    if (reflections && (reflectionInfo->reserved || reflectionInfo->positionCount > 4096 ||
+                        (reflectionInfo->positionCount &&
+                         (!reflectionInfo->positions || !reflectionInfo->reflectionRevision)) ||
+                        (info->state == REMIXAPI_BAKE_SCENE_LOADING_EXT && reflectionInfo->positionCount)))
+      throw invalid;
+    const bool surfaces = reflections || (info->version == REMIXAPI_BAKE_SCENE_SURFACES_VERSION_EXT &&
+                                          info->structSize == sizeof(remixapi_BakeSceneSurfacesInfoEXT));
+    const bool bounded = surfaces || (info->version == REMIXAPI_BAKE_SCENE_BOUNDS_VERSION_EXT &&
+                                      info->structSize == sizeof(remixapi_BakeSceneBoundsInfoEXT));
+    const auto *surfaceInfo =
+        surfaces ? reinterpret_cast<const remixapi_BakeSceneSurfacesInfoEXT *>(info) : nullptr;
+    if (surfaces && (surfaceInfo->reserved || surfaceInfo->chartCount > (1u << 20) ||
+                     (surfaceInfo->chartCount && (!surfaceInfo->charts || !surfaceInfo->chartRevision)) ||
+                     (info->state == REMIXAPI_BAKE_SCENE_LOADING_EXT && surfaceInfo->chartCount)))
+      throw invalid;
+    const bool legacy = info->version == REMIXAPI_BAKE_SCENE_VERSION_EXT && info->structSize == sizeof(*info);
+    if ((!bounded && !legacy) || !info->sceneId || !info->revision || !std::isfinite(info->sceneScale) ||
+        info->sceneScale <= 0 || info->state > REMIXAPI_BAKE_SCENE_READY_EXT ||
+        (info->instanceCount && !info->instances) || (info->lightCount && !info->lights) ||
+        (info->state == REMIXAPI_BAKE_SCENE_LOADING_EXT && (info->instanceCount || info->lightCount)))
+      throw invalid;
+    if (bounded) {
+      const auto &bounds = *reinterpret_cast<const remixapi_BakeSceneBoundsInfoEXT *>(info);
+      for (uint32_t c = 0; c < 3; ++c)
+        if (!std::isfinite(bounds.minimum[c]) || !std::isfinite(bounds.maximum[c]) ||
+            bounds.minimum[c] >= bounds.maximum[c])
+          throw invalid;
+    }
+    if (bakeRequestCurrent(*info))
+      return;
+    auto next = std::make_shared<scene::BakeScene>();
+    next->sceneId = info->sceneId;
+    next->revision = info->revision;
+    next->sceneScale = info->sceneScale;
+    next->ready = info->state == REMIXAPI_BAKE_SCENE_READY_EXT;
+    next->hasBounds = bounded;
+    next->partition = m_visibilityPartition;
+    if (bounded) {
+      const auto &bounds = *reinterpret_cast<const remixapi_BakeSceneBoundsInfoEXT *>(info);
+      std::copy_n(bounds.minimum, 3, next->minimum.begin());
+      std::copy_n(bounds.maximum, 3, next->maximum.begin());
+    }
+    if (reflections) {
+      next->reflectionRevision = reflectionInfo->reflectionRevision;
+      next->reflectionHints.resize(reflectionInfo->positionCount);
+      for (uint32_t i = 0; i < reflectionInfo->positionCount; ++i)
+        for (uint32_t c = 0; c < 3; ++c) {
+          const float value = reflectionInfo->positions[size_t(i) * 3 + c];
+          if (!std::isfinite(value) || value < next->minimum[c] || value > next->maximum[c])
+            throw invalid;
+          next->reflectionHints[i][c] = value;
+        }
+    }
+    std::vector<std::pair<uint64_t, uint64_t>> instances;
+    std::vector<BakeLightDependency> lights;
+    std::unordered_set<uint64_t> seen;
+    std::unordered_set<uint64_t> receiverHandles;
+    if (receivers)
+      for (uint32_t i = 0; i < receiverInfo->receiverCount; ++i)
+        if (!receiverHandles.insert(receiverInfo->receivers[i]).second) throw invalid;
+    std::unordered_map<uint64_t, size_t> drawBases;
+    for (uint32_t i = 0; i < info->instanceCount; ++i) {
+      const auto *entry = retained(info->instances[i]);
+      if (!entry || !seen.insert(entry->handle).second || !entry->mesh || entry->watch || !entry->placed ||
+          entry->description.hidden || (!entry->visible && !receiverHandles.contains(entry->handle)) || retainedStale(*entry) ||
+          entry->resolvedModGeneration != m_modGeneration)
+        throw invalid;
+      drawBases.emplace(entry->handle, next->draws.size());
+      instances.emplace_back(entry->handle, entry->revision);
+      next->draws.insert(next->draws.end(), entry->records.begin(), entry->records.end());
+    }
+    if (receivers && receiverInfo->receiverCount) {
+      next->receiverDraws.resize(next->draws.size());
+      for (uint32_t i = 0; i < receiverInfo->receiverCount; ++i) {
+        const auto handle = receiverInfo->receivers[i];
+        const auto base = drawBases.find(handle);
+        const auto *entry = retained(handle);
+        if (base == drawBases.end() || !entry) throw invalid;
+        next->receiverInstances.push_back(handle);
+        std::fill_n(next->receiverDraws.begin() + base->second, entry->records.size(), uint8_t(1));
+      }
+    }
+    if (surfaces) {
+      next->chartRevision = surfaceInfo->chartRevision;
+      uint64_t totalCorners = 0;
+      for (uint32_t i = 0; i < surfaceInfo->chartCount; ++i) {
+        const auto &source = surfaceInfo->charts[i];
+        const auto base = drawBases.find(source.instance);
+        const auto *entry = retained(source.instance);
+        totalCorners += source.indexCount;
+        if (base == drawBases.end() || !entry || source.surfaceIndex >= entry->surfaceCount ||
+            source.instanceIndex >= entry->instanceCount() || !source.indexCount || source.indexCount % 3 ||
+            !source.texcoords || totalCorners > (1u << 24))
+          throw invalid;
+        scene::BakeSurfaceChart chart;
+        const size_t draw =
+            base->second + size_t(source.instanceIndex) * entry->surfaceCount + source.surfaceIndex;
+        if (draw >= next->draws.size())
+          throw invalid;
+        chart.draw = uint32_t(draw);
+        chart.firstIndex = source.firstIndex;
+        chart.width = source.width;
+        chart.height = source.height;
+        chart.texcoords.resize(source.indexCount);
+        for (uint32_t corner = 0; corner < source.indexCount; ++corner)
+          std::copy_n(source.texcoords + size_t(corner) * 2, 2, chart.texcoords[corner].begin());
+        next->charts.push_back(std::move(chart));
+      }
+    }
+    seen.clear();
+    for (uint32_t i = 0; i < info->lightCount; ++i) {
+      const auto key = uint64_t(reinterpret_cast<uintptr_t>(info->lights[i]));
+      const auto found = m_lights.find(key);
+      if (found == m_lights.end() || !seen.insert(key).second)
+        throw invalid;
+      const auto &light = found->second;
+      if (light.dynamic)
+        throw invalid;
+      lights.push_back({key, light.revision, !light.emitters.empty()});
+      next->lights.insert(next->lights.end(), light.emitters.begin(), light.emitters.end());
+      if (light.distant.isDistant) {
+        if (next->sun.isDistant)
+          throw invalid; // one sun, never silently overwrite another
+        next->sun = light.distant;
+      }
+      if (light.dome.enabled) {
+        if (next->dome.enabled)
+          throw invalid;
+        next->dome = light.dome;
+      }
+    }
+    std::vector<BakeStyledDependency> styledDependencies;
+    if (styled)
+      for (uint32_t i = 0; i < styledInfo->styledLightCount; ++i) {
+        const auto &request = styledInfo->styledLights[i];
+        const auto authoredKey = uint64_t(reinterpret_cast<uintptr_t>(request.authoredLight));
+        const auto runtimeKey = uint64_t(reinterpret_cast<uintptr_t>(request.runtimeLight));
+        const auto authored = m_lights.find(authoredKey), runtime = m_lights.find(runtimeKey);
+        if (authored == m_lights.end() || runtime == m_lights.end() ||
+            !seen.insert(authoredKey).second || !seen.insert(runtimeKey).second)
+          throw invalid;
+        const auto &a = authored->second;
+        const auto &r = runtime->second;
+        if (a.dynamic || r.dynamic || a.distant.isDistant || r.distant.isDistant ||
+            a.dome.enabled || r.dome.enabled || a.emitters.empty() || a.emitters.size() != r.emitters.size())
+          throw invalid;
+        for (size_t emitter = 0; emitter < a.emitters.size(); ++emitter) {
+          auto light = a.emitters[emitter];
+          if (!scene::sameStyledShape(light, r.emitters[emitter])) throw invalid;
+          light.id = r.emitters[emitter].id;
+          light.style = request.style;
+          next->lights.push_back(light);
+        }
+        styledDependencies.push_back({request, a.revision, scene::styledShapeHash(r.emitters)});
+      }
+    if (next->ready)
+      scene::freezeBakeScene(*next);
+    m_bakeInstances = std::move(instances);
+    m_bakeLights = std::move(lights);
+    m_bakeStyledLights = std::move(styledDependencies);
+    m_bakeScene = std::move(next);
+    m_publishedBakeLightValidity.reset();
+  }
+} // namespace remix

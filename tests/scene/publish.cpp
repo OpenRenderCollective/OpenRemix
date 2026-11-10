@@ -70,6 +70,10 @@ namespace {
     const auto draws = api.draws();
     const auto lights = api.sphereLights();
     require(lights.size() == 1, "Fixture light");
+    std::vector<scene::SphereLight> scratch;
+    const auto synchronousLights = api.sphereLightView(scratch);
+    require(synchronousLights.data() == scratch.data() && scratch == lights,
+            "Synchronous reads collect lights into caller-owned storage");
     api.publishFrame(frame);
     require(api.draws().empty() && api.pendingDrawCount() == 0 && !api.hasSphereLights() && api.sphereLights().empty(),
             "The API frame was not finished");
@@ -81,6 +85,10 @@ namespace {
     require(frame.camera() == api.camera() && frame.view() == api.view() && frame.cameraValid(),
             "Published camera differs");
     require(frame.hasSphereLights() && frame.sphereLights() == lights, "Published lights differ");
+    const auto publishedLights = frame.sphereLightView(scratch);
+    require(publishedLights.data() != scratch.data() && publishedLights.size() == lights.size() &&
+                publishedLights.front() == lights.front(),
+            "Published reads borrow the immutable light list");
     // Lights resolve at publication: destroying one afterwards does not
     // reach the published frame.
     api.destroyLight(light);
@@ -304,7 +312,96 @@ namespace {
   }
 } // namespace
 
+namespace {
+  void bakeComponentDependencies() {
+    using Scope = scene::BakeLightScope;
+    for (bool dome : {false, true}) {
+      NativeResources api, original, changed;
+      const auto point = sphereLight(api, 9810, 0);
+      remixapi_LightInfoDistantEXT distant{};
+      distant.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DISTANT_EXT;
+      distant.direction = {0, 0, 1};
+      remixapi_LightInfoDomeEXT environment{};
+      environment.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DOME_EXT;
+      for (uint32_t c = 0; c < 3; ++c) environment.transform.matrix[c][c] = 1;
+      remixapi_LightInfo info{};
+      info.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
+      info.hash = 9811;
+      info.pNext = dome ? static_cast<void *>(&environment) : static_cast<void *>(&distant);
+      info.radiance = {1, 1, 1};
+      remixapi_LightHandle global;
+      api.createLight(info, global);
+      const remixapi_LightHandle lights[] = {point, global};
+      remixapi_BakeSceneInfoEXT request{};
+      request.structSize = sizeof(request);
+      request.version = REMIXAPI_BAKE_SCENE_VERSION_EXT;
+      request.sceneId = request.revision = 1;
+      request.sceneScale = 1;
+      request.state = REMIXAPI_BAKE_SCENE_READY_EXT;
+      request.lightCount = 2;
+      request.lights = lights;
+      api.setBakeScene(&request);
+      api.publishFrame(original);
+      require(original.bakeLightsCurrent() && original.bakeLightsCurrent(Scope::ReceiverDirect),
+              "A publication retains both captured energy dependency scopes");
+      info.radiance = {2, 3, 4};
+      api.updateLight(global, info);
+      require(!api.bakeLightsCurrent() && api.bakeLightsCurrent(Scope::ReceiverDirect),
+              "Sun/dome power changes invalidate combined energy, not receiver-direct energy");
+      api.publishFrame(changed);
+      require(!changed.bakeLightsCurrent() && changed.bakeLightsCurrent(Scope::ReceiverDirect) &&
+                  original.bakeLightsCurrent() && original.bakeLightsCurrent(Scope::ReceiverDirect),
+              "Published dependency scopes stay immutable without a light registry");
+      api.destroyLight(point);
+      require(!api.bakeLightsCurrent() && !api.bakeLightsCurrent(Scope::ReceiverDirect) &&
+                  changed.bakeLightsCurrent(Scope::ReceiverDirect),
+              "Local emitter removal invalidates future direct fields without altering published frames");
+      api.setBakeScene(nullptr);
+      api.publishFrame(changed);
+      require(!changed.bakeLightsCurrent() && !changed.bakeLightsCurrent(Scope::ReceiverDirect),
+              "Unload clears both dependency scopes");
+    }
+  }
+  void bakeLightDependencies() {
+    NativeResources api, original, missing, replaced;
+    auto light = sphereLight(api, 9800, 0);
+    remixapi_BakeSceneInfoEXT request{};
+    request.structSize = sizeof(request);
+    request.version = REMIXAPI_BAKE_SCENE_VERSION_EXT;
+    request.sceneId = request.revision = 1;
+    request.sceneScale = 1;
+    request.state = REMIXAPI_BAKE_SCENE_READY_EXT;
+    request.lightCount = 1;
+    request.lights = &light;
+    api.setBakeScene(&request);
+    api.publishFrame(original); // No drawLight call: culling is not removal.
+    require(original.bakeLightsCurrent() && original.sphereLights().empty(),
+            "Published static validity does not require a camera-visible light");
+    api.destroyLight(light);
+    require(!api.bakeLightsCurrent() && original.bakeLightsCurrent(),
+            "Destroying a captured light invalidates future frames without mutating earlier publication");
+    api.publishFrame(missing);
+    require(!missing.bakeLightsCurrent() && missing.bakeScene() == original.bakeScene(),
+            "A render replica receives stale-light state even though it owns no definition registry");
+    light = sphereLight(api, 9800, 1);
+    require(!api.bakeLightsCurrent(), "Reusing a destroyed light handle cannot revive old aggregate data");
+    api.setBakeScene(&request);
+    api.publishFrame(replaced);
+    require(replaced.bakeLightsCurrent() && !missing.bakeLightsCurrent() && original.bakeLightsCurrent() &&
+                replaced.bakeScene()->contentHash != original.bakeScene()->contentHash,
+            "Recaptured replacements publish their own validity and content identity");
+    api.setBakeScene(nullptr);
+    api.publishFrame(replaced);
+    require(!replaced.bakeLightsCurrent() && !replaced.bakeScene(),
+            "Unload cannot retain a prior publication's light validity");
+    missing.reset();
+    require(!missing.bakeLightsCurrent(), "Reset clears published stale/current dependency state");
+  }
+}
+
 int main() {
+  bakeComponentDependencies();
+  bakeLightDependencies();
   snapshot();
   lifetime();
   emissionCache();

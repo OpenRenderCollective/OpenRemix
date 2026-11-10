@@ -159,12 +159,12 @@ namespace remix::pipeline {
   struct Service::Impl {
     VkDevice device;
     // REMIX_PIPELINE_STATISTICS (VK_KHR_pipeline_executable_properties):
-    // compute compiles capture the driver's statistics for the report.
+    // Compiles capture the driver's statistics for the report.
     bool statistics = false;
     PFN_vkGetPipelineExecutablePropertiesKHR executableProperties{};
     PFN_vkGetPipelineExecutableStatisticsKHR executableStatistics{};
     // "name value" pairs of each executable's statistics, executables separated by " | ".
-    std::string describe(VkPipeline handle) const {
+    std::string describe(VkPipeline handle) const noexcept try {
       std::string text;
       VkPipelineInfoKHR info{.sType = VK_STRUCTURE_TYPE_PIPELINE_INFO_KHR, .pipeline = handle};
       uint32_t count = 0;
@@ -201,6 +201,8 @@ namespace remix::pipeline {
         }
       }
       return text;
+    } catch (...) {
+      return {};
     }
     VkPipelineCache cache{};
     CacheIdentity identity;
@@ -346,11 +348,12 @@ namespace remix::pipeline {
                                                               VK_STRUCTURE_TYPE_PIPELINE_CREATION_FEEDBACK_CREATE_INFO,
                                                           .pPipelineCreationFeedback = &feedback};
                 const auto status = compile(&result->handle, stats.feedback ? &info : nullptr);
+                const auto elapsed = std::chrono::steady_clock::now() - start;
+                auto description = status == VK_SUCCESS && statistics ? describe(result->handle) : std::string{};
                 {
                   std::lock_guard lock(mutex);
                   ++stats.completed;
-                  stats.milliseconds +=
-                      std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+                  stats.milliseconds += std::chrono::duration<double, std::milli>(elapsed).count();
                   // With the count, so a caller that sees it completed can use it.
                   if (status == VK_SUCCESS) {
                     ++stats.created;
@@ -360,8 +363,7 @@ namespace remix::pipeline {
                   auto &entry = records[record];
                   entry.finished = since();
                   entry.failed = status != VK_SUCCESS;
-                  if (status == VK_SUCCESS && statistics)
-                    entry.statistics = describe(result->handle);
+                  entry.statistics = std::move(description);
                   if (feedback.flags & VK_PIPELINE_CREATION_FEEDBACK_VALID_BIT) {
                     stats.driverNanoseconds += feedback.duration;
                     entry.hit = feedback.flags & VK_PIPELINE_CREATION_FEEDBACK_APPLICATION_PIPELINE_CACHE_HIT_BIT;
@@ -934,6 +936,8 @@ namespace remix::pipeline {
                                 [r, &g](VkPipeline *p, VkPipelineCreationFeedbackCreateInfo *feedback) {
                                   r->bind();
                                   r->info.pNext = feedback;
+                                  if (g.statistics)
+                                    r->info.flags |= VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR;
                                   return vkCreateGraphicsPipelines(g.device, g.cache, 1, &r->info, nullptr, p);
                                 }));
     }

@@ -1,0 +1,77 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+layout(local_size_x = 64) in;
+#define PROBE_IMAGE_BINDING 14
+#include "../../../src/native/forward/shaders/probes.glsl"
+#define IRRADIANCE_BINDING 2
+#include "../../../src/native/forward/shaders/irradiance.glsl"
+#include "../../../src/native/forward/shaders/diffuse-residual.glsl"
+#include "../../../src/native/forward/shaders/diffuse-compose.glsl"
+struct Query {
+  vec4 position, reflected;
+};
+layout(set = 0, binding = 0, std430) readonly buffer Queries { Query queries[]; };
+layout(set = 0, binding = 1, std430) writeonly buffer Results { vec4 results[]; };
+layout(push_constant) uniform Count { uint count; };
+void main() {
+  uint index = gl_GlobalInvocationID.x;
+  if (index >= count)
+    return;
+  Query q = queries[index];
+  if (q.position.w >= 12) {
+    bool covered = q.position.w == 12;
+    ReceiverLighting direct = ReceiverLighting(covered ? q.position.xyz : vec3(0),
+        DirectLightingPolicy(true, !covered, covered), true);
+    ReceiverLighting composed = composeDirectAndIncoming(direct, q.reflected.xyz);
+    vec3 corrected = composed.diffuse + diffuseResidual(q.position.xyz, q.reflected.w,
+                                                        composed.direct.attribution);
+    uint policy = uint(composed.direct.diffuse) | uint(composed.direct.specular) << 1 |
+        uint(composed.direct.attribution) << 2 | uint(composed.reflectionReference) << 3;
+    results[index] = vec4(corrected, float(policy));
+    return;
+  }
+  if (q.position.w >= 9) {
+    float visibility = 0, diffuse = -1;
+    uint light = q.position.w == 10 ? 2u : q.position.w == 11 ? 65u : 1u;
+    bool found = bakedLocalProbeResponse(q.position.xyz, q.reflected.xyz, q.reflected.xyz, light,
+                                          true, visibility, diffuse);
+    results[index] = vec4(visibility, diffuse, 0, found ? 1 : 0);
+    return;
+  }
+  if (q.position.w == 8) {
+    results[index] = vec4(diffuseResidual(q.position.xyz, q.reflected.x, q.reflected.y > .5), 1);
+    return;
+  }
+  if (q.position.w >= 4) {
+    // Exercise private stencil invalidation across positions and normals, then
+    // reuse at the same receiver for a different captured light.
+    float ignored;
+    bakedLocalProbeVisibility(q.position.xyz + vec3(1000), q.reflected.xyz, 1u, ignored);
+    bakedLocalProbeVisibility(q.position.xyz, normalize(vec3(1, 2, 3)), 1u, ignored);
+    bakedLocalProbeVisibility(q.position.xyz, q.reflected.xyz, 2u, ignored);
+    float value = 0;
+    uint light = q.position.w == 4 ? 1u : q.position.w == 5 ? 2u : q.position.w == 7 ? 65u : 0u;
+    bool found = bakedLocalProbeVisibility(q.position.xyz, q.reflected.xyz, light, value);
+    results[index] = vec4(value, 0, 0, found ? 1 : 0);
+    return;
+  }
+  if (q.position.w == 3) {
+    float value = 0;
+    bool found = bakedSunVisibility(q.position.xyz, q.reflected.xyz, value);
+    results[index] = vec4(value, 0, 0, found ? 1 : 0);
+    return;
+  }
+  if (q.position.w == 2) {
+    vec3 value = vec3(0);
+    bool found = bakedIrradiance(q.position.xyz, q.reflected.xyz, value);
+    results[index] = vec4(value, found ? 1 : 0);
+    return;
+  }
+  if (q.position.w > 0) {
+    results[index] = vec4(bakedSkyVisibility(q.position.xyz, vec3(0, 1, 0), q.reflected.xyz));
+    return;
+  }
+  vec3 value;
+  bool found = probeRadiance(q.position.xyz, q.reflected.xyz, q.reflected.w, value);
+  results[index] = vec4(value, found ? 1 : 0);
+}

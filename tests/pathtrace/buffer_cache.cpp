@@ -142,5 +142,6 @@ int main() {
     for (const auto &block : blocks)
       assert(block->liveRanges == 0 && block->free.size() == 1);
   }
+  remix::MemoryRelease::drain();
   std::puts("Upload buffer cache ownership, compatibility, limits and cleanup passed");
 }

@@ -1,5 +1,6 @@
 #include "runtime/pipelines.h"
 #include "raster/gpu.h"
+#include "forward/lighting.h"
 
 namespace remix {
   using namespace scene;
@@ -15,7 +16,8 @@ namespace remix {
     }
   } // namespace
 
-  bool RasterRenderer::preparePipelines(bool tracing) {
+  bool RasterRenderer::preparePipelines(bool tracing, bool forward, DrawOwner owner) {
+    if (forward) applyViewModel(1.f);
     bool ready = true;
     // Masked overlays (raster/mask.cpp): their coverage machinery and their
     // pipeline variants are compiled on first use, as for halos. A frame never
@@ -110,7 +112,8 @@ namespace remix {
       request(draw, true, false);
     };
     for (const auto &draw : m_draws)
-      if (draw.rasterVisible && !draw.reflectionOnly && (!tracing || !draw.traced())) {
+      if (draw.rasterVisible && !draw.reflectionOnly && (!tracing || !draw.traced()) &&
+          (!forward || !(owner ? owner(draw) : forward::accepts(draw)))) {
         if (tracing && draw.depthCompare == 2) {
           auto adjusted = draw;
           adjusted.depthCompare = 3;
@@ -166,18 +169,18 @@ namespace remix {
     } timed{createPipelineMs};
     ++pipelinesCreated;
     const VkPipelineShaderStageCreateInfo stages[] = {{.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                                                       .stage = VK_SHADER_STAGE_VERTEX_BIT,
+         .stage = VK_SHADER_STAGE_VERTEX_BIT,
                                                        .module = infectedStages ? infected.vertex
                                                                  : spriteStages ? sprite.vertex
                                                                                 : vertex,
-                                                       .pName = "main"},
-                                                      {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                                                       .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-                                                       .module = masked           ? mask.overlayFragment
-                                                                 : spriteStages   ? sprite.fragment
-                                                                 : infectedStages ? infected.fragment
-                                                                                  : fragment,
-                                                       .pName = "main"}};
+         .pName = "main"},
+        {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+         .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+         .module = masked           ? mask.overlayFragment
+                   : spriteStages   ? sprite.fragment
+                   : infectedStages ? infected.fragment
+                                    : fragment,
+         .pName = "main"}};
     // Sprite overlays: the mesh's sprite vertices as a second binding.
     const VkVertexInputBindingDescription bindings[] = {{0, sizeof(Vertex), VK_VERTEX_INPUT_RATE_VERTEX},
                                                         {1, sizeof(SpriteVertex), VK_VERTEX_INPUT_RATE_VERTEX}};
@@ -217,7 +220,7 @@ namespace remix {
         .lineWidth = 1};
     const VkPipelineMultisampleStateCreateInfo samples = {.sType =
                                                               VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-                                                          .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT};
+        .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT};
     // SKY instances skip the depth test in the shared main pass (their camera
     // is not the world's). The path tracer's sky pass has its own depth
     // buffer, so there the 3D skybox's geometry occludes itself.
@@ -238,13 +241,13 @@ namespace remix {
                                                        .colorWriteMask = b.mask};
     const VkPipelineColorBlendStateCreateInfo blending = {.sType =
                                                               VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-                                                          .attachmentCount = 1,
-                                                          .pAttachments = &blend};
+        .attachmentCount = 1,
+        .pAttachments = &blend};
     const VkDynamicState dynamicStates[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR,
                                             VK_DYNAMIC_STATE_BLEND_CONSTANTS};
     const VkPipelineDynamicStateCreateInfo dynamic = {.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
-                                                      .dynamicStateCount = 3,
-                                                      .pDynamicStates = dynamicStates};
+        .dynamicStateCount = 3,
+        .pDynamicStates = dynamicStates};
     const VkGraphicsPipelineCreateInfo info = {.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
                                                .stageCount = 2,
                                                .pStages = stages,

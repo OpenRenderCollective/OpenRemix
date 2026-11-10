@@ -15,10 +15,10 @@
 
 namespace {
   void require(bool value, const char *message) {
-    if (!value) {
-      std::fprintf(stderr, "%s\n", message);
-      std::exit(1);
-    }
+  if (!value) {
+    std::fprintf(stderr, "%s\n", message);
+    std::exit(1);
+  }
   }
   void ok(remixapi_ErrorCode code) { require(code == REMIXAPI_ERROR_CODE_SUCCESS, "Adaptive sampling API failure"); }
   using Image = std::vector<std::array<float, 3>>;
@@ -214,7 +214,7 @@ int main(int argc, char **argv) {
   };
   auto emissive = material({0, 0, 0}, 1, .01f);
   auto farEmitter = quad(2, 191.f, 240.f, 241.f, 65.f, 66.f, emissive);
-  auto *csv = std::fopen((directory / "metrics.csv").c_str(), "w");
+  auto *csv = std::fopen((directory / "metrics.csv").string().c_str(), "w");
   require(csv, "Cannot open adaptive sampling metrics");
   std::fputs("primary,pose,sample_fraction,candidate_fraction\n", csv);
   for (const char *primary : {"raster", "ray"}) {
@@ -234,7 +234,7 @@ int main(int argc, char **argv) {
     }
     std::printf("%s budget variation %.6f\n", primary, maximum - minimum);
     require(maximum - minimum < .06, "Small illumination/motion changes switched a whole surface's "
-                                     "sampling budget");
+            "sampling budget");
     update(.001f, 0);
     auto dim = capture(std::string(primary) + "-dim");
     require(std::abs(dim[0] - .25) < .01, "Dim receivers lost the one-sample adaptive budget");

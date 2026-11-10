@@ -1,4 +1,5 @@
 api_sources = files(
+  'bake_scene.cpp',
   'compatibility.cpp',
   'configuration.cpp',
   'diagnostics.cpp',

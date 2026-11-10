@@ -99,15 +99,23 @@ def slang(work, bin_dir):
             shutil.copy2(path, bin_dir / path.name)
 
 
-def remove_tree(path, ignore_errors=False):
-    """Removes a directory, including the read-only files Git checkouts hold on Windows."""
-    for parent, _, files in os.walk(path):
-        for name in files:
-            try:
-                os.chmod(os.path.join(parent, name), stat.S_IWRITE | stat.S_IREAD)
-            except OSError:
-                pass
-    shutil.rmtree(path, ignore_errors=ignore_errors)
+def remove_scratch(path, cache, ignore_errors=False):
+    """Remove owned scratch trees, including Git's read-only pack files on Windows."""
+    resolved, boundary = path.resolve(), cache.resolve()
+    if resolved == boundary or not resolved.is_relative_to(boundary):
+        raise ValueError(f'Scratch cleanup escaped the tool cache: {path}')
+
+    def writable_retry(action, target, error):
+        if not isinstance(error[1], PermissionError):
+            raise error[1]
+        os.chmod(target, stat.S_IREAD | stat.S_IWRITE)
+        action(target)
+
+    try:
+        shutil.rmtree(resolved, onerror=writable_retry)
+    except OSError:
+        if not ignore_errors:
+            raise
 
 
 def toolset(cache, name, entries, make):
@@ -126,7 +134,7 @@ def toolset(cache, name, entries, make):
         (scratch / 'bin').mkdir()
         print(f'Building pinned {name} shader tools in {final} (once per machine)', flush=True)
         make(scratch / 'work', scratch / 'bin')
-        remove_tree(scratch / 'work')
+        remove_scratch(scratch / 'work', cache)
         (scratch / 'complete').touch()
         try:
             scratch.rename(final)
@@ -134,7 +142,7 @@ def toolset(cache, name, entries, make):
             if not (final / 'complete').exists():
                 raise
     finally:
-        remove_tree(scratch, ignore_errors=True)
+        remove_scratch(scratch, cache, ignore_errors=True)
     return final / 'bin'
 
 

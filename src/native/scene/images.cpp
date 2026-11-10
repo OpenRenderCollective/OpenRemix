@@ -100,7 +100,7 @@ namespace remix::scene {
       for (uint32_t mip = 0; mip < mips; ++mip) {
         const size_t bytes = block
                                  ? size_t((width + 3) / 4) * ((height + 3) / 4) * ((block == 1 || block == 4) ? 8 : 16)
-                                 : size_t(width) * height * 4;
+                  : size_t(width) * height * 4;
         const size_t decodedSize = size_t(width) * height * 4;
         total += decodedSize * ((block == 6 || block == 16) ? 5 : 1);
         if (offset > size || bytes > size - offset || total > 512u * 1024 * 1024) {
@@ -179,6 +179,28 @@ namespace remix::scene {
     }
   } // namespace
 
+  bool textureHasZeroRgb(const Texture &texture) {
+    const auto &pixels = texture.pixels;
+    if (texture.dynamic || texture.updates || pixels.compressed || pixels.mips.empty() ||
+        pixels.width > maxTextureDimension || pixels.height > maxTextureDimension)
+      return false;
+    const auto zeroRgb = [&](const auto &mips) {
+      if (mips.size() != pixels.mips.size()) return false;
+      uint32_t width = pixels.width, height = pixels.height;
+      for (const auto &mip : mips) {
+        if (!width || !height || mip.size() != uint64_t(width) * height * 4)
+          return false;
+        for (size_t i = 0; i < mip.size(); i += 4)
+          if (mip[i] != 0 || mip[i + 1] != 0 || mip[i + 2] != 0)
+            return false;
+        width = std::max(1u, width / 2);
+        height = std::max(1u, height / 2);
+      }
+      return true;
+    };
+    return pixels.hdrMips.empty() ? zeroRgb(pixels.mips) : zeroRgb(pixels.hdrMips);
+  }
+
   bool isFloatFormat(remixapi_Format format) {
     return format == REMIXAPI_FORMAT_R16G16B16A16_SFLOAT_EXT || format == REMIXAPI_FORMAT_R32G32B32A32_SFLOAT_EXT;
   }
@@ -203,6 +225,11 @@ namespace remix::scene {
     uint32_t block = 0;
     bool srgb = false, bgra = false, bc1Alpha = false;
     switch (uint32_t(info.format)) {
+    case REMIXAPI_FORMAT_R16G16B16A16_SFLOAT_EXT:
+    case REMIXAPI_FORMAT_R32G32B32A32_SFLOAT_EXT:
+      return decodeFloat(info.width, info.height, info.mipLevels, 4,
+                         info.format == REMIXAPI_FORMAT_R16G16B16A16_SFLOAT_EXT,
+                         static_cast<const uint8_t *>(info.data), size_t(info.dataSize));
     case REMIXAPI_FORMAT_R8G8B8A8_SRGB:
       srgb = true;
       break;

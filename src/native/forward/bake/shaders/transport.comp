@@ -1,0 +1,382 @@
+#version 460
+#extension GL_EXT_ray_query : require
+#extension GL_EXT_control_flow_attributes : require
+#extension GL_GOOGLE_include_directive : require
+layout(local_size_x = 64) in;
+#include "bindings.glsl"
+#ifdef RADIANCE_BAKE
+#define BAKE_MODE 1u
+#else
+#define BAKE_MODE rayFrame.control.z
+#endif
+#include "material.glsl"
+#define OFFLINE_LIGHT_SELECTION
+#include "radiance.glsl"
+#include "sample-sums.glsl"
+#include "../../shaders/probe-depth-mapping.glsl"
+// Placement and projection diagnostics use the same solid-side definition as
+// radiance. Captured double-sided meshes can have normals opposite winding;
+// hardware facing alone is not evidence that a probe lies inside a solid.
+bool solidBackface(Hit hit, vec3 direction) {
+  RayMaterial material = rayMaterials[rayTriangles[hit.primitive].w];
+  vec2 uv;
+  vec4 color;
+  vec3 normal, geometric;
+  attributes(hit.primitive, hit.bary, uv, color, normal, geometric);
+  return !dielectric(material) && dot(normal, direction) > 0;
+}
+#ifdef PARALLEL_BAKE
+#define SAMPLE_START gl_LocalInvocationIndex
+#define SAMPLE_STEP 64u
+#else
+#define SAMPLE_START 0u
+#define SAMPLE_STEP 1u
+#endif
+// Randomly shifted strata cover the emitter with the existing ray budget.
+// Global ordinals also preserve the exact stream when receiver sites coincide;
+// interleaved four-site groups each span the emitter instead of one quadrant.
+vec2 visibilitySample(uint ordinal, vec2 shift) {
+  return fract(vec2((float(ordinal) + .5) / float(rayFrame.counts.z),
+                    float(ordinal * 0x61c88647u) * (1.0 / 4294967296.0)) + shift);
+}
+void basis(vec3 d, out float sh[9]) {
+  sh[0] = .2820947918;
+  sh[1] = .4886025119 * d.y;
+  sh[2] = .4886025119 * d.z;
+  sh[3] = .4886025119 * d.x;
+  sh[4] = 1.092548431 * d.x * d.y;
+  sh[5] = 1.092548431 * d.y * d.z;
+  sh[6] = .3153915653 * (3 * d.z * d.z - 1);
+  sh[7] = 1.092548431 * d.x * d.z;
+  sh[8] = .5462742153 * (d.x * d.x - d.y * d.y);
+}
+void anchorSurfaceIrradiance(inout RayResult value, vec3 normal, vec3 irradiance) {
+  float sh[9];
+  basis(normal, sh);
+  vec3 reconstructed = vec3(0);
+  for (uint j = 0u; j < 9u; ++j)
+    reconstructed += value.irradiance[j].rgb * sh[j];
+  // The truncated cosine kernel overestimates grazing light. Constrain the
+  // surface-normal response to its sampled cosine integral with the smallest
+  // squared change to the SH coefficients. The basis norm is 9/(4Pi).
+  vec3 correction = (irradiance - reconstructed) * (4 * RayPi / 9);
+  for (uint j = 0u; j < 9u; ++j)
+    value.irradiance[j].rgb += correction * sh[j];
+}
+// Unit-light fields store scalar coefficients in Y; X/Z/W retain visibility
+// metadata. Apply the same constraint without touching that metadata.
+void anchorSurfaceIrradiance(inout RayResult value, vec3 normal, float irradiance) {
+  float sh[9];
+  basis(normal, sh);
+  float reconstructed = 0;
+  for (uint j = 0u; j < 9u; ++j)
+    reconstructed += value.irradiance[j].y * sh[j];
+  float correction = (irradiance - reconstructed) * (4 * RayPi / 9);
+  for (uint j = 0u; j < 9u; ++j)
+    value.irradiance[j].y += correction * sh[j];
+}
+#ifdef AGGREGATE_DIFFUSE
+#include "aggregate.glsl"
+#endif
+void main() {
+  uint index =
+#ifdef PARALLEL_BAKE
+      gl_WorkGroupID.x + gl_WorkGroupID.y * gl_NumWorkGroups.x;
+#else
+      gl_GlobalInvocationID.x;
+#endif
+  if (index >= rayFrame.counts.x)
+    return;
+  uint inputIndex = index;
+#ifdef PARALLEL_BAKE
+  // Receiver sites share this group's existing sample budget.
+  if ((rayFrame.control.w & 32u) != 0u)
+    inputIndex = index * 16u + gl_LocalInvocationIndex % 16u;
+  else if ((rayFrame.control.w & 16u) != 0u)
+    inputIndex = index * 4u + gl_LocalInvocationIndex % 4u;
+#endif
+  RayPoint point = rayPoints[inputIndex];
+  vec3 origin = point.position.xyz;
+#if defined(PARALLEL_BAKE) && !defined(COMPACT_VISIBILITY)
+  if (BAKE_MODE == 8u) {
+    // One lane owns one packed texel. Never initialize/store a whole Result:
+    // other lanes concurrently write its other scalar words.
+    uint texel = gl_LocalInvocationIndex;
+    vec2 moments = vec2(0);
+    for (uint sampleIndex = 0u; sampleIndex < 4u; ++sampleIndex) {
+      vec3 direction = probeDepthDirection(texel, sampleIndex);
+      uint seed = directionSeed(direction, floatBitsToUint(origin.x) ^ floatBitsToUint(origin.y) ^
+                                           floatBitsToUint(origin.z));
+      Hit hit;
+      traceRay(origin, direction, rayFrame.trace.x, seed, hit);
+      float distance = clamp(hit.distance / rayFrame.trace.x, 0, 1);
+      moments += vec2(distance, distance * distance) * .25;
+    }
+    float packed = uintBitsToFloat(packHalf2x16(moments));
+    uint vectorIndex = texel / 4u, channel = texel % 4u;
+    if (vectorIndex < 9u) rayResults[index].irradiance[vectorIndex][channel] = packed;
+    else if (vectorIndex < 15u) rayResults[index].moments[vectorIndex - 9u][channel] = packed;
+    else rayResults[index].statistics[channel] = packed;
+    return;
+  }
+#endif
+  if (BAKE_MODE != 1u && BAKE_MODE != 7u && BAKE_MODE != 8u &&
+      dot(point.normal.xyz, point.normal.xyz) > 1e-10)
+    origin += normalize(point.normal.xyz) *
+        ((BAKE_MODE == 5u || BAKE_MODE == 6u) ? rayFrame.trace.z : rayFrame.trace.y);
+  RayResult outputValue;
+  for (uint i = 0; i < 9; ++i)
+    outputValue.irradiance[i] = vec4(0);
+  for (uint i = 0; i < 6; ++i)
+    outputValue.moments[i] = vec4(0);
+  outputValue.statistics = vec4(0);
+  uint seed = floatBitsToUint(origin.x) * 73856093u ^ floatBitsToUint(origin.y) * 19349663u ^
+              floatBitsToUint(origin.z) * 83492791u ^ (rayFrame.control.y + 1u) * 2654435761u;
+#ifndef COMPACT_VISIBILITY
+#ifndef PARALLEL_BAKE
+  if (BAKE_MODE == 7u) {
+    // Evaluate the actual captured geometry before spending lighting samples
+    // on a candidate. No containing-medium queries, lighting or SH convolution.
+    Hit hit;
+    vec3 direction = normalize(point.normal.xyz);
+    seed = directionSeed(direction, seed);
+    bool found = traceRay(origin, direction, rayFrame.trace.x, seed, hit);
+    outputValue.irradiance[0].w = hit.distance;
+    outputValue.statistics = vec4(found && solidBackface(hit, direction) ? 1 : 0, found ? 0 : 1, 1, 0);
+    storeResult(index, outputValue);
+    return;
+  }
+#endif
+  if (BAKE_MODE == 4u) {
+    float rotation = random(seed) * 2 * RayPi;
+    for (uint i = 0; i < rayFrame.counts.z; ++i) {
+      float phase = float(i * 0x61c88647u) * (1.0 / 4294967296.0);
+      float z = 1 - 2 * (float(i) + .5) / float(rayFrame.counts.z), phi = rotation + 2 * RayPi * phase;
+      vec3 direction = vec3(sqrt(max(0, 1 - z * z)) * vec2(cos(phi), sin(phi)), z);
+      Hit hit;
+      bool found = traceRay(origin, direction, rayFrame.trace.x, seed, hit);
+      if (found) {
+        outputValue.statistics.x += solidBackface(hit, direction) ? 1 : 0;
+      } else {
+        outputValue.statistics.y += 1;
+      }
+    }
+    outputValue.statistics.xy /= float(rayFrame.counts.z);
+    outputValue.statistics.z = float(rayFrame.counts.z);
+    storeResult(index, outputValue);
+    return;
+  }
+#endif
+#ifndef COMPACT_VISIBILITY
+  // Screen producers pad batches and skip covered/rough/empty receivers.
+  // Reject inactive rays before the six-axis containing-medium lookup.
+  if (BAKE_MODE == 1u && point.normal.w < 0) {
+    storeResult(index, outputValue);
+    return;
+  }
+  // A radiance point has one containing medium even when its lighting samples
+  // are chunked. Keep classification independent of the requested sample range.
+  if (BAKE_MODE == 1u)
+    seed ^= (rayFrame.control.y + 1u) * 2654435761u ^ 2654435761u;
+#endif
+  Medium medium = pointMedium(origin, seed);
+  if (BAKE_MODE == 5u || BAKE_MODE == 6u) {
+    vec3 axis = normalize(-rayFrame.sunDirection.xyz);
+    vec3 normal = dot(point.normal.xyz, point.normal.xyz) > 1e-10 ? normalize(point.normal.xyz) : vec3(0);
+    float surfaceIrradiance = 0;
+    float visible = 0;
+    bool unoccluded = true;
+    float shiftU = random(seed), shiftV = random(seed);
+    vec2 sampleShift = vec2(shiftU, shiftV);
+#ifdef PARALLEL_BAKE
+    seed ^= gl_LocalInvocationIndex * 747796405u;
+#endif
+    for (uint sampleIndex = SAMPLE_START; sampleIndex < rayFrame.counts.z; sampleIndex += SAMPLE_STEP) {
+      vec2 samplePoint = visibilitySample(sampleIndex, sampleShift);
+      vec3 direction = basisDirection(axis, mix(cos(rayFrame.sunDirection.w), 1, samplePoint.x),
+                                      2 * RayPi * samplePoint.y);
+      vec3 passing = visibility(origin, direction, rayFrame.trace.x, seed, medium);
+      unoccluded = unoccluded && all(equal(passing, vec3(1)));
+      float transmission = dot(passing, vec3(.2126, .7152, .0722));
+      visible += transmission;
+      if (BAKE_MODE == 6u && transmission > 0 &&
+          (dot(normal, normal) == 0 || dot(normal, direction) > 0)) {
+        surfaceIrradiance += transmission * max(dot(normal, direction), 0);
+        float sh[9];
+        basis(direction, sh);
+        for (uint coefficient = 0; coefficient < 9u; ++coefficient)
+          outputValue.irradiance[coefficient].y += transmission * sh[coefficient];
+      }
+    }
+#ifdef PARALLEL_BAKE
+    outputValue.irradiance[0].x = visible;
+    outputValue.irradiance[0].w = unoccluded ? 0 : 1;
+#else
+    outputValue.irradiance[0].x = unoccluded ? 1 : clamp(visible / float(rayFrame.counts.z), 0,
+                                                       uintBitsToFloat(0x3f7fffffu));
+#endif
+    if (BAKE_MODE == 6u) {
+      for (uint coefficient = 0; coefficient < 9u; ++coefficient) {
+        float convolution = coefficient == 0u ? RayPi : coefficient < 4u ? 2 * RayPi / 3 : RayPi / 4;
+        outputValue.irradiance[coefficient].y *= convolution / float(rayFrame.counts.z);
+      }
+      if (dot(normal, normal) > 0)
+        anchorSurfaceIrradiance(outputValue, normal, surfaceIrradiance / float(rayFrame.counts.z));
+    }
+    outputValue.statistics.z = float(rayFrame.counts.z);
+    storeResult(index, outputValue);
+    return;
+  }
+  if (BAKE_MODE == 2u || BAKE_MODE == 3u) {
+    uint light = uint(point.position.w);
+    vec3 normal = dot(point.normal.xyz, point.normal.xyz) > 1e-10 ? normalize(point.normal.xyz) : vec3(0);
+    float surfaceIrradiance = 0;
+    float visibleWeight = 0, totalWeight = 0;
+    bool unoccluded = true;
+    seed ^= (light + 1u) * 747796405u;
+    float shiftU = random(seed), shiftV = random(seed);
+    vec2 sampleShift = vec2(shiftU, shiftV);
+#ifdef PARALLEL_BAKE
+    seed ^= gl_LocalInvocationIndex * 747796405u;
+#endif
+    for (uint sampleIndex = SAMPLE_START; sampleIndex < rayFrame.counts.z; sampleIndex += SAMPLE_STEP) {
+      vec3 direction;
+      float distance, weight;
+      if (sampleEmitterAt(rayLights[light], origin, visibilitySample(sampleIndex, sampleShift),
+                          direction, distance, weight)) {
+        totalWeight += weight;
+        vec3 passing = visibility(origin, direction, emitterShadowDistance(rayLights[light], distance), seed, medium);
+        // Luminance reduction and weighted accumulation may round below one
+        // even when every connection is clear. Preserve that exact endpoint
+        // from RGB transport; never turn a small real attenuation into clear.
+        if (weight > 0 && any(notEqual(passing, vec3(1))))
+          unoccluded = false;
+        // Mixed-light channels store scalar visibility, independent of light RGB.
+        float transmission = dot(passing, vec3(.2126, .7152, .0722));
+        if (transmission > 0) {
+          visibleWeight += weight * transmission;
+          if (BAKE_MODE == 3u && (dot(normal, normal) == 0 || dot(normal, direction) > 0)) {
+            surfaceIrradiance += weight * transmission * max(dot(normal, direction), 0);
+            float sh[9];
+            basis(direction, sh);
+            for (uint coefficient = 0; coefficient < 9u; ++coefficient)
+              outputValue.irradiance[coefficient].y += weight * transmission * sh[coefficient];
+          }
+        }
+      }
+    }
+    // An attenuated result must not round back into the reserved clear state.
+#ifdef PARALLEL_BAKE
+    outputValue.irradiance[0].x = visibleWeight;
+    outputValue.irradiance[0].z = totalWeight;
+    outputValue.irradiance[0].w = unoccluded ? 0 : 1;
+#else
+    outputValue.irradiance[0].x = unoccluded || totalWeight <= 0
+                                    ? 1
+                                    : clamp(visibleWeight / totalWeight, 0, uintBitsToFloat(0x3f7fffffu));
+#endif
+    if (BAKE_MODE == 3u) {
+      for (uint coefficient = 0; coefficient < 9u; ++coefficient) {
+        float convolution = coefficient == 0u ? RayPi : coefficient < 4u ? 2 * RayPi / 3 : RayPi / 4;
+        outputValue.irradiance[coefficient].y *= convolution / float(rayFrame.counts.z);
+      }
+      if (dot(normal, normal) > 0)
+        anchorSurfaceIrradiance(outputValue, normal, surfaceIrradiance / float(rayFrame.counts.z));
+    }
+    outputValue.statistics.z = float(rayFrame.counts.z);
+    storeResult(index, outputValue);
+    return;
+  }
+#ifndef COMPACT_VISIBILITY
+  if (BAKE_MODE == 1u) {
+    // A cubemap stores outgoing radiance, rather than cosine-convolved
+    // irradiance. Reuse exactly the same scene/material/visibility transport.
+    // A ray keeps its sample stream when capture faces or live queries are
+    // split into different batches. Batch-local invocation IDs are scheduling
+    // details, not part of a lighting sample's identity.
+    vec3 direction = normalize(point.normal.xyz);
+    seed = directionSeed(direction, seed);
+    // Average lighting at this fixed primary direction. Independent sample
+    // identities preserve the result across point batches and sample chunks;
+    // sample zero also retains the original single-ray/live-reflection stream.
+    uint stream = seed ^ 2654435761u;
+    vec3 sum = vec3(0);
+    for (uint i = SAMPLE_START; i < rayFrame.counts.z; i += SAMPLE_STEP) {
+      uint sampleSeed = stream ^ (rayFrame.control.y + i + 1u) * 2654435761u;
+      float distance;
+      bool back, miss;
+      sum += radiance(origin, direction, medium, sampleSeed, distance, back, miss,
+        rayFrame.trace.x, rayFrame.counts.w);
+      if (i == 0u) {
+        outputValue.irradiance[0].w = distance;
+        outputValue.statistics.xy = vec2(back ? 1 : 0, miss ? 1 : 0);
+      }
+    }
+    outputValue.irradiance[0].rgb = sum / float(rayFrame.counts.z);
+    outputValue.statistics.z = float(rayFrame.counts.z);
+    storeResult(index, outputValue);
+    return;
+  }
+  float rotation = random(seed) * 2 * RayPi;
+  bool surfaceReceiver = dot(point.normal.xyz, point.normal.xyz) > 1e-10;
+  vec3 surfaceNormal = surfaceReceiver ? normalize(point.normal.xyz) : vec3(0);
+  vec3 surfaceIrradiance = vec3(0);
+#ifdef PARALLEL_BAKE
+  seed ^= gl_LocalInvocationIndex * 747796405u;
+#endif
+  for (uint i = SAMPLE_START; i < rayFrame.counts.z; i += SAMPLE_STEP) {
+    // Integer Weyl phase keeps progressive sample offsets precise without
+    // requiring shaderInt64 or losing the azimuth at large float ordinals.
+    float phase = float((i + rayFrame.control.y) * 0x61c88647u) * (1.0 / 4294967296.0);
+    float z = 1 - 2 * (float(i) + .5) / float(rayFrame.counts.z), phi = rotation + 2 * RayPi * phase;
+    vec3 direction = vec3(sqrt(max(0, 1 - z * z)) * vec2(cos(phi), sin(phi)), z);
+    if (surfaceReceiver)
+      direction = basisDirection(surfaceNormal, (float(i) + .5) / float(rayFrame.counts.z), phi);
+    float distance;
+    bool back, miss;
+#ifdef RECEIVER_DIRECT_ONLY
+    // Preserve primary geometry evidence without tracing incoming lighting paths.
+    Hit primary;
+    miss = !traceBounceRay(origin, direction, rayFrame.trace.x, seed, primary);
+    distance = primary.distance;
+    back = !miss && solidBackface(primary, direction);
+    vec3 value = vec3(0);
+#else
+    vec3 value = radiance(origin, direction, medium, seed, distance, back, miss,
+        rayFrame.trace.x, rayFrame.counts.w);
+#endif
+    // Surface receivers see a hemisphere (2Pi); volume probes see 4Pi. Keep
+    // the common epilogue unchanged for the separately normalized direct NEE.
+    if (surfaceReceiver) value *= .5;
+    surfaceIrradiance += value * max(dot(surfaceNormal, direction), 0);
+    float sh[9];
+    basis(direction, sh);
+    for (uint j = 0; j < 9; ++j)
+      outputValue.irradiance[j].rgb += value * sh[j];
+#ifdef AGGREGATE_DIFFUSE
+    accumulateBakedDiffuse(outputValue, surfaceIrradiance, origin, surfaceNormal, medium, i + rayFrame.control.y);
+#endif
+    vec3 axis = abs(direction);
+    uint face = axis.x >= axis.y && axis.x >= axis.z ? (direction.x >= 0 ? 0u : 1u)
+                : axis.y >= axis.z                   ? (direction.y >= 0 ? 2u : 3u)
+                                                     : (direction.z >= 0 ? 4u : 5u);
+    outputValue.moments[face] += vec4(distance, distance * distance, miss ? 0 : 1, 1);
+    outputValue.statistics.xy += vec2(back ? 1 : 0, miss ? 1 : 0);
+  }
+  float weight = 4 * RayPi / float(rayFrame.counts.z);
+  for (uint j = 0; j < 9; ++j) {
+    float convolution = j == 0u ? RayPi : j < 4u ? 2 * RayPi / 3 : RayPi / 4;
+    outputValue.irradiance[j] *= weight * convolution;
+  }
+  if (surfaceReceiver)
+    anchorSurfaceIrradiance(outputValue, surfaceNormal, surfaceIrradiance * weight);
+#ifndef PARALLEL_BAKE
+  for (uint j = 0; j < 6; ++j)
+    if (outputValue.moments[j].w > 0)
+      outputValue.moments[j].xyz /= outputValue.moments[j].w;
+  outputValue.statistics.xy /= float(rayFrame.counts.z);
+#endif
+  outputValue.statistics.z = float(rayFrame.counts.z);
+  storeResult(index, outputValue);
+#endif
+}

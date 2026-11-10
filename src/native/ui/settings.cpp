@@ -1,3 +1,9 @@
+#if !defined(REMIX_METAL)
+#include "forward/lightmap/denoise.h"
+#endif
+#if !defined(REMIX_METAL)
+#include "forward/lightmap/data.h"
+#endif
 // Every settings tab of the panel, in tab order (ui::Tab). Each tab is one function;
 // each setting is one widget row inside a ui::Panel. The tool tabs (Diagnostics,
 // Textures, Profiles, Mods) and the sky/weather rows (sky.cpp) live in their own files.
@@ -58,9 +64,16 @@ namespace remix {
     const auto generation = uiFrameGeneration();
     if (ui::Panel panel{"Renderer", ImGuiTreeNodeFlags_DefaultOpen}) {
       int backend = int(settings.backend);
+#if defined(REMIX_METAL)
       if (ui::Combo("Requested backend", &backend, "Raster\0Path trace\0"))
         settings.backend = uint32_t(backend);
       ImGui::TextWrapped("Active backend: %s", m_backend ? "Path trace" : "Raster");
+#else
+      if (ui::Combo("Requested backend", &backend, "Raster\0Path trace\0Forward+ (experimental)\0"))
+        settings.backend = uint32_t(backend);
+      ImGui::TextWrapped("Active backend: %s", config::Backend::name(m_backend));
+      if (!m_forwardFailure.empty()) ImGui::TextWrapped("%s", m_forwardFailure.c_str());
+#endif
       if (!m_traceUnavailable.empty())
         ImGui::TextWrapped("Path tracing unavailable: %s", m_traceUnavailable.c_str());
       int primary = options.rasterPrimary ? 0 : 1;
@@ -331,6 +344,270 @@ namespace remix {
   // How the scene is lit: denoising, path sampling, the sun and sky, local lights, radiance
   // caches, volumetrics, and the game's scale and shadow offsets.
   void RemixNativeRuntime::drawLightingTab(config::Settings &settings) {
+#if !defined(REMIX_METAL)
+    if (settings.backend == config::Backend::ForwardPlus) {
+      const auto statistics = forwardStatistics();
+      ImGui::Text("Active MSAA: %ux | prepared draw records: %u | lights: %u | clusters: %u",
+                  statistics.samples, statistics.draws, statistics.lights, statistics.clusters);
+      const auto &calls = statistics.drawCalls;
+      ImGui::TextDisabled("Geometry calls: depth %u | color %u | terrain %u | water %u",
+                          calls.worldDepth, calls.worldColor, calls.terrain, calls.water);
+      ImGui::TextDisabled("Depth sources: %u logical | %u in static batch",
+                          calls.worldDepthLogical, calls.batchedDepthSources);
+      ImGui::TextDisabled("Shadow calls: sun %u static + %u moving | local %u static + %u moving",
+                          calls.staticSunShadow, calls.movingSunShadow,
+                          calls.staticLocalShadow, calls.movingLocalShadow);
+      ImGui::TextDisabled("Viewmodel calls: color %u | sun %u | local %u",
+                          calls.viewModelColor,
+                          calls.viewModelSunShadow, calls.viewModelLocalShadow);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Geometry API calls recorded for the last reported frame.\n"
+                          "Excludes fullscreen/post-processing, raster overlays and UI.");
+      ImGui::TextDisabled("Local light lists: %u runtime | %u baked fallback | %u build candidates",
+                          statistics.clusteredLights, statistics.fullyBakedLights, statistics.clusterBuildLights);
+      ImGui::TextDisabled("Selected baked roles: %u highlights | %u mixed shadows",
+                          statistics.selectedHighlightLights, statistics.selectedMixedShadowLights);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Counts overlap when a light has both roles. Positive response weights only;\n"
+                          "pending fades can also retain clustered entries.");
+      auto &forward = settings.forward;
+      const bool source2Preset = remix::forward::presets::isSource2(forward);
+      const char *source2Name = remix::forward::presets::source2Name.data();
+      ui::field("Lighting preset", [&](const char *label) {
+        if (!ImGui::BeginCombo(label, source2Preset ? source2Name : "Custom")) return false;
+        bool changed = false;
+        if (ImGui::Selectable(source2Name, source2Preset)) {
+          remix::forward::presets::applySource2(forward);
+          changed = true;
+        }
+        ImGui::BeginDisabled();
+        ImGui::Selectable("Custom (individual techniques)", !source2Preset);
+        ImGui::EndDisabled();
+        ImGui::EndCombo();
+        return changed;
+      });
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Source 2 selects baked surface/probe lighting, mixed shadows and cubemap + SSR reflections.\n"
+                          "Quality settings stay unchanged. Individual technique changes display Custom.\n"
+                          "If cubemaps were disabled with a zero probe budget, the default budget is restored.");
+      int lightingView = int(forward.debugView);
+      if (ui::Combo("Lighting view", &lightingView,
+                    "Shaded\0Baked irradiance (neutral)\0Analytic direct diffuse\0Direct specular\0"
+                    "Albedo (unlit)\0Baked irradiance (no normal maps)\0Bake coverage\0Total diffuse\0"))
+        forward.debugView = uint32_t(lightingView);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Separates opaque-world lighting using the current bake.\n"
+                          "Neutral baked irradiance includes aggregate direct lighting, excluding material colour, emission and reflections.\n"
+                          "Analytic diffuse excludes direct light already in the bake. Albedo excludes lighting.\n"
+                          "Total diffuse retains material colour, baked and live diffuse, excluding emission and specular.\n"
+                          "Unmapped irradiance excludes normal maps. Direct views exclude screen-space and probe reflections.\n"
+                          "Bake coverage: blue = surface lightmap, green = valid probe, red = uncovered opaque receiver.\n"
+                          "Does not rebake.");
+      int samples = forward.samples == 4 ? 2 : forward.samples == 2 ? 1 : 0;
+      ui::Checkbox("Batch static depth draws", &forward.staticDepthBatch);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Combines static opaque depth draws with a bounded buffer per frame slot.\n"
+                          "Cutout and dynamic draws keep their normal paths; does not rebake lighting.");
+      ui::Checkbox("GPU opaque occlusion culling", &forward.opaqueOcclusionCulling);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Uses depth prepass coverage to skip hidden opaque draws in larger views.");
+      ui::Checkbox("Bicubic lightmaps", &forward.bicubicLightmaps);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Smooth baked texel transitions with chart-safe cubic B-spline filtering.\n"
+                          "Costs additional lighting samples; does not rebake or remove capture noise.");
+      if (ui::Combo("MSAA", &samples, "Off\0 2x\0 4x\0")) forward.samples = 1u << samples;
+      ui::Checkbox("Sun shadows", &forward.shadows);
+      ui::Checkbox("Local light shadows", &forward.localShadows);
+      int shadowLights = int(forward.localShadowLights);
+      if (ui::SliderInt("Shadowed local lights", &shadowLights, 0, 8))
+        forward.localShadowLights = uint32_t(shadowLights);
+      int shadowResolution = 0;
+      while ((64u << shadowResolution) < forward.localShadowResolution) ++shadowResolution;
+      if (ui::Combo("Local shadow face size", &shadowResolution, "64\0 128\0 256\0 512\0 1024\0"))
+        forward.localShadowResolution = 64u << shadowResolution;
+      ui::DragFloat("Local shadow distance (m)", &forward.localShadowDistance, 1, .1f, 10000);
+      ImGui::Text("Local shadows: %u | unshadowed fallback: %u | static map updates: %u",
+                  statistics.shadowedLights, statistics.shadowOverflow, statistics.staticShadowUpdates);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Each selected light has cached static geometry and a separate live caster map.\n"
+                          "Lights beyond the budget keep illuminating the scene without local shadow maps.");
+      ImGui::Text("Moving local maps: %u updated, %u reused", statistics.movingLocalUpdates,
+                  statistics.movingLocalReuses);
+      ImGui::Text("Sun static cascade updates: %u | captured casters: %u | live candidates: %u",
+                  statistics.staticSunUpdates, statistics.capturedCasters, statistics.liveCasters);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Captured geometry is excluded from moving-caster maps.\n"
+                          "Frozen depth maps are fallback shadows for receivers without a matching lightmap.\n"
+                          "Static sun cascades are reused until their projection or frozen scene changes.");
+      ImGui::Text("Frozen caster draws prepared this frame: %u", statistics.staticCasterPreparations);
+      ImGui::Text("Geometry uploads: %llu created, %llu reused | spare buffers %.2f MiB",
+                  static_cast<unsigned long long>(statistics.rigidUploadCreates),
+                  static_cast<unsigned long long>(statistics.rigidUploadReuses),
+                  statistics.spareGeometryBytes / 1048576.0);
+      ImGui::Text("Posed uploads: %llu | unchanged poses reused: %llu",
+                  static_cast<unsigned long long>(statistics.posedUploads),
+                  static_cast<unsigned long long>(statistics.posedUploadReuses));
+      ui::Checkbox("Screen-space reflections", &forward.ssr);
+      ui::Checkbox("Water refraction and reflections", &forward.water);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Uses the material's tint, absorption and refractive index.\n"
+                          "Disabling restores compatibility water rendering.");
+      auto selectedTechniques = remix::forward::techniques::requested(forward);
+      int diffuseTechnique = int(selectedTechniques.diffuse);
+      if (ui::Combo("Diffuse lighting", &diffuseTechnique,
+                    "Surface lightmaps + volume probes\0Live ray-query GI\0Disabled\0Live incoming + baked direct\0"))
+        remix::forward::techniques::selectDiffuse(forward,
+            remix::forward::techniques::Diffuse(diffuseTechnique));
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Selects diffuse transport independently of material shading.\n"
+                          "Live incoming retains the selected baked direct technique; full live GI replaces the baked field.\n"
+                          "Cubemap captures use an independent owner when live incoming is active.");
+      if (forward.rtGI) {
+        if (!statistics.rayGI.available)
+          ImGui::TextWrapped("Fragment ray queries unavailable; using baked indirect lighting.");
+        else ImGui::TextWrapped("%s", statistics.rayGI.status);
+        int samples = int(forward.rtGISamples), bounces = int(forward.rtGIBounces);
+        if (ui::SliderInt("GI rays per shaded pixel", &samples, 1, 64)) forward.rtGISamples = uint32_t(samples);
+        if (ui::SliderInt("GI secondary bounces", &bounces, 1, 8)) forward.rtGIBounces = uint32_t(bounces);
+        ui::DragFloat("GI ray distance (m)", &forward.rtGIDistance, 1, .1f, 10000);
+      }
+      int reflectionTechnique = int(remix::forward::techniques::requested(forward).reflections);
+      if (ui::Combo("Reflection fallback", &reflectionTechnique,
+                    "Disabled\0Parallax cubemaps\0Ray queries\0Ray queries + cubemaps\0"))
+        remix::forward::techniques::selectReflections(forward,
+            remix::forward::techniques::Reflections(reflectionTechnique));
+      if (forward.rtReflections) {
+        if (!statistics.rayReflections.available)
+          ImGui::TextWrapped("Hardware ray queries unavailable; using enabled fallback techniques.");
+        else if (statistics.rayReflections.status[0]) {
+          ImGui::TextWrapped("%s", statistics.rayReflections.status);
+          ImGui::Text("Reflection ray slots: %u | scene builds: %u", statistics.rayReflections.rays,
+                      statistics.rayReflections.sceneBuilds);
+        }
+        ui::DragFloat("Hardware reflection distance (m)", &forward.rtReflectionDistance, 1, .1f, 10000);
+        int bounces = int(forward.rtReflectionBounces);
+        if (ui::SliderInt("Hardware reflection bounces", &bounces, 1, 8))
+          forward.rtReflectionBounces = uint32_t(bounces);
+      }
+      ui::Checkbox("Cache baked lighting on disk", &forward.baking.diskCache);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Reuses finished lighting when map inputs, materials, quality and GPU match.\n"
+                          "Cache changes affect subsequent map loads; disabling keeps the active lighting.");
+      int directTechnique = int(remix::forward::techniques::requested(forward).direct);
+      if (ui::Combo("Static direct lighting", &directTechnique,
+                    "Analytic\0Attributed bake\0Baked diffuse + mixed shadows\0"))
+        remix::forward::techniques::selectDirect(forward,
+            remix::forward::techniques::Direct(directTechnique));
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Uses baked diffuse for fixed lights and reduces their per-frame work.\n"
+                          "Lightmaps and probes provide diffuse; selected highlights and moving shadows stay live.\n"
+                          "Switching can prepare another bake; disabling restores your previous policy.");
+      if (forward.bakedLighting) {
+        ImGui::TextWrapped("Fixed-light diffuse comes from lightmaps and probes. "
+                           "Other reflections still use the enabled reflection effects.");
+        if (!forward.baking.enabled)
+          ImGui::TextWrapped("Select surface lightmaps + volume probes to use baked lighting.");
+        else if (!forward.baking.directDiffuse)
+          ImGui::TextWrapped("Enable baked direct diffuse to use baked lighting.");
+        else if (forward.rtGI && statistics.rayGI.available)
+          ImGui::TextWrapped(forward.bakedDirectWithLiveGI
+              ? "Direct lighting stays baked; incoming lighting is evaluated live."
+              : "Live ray-traced GI replaces the baked field. Baked lighting resumes when GI is off.");
+      }
+      ImGui::BeginDisabled(!remix::forward::lightmap::denoiserVersion());
+      ui::Checkbox("Denoise indirect lightmaps", &forward.baking.denoiseLightmaps);
+      ImGui::EndDisabled();
+      if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip("Filters baked indirect light while preserving direct-light and shadow masks.\n"
+                          "Adds a filtering stage to new bakes; cached lighting reuses the result.\n"
+                          "Requires an Open Image Denoise enabled build; otherwise raw lighting is retained.");
+      ui::DragFloat("Bake GPU budget (ms)", &forward.baking.gpuBudgetMs, .25f, 0, 16);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Adjusts batch size from completed GPU timings. Complex batches can exceed the target.\n"
+                          "Higher values finish first bakes faster and can reduce frame rate while baking.\n"
+                          "Zero uses the fixed bakeBatch setting. Scheduling edits preserve baked lighting.");
+      ui::DragFloat("Bake probe spacing (m)", &forward.baking.spacing, .1f, .1f, 100);
+      if (statistics.irradianceGrid.slots)
+        ImGui::Text("Active probe grid: %.2f m, %u / %u usable", statistics.irradianceGrid.spacingMetres,
+                    statistics.irradianceGrid.usable, statistics.irradianceGrid.slots);
+      ui::Checkbox("Antialias baked sunlight edges", &forward.baking.antialiasSun);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Refines detected static sun-shadow edges across each luxel's surface area.\n"
+                          "Adds a bounded sampling pass to new bakes; cached lighting reuses the result.");
+      ui::Checkbox("Lightmap static models", &forward.baking.modelLightmaps);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Bakes eligible opaque static mesh surfaces into the surface atlas.\n"
+                          "Dynamic objects retain probe lighting. Changing this rebuilds lighting once.");
+      ui::Checkbox("Fit surface detail to atlas budget", &forward.baking.lightmapFitBudget);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Selects the finest consistent surface density that fits the atlas.\n"
+                          "Larger budgets add detail, including on small maps.");
+      if (!forward.baking.lightmapFitBudget)
+        ui::DragFloat("Manual surface luxel size (m)", &forward.baking.lightmapLuxelSize, .01f, .01f, 16);
+      int surfaceBudget = int(forward.baking.lightmapTexels / 1024);
+      if (ui::SliderInt("Surface lightmap budget (k texels)", &surfaceBudget, 64, 16384))
+        forward.baking.lightmapTexels = uint32_t(surfaceBudget) * 1024;
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("More texels preserve smaller baked lighting details. Automatic density fills this budget.");
+      ImGui::Text("Surface atlas memory limit: %.1f MiB",
+                  double(forward.baking.lightmapTexels) * remix::forward::lightmap::atlasBytesPerTexel / (1024 * 1024));
+      int surfacePage = 0;
+      while ((64u << surfacePage) < forward.baking.lightmapPageSize) ++surfacePage;
+      if (ui::Combo("Maximum surface atlas page size", &surfacePage, "64\0 128\0 256\0 512\0 1024\0 2048\0 4096\0"))
+        forward.baking.lightmapPageSize = 64u << surfacePage;
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Larger pages let large faces retain finer luxels. Pages shrink if one would exceed the texel budget.\n"
+                          "Smaller pages allocate memory in smaller increments.");
+      int probeCount = int(forward.baking.reflectionProbes);
+      if (ui::SliderInt("Reflection probes", &probeCount, 0, int(remix::forward::probes::maxProbes)))
+        forward.baking.reflectionProbes = uint32_t(probeCount);
+      const auto activeProbes = statistics.reflectionProbes.parameters[0];
+      ui::Checkbox("Automatic fallback outside authored volumes", &forward.authoredReflectionFallback);
+      ImGui::Text("Active reflection probes: %u (%s)", activeProbes,
+                  statistics.authoredReflections.active ?
+                    (statistics.authoredReflections.automatic ? "authored + automatic" : "authored") : "automatic");
+      if (statistics.authoredReflections.active && activeProbes && !forward.authoredReflectionFallback)
+        ImGui::TextWrapped("Authored volumes replace the automatic set for this map. "
+                           "Areas outside these volumes have no local cubemap. "
+                           "Clear the host's override to restore automatic probes.");
+      if (statistics.authoredReflections.active && forward.authoredReflectionFallback && activeProbes)
+        ImGui::Text("Automatic fallback: %u retained, %u covered, %u omitted by capacity",
+                    statistics.authoredReflections.automatic, statistics.authoredReflections.covered,
+                    statistics.authoredReflections.omitted);
+      if (statistics.authoredReflections.active && !activeProbes)
+        ImGui::TextWrapped("The authored volume set is empty, so local cubemaps are disabled. "
+                           "Clear the host's override to use automatic probes.");
+      ui::DragFloat("Reflection trim tolerance (m)", &forward.baking.reflectionDetailTolerance, .01f, 0, 2);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Allows small bevels and interior clutter in fitted reflection boxes. Zero uses strict empty space.\n"
+                          "Thin walls remain barriers; this is an approximate room fit.");
+      int probeResolution = 0;
+      while ((8u << probeResolution) < forward.baking.reflectionResolution) ++probeResolution;
+      if (ui::Combo("Cubemap face size", &probeResolution, "8\0 16\0 32\0 64\0 128\0 256\0 512\0"))
+        forward.baking.reflectionResolution = 8u << probeResolution;
+      if (ImGui::IsItemHovered()) {
+        const uint64_t size = forward.baking.reflectionResolution;
+        // Six faces, their full mip chain, and eight bytes per HDR texel.
+        const uint64_t perCapture = 6 * (4*size*size-1) / 3 * 8;
+        ImGui::SetTooltip("Sharper faces require more memory and capture work.\n"
+                          "Image texels at this capture budget: about %.1f MiB.",
+                          double(perCapture * forward.baking.reflectionProbes) / (1024*1024));
+      }
+      ImGui::TextWrapped("%s", statistics.baking.status[0] ? statistics.baking.status : "Waiting for static map inputs");
+      if (statistics.baking.probes)
+        ImGui::Text("Bake probes: %u / %u", statistics.baking.completed, statistics.baking.probes);
+      int ssrScale = forward.ssrScale == 4 ? 2 : forward.ssrScale == 2 ? 1 : 0;
+      if (ui::Combo("SSR resolution", &ssrScale, "Full\0Half\0Quarter\0"))
+        forward.ssrScale = 1u << ssrScale;
+      ui::DragFloat("Shadow distance (m)", &forward.shadowDistance, 1, 1, 10000);
+      ui::DragFloat("Scene scale (m per unit)", &forward.sceneScale, .0005f, .0001f, 1000, "%.4f", ImGuiSliderFlags_Logarithmic);
+      ui::DragFloat("Ambient fill", &forward.ambient, .001f, 0, 100);
+      ui::DragFloat("Exposure", &forward.exposure, .01f, .0001f, 10000);
+      ImGui::TextWrapped("Experimental Forward+ renderer with mixed static and dynamic local shadows. Map baking supplies static indirect light, soft static shadows and "
+                         "box-projected reflections. Transparency and game effects use compatibility rasterization.");
+      return;
+    }
+#endif
     auto &options = settings.trace;
     const auto fsr = uiReconstruction();
     const bool rrActive = fsr.denoises;
@@ -991,6 +1268,26 @@ namespace remix {
 
   // The image after lighting: exposure, bloom and contrast.
   void RemixNativeRuntime::drawPostProcessTab(config::Settings &settings) {
+#if !defined(REMIX_METAL)
+    if (settings.backend == config::Backend::ForwardPlus) {
+      ImGui::TextUnformatted("Forward+ brightness");
+      auto &options = settings.forward;
+      ui::Checkbox("Prism tone mapping", &options.prism);
+      ui::Checkbox("Gamma 2.2 output", &options.gamma22);
+      ui::Checkbox("Automatic exposure", &options.autoExposure);
+      ui::DragFloat("Exposure multiplier", &options.exposure, .01f, .0001f, 10000.f);
+      ui::SliderFloat("Meter target", &options.autoExposureTarget, .02f, .6f, "%.3f");
+      ui::SliderFloat("Adaptation rate (1/s)", &options.autoExposureSpeed, .1f, 16.f, "%.2f");
+      ui::SliderFloat("Centre weight", &options.autoExposureCentre, 0, 1, "%.2f");
+      ui::SliderFloat("Minimum exposure EV", &options.autoExposureMinEv, -24, 0, "%.1f");
+      ui::SliderFloat("Maximum exposure EV", &options.autoExposureMaxEv, 0, 24, "%.1f");
+      const auto post = postProcessingStatistics();
+      ImGui::TextWrapped("Automatic %.4g | target %.4g | %.3f ms", post.exposure, post.target, post.milliseconds);
+      ImGui::TextWrapped("Meters linear world lighting and reflections before tonemapping. Empty background "
+                        "and overlays are excluded. Debug lighting views freeze adaptation.");
+      return;
+    }
+#endif
     auto &options = settings.trace;
     if (ui::Panel panel{"Exposure", ImGuiTreeNodeFlags_DefaultOpen}) {
       ui::Checkbox("Automatic exposure", &options.autoExposure);

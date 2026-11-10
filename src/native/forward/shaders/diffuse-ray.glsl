@@ -1,0 +1,12 @@
+#include "incoming-lighting.glsl"
+// Ray-query diffuse implementation. Selected at shader compilation.
+ReceiverLighting evaluateReceiverLighting(vec3 position, vec3 normal, vec3 geometric,
+                                         bool diffuseRequired, vec3 fallback) {
+  ReceiverLighting lighting = ReceiverLighting(fallback, analyticDirectLighting(false), false);
+  lighting.diffuse = diffuseRequired ? sampleIncomingDiffuse(position, normal, geometric) : vec3(0);
+  return lighting;
+}
+
+// Live diffuse does not advertise a compatible frozen-reflection reference.
+// Compatibility describes the selected source, not receiver availability.
+uint diffuseReflectionReferenceDomain() { return NoLightingReference; }

@@ -84,6 +84,7 @@ namespace {
   // profile directory (REMIX_CONFIG_DIR, else ./openremix):
   //   config.request     "key = value" lines applied as SetConfigVariable
   //   screenshot.request presented frame to screenshot.png
+  //   probes.request     published reflection boxes/positions to probes.json
   //   timings.request    GPU pass timings (rtx.native.gpuPassTimers) to timings.txt
   //   pipelines.request  every pipeline compile and cache save to pipelines.txt
   //   lighttree.request  the next frame's combined light tree to lighttree.bin
@@ -208,6 +209,16 @@ namespace {
       }
       std::ofstream(directory / "pipelines.txt") << text;
     }
+#if !REMIX_METAL
+    if (take("probes.request", nullptr)) {
+      std::string text;
+      {
+        std::lock_guard lock(g_apiMutex);
+        text = g_runtime.reflectionProbeReport();
+      }
+      std::ofstream(directory / "probes.json") << text;
+    }
+#endif
     if (take("lighttree.request", nullptr)) {
       std::lock_guard lock(remix::scene::g_lightTreeSaveMutex);
       remix::scene::g_lightTreeSavePath = std::filesystem::absolute(directory / "lighttree.bin", ec).string();
@@ -266,6 +277,22 @@ namespace {
             text += line;
           }
           const auto breakdown = g_runtime.frameBreakdown();
+#if !REMIX_METAL
+          const auto forward = g_runtime.forwardCpuRecording();
+          std::snprintf(line, sizeof(line),
+                        "# Forward+ CPU recording ms: bake %.3f, live scene %.3f, frame preparation %.3f, "
+                        "world commands %.3f, reflections %.3f, water/exposure %.3f, publication %.3f\n",
+                        forward.bake, forward.liveScene, forward.frame, forward.world, forward.reflections,
+                        forward.waterExposure, forward.publication);
+          text += line;
+          const auto &preparation = forward.preparation;
+          std::snprintf(line, sizeof(line),
+                        "# Forward+ frame preparation ms: selection %.3f, draws %.3f, lighting %.3f, "
+                        "uploads/bindings %.3f, materials %.3f, publication %.3f\n",
+                        preparation.selection, preparation.draws, preparation.lighting, preparation.uploads,
+                        preparation.materials, preparation.publication);
+          text += line;
+#endif
           std::snprintf(line, sizeof(line),
                         "# raster draws %llu, outside the view (not drawn) %llu, prepare %.3f ms, record %.3f ms\n",
                         (unsigned long long)breakdown.rasterDraws, (unsigned long long)breakdown.rasterCulledDraws,

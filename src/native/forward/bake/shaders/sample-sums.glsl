@@ -1,0 +1,141 @@
+// Parallel kernels assign one 64-lane workgroup to a point. The arrays use
+// less than 16 KiB, including the shared containing-medium classification.
+#ifdef PARALLEL_BAKE
+#ifdef COMPACT_VISIBILITY
+shared vec4 sumIrradiance[64 * 3];
+#else
+shared vec4 sumIrradiance[64 * 9];
+shared vec4 sumMoments[64 * 6];
+shared float sumFirst[64], sumSecond[64];
+#endif
+shared vec4 containingMedium[4];
+shared uint containingSeed[4];
+Medium pointMedium(vec3 origin, inout uint seed) {
+  uint sites = (rayFrame.control.w & 16u) != 0u ? 4u : 1u;
+  uint site = gl_LocalInvocationIndex % sites;
+  if (gl_LocalInvocationIndex < sites) {
+    Medium medium = initialMedium(origin, seed);
+    containingMedium[site] = vec4(medium.extinction, medium.index);
+    containingSeed[site] = seed;
+  }
+  barrier();
+  seed = containingSeed[site];
+  return Medium(containingMedium[site].xyz, containingMedium[site].w);
+}
+void storeResult(uint index, RayResult value) {
+  uint lane = gl_LocalInvocationIndex;
+#ifdef COMPACT_VISIBILITY
+  if (BAKE_MODE == 2u) {
+    // Overflow masks consume visibility alone. Avoid reducing, writing and
+    // reading nine unused directional coefficients for every light/texel pair.
+    sumIrradiance[lane] = vec4(value.irradiance[0].xzw, 0);
+    barrier();
+    for (uint stride = 32u; stride > 0u; stride >>= 1u) {
+      if (lane < stride)
+        sumIrradiance[lane] += sumIrradiance[lane + stride];
+      barrier();
+    }
+    if (lane == 0u) {
+      vec3 sum = sumIrradiance[0].xyz;
+      visibilityResults[index] = sum.z == 0 || sum.y <= 0
+          ? 1 : clamp(sum.x / sum.y, 0, uintBitsToFloat(0x3f7fffffu));
+    }
+    return;
+  }
+#endif
+#ifndef COMPACT_VISIBILITY
+  if (BAKE_MODE == 1u) {
+    // Offline radiance needs one RGB reduction, not the nine irradiance SH
+    // bands or visibility ratios. Only sample zero contributes hit metadata.
+    sumIrradiance[lane] = value.irradiance[0];
+    sumFirst[lane] = value.statistics.x;
+    sumSecond[lane] = value.statistics.y;
+    barrier();
+    for (uint stride = 32u; stride > 0u; stride >>= 1u) {
+      if (lane < stride) {
+        sumIrradiance[lane] += sumIrradiance[lane + stride];
+        sumFirst[lane] += sumFirst[lane + stride];
+        sumSecond[lane] += sumSecond[lane + stride];
+      }
+      barrier();
+    }
+    if (lane == 0u) {
+      value.irradiance[0] = sumIrradiance[0];
+      value.statistics.xy = vec2(sumFirst[0], sumSecond[0]);
+      rayResults[index] = value;
+    }
+    return;
+  }
+  if (BAKE_MODE != 0u)
+#endif
+  {
+    // Visibility needs nine scalar SH values and three reduction scalars.
+    // Do not move/reduce the unused RGB coefficients, moments and statistics
+    // of a full irradiance result for every chart/light connection.
+    sumIrradiance[lane * 3u] = vec4(value.irradiance[0].xzw, value.irradiance[0].y);
+    sumIrradiance[lane * 3u + 1u] = vec4(value.irradiance[1].y, value.irradiance[2].y,
+                                         value.irradiance[3].y, value.irradiance[4].y);
+    sumIrradiance[lane * 3u + 2u] = vec4(value.irradiance[5].y, value.irradiance[6].y,
+                                         value.irradiance[7].y, value.irradiance[8].y);
+    barrier();
+    for (uint stride = 32u; stride > 0u; stride >>= 1u) {
+      if (lane < stride)
+        for (uint i = 0u; i < 3u; ++i)
+          sumIrradiance[lane * 3u + i] += sumIrradiance[(lane + stride) * 3u + i];
+      barrier();
+    }
+    if (lane != 0u) return;
+    vec4 first = sumIrradiance[0];
+    float denominator = BAKE_MODE >= 5u ? float(rayFrame.counts.z) : first.y;
+#ifdef COMPACT_VISIBILITY
+    float visible = first.z == 0 || denominator <= 0
+                        ? 1 : clamp(first.x / denominator, 0, uintBitsToFloat(0x3f7fffffu));
+    visibilityResults[index * 12u] = visible;
+    visibilityResults[index * 12u + 1u] = first.w;
+    for (uint coefficient = 1u; coefficient < 9u; ++coefficient)
+      visibilityResults[index * 12u + 1u + coefficient] =
+          sumIrradiance[1u + (coefficient - 1u) / 4u][(coefficient - 1u) % 4u];
+    visibilityResults[index * 12u + 10u] = 0;
+    visibilityResults[index * 12u + 11u] = 0;
+#else
+    value.irradiance[0] = vec4(first.z == 0 || denominator <= 0
+                                 ? 1 : clamp(first.x / denominator, 0, uintBitsToFloat(0x3f7fffffu)),
+                               first.w, 0, 0);
+    for (uint i = 1u; i < 9u; ++i)
+      value.irradiance[i] = vec4(0, sumIrradiance[1u + (i - 1u) / 4u][(i - 1u) % 4u], 0, 0);
+    value.statistics = vec4(0, 0, float(rayFrame.counts.z), 0);
+    rayResults[index] = value;
+#endif
+    return;
+  }
+#ifndef COMPACT_VISIBILITY
+  for (uint i = 0u; i < 9u; ++i) sumIrradiance[lane * 9u + i] = value.irradiance[i];
+  for (uint i = 0u; i < 6u; ++i) sumMoments[lane * 6u + i] = value.moments[i];
+  sumFirst[lane] = value.statistics.x;
+  sumSecond[lane] = value.statistics.y;
+  barrier();
+  for (uint stride = 32u; stride > 0u; stride >>= 1u) {
+    if (lane < stride) {
+      for (uint i = 0u; i < 9u; ++i)
+        sumIrradiance[lane * 9u + i] += sumIrradiance[(lane + stride) * 9u + i];
+      for (uint i = 0u; i < 6u; ++i)
+        sumMoments[lane * 6u + i] += sumMoments[(lane + stride) * 6u + i];
+      sumFirst[lane] += sumFirst[lane + stride];
+      sumSecond[lane] += sumSecond[lane + stride];
+    }
+    barrier();
+  }
+  if (lane != 0u) return;
+  for (uint i = 0u; i < 9u; ++i) value.irradiance[i] = sumIrradiance[i];
+  for (uint i = 0u; i < 6u; ++i) value.moments[i] = sumMoments[i];
+  value.statistics = vec4(sumFirst[0], sumSecond[0], float(rayFrame.counts.z), 0);
+  for (uint i = 0u; i < 6u; ++i)
+    if (value.moments[i].w > 0) value.moments[i].xyz /= value.moments[i].w;
+  value.statistics.xy /= float(rayFrame.counts.z);
+  rayResults[index] = value;
+#endif
+}
+#else
+Medium pointMedium(vec3 origin, inout uint seed) { return initialMedium(origin, seed); }
+void storeResult(uint index, RayResult value) { rayResults[index] = value; }
+#endif

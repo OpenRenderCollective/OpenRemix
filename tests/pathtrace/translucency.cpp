@@ -14,31 +14,31 @@
 
 namespace {
   void require(bool condition, const char *message) {
-    if (!condition) {
-      std::fprintf(stderr, "%s\n", message);
-      std::exit(1);
-    }
+  if (!condition) {
+    std::fprintf(stderr, "%s\n", message);
+    std::exit(1);
+  }
   }
   void ok(remixapi_ErrorCode error, std::source_location where = std::source_location::current()) {
-    if (error) {
+  if (error) {
       std::fprintf(stderr, "Translucency API %x at line %u\n", unsigned(error), where.line());
-      std::exit(1);
-    }
+    std::exit(1);
+  }
   }
   using Image = std::vector<float>;
   Image load(const std::filesystem::path &path, unsigned &width, unsigned &height, bool signedValues = false) {
-    std::ifstream input(path, std::ios::binary);
-    std::string magic;
-    float scale;
-    input >> magic >> width >> height >> scale;
-    input.get();
+  std::ifstream input(path, std::ios::binary);
+  std::string magic;
+  float scale;
+  input >> magic >> width >> height >> scale;
+  input.get();
     require(input.good() && magic == "PF" && scale == -1, "Missing linear translucency capture");
-    Image pixels(size_t(width) * height * 3);
+  Image pixels(size_t(width) * height * 3);
     input.read(reinterpret_cast<char *>(pixels.data()), pixels.size() * sizeof(float));
-    require(input.good(), "Incomplete translucency capture");
-    for (float value : pixels)
+  require(input.good(), "Incomplete translucency capture");
+  for (float value : pixels)
       require(std::isfinite(value) && (signedValues || value >= 0), "Invalid translucent radiance");
-    return pixels;
+  return pixels;
   }
 } // namespace
 
@@ -60,8 +60,10 @@ int main(int argc, char **argv) {
   ok(remixapi_InitializeLibrary(&init, &api));
   remixapi_StartupInfo startup{};
   startup.sType = REMIXAPI_STRUCT_TYPE_STARTUP_INFO;
+#if !defined(_WIN32)
   startup.windowWidth = 95;
   startup.windowHeight = 79;
+#endif
   ok(api.Startup(&startup));
   remixapi_BackendCapabilitiesEXT caps{};
   caps.structSize = sizeof(caps);

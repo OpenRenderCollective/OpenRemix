@@ -7,6 +7,14 @@ namespace remix {
       if (result != VK_SUCCESS)
         throw result;
     }
+    void namePipeline(VkDevice device, VkPipeline pipeline, const char *name) {
+      const auto setName = reinterpret_cast<PFN_vkSetDebugUtilsObjectNameEXT>(
+          vkGetDeviceProcAddr(device, "vkSetDebugUtilsObjectNameEXT"));
+      if (!setName) return;
+      const VkDebugUtilsObjectNameInfoEXT info{.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT,
+          .objectType = VK_OBJECT_TYPE_PIPELINE, .objectHandle = uint64_t(pipeline), .pObjectName = name};
+      setName(device, &info);
+    }
   } // namespace
 
   // Plain Vulkan objects throughout: created on the thread presenting (which
@@ -180,10 +188,10 @@ namespace remix {
         const VkRect2D scissor{{0, 0}, extent};
         const VkPipelineViewportStateCreateInfo viewportState{.sType =
                                                                   VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
-                                                              .viewportCount = 1,
-                                                              .pViewports = &viewport,
-                                                              .scissorCount = 1,
-                                                              .pScissors = &scissor};
+            .viewportCount = 1,
+            .pViewports = &viewport,
+            .scissorCount = 1,
+            .pScissors = &scissor};
         const VkPipelineRasterizationStateCreateInfo raster{
             .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
             .polygonMode = VK_POLYGON_MODE_FILL,
@@ -191,12 +199,12 @@ namespace remix {
             .lineWidth = 1};
         const VkPipelineMultisampleStateCreateInfo samples{.sType =
                                                                VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-                                                           .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT};
+            .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT};
         const VkPipelineColorBlendAttachmentState blendAttachment{.colorWriteMask = 15};
         const VkPipelineColorBlendStateCreateInfo blend{.sType =
                                                             VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-                                                        .attachmentCount = 1,
-                                                        .pAttachments = &blendAttachment};
+            .attachmentCount = 1,
+            .pAttachments = &blendAttachment};
         const VkGraphicsPipelineCreateInfo info{.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
                                                 .stageCount = 2,
                                                 .pStages = stages,
@@ -209,6 +217,7 @@ namespace remix {
                                                 .layout = m_layout,
                                                 .renderPass = m_pass};
         check(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &m_pipeline));
+        namePipeline(device, m_pipeline, "HDR10 fullscreen encode");
 
         // The UI scale, in the frame's pass: colour = target x constant,
         // alpha kept; no depth test.
@@ -240,6 +249,7 @@ namespace remix {
         scale.layout = m_uiLayout;
         scale.renderPass = mainPass;
         check(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &scale, nullptr, &m_uiPipeline));
+        namePipeline(device, m_uiPipeline, "HDR UI brightness scale");
       } catch (...) {
         for (auto module : modules)
           if (module)

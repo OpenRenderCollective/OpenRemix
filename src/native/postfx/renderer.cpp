@@ -119,7 +119,10 @@ namespace remix::postfx {
       float centre{};
       float target{}, blend{}, minEv{}, maxEv{}, radius{};
       uint32_t reset{};
+      uint32_t meterMode{};
+      uint32_t hasBackground{};
     };
+    static_assert(sizeof(Push) == 48); // mirrored by shaders/postfx.comp
   } // namespace
   class State {
   public:
@@ -144,6 +147,7 @@ namespace remix::postfx {
     VkDevice device{};
     VkExtent2D display{}, render{};
     std::shared_ptr<State> state;
+    bool radianceMeter = false;
     std::unique_ptr<Image> dummy, guide;
     std::vector<std::unique_ptr<Image>> down, up;
     std::unique_ptr<Buffer> partials;
@@ -155,7 +159,7 @@ namespace remix::postfx {
       VkDescriptorPool pool{};
       VkDescriptorSet composite{}, meter{};
       std::vector<VkDescriptorSet> down, up;
-      std::unique_ptr<Buffer> uniform, readback;
+      std::unique_ptr<Buffer> uniform, readback, emptyBackground;
       VkQueryPool timestamps{};
       bool pending = false;
     } frames[gpuFrameCount];
@@ -199,10 +203,11 @@ namespace remix::postfx {
       check(vkAllocateDescriptorSets(device, &info, &result));
       return result;
     }
-    void descriptors(VkDescriptorSet set, VkImageView source, VkImageView second, VkImageView output,
-                     VkSampler sampler) {
-      VkDescriptorImageInfo images[] = {{sampler, source, VK_IMAGE_LAYOUT_GENERAL},
-                                        {edge, second, VK_IMAGE_LAYOUT_GENERAL},
+    void descriptors(VkDescriptorSet set, VkImageView source, VkImageView second, VkImageView output, VkSampler sampler,
+                     VkImageLayout sourceLayout = VK_IMAGE_LAYOUT_GENERAL,
+                     VkImageLayout secondLayout = VK_IMAGE_LAYOUT_GENERAL) {
+      VkDescriptorImageInfo images[] = {{sampler, source, sourceLayout},
+                                        {edge, second, secondLayout},
                                         {VK_NULL_HANDLE, output, VK_IMAGE_LAYOUT_GENERAL}};
       VkDescriptorBufferInfo buffers[] = {{partials->handle, 0, VK_WHOLE_SIZE}, {state->exposure->handle, 0, 16}};
       VkWriteDescriptorSet writes[5]{};
@@ -234,13 +239,14 @@ namespace remix::postfx {
   Renderer::Renderer() = default;
   Renderer::~Renderer() = default;
   void Renderer::initialize(VkPhysicalDevice physical, VkDevice device, uint32_t family, VkExtent2D display,
-                            VkExtent2D render, bool meter, bool bloom, std::shared_ptr<State> state) {
+                            VkExtent2D render, bool meter, bool bloom, std::shared_ptr<State> state, MeterMode mode) {
     m_gpu = std::make_unique<Gpu>();
     auto &g = *m_gpu;
     g.physical = physical;
     g.device = device;
     g.display = display;
     g.render = render;
+    g.radianceMeter = meter && mode == MeterMode::SceneRadiance;
     if (!state) {
       state = std::make_shared<State>();
       state->exposure = buffer(physical, device, 16,
@@ -249,7 +255,7 @@ namespace remix::postfx {
     }
     g.state = std::move(state);
     g.dummy = image(physical, device, {1, 1});
-    if (meter)
+    if (meter && !g.radianceMeter)
       g.guide = image(physical, device, render);
     if (bloom)
       for (auto size : pyramid({display.width, display.height})) {
@@ -273,15 +279,18 @@ namespace remix::postfx {
     sampler.borderColor = VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK;
     check(pipeline::createSampler(device, &sampler, nullptr, &g.border));
     g.compositeSetLayout = compositeLayout(device);
-    VkDescriptorSetLayoutBinding bindings[5]{};
+    VkDescriptorSetLayoutBinding bindings[8]{};
     for (uint32_t i = 0; i < 5; ++i)
       bindings[i] = {i,
                      i < 2    ? VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER
                      : i == 2 ? VK_DESCRIPTOR_TYPE_STORAGE_IMAGE
                               : VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
                      1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr};
+    bindings[5] = {5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr};
+    bindings[6] = {6, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr};
+    bindings[7] = {7, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr};
     VkDescriptorSetLayoutCreateInfo si{
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, .bindingCount = 5, .pBindings = bindings};
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, .bindingCount = 8, .pBindings = bindings};
     check(pipeline::createDescriptorSetLayout(device, &si, nullptr, &g.computeSetLayout));
     VkPushConstantRange push{VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(Push)};
     VkPipelineLayoutCreateInfo li{.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
@@ -315,14 +324,14 @@ namespace remix::postfx {
     vkGetPhysicalDeviceQueueFamilyProperties(physical, &count, nullptr);
     std::vector<VkQueueFamilyProperties> families(count);
     vkGetPhysicalDeviceQueueFamilyProperties(physical, &count, families.data());
-    g.timestampBits = families.at(family).timestampValidBits;
+    g.timestampBits = family == VK_QUEUE_FAMILY_IGNORED ? 0 : families.at(family).timestampValidBits;
     g.timestampPeriod = properties.limits.timestampPeriod;
     uint32_t sets = 2 + g.down.size() + g.up.size();
     for (auto &f : g.frames) {
-      VkDescriptorPoolSize sizes[] = {{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, sets * 2},
+      VkDescriptorPoolSize sizes[] = {{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, sets * 4},
                                       {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, sets},
                                       {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, sets * 2},
-                                      {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1}};
+                                      {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, sets + 1}};
       VkDescriptorPoolCreateInfo pool{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
                                       .maxSets = sets,
                                       .poolSizeCount = 4,
@@ -336,12 +345,14 @@ namespace remix::postfx {
         f.up.push_back(g.allocate(f, g.computeSetLayout));
       f.uniform = buffer(physical, device, 16, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, true);
       f.readback = buffer(physical, device, 16, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true);
+      f.emptyBackground = buffer(physical, device, 160, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, true);
+      std::memset(f.emptyBackground->mapped, 0, 160);
       if (g.timestampBits) {
         VkQueryPoolCreateInfo qi{
             .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO, .queryType = VK_QUERY_TYPE_TIMESTAMP, .queryCount = 2};
         check(vkCreateQueryPool(device, &qi, nullptr, &f.timestamps));
       }
-      g.stats.memoryBytes += f.uniform->bytes + f.readback->bytes;
+      g.stats.memoryBytes += f.uniform->bytes + f.readback->bytes + f.emptyBackground->bytes;
     }
     g.stats.memoryBytes += g.state->exposure->bytes + g.partials->bytes + g.dummy->bytes;
     if (g.guide)
@@ -355,7 +366,7 @@ namespace remix::postfx {
   bool Renderer::supports(VkExtent2D display, VkExtent2D render, bool meter, bool bloom) const {
     const auto &g = *m_gpu;
     return g.display.width == display.width && g.display.height == display.height && g.render.width == render.width &&
-           g.render.height == render.height && (!meter || g.guide) && (!bloom || !g.down.empty());
+           g.render.height == render.height && (!meter || g.guide || g.radianceMeter) && (!bloom || !g.down.empty());
   }
   void Renderer::selectFrame(uint32_t slot) {
     auto &g = *m_gpu;
@@ -368,7 +379,8 @@ namespace remix::postfx {
     g.stats.exposure = value.current;
     g.stats.target = value.target;
     g.stats.limit = value.limit;
-    g.stats.adapting = g.activeMeter && std::abs(value.current - value.target) > std::max(value.target, 1e-6f) * .001f;
+    g.stats.adapting = g.activeMeter && value.initialized == 1 &&
+                       std::abs(value.current - value.target) > std::max(value.target, 1e-6f) * .001f;
     if (f.timestamps) {
       uint64_t times[2];
       if (vkGetQueryPoolResults(g.device, f.timestamps, 0, 2, sizeof(times), times, sizeof(uint64_t),
@@ -438,8 +450,8 @@ namespace remix::postfx {
     m_gpu->state->time = {};
     m_gpu->stats.adapting = false;
   }
-  void Renderer::record(VkCommandBuffer command, upscale::Input hdr, const TraceOptions &options,
-                        scene::TemporalEpoch epoch, bool changed, bool bypass, float seconds, uint64_t generation) {
+  void Renderer::record(VkCommandBuffer command, upscale::Input hdr, const Options &options, scene::TemporalEpoch epoch,
+                        bool changed, bool bypass, float seconds, uint64_t generation, MeterInputs inputs) {
     auto &g = *m_gpu;
     auto &f = g.frames[g.slot];
     auto &s = *g.state;
@@ -447,7 +459,8 @@ namespace remix::postfx {
       g.guideValid = true;
       g.bloomValid = false;
     }
-    const bool meter = !bypass && options.autoExposure && bool(g.guide);
+    const bool hasMeter = g.guide || g.radianceMeter;
+    const bool meter = !bypass && options.autoExposure && hasMeter;
     const bool bloom = !bypass && options.bloom && !g.down.empty() && options.bloomIntensity > 0;
     g.activeMeter = meter;
     if (!meter)
@@ -461,7 +474,7 @@ namespace remix::postfx {
     const bool reset = !s.enabled || !s.epochValid || s.epoch != epoch;
     // Diagnostic bypass freezes the meter; explicit disabling marks
     // re-enablement.
-    if (!bypass && (g.guide || !options.autoExposure)) {
+    if (!bypass && (hasMeter || !options.autoExposure)) {
       s.enabled = options.autoExposure;
       s.epoch = epoch;
       s.epochValid = true;
@@ -479,7 +492,38 @@ namespace remix::postfx {
         g.settlingFrames = gpuFrameCount;
       g.previousMeter = meterSettings;
       g.sourceGeneration = generation;
-      g.descriptors(f.meter, hdr.view, g.guide->view, g.dummy->view, g.edge);
+      const auto auxiliary =
+          g.radianceMeter ? (inputs.auxiliary.imageView ? inputs.auxiliary.imageView : g.dummy->view) : g.guide->view;
+      const auto auxiliaryLayout =
+          g.radianceMeter && inputs.auxiliary.imageView ? inputs.auxiliary.imageLayout : VK_IMAGE_LAYOUT_GENERAL;
+      g.descriptors(f.meter, hdr.view, auxiliary, g.dummy->view, g.edge, inputs.colorLayout, auxiliaryLayout);
+      const bool background = g.radianceMeter && inputs.background.imageView && inputs.backgroundConstants.buffer;
+      const VkDescriptorImageInfo sky =
+          background ? inputs.background : VkDescriptorImageInfo{g.edge, g.dummy->view, VK_IMAGE_LAYOUT_GENERAL};
+      const VkDescriptorBufferInfo skyConstants =
+          background ? inputs.backgroundConstants : VkDescriptorBufferInfo{f.emptyBackground->handle, 0, 160};
+      const bool materialScene = g.radianceMeter && inputs.material.imageView;
+      const VkDescriptorImageInfo material =
+          materialScene ? inputs.material : VkDescriptorImageInfo{g.edge, g.dummy->view, VK_IMAGE_LAYOUT_GENERAL};
+      const VkWriteDescriptorSet skyWrites[] = {{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                                                 .dstSet = f.meter,
+                                                 .dstBinding = 5,
+                                                 .descriptorCount = 1,
+                                                 .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                                                 .pImageInfo = &sky},
+                                                {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                                                 .dstSet = f.meter,
+                                                 .dstBinding = 6,
+                                                 .descriptorCount = 1,
+                                                 .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                                                 .pBufferInfo = &skyConstants},
+                                                {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                                                 .dstSet = f.meter,
+                                                 .dstBinding = 7,
+                                                 .descriptorCount = 1,
+                                                 .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                                                 .pImageInfo = &material}};
+      vkUpdateDescriptorSets(g.device, 3, skyWrites, 0, nullptr);
       Push p{g.display.width,
              g.display.height,
              ((g.display.width + 15) / 16) * ((g.display.height + 15) / 16),
@@ -489,7 +533,9 @@ namespace remix::postfx {
              options.autoExposureMinEv,
              options.autoExposureMaxEv,
              0,
-             uint32_t(reset)};
+             uint32_t(reset),
+             materialScene ? 2u : uint32_t(g.radianceMeter),
+             uint32_t(background)};
       {
         gpu::GpuScope scope(command, "Auto exposure meter", g.display);
         g.dispatch(command, 0, f.meter, p);
@@ -509,7 +555,8 @@ namespace remix::postfx {
       gpu::GpuScope downTime(command, "Bloom downsample chain", g.down[0]->size);
       for (size_t i = 0; i < g.down.size(); ++i) {
         auto &im = *g.down[i];
-        g.descriptors(f.down[i], i ? g.down[i - 1]->view : hdr.view, g.dummy->view, im.view, g.border);
+        g.descriptors(f.down[i], i ? g.down[i - 1]->view : hdr.view, g.dummy->view, im.view, g.border,
+                      i ? VK_IMAGE_LAYOUT_GENERAL : inputs.colorLayout);
         g.dispatch(command, 2, f.down[i], {im.size.width, im.size.height});
       }
       downTime.close();

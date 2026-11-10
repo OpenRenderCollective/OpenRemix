@@ -1,0 +1,57 @@
+subdir('shaders')
+subdir('bake/shaders')
+subdir('probe_batch/shaders')
+subdir('styled_lighting/shaders')
+subdir('ray/shaders')
+subdir('ray/gi_shaders')
+subdir('water/shaders')
+subdir('water/ray_shaders')
+
+oidn_deps = []
+oidn_args = []
+if get_option('oidn_root') != ''
+  oidn_root = get_option('oidn_root')
+  oidn_deps += declare_dependency(
+    compile_args : ['-I' + oidn_root / 'include'],
+    dependencies : cpp.find_library('OpenImageDenoise', dirs : [oidn_root / 'lib']))
+  oidn_args += '-DREMIX_OIDN=1'
+endif
+lightmap_denoise_library = static_library('remix_lightmap_denoise', 'lightmap/denoise.cpp', 'lightmap/denoise_chart.cpp', 'lightmap/denoise_graph.cpp', 'lightmap/denoise_filter.cpp', 'lightmap/denoise_device.cpp',
+  dependencies : oidn_deps + [threads_dep], include_directories : [remix_public_include, native_include],
+  cpp_args : oidn_args, gnu_symbol_visibility : 'hidden', pic : true)
+
+forward_library = static_library('remix_forward',
+  forward_shaders, bake_shaders, probe_batch_shaders, live_ray_shaders, live_gi_shaders, water_shaders, water_ray_shaders,
+  'probe_batch/batch.cpp',
+  styled_lighting_shaders, 'styled_lighting/composition.cpp',
+  'bake/reference_capture.cpp',
+  'bake/reference_grid_report.cpp',
+  'bake/probe_receiver_report.cpp',
+  'bake/probe_anchor_report.cpp',
+  'bake/probe_connection_audit.cpp',
+  'bake/model_receivers.cpp',
+  'bake/model_charts.cpp',
+  'bake/model_triangles.cpp',
+  'bake/model_preflight.cpp',
+  'bake/model_atlas_preflight.cpp',
+  'bake/model_chart_report.cpp',
+  'bake/probe_receiver_geometry.cpp',
+  'bake/visibility_report.cpp',
+  'bake/probe_depth.cpp',
+  'bake/coarse_transfer.cpp',
+  'bake/coarse_transfer_sampling.cpp',
+  'bake/controller_coarse_transfer.cpp',
+  'bake/controller_probe_depth.cpp',
+  'fragment_statistics.cpp', 'lighting.cpp', 'resources.cpp', 'renderer.cpp', 'renderer_local_reflections.cpp', 'probes/capture_providers.cpp', 'targets.cpp', 'pipelines.cpp', 'scene.cpp', 'shadows/sun_cache.cpp', 'shadows/sun_maps.cpp', 'geometry_uploads.cpp', 'depth_batch/batch.cpp', 'depth_batch/scene.cpp', 'rendering.cpp', 'opaque_visibility.cpp', 'exposure.cpp', 'sky.cpp', 'image_dump.cpp',
+  'viewmodel/target.cpp', 'viewmodel/lighting.cpp', 'viewmodel/scene.cpp', 'viewmodel/rendering.cpp',
+  'reflections.cpp', 'ray/capture.cpp', 'ray/live_scene.cpp', 'ray/reflections.cpp',
+  'ray_scene.cpp', 'ray/provider.cpp',
+  'material.cpp', 'bake/data.cpp', 'bake/light_sampling.cpp', 'bake/policy.cpp', 'bake/probe_visibility.cpp', 'bake/probe_visibility_gpu.cpp', 'bake/probe_visibility_plan.cpp', 'bake/cache.cpp', 'probes/cache_codec.cpp', 'bake/local_reflection_cache.cpp', 'bake/transport.cpp', 'bake/indexed_visibility.cpp', 'bake/pipelines.cpp', 'bake/atlas.cpp',
+  'bake/cache_persistence.cpp', 'water/snapshot.cpp', 'water/data.cpp', 'water/pass.cpp',
+  'shadows/plan.cpp', 'shadows/moving_cache.cpp', 'shadows/maps.cpp', 'mixed/data.cpp', 'mixed/refine.cpp', 'mixed/direct_work.cpp', 'mixed/ownership.cpp', 'mixed/directional_links.cpp', 'mixed/unified_masks.cpp', 'mixed/publication.cpp', 'mixed/overflow.cpp', 'mixed/masks.cpp', 'mixed/mask_codec.cpp', 'mixed/mask_palette.cpp', 'mixed/occlusion.cpp', 'mixed/map.cpp', 'lightmap/layout.cpp', 'lightmap/receiver_footprint.cpp', 'lightmap/receiver_sampler.cpp', 'bake/sun_antialiasing.cpp', 'lightmap/packing.cpp', 'lightmap/fit.cpp', 'lightmap/parameterization.cpp', 'lightmap/curved.cpp', 'lightmap/harmonic.cpp', 'lightmap/fan.cpp', 'lightmap/seams.cpp', 'lightmap/curved_seams.cpp', 'lightmap/seam_mesh.cpp', 'lightmap/surface_walk.cpp', 'lightmap/coverage.cpp', 'lightmap/interior_donors.cpp', 'lightmap/data.cpp', 'lightmap/geometry.cpp', 'lightmap/receiver_triangles.cpp', 'lightmap/decal.cpp', 'bake/grid.cpp', 'bake/grid_sampling.cpp', 'bake/grid_directory.cpp', 'bake/sparse_grid.cpp', 'bake/adaptive_grid.cpp', 'bake/receiver_support.cpp', 'bake/refinement_builder.cpp', 'bake/controller.cpp', 'bake/reflection_schedule.cpp', 'bake/reflection_refresh.cpp', 'bake/controller_refinement.cpp', 'bake/controller_receiver_diagnostics.cpp', 'bake/controller_guard_diagnostics.cpp', 'bake/controller_local_reflections.cpp',
+  'mixed/chart_highlights.cpp', 'mixed/mask_pages.cpp', 'mixed/directional_field.cpp', 'mixed/directional_fields.cpp', 'mixed/directional_capture.cpp', 'mixed/directional_coverage.cpp', 'bake/receiver_report.cpp', 'bake/receiver_projection.cpp', 'bake/receiver_tiles.cpp', 'bake/sun_depth_layout.cpp', 'bake/sun_depth_cache.cpp', 'bake/sun_depth.cpp', 'bake/sun_depth_persistence.cpp', 'bake/controller_sun_depth.cpp', 'bake/grouped_direct_report.cpp', 'bake/fingerprint.cpp', 'bake/relocation.cpp', 'bake/styles.cpp', 'bake/sparse_sh.cpp', 'bake/style_work.cpp', 'bake/styled_direct.cpp', 'bake/controller_styles.cpp', 'bake/controller_storage.cpp', 'bake/diffuse_finish.cpp', 'bake/source2_finish.cpp', 'bake/diffuse_publication.cpp', 'bake/controller_directionals.cpp', 'bake/controller_probe_visibility.cpp',
+  'probes/automatic_capture.cpp', 'probes/standalone_capture.cpp', 'probes/capture_cache.cpp', 'probes/automatic_readback.cpp', 'probes/automatic_placement.cpp', 'probes/automatic_preparation.cpp', 'probes/automatic_cache.cpp', 'probes/placement_geometry.cpp', 'probes/automatic_schedule.cpp', 'probes/data.cpp', 'probes/composition.cpp', 'probes/image_data.cpp', 'probes/normalization.cpp', 'probes/image_asset.cpp', 'probes/selection_upload.cpp', 'probes/local_selection_preparation.cpp', 'probes/capture_work.cpp', 'probes/capture_content.cpp', 'probes/local_capture_work.cpp', 'probes/receivers.cpp', 'probes/receiver_pairs.cpp', 'probes/receiver_sites.cpp', 'probes/receiver_fits.cpp', 'probes/receiver_fit_pairs.cpp', 'probes/receiver_mask.cpp', 'probes/authoring.cpp', 'probes/capture_dump.cpp', 'probes/placement.cpp', 'probes/placement_grid.cpp', 'probes/selection.cpp', 'probes/coverage_selection.cpp', 'probes/coverage_baseline.cpp', 'probes/coverage_context.cpp', 'probes/coverage_image_plan.cpp', 'probes/receiver_coverage_plan.cpp', 'probes/coverage_guards.cpp', 'probes/evaluation.cpp', 'probes/refinement.cpp', 'probes/regions.cpp', 'probes/sites.cpp',
+  link_with : [scene_library, raster_library, pipeline_library, lightmap_denoise_library, postfx_library],
+  dependencies : vulkan_dep, include_directories : [remix_public_include, native_include],
+  cpp_args : cpp.get_supported_arguments('-Wno-missing-field-initializers'),
+  gnu_symbol_visibility : 'hidden', pic : true)

@@ -2,6 +2,7 @@
 #include <vulkan/vulkan.h>
 #include "scene/resources.h"
 #include "platform/gpu_frames.h"
+#include <functional>
 
 namespace remix {
   class RasterRenderer : public NativeResources {
@@ -25,7 +26,7 @@ namespace remix {
     // CPU cost of the last prepare() (FrameBreakdownEXT).
     struct Profile {
       double prepareMilliseconds = 0, skinningMilliseconds = 0;
-      uint64_t culledDraws = 0;  // left out by frustum culling
+      uint64_t culledDraws = 0; // left out by frustum culling
       uint64_t unreadyDraws = 0; // left out while their pipeline variant compiles (path tracing)
       // Where prepare()'s time goes: retiring released resources, refreshing
       // dynamic textures, ordering the draws and building their commands
@@ -50,7 +51,7 @@ namespace remix {
       uint64_t draws = 0, skinnedVertices = 0, uploadBytes = 0; // draws include halo sources
       uint64_t haloGroups = 0, haloDraws = 0;
       uint64_t maskGroups = 0, maskDraws = 0; // groups with coverage, their source draws
-      uint64_t digest = 0;                    // REMIX_FRAME_DIGEST only: commands and skinned vertices.
+      uint64_t digest = 0; // REMIX_FRAME_DIGEST only: commands and skinned vertices.
     };
     const Profile &profile() const { return m_profile; }
     // The last prepare() that finished, whole (profile() is rewritten while one runs).
@@ -80,9 +81,11 @@ namespace remix {
     VkFormat depthFormat() const;
     VkImageView depthView() const;
     std::shared_ptr<void> depthLifetime() const;
-    bool preparePipelines(bool tracing);
+    using DrawOwner = std::function<bool(const scene::Draw &)>;
+    bool preparePipelines(bool tracing, bool forward = false, DrawOwner owner = {});
     void prepare(VkCommandBuffer command,
-                 bool tracing = false); // After prior frame fence, outside render pass.
+                 bool tracing = false, bool forward = false,
+                 DrawOwner owner = {}); // After prior frame fence, outside render pass.
     // Layers: 0 sky, 1 world, 2 view model, 3 UI and overlays. part: with
     // masked overlays, the commands before (1) or from (2) the coverage passes.
     void record(VkCommandBuffer command, bool skyOnly = false, bool skipSky = false, const float *skyJitter = nullptr,
