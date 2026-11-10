@@ -10,6 +10,9 @@ test('Volumetric medium from fog and settings', volume_policy_test)
 static_scene_test = executable('remix-static-scene-test', 'static_scene.cpp',
   include_directories : test_includes, link_with : scene_library, dependencies : threads_dep)
 test('Persistent static set matches the rebuild path', static_scene_test)
+material_optics_test = executable('remix-trace-material-optics-test', 'material_optics.cpp',
+  include_directories : test_includes, link_with : scene_library)
+test('Path-tracer measured sheet material representation', material_optics_test)
 upscale_depth_test = executable('remix-upscale-depth-test', 'upscale_depth.cpp', include_directories : test_includes)
 test('FSR wide-frustum depth precision', upscale_depth_test)
 # CPU cost of Present for a scene of about 12k scene instances. A benchmark,
@@ -19,6 +22,15 @@ scene_frame_benchmark = executable('remix-scene-frame-benchmark', 'scene_frame.c
 benchmark('Scene frame CPU cost', scene_frame_benchmark, env : ['REMIX_BENCH_SCENE=1'], timeout : 1800,
   verbose : true)
 if get_option('gpu_tests')
+  measured_sheet_test = executable('remix-measured-sheet-test', 'sheets.cpp',
+    include_directories : test_includes, dependencies : [sdl3_dep, filesystem_dep] + [runtime_test_dep])
+  test('Path-tracer primary measured sheets, energy and layering', measured_sheet_test,
+    args : [meson.current_build_dir() / 'measured-sheet-scenes'],
+    env : ['REMIX_FG_PRESENT_METERING=0'], timeout : 600, is_parallel : false)
+  test('Path-tracer measured sheet indirect transport and cache', measured_sheet_test,
+    args : [meson.current_build_dir() / 'measured-sheet-indirect'],
+    env : ['REMIX_FG_PRESENT_METERING=0', 'REMIX_TEST_SHEET_INDIRECT=1'],
+    timeout : 600, is_parallel : false)
   subdir('upscale')
   if system != 'windows'
     process_exit_test = executable('remix-tracing-exit-test', 'process_exit.cpp',
@@ -194,6 +206,9 @@ if get_option('gpu_tests')
     args : [meson.current_build_dir() / 'local-light-scenes'], timeout : 300)
   shadow_test = executable('remix-shadow-test', 'shadows.cpp',
     include_directories : test_includes, dependencies : [sdl3_dep, filesystem_dep] + [runtime_test_dep])
+  test('Path-tracer measured sheet shadow visibility', shadow_test,
+    args : [meson.current_build_dir() / 'sheet-shadow-scenes'],
+    env : ['REMIX_TEST_SHEET_VISIBILITY=1', 'REMIX_FG_PRESENT_METERING=0'], timeout : 480, is_parallel : false)
   test('SIGMA sun penumbra and temporal separation', shadow_test,
     args : [meson.current_build_dir() / 'shadow-scenes'], timeout : 240)
   test('SIGMA hashed shadow comparison', shadow_test,
@@ -250,6 +265,8 @@ if get_option('gpu_tests')
   endif
   pathtrace_test = executable('remix-pathtrace-test', 'rendering.cpp',
     include_directories : test_includes, dependencies : [sdl3_dep, filesystem_dep] + [runtime_test_dep])
+  test('Scrolling normals preserve progressive reference history', pathtrace_test,
+    args : [meson.current_build_dir() / 'normal-animation-scenes', 'normal-animation'], timeout : 180)
   test('Opaque traversal shared mesh and alpha replacement', pathtrace_test,
     args : [meson.current_build_dir() / 'opacity-scenes', 'opaque-variants'], timeout : 180)
   test('Compatible mesh updates and queued version isolation', pathtrace_test,

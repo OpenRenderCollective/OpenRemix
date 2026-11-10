@@ -5,6 +5,7 @@
 #include "usd/mods.h"
 #endif
 #include "ui/context.h"
+#include "ui/bake_progress.h"
 #include "api/imgui_compat.h"
 #include <algorithm>
 #include <cmath>
@@ -66,6 +67,8 @@ namespace remix {
       ImGui::Text("%s: settings and diagnostics", m_profileUi.menuShortcut.c_str());
       ImGui::End();
     }
+    if (m_backend == config::Backend::ForwardPlus)
+      ui::drawBakeProgress(bakingStatistics());
 #if REMIX_HAS_USD
     // RTX Remix's corner text: a mod's replacements apply once all are ready.
     if (const auto loading = usd::modLoadText(); !loading.empty()) {

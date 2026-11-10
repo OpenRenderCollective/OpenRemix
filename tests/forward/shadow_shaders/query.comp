@@ -1,0 +1,94 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+// Only the fields consumed by the production lookup functions are needed here.
+layout(set = 0, binding = 0, std140) uniform Parameters {
+  vec4 localPositions[3];
+  vec4 localSettings;
+  uvec4 clusterInfo;
+  mat4 shadows[4];
+  vec4 splits;
+  uvec4 target;
+  vec4 movingShadowCoverage[18];
+  vec4 movingSunCoverage[4];
+} frame;
+#include "../../../src/native/forward/shaders/local-light-record.glsl"
+#define SUN_SHADOW_BINDING 3
+#define VIEWMODEL_PASS
+#include "../../../src/native/forward/shaders/local-shadows.glsl"
+#include "../../../src/native/forward/shaders/sun-shadows.glsl"
+#include "../../../src/native/forward/shaders/brdf.glsl"
+#include "../../../src/native/forward/shaders/light-contribution.glsl"
+#include "../../../src/native/forward/shaders/local-light-values.glsl"
+#include "../../../src/native/forward/shaders/local-light-composition.glsl"
+#include "../../../src/native/forward/shaders/lighting-reference.glsl"
+#include "local-response.glsl"
+struct Query { vec4 position, normal; uvec4 control; };
+layout(set = 0, binding = 1, std430) readonly buffer Queries { Query queries[]; };
+layout(set = 0, binding = 2, std430) writeonly buffer Answers { vec4 answers[]; };
+layout(push_constant) uniform Count { uint count; } inputData;
+layout(local_size_x = 64) in;
+void main() {
+  uint index = gl_GlobalInvocationID.x;
+  if (index >= inputData.count) return;
+  Query query = queries[index];
+  bool fixedVisibility = query.control.y != 0;
+  uint staticLayer = fixedVisibility ? StaticLocalShadowLayer : 0u;
+  uint fullLayers = staticLayer | MovingLocalShadowLayer;
+  Light light;
+  light.corners[0] = vec4(0, 0, 0, query.control.x + 1u);
+  light.corners[1] = vec4(0);
+  light.responseWeights = vec4(0);
+  float visibility = query.control.z == 0u
+      ? localShadowVisibility(light, query.position.xyz, query.normal.xyz, fullLayers, true)
+      : sunShadowVisibilityLayers(query.position.xyz, query.position.w, fixedVisibility, query.control.z == 2u, query.normal.xyz);
+  // Compare two ownership routes for the same shadowed unit material: a field
+  // with unoccluded direct energy plus a moving-caster residual, and a unified
+  // field that already contains the shadowed direct energy. Neither may add a
+  // second direct term. Analytic highlights remain independently selectable.
+  LocalLightSample source = LocalLightSample(true, false, vec3(0, 0, 1), vec3(1),
+      2, 1, visibility, 1, 1);
+  LightContribution mixed = composeLocalLight(source, BrdfLobes(vec3(1), vec3(.25)));
+  LightContribution attributed = selectDirectLight(mixed, analyticDirectLighting(true));
+  LightContribution owned = selectDirectLight(mixed, DirectLightingPolicy(false, true, false));
+  ReceiverLighting field = ReceiverLighting(vec3(2 * visibility), DirectLightingPolicy(false, true, false), false);
+  answers[index] = vec4(visibility, 2 + attributed.diffuse.r,
+      composeDiffuseLight(field, vec3(1)).r + owned.diffuse.r, owned.specular.r);
+  LightContribution diffuseOnly = selectDirectLight(mixed, DirectLightingPolicy(true, false, true));
+  LightContribution disabled = selectDirectLight(mixed, DirectLightingPolicy(false, false, false));
+  source.aggregateDiffuse = false;
+  LightContribution analytic = composeLocalLight(source, BrdfLobes(vec3(1), vec3(.25)));
+  answers[index + inputData.count] = vec4(owned.diffuse.r, diffuseOnly.specular.r,
+      disabled.diffuse.r + disabled.specular.r, analytic.diffuse.r);
+  LightingReference capture = LightingReference(2, Source2StaticLightingReference);
+  LightingReference receiver = LightingReference(2 * visibility, Source2StaticLightingReference);
+  answers[index + 2u * inputData.count] = vec4(
+      normalizeReflectionReference(vec3(1), receiver, capture).r,
+      normalizeReflectionReference(vec3(1), LightingReference(receiver.luminance, 2u), capture).r,
+      normalizeReflectionReference(vec3(1), unavailableLightingReference(), capture).r,
+      normalizeReflectionReference(vec3(1), LightingReference(0, capture.domain), capture).r);
+  answers[index + 3u * inputData.count] = vec4(
+      normalizeReflectionReference(vec3(1), LightingReference(4, capture.domain), capture).r,
+      normalizeReflectionReference(vec3(1), receiver, LightingReference(0, capture.domain)).r,
+      normalizeReflectionReference(vec3(1), LightingReference(-1, capture.domain), capture).r,
+      normalizeReflectionReference(vec3(1), LightingReference(0, NoLightingReference), capture).r);
+  answers[index + 4u * inputData.count] = vec4(
+      lightingReferenceLuminance(receiver, capture.domain),
+      lightingReferenceLuminance(LightingReference(receiver.luminance, 42u), capture.domain),
+      lightingReferenceLuminance(unavailableLightingReference(), capture.domain),
+      lightingReferenceLuminance(LightingReference(0, capture.domain), capture.domain));
+  answers[index + 5u * inputData.count] = query.control.w != 0u
+      ? compareLocalResponses(query.position.xyz, query.normal.xyz) : vec4(0);
+  light.responseWeights.w = 1;
+  float reference = localShadowVisibility(light, query.position.xyz, query.normal.xyz, MovingLocalShadowLayer, true);
+  bool needed = movingLocalShadowRequired(light, query.position.xyz);
+  float scalar = localShadowVisibility(light, query.position.xyz, query.normal.xyz, fullLayers, false);
+  float gathered = localShadowVisibility(light, query.position.xyz, query.normal.xyz, fullLayers, true);
+  uint boundedLayers = staticLayer | (needed ? MovingLocalShadowLayer : 0u);
+  float bounded = localShadowVisibility(light, query.position.xyz, query.normal.xyz, boundedLayers, true);
+  float noLayers = localShadowVisibility(light, query.position.xyz, query.normal.xyz, 0u, true);
+  light.corners[1].w = 1;
+  float faded = localShadowVisibility(light, query.position.xyz, query.normal.xyz, fullLayers, true);
+  float error = max(max(abs(scalar - gathered), abs(bounded - gathered)), max(abs(noLayers - 1), abs(faded - 1)));
+  answers[index + 6u * inputData.count] = vec4(reference, needed ? reference : 1, needed ? 1 : 0,
+      error);
+}

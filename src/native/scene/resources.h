@@ -1,5 +1,8 @@
 #pragma once
 #include "scene/id_set.h"
+#include "scene/bake_scene.h"
+#include "scene/reflection_volumes.h"
+#include <remix/remix_reflection_ext.h>
 #include "scene/light_visibility.h"
 #include "scene/retained.h"
 #include "scene/temporal.h"
@@ -13,9 +16,12 @@
 #include <unordered_set>
 #include <utility>
 #include <memory>
+#include <optional>
 #include <remix/remix_c.h>
 #include <remix/remix_native_ext.h>
+#include <remix/remix_bake_ext.h>
 #include <string>
+#include <span>
 #include <unordered_map>
 #include <vector>
 
@@ -60,7 +66,8 @@ namespace remix {
       if (it != m_materials.end()) {
         m_modMaterials[hash] = it->second;
         m_modParts[hash] = parts;
-        m_modMerged.clear();
+        // Merged entries validate both source pointers on lookup. Loading an
+        // unrelated replacement must not change existing receiver identities.
         ++m_modGeneration;
       }
     }
@@ -103,7 +110,7 @@ namespace remix {
     }
     void setMaterialSourceHash(remixapi_MaterialHandle handle, uint64_t hash) {
       auto it = m_materials.find(uint64_t(reinterpret_cast<uintptr_t>(handle)));
-      if (it != m_materials.end()) {
+      if (it != m_materials.end() && it->second->sourceHash != hash) {
         it->second->sourceHash = hash;
         ++m_modGeneration;
       }
@@ -170,6 +177,25 @@ namespace remix {
     void updateRetained(const remixapi_SceneInstanceChangeEXT *changes, uint32_t count);
     void destroyRetained(const uint64_t *handles, uint32_t count);
     void drawRetained(const float *sceneOrigin);
+    void setBakeScene(const remixapi_BakeSceneInfoEXT *info);
+    void setReflectionVolumes(const remixapi_ReflectionVolumesInfoEXT *info);
+    scene::ReflectionBinding materialReflection(uint64_t material) const {
+      if (m_materialReflections) {
+        const auto found = m_materialReflections->find(material);
+        if (found != m_materialReflections->end())
+          return found->second;
+      }
+      return {};
+    }
+    std::shared_ptr<const scene::ReflectionVolumes> reflectionVolumes() const {
+      return m_bakeScene && m_reflectionVolumes && m_reflectionVolumes->sceneId == m_bakeScene->sceneId
+                 ? m_reflectionVolumes
+                 : nullptr;
+    }
+    const std::shared_ptr<const scene::BakeScene> &bakeScene() const { return m_bakeScene; }
+    // Authored definition dependencies, independent of this frame's light draw
+    // list. Published frames retain the answer from their own publication.
+    bool bakeLightsCurrent(scene::BakeLightScope scope = scene::BakeLightScope::Combined) const;
     size_t retainedCount() const { return m_retained.size(); }
     const scene::RetainedStatistics &retainedStatistics() const { return m_retainedStats; }
     // DrawRetainedInstances calls after which a moved instance returns to static.
@@ -326,6 +352,11 @@ namespace remix {
     const scene::DomeLight &dome() const { return m_dome; }
     const scene::DistantLight &light() const { return m_light; }
     std::vector<scene::SphereLight> sphereLights() const;
+    // Replace the destination in the same order as sphereLights(), reusing its allocation.
+    void copySphereLights(std::vector<scene::SphereLight> &output) const;
+    // Borrow the immutable published list, or collect into caller-owned storage
+    // during synchronous rendering. Consume the view within the current frame.
+    std::span<const scene::SphereLight> sphereLightView(std::vector<scene::SphereLight> &scratch) const;
     bool hasSphereLights() const { return !m_frameLights.empty(); }
 
     // A light as created: its USD-style parameters (overrideLight merges
@@ -384,6 +415,9 @@ namespace remix {
     std::shared_ptr<scene::Material> m_default, m_domeMaterial, m_cookieMaterial;
     std::shared_ptr<const scene::VisibilityPartition> m_visibilityPartition;
     std::unordered_map<uint64_t, std::shared_ptr<scene::Material>> m_materials, m_modMaterials;
+    using MaterialReflections = std::unordered_map<uint64_t, scene::ReflectionBinding>;
+    std::shared_ptr<const MaterialReflections> m_materialReflections;
+    void setMaterialReflection(uint64_t material, scene::ReflectionBinding binding);
     // Of a partial mod material, the parts it authors (scene::ModParts).
     std::unordered_map<uint64_t, uint32_t> m_modParts;
     // A mod material given the albedo of the material it replaces, or the
@@ -394,6 +428,9 @@ namespace remix {
       std::shared_ptr<scene::Material> merged;
     };
     std::unordered_map<uint64_t, ModMerged> m_modMerged;
+    // Weak content entries share immutable payloads, never mesh lifetimes.
+    std::shared_ptr<scene::Surface> shareSurface(std::shared_ptr<scene::Surface> surface);
+    std::unordered_map<uint64_t, std::weak_ptr<scene::Surface>> m_surfaceContent;
     std::unordered_map<uint64_t, std::shared_ptr<scene::Mesh>> m_meshes;
     std::unordered_map<uint64_t, std::shared_ptr<scene::Texture>> m_textures, m_uiTextures;
     std::unordered_set<uint64_t> m_hiddenTextures;
@@ -403,17 +440,40 @@ namespace remix {
     std::array<std::array<float, 4>, 3> m_reverseDepth, m_authoredReverseDepth;
     bool m_freeCamActive = false;
     struct LightDefinition {
+      uint64_t revision = 0;
+      bool dynamic = false;
       LightSource source;
       scene::DistantLight distant;
       std::vector<scene::SphereLight> emitters;
       scene::DomeLight dome;
     };
     std::unordered_map<uint64_t, LightDefinition> m_lights;
+    uint64_t m_lightRevision = 0;
+    std::shared_ptr<const scene::BakeScene> m_bakeScene;
+    std::shared_ptr<const scene::ReflectionVolumes> m_reflectionVolumes;
+    std::vector<std::pair<uint64_t, uint64_t>> m_bakeInstances;
+    struct BakeLightDependency {
+      uint64_t handle = 0, revision = 0;
+      bool receiverDirect = false;
+    };
+    struct BakeLightValidity {
+      bool combined = false, receiverDirect = false;
+    };
+    std::vector<BakeLightDependency> m_bakeLights;
+    std::optional<BakeLightValidity> m_publishedBakeLightValidity;
+    BakeLightValidity bakeLightValidity() const;
+    struct BakeStyledDependency {
+      remixapi_BakeStyledLightEXT info{};
+      uint64_t authoredRevision = 0, runtimeShape = 0;
+    };
+    std::vector<BakeStyledDependency> m_bakeStyledLights;
+    bool bakeRequestCurrent(const remixapi_BakeSceneInfoEXT &info) const;
     // A profile's number (+ 1) by its text's hash; the profile for an IES text.
     std::shared_ptr<const std::vector<float>> m_iesProfiles;
     std::unordered_map<uint64_t, uint32_t> m_iesIndex;
     uint32_t iesProfile(std::string_view text);
     std::vector<std::shared_ptr<scene::Texture>> m_cookieTextures;
+
     std::unordered_set<uint64_t> m_frameLights;
     // A published frame's sphere lights, as sphereLights() returned them at
     // publication (m_frameLights then only tells whether there are any).

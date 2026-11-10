@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <thread>
 
 namespace remix::test {
@@ -34,18 +35,49 @@ namespace remix::test {
       }
     };
   }
-  template <class F> remixapi_ErrorCode requestScreenshot(remixapi_Interface &api, const char *path, F &&frame) {
-    auto result = api.RequestPresentedScreenshot(path);
-    if (result)
-      return result;
-    frame();
-    // Preserve first-frame motion diagnostics when no preparation was needed.
-    // If preparation drew a panel over that frame, recapture the activated path.
-    if (lastFrameWaited) {
-      result = api.RequestPresentedScreenshot(path);
-      if (!result)
-        frame();
-    }
-    return result;
+// Drain the requested image without submitting another scene frame.
+inline remixapi_ErrorCode waitForScreenshot(remixapi_Interface &api, const char *path,
+                                             std::filesystem::file_time_type previous) {
+  std::error_code error;
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+  while (std::chrono::steady_clock::now() < deadline) {
+    if (const auto status = api.PumpEvents(); status) return status;
+    const auto written = std::filesystem::last_write_time(path, error);
+    if (!error && written != previous) return REMIXAPI_ERROR_CODE_SUCCESS;
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
+  std::fprintf(stderr, "Screenshot did not complete: %s\n", path);
+  return REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
+}
+
+template <class F>
+remixapi_ErrorCode requestScreenshot(remixapi_Interface &api, const char *path,
+                                     F &&frame, std::filesystem::file_time_type *previous = nullptr) {
+  auto notePreviousWrite = [&] {
+    if (!previous) return;
+    std::error_code error;
+    *previous = std::filesystem::last_write_time(path, error);
+  };
+  notePreviousWrite();
+  auto result = api.RequestPresentedScreenshot(path);
+  if (result)
+    return result;
+  frame();
+  // Preserve first-frame motion diagnostics when no preparation was needed.
+  // If preparation drew a panel over that frame, recapture the activated path.
+  if (lastFrameWaited) {
+    // The writer can still be encoding the preparation frame. Drain it so
+    // its file timestamp cannot be mistaken for the recapture's timestamp.
+    if (previous) {
+      const auto ready = waitForScreenshot(api, path, *previous);
+      if (ready) return ready;
+    }
+    notePreviousWrite();
+    result = api.RequestPresentedScreenshot(path);
+    if (!result)
+      frame();
+  }
+  return result;
+}
+
 } // namespace remix::test

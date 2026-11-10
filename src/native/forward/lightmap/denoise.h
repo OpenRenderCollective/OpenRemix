@@ -1,0 +1,92 @@
+#pragma once
+#include "forward/lightmap/layout.h"
+#include <functional>
+#include <span>
+
+namespace remix::forward::lightmap {
+  // Zero means this build has no OIDN support. Included in the bake cache key.
+  uint32_t denoiserVersion();
+  enum class HostTransfers { Pageable, Pinned };
+  enum class FilterDispatch { Automatic, Ordinary };
+  struct DenoiseStatistics {
+    uint32_t charts = 0;
+    uint64_t texels = 0;
+    uint32_t executions = 0, preparations = 0, constantFields = 0, monitoredExecutions = 0;
+    uint32_t batches = 0; // logical nonconstant image packets; a CUDA queue may submit several together
+    uint32_t synchronizations = 0;
+    uint32_t graphCaptures = 0, graphLaunches = 0, graphFallbacks = 0;
+    uint64_t peakHostBytes = 0, imageBufferBytes = 0, transferBytes = 0;
+    uint64_t stagingBufferBytes = 0;
+    uint64_t batchBufferBytes = 0;
+    int deviceType = 0; // OIDNDeviceType; no OIDN types escape this module
+    double seconds = 0;
+    // Host wall intervals, not GPU timestamps. Submission may block in the
+    // driver; waits measure only explicit synchronization. These intervals do
+    // not include one another within a queue. Parallel CPU queues sum worker
+    // intervals, which can overlap; seconds remains the overall wall duration.
+    double initializationSeconds = 0, preparationSeconds = 0;
+    double uploadSeconds = 0, executionSeconds = 0, readbackSeconds = 0;
+    double waitSeconds = 0, chartSeconds = 0;
+    double stagingSeconds = 0;
+    // Optional device trials use copied inputs; their work never joins the
+    // production counters above. Total seconds includes calibration wall time.
+    uint32_t calibrationCharts = 0;
+    double deviceCalibrationSeconds = 0, cpuEstimateSeconds = 0, defaultEstimateSeconds = 0;
+    uint32_t cpuQueues = 1, cpuThreadsPerQueue = 0;
+    double parallelCpuEstimateSeconds = 0;
+  };
+  // Reusable geometry preparation for multiple fields on one immutable layout.
+  // The layout must outlive the plan. Device calibration stays field-specific.
+  class DenoisePlan {
+  public:
+    explicit DenoisePlan(const Layout &layout, std::stop_token cancelled = {});
+    DenoisePlan(Layout &&layout, std::stop_token cancelled = {}) = delete;
+    const Layout &layout() const { return m_layout; }
+    DenoiseStatistics filter(std::span<bake::Result> results, std::stop_token cancelled = {},
+        std::function<void(uint32_t, uint32_t)> progress = {}, HostTransfers transfers = HostTransfers::Pinned,
+        FilterDispatch dispatch = FilterDispatch::Automatic) const;
+
+  private:
+    const Layout &m_layout;
+    std::vector<std::vector<uint32_t>> m_chartPoints;
+    std::vector<uint32_t> m_order;
+    [[maybe_unused]] size_t m_largestImage = 0; // Used by the optional OIDN backend.
+  };
+  // Chart-heavy CUDA workloads may compare bounded real-chart CPU/GPU trials
+  // before filtering. A CPU win needs a 35% projected margin; small maps,
+  // workloads dominated by large images, other default devices and OIDN_DEFAULT_DEVICE keep normal selection.
+  // Trial inputs/outputs together are capped at 16 MiB, apart from one chart's
+  // scratch and OIDN's internal model/device storage. Explicit device hints win.
+  // Worker-only offline operation, after transport readback and before atlas encoding.
+  // Filters indirect RGB SH within each chart. Signed bands are normalized by L0,
+  // filtered as directional data, then reconstructed with the filtered L0.
+  // Alpha, visibility, direct-light attribution, probe data and moments are untouched.
+  // Exceptions abort publication. OIDN 2.5 images share its native 16-pixel network
+  // padding; signed -1 and HDR zero preserve zero tensor boundaries. Equal-shaped
+  // images can queue independent host packets, bounded by 32 charts and an 8 MiB
+  // scratch target (one oversized chart remains valid). Cancellation is checked
+  // between batches and enqueues; queued work is drained before cleanup. CPU and large GPU images
+  // additionally use OIDN's internal cancellation callback.
+  // GPU transfers use an additional pinned arena capped at 8 MiB, reused only
+  // after synchronization. On Windows, the default CUDA device can reuse one
+  // captured bounded chart queue per binding/active-band pattern, using an
+  // additional device arena capped at 8 MiB. Host transfers surround the queue;
+  // each chart's device copies and filtering remain ordered and independent.
+  // Graphs retire before rebinding or releasing either arena. Explicit device
+  // selection, other backends/platforms, monitored fields and unavailable graph
+  // support retain ordinary dispatch. This changes submission, not filtering.
+  // CPU devices, oversized packets and failed pinned
+  // allocations retain pageable transfers. Pageable mode supports comparisons.
+  // A measured CPU win may also test four independent chart queues, with at most
+  // 32 nominal threads and a required additional 25% projected saving. Explicit
+  // OIDN device/thread overrides retain serial scheduling. Queues partition the
+  // 8 MiB host target and 32-chart limit; each can still admit one oversized
+  // chart and owns an image buffer/model. Their storage peaks are summed in the
+  // statistics. Chart data never shares a spatial filtering image. Any failure
+  // cancels peers; all devices retire before results or callbacks are released.
+  DenoiseStatistics denoise(const Layout &layout, std::span<bake::Result> results,
+                            std::stop_token cancelled = {},
+                            std::function<void(uint32_t completed, uint32_t total)> progress = {},
+                            HostTransfers transfers = HostTransfers::Pinned,
+                            FilterDispatch dispatch = FilterDispatch::Automatic);
+} // namespace remix::forward::lightmap

@@ -1,4 +1,15 @@
 python = find_program('python3')
+test('Windows DLSS bundles preserve separate pinned RR models', python,
+  args : [meson.current_source_dir() / 'package_runtime.py'])
+test('Fixed probe receiver comparison and coverage gates', python,
+  args : [meson.current_source_dir() / 'probe_receiver_comparison.py'])
+test('Pinned shader compiler native version formats', python,
+  args : [meson.current_source_dir() / 'shader_tools.py'])
+test('Shader toolchain scratch cleanup and completed publication', python,
+  args : [meson.current_source_dir() / 'shader_toolchain.py'])
+
+test('Sampled reflection influence proposals', python,
+  args : [meson.current_source_dir() / 'reflection_regions.py'])
 add_test_setup('isolatedconfig', exe_wrapper : [python, meson.current_source_dir() / 'isolated_config.py'], is_default : true)
 test_include = include_directories('.')
 test_includes = [remix_public_include, native_include, test_include, image_include]
@@ -24,8 +35,8 @@ endif
 # export to the Remix ABI. They execute the same compiled runtime objects.
 runtime_test_dep = declare_dependency(
   objects : remix.extract_all_objects(recursive : false),
-  link_with : usd_libraries + [shell_platform, imgui_vulkan, scene_library,
-    raster_library, pathtrace_library, denoise_library, upscale_library, particles_library],
+  link_with : usd_libraries + sky_libraries + [shell_platform, imgui_vulkan, scene_library,
+    raster_library, forward_library, pathtrace_library, denoise_library, upscale_library, particles_library],
   dependencies : shell_deps,
   compile_args : ['-DREMIX_LIBRARY_EXPORTS=1'] + test_cpp_args)
 subdir('abi')
@@ -36,6 +47,7 @@ subdir('ui')
 subdir('platform')
 subdir('runtime')
 subdir('raster')
+subdir('forward')
 subdir('pathtrace')
 subdir('denoise')
 subdir('postfx')

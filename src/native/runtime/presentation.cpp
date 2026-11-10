@@ -43,6 +43,14 @@
 #include <limits>
 #include <optional>
 
+namespace {
+  remix::RasterRenderer::DrawOwner forwardDrawOwner(const remix::forward::Renderer *renderer) {
+    if (!renderer)
+      return {};
+    return [renderer](const remix::scene::Draw &draw) { return renderer->owns(draw); };
+  }
+} // namespace
+
 namespace remix {
   void RemixNativeRuntime::presented() {
     const auto now = std::chrono::steady_clock::now();
@@ -253,7 +261,7 @@ namespace remix {
     // Present) or merely enabled (the driver then holds vkQueuePresentKHR).
     // Garry's Mod, gm_voidplaces, raster: 19.6 ms a frame with the sleep,
     // 17.4 with the mode enabled and no sleep, 13.6 with it off.
-    return m_lowLatencyRequested && (m_frameGenerationRequested || m_backend == 1);
+    return m_lowLatencyRequested && (m_frameGenerationRequested || m_backend == config::Backend::PathTrace);
   }
 
   void RemixNativeRuntime::applyLatencyMode() {
@@ -546,7 +554,8 @@ namespace remix {
       prepareSettings();
       {
         const auto &settings = m_profiles.current();
-        const bool traceStatic = m_pathTracer && m_targetBackend && m_backend != 0 && !m_loading;
+        const bool traceStatic =
+            m_pathTracer && m_targetBackend && m_backend == config::Backend::PathTrace && !m_loading;
         if (!traceStatic)
           frame.expandStatic();
         // From the next replay on; the tracer reads the setting this frame.
@@ -558,7 +567,9 @@ namespace remix {
       if (m_pathTracer)
         m_pathTracer->setSky(m_profiles.current().sky, m_skyControl, m_skyUnavailable);
       frame.setSkyTarget(m_pathTracer ? m_pathTracer->skyPass() : VK_NULL_HANDLE);
-      m_rasterPreparing = !frame.preparePipelines(m_backend != 0);
+      m_rasterPreparing =
+          !frame.preparePipelines(m_backend == config::Backend::PathTrace, m_backend == config::Backend::ForwardPlus,
+                                  forwardDrawOwner(m_forward.get()));
       m_loading |= m_rasterPreparing;
       if (m_loading && m_postProcessing)
         m_postProcessing->freeze();
@@ -662,6 +673,8 @@ namespace remix {
       setupTime.start();
       m_frames[m_frameIndex].snapshot.reset();
       frame.selectFrame(m_frameIndex);
+      if (m_forward)
+        m_forward->selectFrame(m_frameIndex);
       if (m_particles)
         m_particles->selectFrame(m_frameIndex);
       if (m_postProcessing)
@@ -749,6 +762,9 @@ namespace remix {
         fail(result);
     } catch (VkResult result) {
       fail(result);
+    } catch (const std::exception &error) {
+      SDL_Log("OpenRemix asynchronous frame failed: %s", error.what());
+      fail();
     } catch (...) {
       fail();
     }
@@ -835,7 +851,8 @@ namespace remix {
         // Any other consumer of this frame (raster rendering, a frame without
         // the tracer) takes the set into the draw list, as without it.
         const auto &settings = m_profiles.current();
-        const bool traceStatic = m_pathTracer && m_targetBackend && m_backend != 0 && !m_loading;
+        const bool traceStatic =
+            m_pathTracer && m_targetBackend && m_backend == config::Backend::PathTrace && !m_loading;
         if (!traceStatic)
           m_raster.expandStatic();
         // From the next replay on.
@@ -846,7 +863,9 @@ namespace remix {
       if (m_pathTracer)
         m_pathTracer->setSky(m_profiles.current().sky, m_skyControl, m_skyUnavailable);
       m_raster.setSkyTarget(m_pathTracer ? m_pathTracer->skyPass() : VK_NULL_HANDLE);
-      m_rasterPreparing = !m_raster.preparePipelines(m_backend != 0);
+      m_rasterPreparing =
+          !m_raster.preparePipelines(m_backend == config::Backend::PathTrace, m_backend == config::Backend::ForwardPlus,
+                                     forwardDrawOwner(m_forward.get()));
       m_loading |= m_rasterPreparing;
       if (m_loading && m_postProcessing)
         m_postProcessing->freeze();
@@ -893,6 +912,8 @@ namespace remix {
       setupTime.start();
       m_frames[m_frameIndex].snapshot.reset();
       m_raster.selectFrame(m_frameIndex);
+      if (m_forward)
+        m_forward->selectFrame(m_frameIndex);
       if (m_particles)
         m_particles->selectFrame(m_frameIndex);
       if (m_postProcessing)
@@ -991,6 +1012,9 @@ namespace remix {
       return result == VK_SUCCESS ? REMIXAPI_ERROR_CODE_SUCCESS : fail(result);
     } catch (VkResult result) {
       return fail(result);
+    } catch (const std::exception &error) {
+      SDL_Log("OpenRemix synchronous frame failed: %s", error.what());
+      return fail();
     } catch (...) {
       return fail();
     }
@@ -1433,7 +1457,8 @@ namespace remix {
     raster.setSkyTarget(m_pathTracer ? m_pathTracer->skyPass() : VK_NULL_HANDLE);
     if (!m_loading) {
       gpu::GpuScope scope(buffer, "Raster uploads and skinning");
-      raster.prepare(buffer, m_backend != 0);
+      raster.prepare(buffer, m_backend == config::Backend::PathTrace, m_backend == config::Backend::ForwardPlus,
+                     forwardDrawOwner(m_forward.get()));
       breakdown.rasterPrepareMilliseconds = 1; // Replaced by the raster profile.
     }
     if (m_pathTracer && !m_loading) {
@@ -1457,6 +1482,10 @@ namespace remix {
       gpu::GpuScope scope(buffer, "Path tracer: barriers, copies, other");
       m_pathTracer->prepare(buffer, raster, m_traceOptions, *traceScene);
     }
+    if (m_forward && !m_loading) {
+      gpu::GpuScope scope(buffer, "Forward+ lighting and shadows", m_swapchainExtent);
+      m_forward->prepare(buffer, raster);
+    }
     VkClearValue clear[2] = {};
     std::copy(std::begin(m_clearColor), std::end(m_clearColor), clear[0].color.float32);
     clear[1].depthStencil.depth = 1;
@@ -1472,12 +1501,13 @@ namespace remix {
     const HdrNits nits{settings.hdrPeakNits, settings.hdrPaperWhiteNits, settings.hdrUiNits};
     // The HUD layer and the developer UI at their own brightness
     // (HdrOutput::scaleUi).
+    const float uiScale = hdr ? nits.uiScale() : 1.f;
     auto drawUiLayer = [&](auto &&draw) {
-      if (hdr)
-        m_hdrOutput.scaleUi(buffer, 1 / nits.uiScale());
+      if (uiScale != 1.f)
+        m_hdrOutput.scaleUi(buffer, 1 / uiScale);
       draw();
-      if (hdr)
-        m_hdrOutput.scaleUi(buffer, nits.uiScale());
+      if (uiScale != 1.f)
+        m_hdrOutput.scaleUi(buffer, uiScale);
     };
     if (hdr)
       m_hdrOutput.prepare(buffer, m_frameIndex);
@@ -1527,7 +1557,7 @@ namespace remix {
       drawUi(VK_NULL_HANDLE);
     lap(breakdown.uiMilliseconds);
     // The raster backend's NUMOS sky records its frame outside the pass.
-    const bool rasterSky = !m_loading && !m_pathTracer && recordRasterSky(buffer, raster);
+    const bool rasterSky = !m_loading && !m_pathTracer && !m_forward && recordRasterSky(buffer, raster);
     const bool rasterSkyHides = rasterSky && m_profiles.current().sky.gameSky == config::SkySettings::GameSky::Hide;
     {
       // Includes the swapchain pass's clear and, when the GPU runs ahead of
@@ -1553,7 +1583,7 @@ namespace remix {
       // HDR10 draws the UI layer on its own, at the UI brightness.
       const bool hudApart = hostPasses || hdr;
       const int sceneLayers = split ? 1 : hudApart ? 2 : 3;
-      const bool skipSky = m_pathTracer != nullptr || rasterSkyHides;
+      const bool skipSky = m_pathTracer != nullptr || m_forward != nullptr || rasterSkyHides;
       auto recordHostPasses = [&] {
         gpu::GpuScope hostTime(buffer, "Host passes", m_swapchainExtent);
         // The scene's depth stays in the target's depth attachment.
@@ -1583,6 +1613,18 @@ namespace remix {
           vkCmdBeginRenderPass(buffer, &pass, VK_SUBPASS_CONTENTS_INLINE);
         }
         gpu::GpuScope overlay(buffer, "Raster overlay (HUD, effects)", m_swapchainExtent);
+        raster.record(buffer, false, true, nullptr, {}, 0, sceneLayers, masks ? 1 : 0);
+      } else if (!m_loading && m_forward) {
+        m_forward->setDisplayOutput(displayOutput());
+        m_forward->background(buffer);
+        raster.record(buffer, true);
+        m_forward->composite(buffer);
+        if (raster.wantsSceneDepth()) {
+          vkCmdEndRenderPass(buffer);
+          raster.captureSceneDepth(buffer);
+          pass.renderPass = m_resumePass;
+          vkCmdBeginRenderPass(buffer, &pass, VK_SUBPASS_CONTENTS_INLINE);
+        }
         raster.record(buffer, false, true, nullptr, {}, 0, sceneLayers, masks ? 1 : 0);
       } else if (!m_loading) {
         raster.record(buffer, false, rasterSkyHides, nullptr, {}, 0, sceneLayers, masks ? 1 : 0);

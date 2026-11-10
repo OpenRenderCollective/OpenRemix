@@ -110,8 +110,8 @@ namespace remix {
     vkGetPhysicalDeviceFormatProperties(m_physicalDevice, format.format, &formatProperties);
     const auto blit = VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT;
     m_snapshotSupported = m_screenshotSupported &&
-                          (capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT) &&
-                          (formatProperties.optimalTilingFeatures & blit) == blit;
+        (capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT) &&
+        (formatProperties.optimalTilingFeatures & blit) == blit;
     VkCompositeAlphaFlagBitsKHR compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     if ((capabilities.supportedCompositeAlpha & compositeAlpha) == 0) {
       constexpr std::array<VkCompositeAlphaFlagBitsKHR, 3> kFallbackAlphaModes = {
@@ -141,8 +141,8 @@ namespace remix {
         .imageExtent = extent,
         .imageArrayLayers = 1,
         .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-                      (m_screenshotSupported ? VK_IMAGE_USAGE_TRANSFER_SRC_BIT : 0u) |
-                      (m_snapshotSupported ? VK_IMAGE_USAGE_TRANSFER_DST_BIT : 0u),
+            (m_screenshotSupported ? VK_IMAGE_USAGE_TRANSFER_SRC_BIT : 0u) |
+            (m_snapshotSupported ? VK_IMAGE_USAGE_TRANSFER_DST_BIT : 0u),
         .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
         .preTransform = capabilities.currentTransform,
         .compositeAlpha = compositeAlpha,
@@ -270,14 +270,27 @@ namespace remix {
         .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
                          VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
     };
+    // Export the final colour layout transition as well as attachment writes.
+    // HDR presentation samples this target after leaving the developer-UI pass.
+    // An implicit bottom-of-pipe dependency cannot make that transition visible
+    // to a subsequent fragment-shader read.
+    const VkSubpassDependency dependencies[] = {
+        dependency,
+        {.srcSubpass = 0,
+         .dstSubpass = VK_SUBPASS_EXTERNAL,
+         .srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+         .dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
+         .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+         .dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT},
+    };
     const VkRenderPassCreateInfo pass = {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
         .attachmentCount = 2,
         .pAttachments = attachments,
         .subpassCount = 1,
         .pSubpasses = &subpass,
-        .dependencyCount = 1,
-        .pDependencies = &dependency,
+        .dependencyCount = uint32_t(std::size(dependencies)),
+        .pDependencies = dependencies,
     };
     if (pipeline::createRenderPass(m_device, &pass, nullptr, &m_renderPass) != VK_SUCCESS) {
       return fail();
@@ -352,6 +365,13 @@ namespace remix {
         return fail(result);
       }
     }
+    if (m_hdrOutput.active()) {
+      const auto &settings = m_profiles.current();
+      const auto nits = HdrNits{settings.hdrPeakNits, settings.hdrPaperWhiteNits, settings.hdrUiNits}.clamped();
+      SDL_Log("OpenRemix display output: HDR10, %.0f nit peak, %.0f nit paper white", nits.peak, nits.paperWhite);
+    } else if (!m_headless) {
+      SDL_Log("OpenRemix display output: SDR (%s)", m_hdrStatus.c_str());
+    }
     return REMIXAPI_ERROR_CODE_SUCCESS;
   }
 
@@ -393,6 +413,7 @@ namespace remix {
     m_framebuffers.clear();
     m_imageViews.clear();
     m_renderFinished.clear();
+    retireForward(true);
     if (m_pathTracer)
       retireTracer(std::move(m_pathTracer), renderer().depthLifetime());
     m_activePreparationKey.clear();
@@ -444,10 +465,10 @@ namespace remix {
           }
       m_hdrStatus = "the display offers no 10-bit ST.2084 (HDR10) swapchain format";
     } else {
-      m_hdrStatus = m_headless                  ? "headless presentation"
-                    : !m_swapchainColorSpace    ? "VK_EXT_swapchain_colorspace is unavailable"
-                    : !m_profiles.current().hdr ? "turned off"
-                                                : "Windows HDR is off for this display";
+      m_hdrStatus = m_headless                       ? "headless presentation"
+                    : !m_swapchainColorSpace          ? "VK_EXT_swapchain_colorspace is unavailable"
+                    : !m_profiles.current().hdr       ? "turned off"
+                                                      : "Windows HDR is off for this display";
     }
     // UNORM only: every output shader encodes gamma 2.2 itself, so an sRGB
     // format's hardware encode would apply a second curve.

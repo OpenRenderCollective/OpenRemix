@@ -1,0 +1,1035 @@
+#include "forward/lightmap/data.h"
+#include "forward/mixed/chart_highlights.h"
+#include "forward/mixed/data.h"
+#include "forward/mixed/direct_work.h"
+#include "forward/mixed/ownership.h"
+#include "forward/mixed/directional_links.h"
+#include "forward/mixed/emitter_bounds.h"
+#include "forward/mixed/overflow.h"
+#include "forward/ray/capture.h"
+#include "scene/fixtures.h"
+#include <algorithm>
+#include <cmath>
+#include <stdexcept>
+#include <thread>
+using namespace remix;
+using namespace remix::test;
+namespace m = remix::forward::mixed;
+namespace lm = remix::forward::lightmap;
+#include "direct_work_cases.h"
+int main() {
+  sparseDirectWorkTests();
+  {
+    using namespace std::chrono_literals;
+    auto field = std::make_shared<m::ChartHighlightField>();
+    m::Occlusion proof(2, 3);
+    proof.mark(0, 0, m::Visibility::Blocked);
+    field->exactOcclusion = m::BlockedChartLights(proof);
+    forward::LightData lights[3]{};
+    lights[0].shaping[3] = 1;
+    lights[1].shaping[3] = 2;
+    lights[2].shaping[3] = 3;
+
+    m::ChartHighlightWork work;
+    const auto waitForTable = [&](std::span<const forward::LightData> selected) {
+      const auto deadline = std::chrono::steady_clock::now() + 5s;
+      do {
+        auto table = work.prepare(field, selected);
+        if (table.words) return table.words;
+        std::this_thread::sleep_for(1ms);
+      } while (std::chrono::steady_clock::now() < deadline);
+      throw std::runtime_error("Chart mask worker did not finish");
+    };
+    const auto first = waitForTable(std::span(lights).first<2>());
+    require(*first == std::vector<uint32_t>{~1u, ~0u}, "Chart worker publishes the blocked runtime slot");
+    require(work.prepare(field, lights).words == first, "Unrelated lights reuse the published mask");
+
+    std::swap(lights[0], lights[1]);
+    require(!work.prepare(field, lights).words, "A changed blocked slot immediately invalidates the old mask");
+    std::swap(lights[0], lights[1]);
+    require(work.prepare(field, lights).words == first, "Returning to the last published selection reuses its mask");
+    std::swap(lights[0], lights[1]);
+    const auto reordered = waitForTable(lights);
+    require(*reordered == std::vector<uint32_t>{~2u, ~0u}, "Rebuilt mask follows the new runtime slot");
+    std::array<forward::LightData, 65> wide{};
+    wide[32].shaping[3] = wide[64].shaping[3] = 1;
+    require(!work.prepare(field, wide).words, "Changing row width invalidates the single-word chart table");
+    const auto wideTable = waitForTable(wide);
+    require(*wideTable == std::vector<uint32_t>{~0u, ~1u, ~1u, ~0u, ~0u, ~0u},
+            "Wide chart masks reject proven blocked slots across word boundaries");
+    require(work.prepare(field, wide).flags == m::ChartHighlightField::exactVisibilityFlag,
+            "Wide exact tables preserve the ordinary cluster headers");
+    require(!work.prepare({}, lights).words, "Removing the proof immediately removes the mask");
+  }
+  {
+    m::ChartHighlightField field;
+    m::Occlusion proof(2, 17);
+    proof.mark(0, 16, m::Visibility::Blocked);
+    proof.mark(0, 15, m::Visibility::Clear);
+    proof.mark(1, 15, m::Visibility::Blocked);
+    field.exactOcclusion = m::BlockedChartLights(proof);
+    const m::ChartHighlightLight selected[]{{16, {}, 0, 31}, {15, {}, 0, 2}};
+    require(field.rank(selected, 0x80000005u) == std::vector<uint32_t>{5, 0x80000001u},
+            "Exact chart masks reject blocked lights and retain unknown, clear and uncaptured lights");
+    const m::ChartHighlightLight reordered[]{{15, {}, 0, 31}, {16, {}, 0, 2}, {16, {}, 0, 32}};
+    require(field.rank(reordered, 0x80000005u) == std::vector<uint32_t>{0x80000001u, 5},
+            "Chart masks follow the current runtime indices and ignore out-of-range slots");
+    const m::ChartHighlightLight unaffected[]{{14, {}, 0, 0}, {16, {}, 0, 1}};
+    require(field.rank(unaffected, 1u).empty(),
+            "Unknown lights and blocked lights outside the runtime mask need no chart table");
+    require(!field.exactOcclusion.mayBlock(14) && field.exactOcclusion.mayBlock(16) &&
+                field.rank(selected, ~0u) == std::vector<uint32_t>{0x7fffffffu, 0xfffffffbu},
+            "Exact proofs depend on blocked slots and leave spare runtime slots eligible");
+  }
+  {
+    auto source = std::make_shared<scene::BakeScene>();
+    source->lights.resize(1);
+    source->lights.front().position[2] = 2;
+    source->lights.front().radius = 1;
+    m::ChartHighlightField field;
+    field.source = source;
+    field.chartOffsets = {1};
+    field.points.resize(1);
+    field.points.front().normal = {0, 0, 1, 1};
+    field.stride = 1;
+    const m::ChartHighlightLight selected[]{{0, {1, 1, 1}, 4, 31}};
+    field.visibility = {m::ChartHighlightField::unknown};
+    require(field.rank(selected).empty(), "A fully unknown chart does not publish a fallback-only table");
+    field.visibility = {0};
+    require(field.rank(selected) == std::vector<uint32_t>{1, 0},
+            "Known blocked highlights still publish a valid empty shortlist");
+    field.points.push_back(field.points.front());
+    field.visibility = {m::ChartHighlightField::unknown, 254};
+    require(field.rank(selected) == std::vector<uint32_t>{1, m::ChartHighlightField::fallback, 1},
+            "A useful shortlist preserves its neighbouring unknown fallback");
+    require(field.rank(selected, 1u) == std::vector<uint32_t>{1, m::ChartHighlightField::fallback, 0x80000001u},
+            "Membership shortlist combines required lights with the ranked runtime index");
+    m::Occlusion proof(1, 1);
+    proof.mark(0, 0, m::Visibility::Blocked);
+    field.exactOcclusion = m::BlockedChartLights(proof);
+    field.visibility = {m::ChartHighlightField::unknown, 0};
+    require(!field.exactVisibility() &&
+                field.rank(selected, 1u) == std::vector<uint32_t>{1, 0x7fffffffu, 1},
+            "Unknown ranked tiles reject proven blocked slots and retain other lights");
+    require(field.rank(selected) == std::vector<uint32_t>{1, m::ChartHighlightField::fallback, 0},
+            "Packed light IDs cannot consume membership proofs");
+  }
+  {
+    auto source = std::make_shared<scene::BakeScene>();
+    source->lights.resize(6);
+    m::Plan plan;
+    plan.lights.source = source;
+    plan.charts = {{1, 2, m::none, m::none}};
+    plan.directCharts = {{0, 1, m::none, m::none}};
+    plan.occlusion = m::Occlusion(1, 6);
+    plan.occlusion.mark(0, 4, m::Visibility::Clear);
+    plan.occlusion.mark(0, 5, m::Visibility::Blocked);
+    lm::Layout layout;
+    layout.pageSize = 16;
+    layout.pages = 1;
+    layout.charts = {{0, 0, 0, 3, 2}};
+    layout.points.resize(6);
+    layout.pointCharts.resize(6, 0);
+    layout.owners.resize(16 * 16, lm::unowned);
+    for (uint32_t y = 0; y < 2; ++y)
+      for (uint32_t x = 0; x < 3; ++x) layout.owners[y * 16 + x] = y * 3 + x;
+    const float values[] = {.1f, .2f, .3f, .4f, .5f, .6f};
+    require(plan.masks.add(0, 3, layout, values), "Ownership fixture retains its partial mask");
+    require(m::positiveDirectionalLinks(plan) == std::vector<m::DirectionalLink>{{0,0},{0,1},{0,2},{0,3},{0,4}},
+            "Directional manifest deduplicates retained, partial and clear ownership beyond four");
+    const auto summary = m::summarizeOwnership(plan, layout);
+    require(summary.retainedPairs == 2 && summary.knownPositivePairs == 5 &&
+                summary.chartsByRetainedCount[2] == 1 && summary.clearPairs == 1 &&
+                summary.clearRectangleBytes == 6 * 18,
+            "Ownership accounting deduplicates shared owners and includes scalar/clear links beyond four");
+    require(summary.allocatedDirectionalBytes == 16 * 16 * 4 * 18 &&
+                summary.retainedRectangleBytes == 6 * 2 * 18 &&
+                summary.knownPositiveRectangleBytes == 6 * 5 * 18,
+            "Sparse rectangle lower bounds stay separate from allocated directional atlas bytes");
+    std::stop_source cancelled;
+    cancelled.request_stop();
+    bool stopped = false;
+    try { (void)m::summarizeOwnership(plan, layout, cancelled.get_token()); }
+    catch (const std::runtime_error &) { stopped = true; }
+    require(stopped, "Ownership analysis obeys cancellation");
+  }
+
+  {
+    auto source = std::make_shared<scene::BakeScene>();
+    source->lights.resize(35);
+    m::Plan plan;
+    plan.lights.source = source;
+    plan.charts.assign(2, {m::none, m::none, m::none, m::none});
+    plan.directCharts = plan.charts;
+    plan.occlusion = m::Occlusion(2, 35);
+    for (auto light : {0u, 15u, 16u, 31u, 34u})
+      plan.occlusion.mark(1, light, m::Visibility::Clear);
+    plan.occlusion.mark(0, 16, m::Visibility::Blocked);
+    require(m::positiveDirectionalLinks(plan) ==
+                std::vector<m::DirectionalLink>{{1,0},{1,15},{1,16},{1,31},{1,34}},
+            "Clear ownership crosses packed word boundaries without inventing blocked or unknown pairs");
+    bool limited = false;
+    try { (void)m::positiveDirectionalLinks(plan, {}, 4 * sizeof(m::DirectionalLink)); }
+    catch (const std::length_error &) { limited = true; }
+    require(limited, "Manifest exhaustion refuses the whole graph instead of publishing a subset");
+    std::stop_source cancelled;
+    cancelled.request_stop();
+    bool stopped = false;
+    try { (void)m::positiveDirectionalLinks(plan, cancelled.get_token()); }
+    catch (const std::runtime_error &) { stopped = true; }
+    require(stopped, "Directional ownership observes cancellation before allocating work");
+    plan.directCharts[0][0] = 35;
+    bool rejected = false;
+    try { (void)m::positiveDirectionalLinks(plan); }
+    catch (const std::invalid_argument &) { rejected = true; }
+    require(rejected, "Malformed ownership cannot produce a partial capture manifest");
+  }
+
+  require(m::Masks::maximumBytes == (16u << 20), "Visibility coverage keeps the sixteen MiB encoded budget");
+  NativeResources resources;
+  const auto mat = material(resources, 1, 1, 1, 1);
+  const auto mesh = quad(resources, 2, mat);
+  const auto handle = resources.createRetained(instance(mesh));
+  auto source = std::make_shared<scene::BakeScene>();
+  source->ready = true;
+  source->draws = resources.retained(handle)->records;
+  source->charts.push_back({0, 0, 5, 5, {{0, 0}, {4, 4}, {4, 0}, {0, 0}, {0, 4}, {4, 4}}});
+  for (uint64_t id : {50u, 10u, 40u, 20u, 30u}) {
+    scene::SphereLight light;
+    light.id = id;
+    light.radius = .25f;
+    light.position[2] = -2;
+    light.radiance[0] = light.radiance[1] = light.radiance[2] = 1;
+    source->lights.push_back(light);
+  }
+  scene::freezeBakeScene(*source);
+  const auto layout = lm::plan(*source, {16, 2, 2, 512});
+  const auto plan = m::plan(source, layout);
+  require(plan.overflow == 1 && plan.tasks.size() == layout.points.size() * 4,
+          "Mixed light storage is bounded per chart and explicitly counts "
+          "overlap overflow");
+  for (uint32_t channel = 0; channel < 4; ++channel)
+    require(source->lights[plan.charts[0][channel]].id == (channel + 1) * 10,
+            "Equal-importance lights use stable identities for deterministic "
+            "channel selection");
+  for (const auto &task : plan.tasks)
+    require(task.light == plan.charts[layout.pointCharts[task.point]][task.channel],
+            "Each visibility task retains its exact light and surface-channel "
+            "provenance");
+  {
+    auto dense = std::make_shared<scene::BakeScene>(*source);
+    constexpr uint32_t chartCount = 32769, overflowPerChart = 128;
+    dense->charts.resize(chartCount, source->charts.front());
+    dense->lights.resize(m::channels + overflowPerChart, source->lights.front());
+    for (uint32_t light = 0; light < dense->lights.size(); ++light)
+      dense->lights[light].id = light;
+    lm::Layout denseLayout;
+    denseLayout.charts.resize(chartCount);
+    const auto densePlan = m::plan(dense, denseLayout);
+    require(densePlan.overflow == chartCount * overflowPerChart &&
+                densePlan.charts.back()[m::channels - 1] == m::channels - 1 &&
+                densePlan.remaining.back().size() == overflowPerChart &&
+                densePlan.remaining.back().front() == m::channels &&
+                densePlan.remaining.back().back() == dense->lights.size() - 1,
+            "Dense maps retain ranked overflow beyond the old four-million-pair limit");
+  }
+  {
+    const uint32_t baked[] = {0};
+    const auto policy = forward::bake::directPolicy(*source, baked);
+    const auto aggregate = m::plan(source, layout, .001f, {}, 0, policy);
+    require(aggregate.overflow == 0 && aggregate.remaining[0].empty() &&
+                aggregate.tasks.size() == layout.points.size() * 4 &&
+                aggregate.lights.bakedDiffuse(0) && aggregate.lights.match(source->lights[0]) == 0,
+            "An aggregated fifth light leaves overflow while retaining its captured runtime identity");
+    for (const auto &task : aggregate.tasks)
+      require(task.light != 0, "Fully baked diffuse receives no per-texel visibility tasks");
+    const uint32_t all[] = {0, 1, 2, 3, 4};
+    const auto fullyStatic = m::plan(source, layout, .001f, {}, 0,
+                                    forward::bake::directPolicy(*source, all));
+    require(fullyStatic.tasks.empty() && fullyStatic.overflow == 0 &&
+                fullyStatic.charts[0] == forward::bake::UInt4{m::none, m::none, m::none, m::none},
+            "A fully static chart schedules no mixed or overflow shadow work");
+    auto corrected = m::plan(source, layout, .001f, {}, 0,
+                             forward::bake::directPolicy(*source, all, forward::bake::DirectMode::BakedMixed));
+    require(corrected.charts == plan.charts && corrected.remaining == plan.remaining &&
+                corrected.overflow == plan.overflow && corrected.tasks.size() == plan.tasks.size(),
+            "Aggregate mixed lights retain the original attributed visibility coverage and budget");
+    for (uint32_t i = 0; i < source->lights.size(); ++i)
+      require(corrected.lights.bakedDiffuse(i) && corrected.lights.retainsVisibility(i) &&
+                  corrected.lights.match(source->lights[i]) == i,
+              "Every aggregate mixed emitter retains independent identity and correction ownership");
+    std::vector<forward::Vec4> partial(layout.points.size(), {.5f, .5f, .5f, .5f});
+    std::vector<lm::Direct> scratch(layout.points.size()), retained(layout.points.size());
+    for (auto &point : scratch)
+      for (auto &coefficient : point)
+        coefficient = {1, 2, 3, 4};
+    require(!m::refine(corrected, layout, partial, {}, scratch, retained) &&
+                corrected.directCharts == plan.charts && retained == scratch && corrected.overflow == 1,
+            "Aggregate mixed refinement retains unit direct SH without changing overlap fallback");
+    require(!corrected.lights.retainsVisibility(m::none),
+            "An unknown captured index cannot advertise aggregate correction coverage");
+    auto recoloured = source->lights[0];
+    recoloured.radiance[0] *= 2;
+    require(aggregate.lights.match(recoloured) == m::none,
+            "RGB aggregate ownership cannot match a changed light colour or intensity");
+    auto moved = source->lights[0];
+    moved.position[0] += 1;
+    require(aggregate.lights.match(moved) == m::none,
+            "Moving an aggregate emitter clears its runtime diffuse ownership");
+    moved = source->lights[0];
+    moved.radius *= 2;
+    require(aggregate.lights.match(moved) == m::none,
+            "Changing an aggregate emitter footprint cannot suppress its new analytic diffuse");
+    moved = source->lights[0];
+    moved.dynamic = true;
+    require(aggregate.lights.match(moved) == m::none,
+            "A live moving light cannot inherit immutable aggregate ownership by identity");
+    recoloured = source->lights[1];
+    recoloured.radiance[0] *= 2;
+    require(aggregate.lights.match(recoloured) == 1,
+            "Mixed unit-radiance data can still follow live colour changes");
+  }
+  {
+    auto styled = std::make_shared<scene::BakeScene>(*source);
+    styled->lights[1].style = 32;
+    const auto mixed = m::plan(styled, layout);
+    auto off = styled->lights[1];
+    std::fill_n(off.radiance, 3, 0.f);
+    off.style = 0; // live packet needs no special flag to match its captured identity
+    require(mixed.lights.match(off) == 1, "Initially-off styled runtime light matches authored visibility");
+    bool refused = false;
+    const uint32_t selected[] = {1};
+    try { (void)forward::bake::directPolicy(*styled, selected); }
+    catch (const std::invalid_argument &) { refused = true; }
+    require(refused, "Styled energy cannot become permanent aggregate irradiance");
+  }
+  {
+    scene::SphereLight spot;
+    spot.radius = .1f;
+    spot.direction[2] = 1;
+    spot.coneCos = std::sqrt(.5f);
+    const forward::Bounds outside{{9, -1, 0}, {11, 1, 2}, true};
+    require(m::outsideEmissionCone(spot, outside),
+            "A narrow spot cannot reach a box entirely beside its finite emitting cone");
+    spot.radius = 10;
+    require(!m::outsideEmissionCone(spot, outside),
+            "A finite emitter reaching the cone boundary remains eligible");
+    spot.radius = 1e-8f;
+    require(!m::outsideEmissionCone(spot, {{1.000001f, 0, 1}, {1.000001f, 0, 1}, true}),
+            "Cone tangency and float-rounding uncertainty remain with hardware sampling");
+    spot.radius = .1f;
+    spot.direction[2] = 2;
+    require(!m::outsideEmissionCone(spot, {{10, 0, 4}, {10, 0, 4}, true}),
+            "Nonunit emission axes preserve the GPU's wider effective cone");
+    spot.direction[2] = 1;
+    spot.triangle = 1;
+    spot.corners[0][0] = -.1f;
+    spot.corners[1][0] = .1f;
+    spot.corners[2][1] = .1f;
+    require(m::outsideEmissionCone(spot, outside), "Triangle emission uses its full finite extent");
+    spot.corners[1][0] = 9.9f;
+    require(!m::outsideEmissionCone(spot, outside),
+            "A triangle corner reaching a receiver cannot be rejected by its centre");
+    spot.triangle = 0;
+    spot.radius = .1f;
+    spot.coneCos = -4.37113883e-8f;
+    const forward::Bounds rear{{-.2f,-.2f,-10}, {.2f,.2f,-9}, true};
+    require(m::outsideEmissionCone(spot, rear),
+            "A rounded hemisphere cosine still excludes a finite receiver behind the emitter");
+    require(!m::outsideEmissionCone(spot, {{-1,-1,-.01f}, {1,1,.01f}, true}),
+            "Finite support crossing a near-hemisphere boundary remains eligible");
+    spot.coneCos = -.5f;
+    require(m::outsideEmissionCone(spot, rear) &&
+                !m::outsideEmissionCone(spot, {{3,-.1f,-1}, {3.1f,.1f,-.9f}, true}),
+            "Wide cones reject their excluded rear axis but preserve allowed backward oblique connections");
+    spot.direction[2] = 2;
+    spot.coneCos = -1;
+    require(!m::outsideEmissionCone(spot, rear),
+            "Raw unrestricted cone flags bypass clipping even for a nonunit emission axis");
+    uint32_t rejected = 0;
+    for (uint32_t trial = 0; trial < 256; ++trial) {
+      const float angle = trial * .731f;
+      spot.direction[0] = .6f * std::cos(angle);
+      spot.direction[1] = .6f * std::sin(angle);
+      spot.direction[2] = .8f;
+      constexpr float cosines[] = {-.9f, -.5f, -4.37113883e-8f, 0, .25f, .6f, .95f};
+      spot.coneCos = cosines[trial % std::size(cosines)];
+      spot.radius = .1f + .3f * float(trial % 5);
+      const forward::Vec3 centre{8*std::sin(angle*.7f), 8*std::cos(angle*1.3f), 5*std::sin(angle*.9f)};
+      forward::Bounds bounds;
+      for (uint32_t c = 0; c < 3; ++c) {
+        bounds.minimum[c] = centre[c] - .4f;
+        bounds.maximum[c] = centre[c] + .4f;
+      }
+      bounds.valid = true;
+      if (!m::outsideEmissionCone(spot, bounds)) continue;
+      ++rejected;
+      for (uint32_t corner = 0; corner < 8; ++corner)
+        for (uint32_t sample = 0; sample < 32; ++sample) {
+          const double z = 1 - 2*(double(sample)+.5)/32, phi = sample*2.399963229728653;
+          const double radial = std::sqrt(1-z*z);
+          const double offset[] = {radial*std::cos(phi), radial*std::sin(phi), z};
+          double projection = 0, length2 = 0;
+          for (uint32_t c = 0; c < 3; ++c) {
+            const double delta = ((corner & (1u << c)) ? bounds.maximum[c] : bounds.minimum[c]) -
+                                 spot.radius*offset[c];
+            projection += spot.direction[c]*delta;
+            length2 += delta*delta;
+          }
+          require(projection/std::sqrt(length2) <= spot.coneCos,
+                  "Rejected finite spot bounds contain no sampled emitting connection");
+        }
+    }
+    require(rejected > 30 && rejected < 250, "Rotated cone fixtures exercise both retention and rejection");
+    for (float scale : {.001f, 1.f, 1000.f}) {
+      scene::SphereLight scaled;
+      scaled.radius = .1f * scale;
+      scaled.direction[2] = 1;
+      scaled.coneCos = std::sqrt(.5f);
+      auto bounds = outside;
+      for (uint32_t c = 0; c < 3; ++c) {
+        bounds.minimum[c] *= scale;
+        bounds.maximum[c] *= scale;
+      }
+      require(m::outsideEmissionCone(scaled, bounds),
+              "Cone rejection is independent of the host's world-unit scale");
+    }
+  }
+  {
+    auto shaped = std::make_shared<scene::BakeScene>(*source);
+    shaped->lights.resize(1);
+    auto &light = shaped->lights[0];
+    light.position[0] = -10;
+    light.direction[2] = 1;
+    light.coneCos = .9f;
+    const auto excluded = m::plan(shaped, layout);
+    require(excluded.tasks.empty() && excluded.coneRejectedPairs == 1 && excluded.occlusion.count() == 0,
+            "Cone-excluded chart links schedule no rays and invent no blocked-visibility records");
+    require(!m::plan(shaped, layout, .001f, {}, 10).tasks.empty(),
+            "Transport bias expands receiver bounds before cone rejection");
+    auto seamLayout = layout;
+    seamLayout.points[0].position[0] = -10;
+    require(!m::plan(shaped, seamLayout).tasks.empty(),
+            "A seam donor entering the cone preserves the chart's light candidate");
+    light.radius = 20;
+    require(!m::plan(shaped, layout).tasks.empty(),
+            "An emitter extent overlapping the chart retains the original visibility path");
+  }
+  {
+    auto shaped = std::make_shared<scene::BakeScene>(*source);
+    shaped->lights.resize(1);
+    auto &light = shaped->lights[0];
+    light.direction[2] = -1;
+    light.focus = 1;
+    auto excluded = m::plan(shaped, layout);
+    require(excluded.tasks.empty() && excluded.remaining[0].empty() && excluded.overflow == 0 &&
+                excluded.occlusion.count() == 0 && excluded.hemisphereRejectedPairs == 1,
+            "A chart wholly behind a focused emitter needs no visibility work or invented blocked proof");
+    light.direction[2] = 1;
+    require(!m::plan(shaped, layout).tasks.empty(), "Forward-facing surface emission retains its receivers");
+    light.direction[2] = -1;
+    light.focus = 0;
+    light.coneCos = -.5f;
+    require(m::plan(shaped, layout).tasks.empty(),
+            "Wide unfocused spots still exclude receivers near their rear axis");
+    light.position[0] = -6;
+    require(!m::plan(shaped, layout).tasks.empty(),
+            "Wide unfocused spots preserve backward oblique receivers inside their cone");
+    light.position[0] = 0;
+    light.coneCos = .5f;
+    require(m::plan(shaped, layout).tasks.empty(), "Narrow spots cannot illuminate their rear hemisphere");
+    light.coneCos = -1;
+    require(!m::plan(shaped, layout).tasks.empty(), "Isotropic lights retain their full influence");
+    light.focus = 1;
+    light.position[2] = .6f;
+    light.direction[2] = 1;
+    require(!m::plan(shaped, layout).tasks.empty(),
+            "A finite emitter overlapping the receiver plane cannot be culled by its centre");
+    light.position[2] = .5f + light.radius;
+    require(!m::plan(shaped, layout).tasks.empty(), "A tangent emitter keeps numerically uncertain lighting");
+    light.position[2] += .1f;
+    require(m::plan(shaped, layout).tasks.empty(), "Finite emitters entirely beyond the plane can be rejected");
+    require(!m::plan(shaped, layout, .001f, {}, .2f).tasks.empty(),
+            "Transport origin bias can move a receiver into the emitting hemisphere");
+    auto seamLayout = layout;
+    seamLayout.points[0].position[2] = 1;
+    require(!m::plan(shaped, seamLayout).tasks.empty(),
+            "Extended seam samples participate in candidate bounds even outside the receiver geometry");
+    light.triangle = 1;
+    light.corners[0][0] = -.2f;
+    light.corners[1][0] = .2f;
+    light.corners[0][1] = light.corners[1][1] = -.2f;
+    light.corners[2][1] = .2f;
+    light.corners[0][2] = light.corners[1][2] = light.corners[2][2] = .4f;
+    require(!m::plan(shaped, layout).tasks.empty(), "Triangle extents can reach receivers behind their centre");
+    light.corners[0][2] = light.corners[1][2] = light.corners[2][2] = .9f;
+    require(m::plan(shaped, layout).tasks.empty(), "Entirely rear-facing triangle connections need no rays");
+    light.triangle = 0;
+    light.radius = .25f;
+    uint32_t rejected = 0;
+    for (uint32_t trial = 0; trial < 256; ++trial) {
+      const float angle = float(trial) * .731f;
+      light.direction[0] = std::cos(angle);
+      light.direction[1] = std::sin(angle) * .6f;
+      light.direction[2] = std::sin(angle) * .8f;
+      light.position[0] = 2 * std::sin(angle * 1.7f);
+      light.position[1] = 2 * std::cos(angle * 1.3f);
+      light.position[2] = 2 * std::sin(angle * .9f);
+      if (!m::plan(shaped, layout).tasks.empty())
+        continue;
+      ++rejected;
+      for (const auto &receiver : layout.points)
+        for (uint32_t sample = 0; sample < 64; ++sample) {
+          const double z = 1 - 2 * (double(sample) + .5) / 64;
+          const double phi = double(sample) * 2.399963229728653;
+          const double radial = std::sqrt(1 - z * z);
+          const double offset[] = {radial * std::cos(phi), radial * std::sin(phi), z};
+          double outgoingCosine = 0;
+          for (uint32_t c = 0; c < 3; ++c)
+            outgoingCosine += light.direction[c] *
+                (double(receiver.position[c]) - light.position[c] - light.radius * offset[c]);
+          require(outgoingCosine < 0, "Rejected rotated emitters have no sampled forward connection");
+        }
+    }
+    require(rejected > 30 && rejected < 200, "Rotated emission fixtures exercise both rejection and retention");
+    for (float scale : {.001f, 1.f, 1000.f}) {
+      auto scaled = std::make_shared<scene::BakeScene>(*source);
+      scaled->lights.resize(1);
+      auto &emitter = scaled->lights[0];
+      emitter.focus = 1;
+      emitter.direction[2] = -1;
+      emitter.radius *= scale;
+      emitter.position[2] *= scale;
+      for (uint32_t c = 0; c < 3; ++c)
+        scaled->draws[0].model[c * 4 + c] *= scale;
+      auto scaledLayout = layout;
+      for (auto &point : scaledLayout.points)
+        for (uint32_t c = 0; c < 3; ++c)
+          point.position[c] *= scale;
+      require(m::plan(scaled, scaledLayout).tasks.empty(), "Emission rejection is independent of host world units");
+      emitter.direction[2] = 1;
+      require(!m::plan(scaled, scaledLayout).tasks.empty(), "Forward connections survive host unit changes");
+    }
+  }
+  auto reordered = std::make_shared<scene::BakeScene>(*source);
+  std::reverse(reordered->lights.begin(), reordered->lights.end());
+  const auto reorderedPlan = m::plan(reordered, layout);
+  for (uint32_t channel = 0; channel < 4; ++channel)
+    require(reordered->lights[reorderedPlan.charts[0][channel]].id ==
+                source->lights[plan.charts[0][channel]].id,
+            "Captured submission order cannot change equal-importance light "
+            "ownership");
+  require(plan.lights.match(source->lights[0]) == m::none,
+          "Unassigned overflow lights avoid a needless runtime mask lookup");
+  {
+    for (float value : {0.f, 1.f, .5f, 1e-6f, 1.f - 1e-6f}) {
+      auto overflow = plan;
+      std::vector<forward::Vec4> partial(layout.points.size(), {.5f, .5f, .5f, .5f});
+      require(!m::refine(overflow, layout, partial) && overflow.overflow == 1 &&
+                  overflow.occlusion.state(0, 0) == m::Visibility::Unknown,
+              "Four partial lights leave an unseen fifth light unknown in the old channel walk");
+      const auto owners = overflow.charts;
+      const auto direct = overflow.directCharts;
+      m::OverflowAudit audit;
+      require(audit.nextRound(overflow, layout), "Overflow lights receive independent visibility work");
+      for (uint32_t task = uint32_t(audit.tasks().size()); task-- > 0;)
+        audit.observe(task, value, layout);
+      require(!audit.nextRound(overflow, layout), "A single overflow light needs one round");
+      const auto expected = value == 0 ? m::Visibility::Blocked
+                           : value == 1 ? m::Visibility::Clear : m::Visibility::Unknown;
+      require(overflow.occlusion.state(0, 0) == expected && overflow.lights.match(source->lights[0]) == 0,
+              "Hidden and clear overflow lights retain exact runtime identities; partial remains unknown");
+      require(overflow.overflow == 0 &&
+                  overflow.masks.entries().size() == (expected == m::Visibility::Unknown ? 1u : 0u) &&
+                  overflow.charts == owners && overflow.directCharts == direct,
+              "Auditing reduces only proven overflow and never overwrites filtered or direct channels");
+    }
+    auto incomplete = plan;
+    m::OverflowAudit audit;
+    require(audit.nextRound(incomplete, layout), "Incomplete-round fixture has tasks");
+    bool rejected = false;
+    try { audit.nextRound(incomplete, layout); } catch (const std::invalid_argument &) { rejected = true; }
+    require(rejected, "An uncompleted frame readback cannot publish a chart-wide visibility proof");
+    audit.observe(0, 0, layout);
+    rejected = false;
+    try { audit.observe(0, 0, layout); } catch (const std::invalid_argument &) { rejected = true; }
+    require(rejected, "Duplicate readback cannot substitute for an unobserved receiver");
+    auto extended = std::make_shared<scene::BakeScene>(*source);
+    for (uint64_t id : {60u, 70u, 80u}) {
+      auto light = source->lights[0];
+      light.id = id;
+      extended->lights.push_back(light);
+    }
+    auto many = m::plan(extended, layout);
+    std::vector<forward::Vec4> partial(layout.points.size(), {.5f, .5f, .5f, .5f});
+    require(!m::refine(many, layout, partial) && many.overflow == 4, "Multiple overflow rounds are needed");
+    m::OverflowAudit repeated;
+    uint32_t rounds = 0;
+    while (repeated.nextRound(many, layout)) {
+      ++rounds;
+      require(repeated.tasks().size() <= layout.points.size(),
+              "Overflow work retains at most one task per surface sample in each round");
+      for (uint32_t task = 0; task < repeated.tasks().size(); ++task)
+        repeated.observe(task, rounds == 2 ? .5f : 0.f, layout);
+    }
+    require(rounds == 4 && many.overflow == 0 && many.occlusion.count() == 3 && many.masks.entries().size() == 1,
+            "A partial overflow emitter cannot prevent later hidden emitters being checked");
+    require(repeated.completedWork() == layout.points.size() * 4 &&
+                repeated.totalWork() == repeated.completedWork(),
+            "Visibility progress counts completed work across all light rounds without resetting");
+    auto donorLayout = layout;
+    donorLayout.receiverSamples.assign(layout.points.size(), 1);
+    donorLayout.receiverSamples[0] = 0;
+    auto donorPlan = plan;
+    m::OverflowAudit donors;
+    require(donors.nextRound(donorPlan, donorLayout), "Receiver-only audit has work");
+    for (uint32_t task = 0; task < donors.tasks().size(); ++task) {
+      donors.observe(task, donors.tasks()[task].point == 0 ? 1.f : 0.f, donorLayout);
+    }
+    require(!donors.nextRound(donorPlan, donorLayout) && donorPlan.occlusion.count() == 1,
+            "Filtering donors do not prevent a hidden receiver's compact mask");
+    auto noReceiverLayout = layout;
+    auto unusedLayout = layout;
+    unusedLayout.receiverSamples.assign(layout.points.size(), 1);
+    unusedLayout.points.push_back(layout.points.front());
+    unusedLayout.pointCharts.push_back(0);
+    unusedLayout.receiverSamples.push_back(0);
+    auto unusedPlan = plan;
+    m::OverflowAudit unused;
+    require(unused.nextRound(unusedPlan, unusedLayout) && unused.tasks().size() == layout.points.size(),
+            "Superseded filtering samples with no atlas owner never receive overflow rays");
+    for (uint32_t task = 0; task < unused.tasks().size(); ++task)
+      unused.observe(task, .5f, unusedLayout);
+    require(!unused.nextRound(unusedPlan, unusedLayout) && unusedPlan.overflow == 0 &&
+                unusedPlan.masks.entries().size() == 1 &&
+                unusedPlan.masks.entries()[0].light == plan.remaining[0][plan.next[0]] &&
+                std::equal(unusedPlan.masks.bytes().begin(), unusedPlan.masks.bytes().end(),
+                           many.masks.bytes().begin(), many.masks.bytes().end()) &&
+                unused.completedWork() == unused.totalWork(),
+            "Removing unused donors preserves the complete partial visibility mask and progress");
+    noReceiverLayout.receiverSamples.assign(layout.points.size(), 0);
+    auto noReceiverPlan = plan;
+    m::OverflowAudit noReceivers;
+    require(!noReceivers.nextRound(noReceiverPlan, noReceiverLayout) &&
+                noReceiverPlan.occlusion.count() == 0 && noReceiverPlan.overflow == 1,
+            "Unsampled geometry remains unknown rather than becoming a false blocked proof");
+    std::stop_source cancelled;
+    cancelled.request_stop();
+    rejected = false;
+    try { noReceivers.nextRound(noReceiverPlan, noReceiverLayout, cancelled.get_token()); }
+    catch (const std::runtime_error &) { rejected = true; }
+    require(rejected, "Superseded overflow work can stop before publishing more classifications");
+    auto budgeted = plan;
+    m::OverflowAudit noSpace(0);
+    require(noSpace.nextRound(budgeted, layout), "Budget-limited overflow still receives a visibility audit");
+    for (uint32_t task = 0; task < noSpace.tasks().size(); ++task)
+      noSpace.observe(task, .5f, layout);
+    require(!noSpace.nextRound(budgeted, layout) && budgeted.overflow == 1 && budgeted.masks.entries().empty(),
+            "Exhausted mask space remains an explicit fallback instead of suppressing a light");
+    m::Plan staggered;
+    staggered.lights.source = source;
+    staggered.remaining = {{0}, {0, 2}, {3}, {}};
+    staggered.charts.resize(staggered.remaining.size());
+    staggered.next.resize(staggered.remaining.size());
+    staggered.overflow = 4;
+    staggered.occlusion = m::Occlusion(uint32_t(staggered.charts.size()), uint32_t(source->lights.size()));
+    lm::Layout sparseLayout;
+    sparseLayout.pointCharts = {0, 1, 3};
+    sparseLayout.points.resize(sparseLayout.pointCharts.size());
+    m::OverflowAudit sparse;
+    require(sparse.nextRound(staggered, sparseLayout) && sparse.tasks().size() == 2 && sparse.totalWork() == 3,
+            "Only charts with receivers and pending lights enter the overflow work list");
+    sparse.observe(0, 0, sparseLayout);
+    sparse.observe(1, 1, sparseLayout);
+    require(sparse.nextRound(staggered, sparseLayout) && sparse.tasks().size() == 1 &&
+                sparse.tasks()[0].point == 1 && sparse.tasks()[0].light == 2,
+            "Finishing one chart leaves the remaining chart in the next round");
+    sparse.observe(0, 0, sparseLayout);
+    require(!sparse.nextRound(staggered, sparseLayout) && !sparse.nextRound(staggered, sparseLayout) &&
+                sparse.completedWork() == 3 && staggered.overflow == 1 &&
+                staggered.occlusion.state(0, 0) == m::Visibility::Blocked &&
+                staggered.occlusion.state(1, 0) == m::Visibility::Clear &&
+                staggered.occlusion.state(1, 2) == m::Visibility::Blocked &&
+                staggered.occlusion.state(2, 3) == m::Visibility::Unknown,
+            "Retiring charts preserves the last classification and leaves unsampled geometry unknown");
+    require(staggered.lights.identities.count(source->lights[0].id) == 1 &&
+                staggered.lights.match(source->lights[0]) == 0,
+            "An overflow light shared by multiple charts retains a single runtime binding");
+    m::Masks scalar;
+    std::vector<float> fractions(layout.points.size(), .5f);
+    require(!scalar.add(0, 0, layout, fractions, 0) && scalar.entries().empty(),
+            "Mask allocation respects the device texture budget before mutation");
+    require(scalar.add(0, 0, layout, fractions), "Partial visibility retains an independent scalar mask");
+    m::Masks compactBudget;
+    require(compactBudget.add(0, 0, layout, fractions, 7) && compactBudget.words(1).size() == 7,
+            "Lossless constant tiles retain a mask when a raw R8 rectangle would exceed the device budget");
+    m::Masks tooSmall;
+    require(!tooSmall.add(0, 0, layout, fractions, 6) && tooSmall.entries().empty() && tooSmall.bytes().empty(),
+            "Insufficient encoded budget fails without publishing a partial mask");
+    require(tooSmall.candidateCosts().candidates == uint64_t(std::getenv("REMIX_DEBUG_MASK_COSTS") != nullptr),
+            "Optional cost diagnostics include a candidate even when the device budget rejects it");
+    const auto packed = scalar.words(uint32_t(layout.charts.size()));
+    require(!packed.empty() && std::find(scalar.bytes().begin(), scalar.bytes().end(), uint8_t(128)) != scalar.bytes().end(),
+            "Half visibility is quantized to the nearest normalized byte");
+    const auto restored = m::Masks::restore(scalar.entries(), scalar.bytes(), layout, uint32_t(source->lights.size()));
+    require(restored.words(uint32_t(layout.charts.size())) == packed,
+            "Sparse lookup tables and quantized values survive cache reconstruction");
+    auto invalid = std::vector<m::Masks::Entry>(scalar.entries().begin(), scalar.entries().end());
+    ++invalid[0].offset;
+    rejected = false;
+    try { m::Masks::restore(invalid, scalar.bytes(), layout, uint32_t(source->lights.size())); }
+    catch (const std::invalid_argument &) { rejected = true; }
+    require(rejected, "Malformed sparse offsets are rejected before GPU publication");
+  }
+  {
+    auto refined = plan;
+    std::vector<forward::Vec4> visibility(layout.points.size());
+    require(m::refine(refined, layout, visibility) && refined.overflow == 0 &&
+                refined.tasks.size() == layout.points.size() && refined.charts[0][0] == 0,
+            "Fully blocked channels promote the next candidate without expanding filtered storage");
+    for (uint32_t channel = 0; channel < 4; ++channel)
+      require(refined.occlusion.contains(0, plan.charts[0][channel]) &&
+                  refined.lights.match(source->lights[plan.charts[0][channel]]) == plan.charts[0][channel],
+              "Discarded zero channels retain exact light identity in compact static occlusion");
+    require(refined.lights.match(source->lights[0]) == 0 && !refined.occlusion.contains(0, 0),
+            "Promoted lights receive bindings without inheriting another light's occlusion");
+    for (auto &value : visibility) value[0] = .25f;
+    require(!m::refine(refined, layout, visibility) && refined.charts[0][0] == 0,
+            "A visible promoted light retains its filtered channel");
+    auto partial = plan;
+    visibility.assign(layout.points.size(), {});
+    visibility[0][0] = 1e-6f;
+    m::refine(partial, layout, visibility);
+    require(partial.charts[0][0] == plan.charts[0][0] &&
+                !partial.occlusion.contains(0, plan.charts[0][0]),
+            "Even one partially visible sample prevents a chart-wide blocked classification");
+    auto unused = plan;
+    auto noSamples = layout;
+    noSamples.points.clear();
+    noSamples.pointCharts.clear();
+    noSamples.receiverSamples.clear();
+    require(!m::refine(unused, noSamples, {}) && unused.occlusion.count() == 0,
+            "A chart without samples cannot be classified as blocked");
+    auto borderLayout = layout;
+    auto borderPlan = plan;
+    borderLayout.receiverSamples[0] = 0;
+    visibility.assign(layout.points.size(), {});
+    visibility[0] = {1, 1, 1, 1};
+    m::refine(borderPlan, borderLayout, visibility);
+    require(borderPlan.occlusion.count() == 4,
+            "A lit neighbour's filtering donor cannot invalidate a fully blocked receiving face");
+    auto clear = plan;
+    auto deferred = plan;
+    visibility.assign(layout.points.size(), {0, .5f, 1, .25f});
+    std::vector<lm::Direct> scratch(layout.points.size()), retained(layout.points.size());
+    for (uint32_t point = 0; point < scratch.size(); ++point)
+      for (uint32_t coefficient = 0; coefficient < 9; ++coefficient)
+        scratch[point][coefficient] = {0, float(point + coefficient + 11),
+                                      float(point + coefficient + 22), float(point + coefficient + 33)};
+    require(m::refine(clear, layout, visibility, {}, scratch, retained) &&
+                clear.charts[0][0] == 0 && clear.charts[0][2] == m::none &&
+                clear.occlusion.state(0, plan.charts[0][2]) == m::Visibility::Clear &&
+                clear.directCharts[0] == forward::bake::UInt4{plan.charts[0][1], plan.charts[0][2],
+                                                            plan.charts[0][3], m::none},
+            "Clear masks free filtered storage while retaining independent positive-light SH owners");
+    require(m::refine(deferred, layout, visibility, {}, {}, {}, m::DirectCapture::Deferred) &&
+                deferred.charts == clear.charts && deferred.directCharts == clear.directCharts &&
+                std::equal(deferred.occlusion.words().begin(), deferred.occlusion.words().end(),
+                           clear.occlusion.words().begin(), clear.occlusion.words().end()),
+            "Scalar classification retains the same filtered masks and positive direct owners");
+    const m::DirectWork firstDirectWork(deferred, layout);
+    const auto firstDirectTasks = firstDirectWork.batch(0, firstDirectWork.size());
+    require(firstDirectTasks.size() == layout.points.size() * 3,
+            "Deferred tracing excludes the blocked candidate and includes every selected receiver/donor");
+    for (const auto &task : firstDirectTasks)
+      require(task.light == deferred.directCharts[layout.pointCharts[task.point]][task.channel],
+              "Deferred tasks preserve each owner's independent destination channel");
+    for (uint32_t point = 0; point < scratch.size(); ++point)
+      for (uint32_t coefficient = 0; coefficient < 9; ++coefficient)
+        require(retained[point][coefficient] == forward::Vec4{float(point + coefficient + 11),
+                                                            float(point + coefficient + 22),
+                                                            float(point + coefficient + 33), 0},
+                "Every signed directional coefficient follows its light when working channels are compacted");
+    for (auto &value : visibility) value[0] = 1;
+    for (auto &point : scratch) for (auto &coefficient : point) coefficient[0] = -7;
+    require(!m::refine(clear, layout, visibility, {}, scratch, retained) &&
+                clear.directCharts[0][3] == 0 && clear.occlusion.clearCount() == 2 &&
+                retained[0][8] == forward::Vec4{19, 30, 41, -7},
+            "Later clear candidates fill spare direct channels without overwriting previously retained SH");
+    require(!m::refine(deferred, layout, visibility, {}, {}, {}, m::DirectCapture::Deferred) &&
+                deferred.charts == clear.charts && deferred.directCharts == clear.directCharts &&
+                m::DirectWork(deferred, layout).size() == layout.points.size() * 4,
+            "Deferred ownership remains identical through channel reuse and subsequent clear candidates");
+    std::stop_source directCancellation;
+    directCancellation.request_stop();
+    bool directCancelled = false;
+    try { m::DirectWork cancelled(deferred, layout, directCancellation.get_token()); }
+    catch (const std::runtime_error &) { directCancelled = true; }
+    require(directCancelled, "Superseded direct-task preparation stops before publication");
+    auto noDirect = deferred;
+    for (auto &owners : noDirect.directCharts) owners.fill(m::none);
+    require(m::DirectWork(noDirect, layout).empty(),
+            "A plan with no retained positive owners schedules no directional rays");
+    {
+      auto sparse = deferred;
+      sparse.charts.resize(3);
+      sparse.directCharts = {{m::none, 1, m::none, 2},
+                             {m::none, m::none, m::none, m::none}, {0, m::none, 3, 4}};
+      lm::Layout interleaved;
+      interleaved.pointCharts = {1, 0, 0, 1, 1, 1, 1, 2, 0, 2, 1, 2, 2, 1};
+      interleaved.points.resize(interleaved.pointCharts.size());
+      std::vector<m::Task> expected;
+      for (uint32_t point = 0; point < interleaved.points.size(); ++point)
+        for (uint32_t channel = 0; channel < m::channels; ++channel)
+          if (const auto light = sparse.directCharts[interleaved.pointCharts[point]][channel]; light != m::none)
+            expected.push_back({point, light, channel});
+      const m::DirectWork work(sparse, interleaved);
+      require(work.size() == expected.size(), "Compact direct prefixes count sparse owners and empty receivers");
+      // Neither caller mutation nor a batch spanning empty receivers may alter
+      // the ownership snapshot already referenced by GPU submissions.
+      for (auto &owners : sparse.directCharts) owners.fill(m::none);
+      std::fill(interleaved.pointCharts.begin(), interleaved.pointCharts.end(), 1);
+      for (uint32_t first = 0; first <= work.size(); ++first)
+        for (uint32_t count = 0; count <= work.size() - first; ++count) {
+          const auto batch = work.batch(first, count);
+          require(batch.size() == count, "Compact direct batches retain exact tail lengths");
+          for (uint32_t i = 0; i < count; ++i)
+            require(batch[i].point == expected[first+i].point && batch[i].light == expected[first+i].light &&
+                        batch[i].channel == expected[first+i].channel,
+                    "Every batch boundary preserves receiver/light/channel order across empty gaps");
+        }
+      bool refused = false;
+      try { work.batch(work.size(), 1); }
+      catch (const std::out_of_range &) { refused = true; }
+      require(refused, "Out-of-range direct batches fail before allocating or submitting work");
+      sparse.charts.resize(1);
+      sparse.directCharts = {{0, 1, 2, 3}};
+      lm::Layout large;
+      large.points.resize(100000);
+      large.pointCharts.resize(large.points.size(), 0);
+      const m::DirectWork dense(sparse, large);
+      require(dense.size() == 400000 && dense.memoryBytes() < (1u << 20),
+              "Four hundred thousand directional tasks retain less than one MiB of index storage");
+      const auto tail = dense.batch(dense.size() - 5, 5);
+      for (uint32_t i = 0; i < tail.size(); ++i) {
+        const uint32_t task = dense.size() - 5 + i;
+        require(tail[i].point == task / 4 && tail[i].light == task % 4 && tail[i].channel == task % 4,
+                "A large streamed tail crosses receiver boundaries without an expanded task list");
+      }
+    }
+    auto almostClear = plan;
+    visibility.assign(layout.points.size(), {1, 1, 1, 1});
+    visibility[0][0] = .999999f;
+    m::refine(almostClear, layout, visibility);
+    require(almostClear.charts[0][0] == plan.charts[0][0] &&
+                almostClear.occlusion.state(0, plan.charts[0][0]) == m::Visibility::Unknown,
+            "Even one nonunit sample prevents clear classification");
+    auto geometry = lm::meshes(*source, layout, {}, clear.charts, clear.directCharts);
+    for (const auto &vertex : geometry[0].vertices)
+      require(vertex.lights == clear.charts[0] && vertex.directLights == clear.directCharts[0],
+              "Geometry carries distinct filtered visibility and unit direct-light identities");
+    m::Occlusion mask(2, 64);
+    for (uint32_t light : {0u, 3u, 4u, 7u, 8u, 11u, 12u, 15u, 16u, 31u, 32u, 63u}) mask.mark(0, light);
+    for (uint32_t light : {1u, 5u, 9u, 13u, 17u, 33u, 62u}) mask.mark(0, light, m::Visibility::Clear);
+    mask.mark(1, 5);
+    mask.mark(1, 5);
+    const auto pixels = mask.pixels(1);
+    const uint32_t tail[] = {0u, 0xffffffffu, 0x80000000u, 0x12345678u};
+    const auto integers = mask.pixels(1, tail);
+    require(integers.words[0] == mask.wordsPerChart() && integers.words[1] == mask.chartCount() &&
+                std::equal(mask.words().begin(), mask.words().end(), integers.words.begin() + 2) &&
+                std::equal(std::begin(tail), std::end(tail),
+                           integers.words.begin() + 2 + mask.words().size()),
+            "Integer metadata preserves state words, high bits and payload without float conversion");
+    require(mask.count() == 13 && mask.clearCount() == 7 && mask.contains(1, 5) && !mask.contains(0, 5) &&
+                mask.state(0, 5) == m::Visibility::Clear && mask.state(2, 0) == m::Visibility::Unknown &&
+                pixels.width == 10 && pixels.height == 1 && pixels.layers == 1 &&
+                pixels.words[2] == 0x49494949u && pixels.words[3] == 0x40000009u &&
+                (pixels.words[4] & 255u) == 9u && (pixels.words[5] >> 24u) == 96u &&
+                ((pixels.words[6] >> 8u) & 255u) == 4u,
+            "Two-bit states preserve chart boundaries, all byte lanes and 16-light word seams");
+    constexpr size_t side = m::occlusionPageSide, pageWords = side * side;
+    std::vector<uint32_t> multiPageTail(pageWords);
+    multiPageTail[pageWords - 11] = 0x12345678u;
+    multiPageTail[pageWords - 10] = 0x80000000u;
+    const auto multiPage = mask.pixels(2, multiPageTail);
+    require(multiPage.width == side && multiPage.height == side && multiPage.layers == 2 &&
+                multiPage.words[pageWords - 1] == 0x12345678u && multiPage.words[pageWords] == 0x80000000u,
+            "Word addressing is contiguous across visibility pages");
+  }
+  auto changed = source->lights[1];
+  changed.radiance[0] = 20;
+  require(plan.lights.match(changed) == 1, "Colour changes retain geometry-valid static visibility");
+  changed.position[0] += .01f;
+  require(plan.lights.match(changed) == m::none, "Moving a light rejects its old static mask");
+  changed = source->lights[1];
+  changed.radius *= 2;
+  require(plan.lights.match(changed) == m::none, "Changing emitter radius rejects its old penumbra");
+  changed = source->lights[1];
+  changed.dynamic = true;
+  require(plan.lights.match(changed) == m::none, "Dynamic lights cannot inherit a static light channel");
+  changed = source->lights[1];
+  ++changed.id;
+  require(plan.lights.match(changed) == m::none,
+          "Equivalent geometry under another light identity cannot steal a mask");
+  auto geometry = lm::meshes(*source, layout, {}, plan.charts);
+  for (const auto &vertex : geometry[0].vertices)
+    require(vertex.lights == plan.charts[0], "Light ownership accompanies chart geometry as discrete integer "
+                                             "attributes");
+  std::vector<forward::bake::Result> results(layout.points.size());
+  std::vector<forward::Vec4> visibility(layout.points.size(), {0, .5f, 1, .25f});
+  const auto packed = lm::pixels(layout, results, {}, visibility);
+  const size_t pageTexels = 16 * 16, pixel = layout.addresses[0];
+  const size_t index = (lm::irradianceLayers * pageTexels + pixel) * 4;
+  require(packed[index] == 0 && packed[index + 1] == 0x3800 && packed[index + 2] == 0x3c00 &&
+              packed[index + 3] == 0x3400,
+          "Visibility layers preserve independent zero, soft, full and "
+          "quarter-strength channels");
+  require(packed[(lm::irradianceLayers * pageTexels) * 4 + 1] == 0x3800,
+          "Chart padding keeps the same light-channel ownership and visibility "
+          "values");
+  std::vector<lm::Direct> direct(layout.points.size());
+  for (auto &point : direct) {
+    point[0] = {1, 2, 3, 4};
+    point[1] = {-1, -.5f, .25f, 0};
+  }
+  const auto withDirect = lm::pixels(layout, results, {}, visibility, direct);
+  const size_t directPixel = (lm::directLayer * pageTexels + pixel) * 4;
+  require(withDirect[directPixel] == 0x3c00 && withDirect[directPixel + 1] == 0x4000 &&
+              withDirect[directPixel + 2] == 0x4200 && withDirect[directPixel + 3] == 0x4400 &&
+              withDirect[directPixel + pageTexels * 4] == 0xbc00 && withDirect[index] == 0,
+          "Signed per-light direct coefficients retain channel ownership "
+          "separately from static visibility");
+  require(withDirect[lm::directLayer * pageTexels * 4] == 0x3c00,
+          "Direct diffuse padding reuses the chart-local donor");
+  std::stop_source stop;
+  stop.request_stop();
+  bool cancelled = false;
+  try {
+    m::plan(source, layout, .001f, stop.get_token());
+  } catch (const std::runtime_error &) {
+    cancelled = true;
+  }
+  require(cancelled, "Superseded mixed light planning supports cancellation");
+  auto capture = [&](std::span<const scene::Draw> current, double seconds = 0) {
+    return forward::ray::capture(source.get(), current, source->lights, source->sun, source->dome, 1,
+                                 seconds);
+  };
+  auto frozen = capture({});
+  require(frozen.inputs.triangles.size() == 2 && frozen.key == capture({}).key,
+          "Live rays retain complete authored geometry with a stable transport "
+          "cache key");
+  auto streamed = source->lights;
+  streamed[0].position[0] += 2;
+  streamed[0].radiance[0] += 5;
+  const auto relit = forward::ray::capture(source.get(), {}, streamed, source->sun, source->dome, 1);
+  require(relit.key == frozen.key &&
+              std::any_of(relit.inputs.lights.begin(), relit.inputs.lights.end(),
+                          [](const auto &light) { return light.positionRadius[0] == 2; }),
+          "Analytic light edits stream fresh data without invalidating "
+          "geometry/atlas reuse");
+  auto current = resources.retained(handle)->records[0];
+  auto optical = current;
+  optical.material = std::make_shared<scene::Material>(*current.material);
+  optical.material->transmission = optical.material->bakeSmoothBoundary = true;
+  optical.material->refractiveIndex = 1.5f;
+  optical.material->transmittanceDistance = 1;
+  optical.material->thinWallThickness = .25f;
+  optical.material->transmittanceScroll[0] = .5f;
+  const auto tintStart = capture({&optical, 1}, 0), tintLater = capture({&optical, 1}, 10);
+  require(tintStart.key == tintLater.key,
+          "The streamed optical tint clock never invalidates live acceleration identity");
+  optical.material->transmittanceScroll[0] = .25f;
+  require(capture({&optical, 1}, 0).key != tintStart.key,
+          "Changing optical tint rates changes immutable transport material identity");
+  const auto liveTint = capture({&optical, 1}, 0);
+  optical.material->bakeTintAxes = 3;
+  const auto meanPolicy = capture({&optical, 1}, 0);
+  require(meanPolicy.key == liveTint.key &&
+              (meanPolicy.inputs.materials[0].flags[3] &
+               (forward::bake::averageTintUFlag | forward::bake::averageTintVFlag)) == 0,
+          "Live ray transport ignores bake-only tint distribution without changing scene identity");
+  current.reflectionOnly = true;
+  const auto reflectionOnly = capture({&current, 1});
+  require(!forward::accepts(current) && reflectionOnly.inputs.triangles.size() == frozen.inputs.triangles.size() &&
+              reflectionOnly.key != frozen.key &&
+              (reflectionOnly.inputs.materials[0].flags[3] & forward::bake::reflectionOnlyFlag),
+          "Reflection-only actors leave camera ownership while retaining separately keyed bounce geometry");
+  require(!scene::matchesBakeDraw(*source, 0, current),
+          "A changed ray-purpose category cannot reuse a frozen lighting binding");
+  current.reflectionOnly = false;
+  require(capture({&current, 1}).key == frozen.key,
+          "Restoring ordinary ray purpose restores the established live transport identity");
+  current.model[12] = 2;
+  auto moved = capture({&current, 1});
+  require(moved.inputs.triangles.size() == 2 && moved.key != frozen.key &&
+              std::abs(moved.inputs.vertices[0].position[0] - 1.2f) < 1e-5f,
+          "A live retained transform replaces its authored counterpart instead "
+          "of creating a ghost");
+  current.blend.enabled = true;
+  const auto blended = capture({&current, 1});
+  require(blended.inputs.triangles.size() == 2 && blended.key != moved.key &&
+              (blended.inputs.materials[0].flags[3] & forward::bake::sourceOverCoverageFlag),
+          "Live source-over sheets retain coverage transport without "
+          "duplicating authored geometry");
+  current.blend.src = current.blend.dst = 1; // additive effects remain compatibility-only
+  require(capture({&current, 1}).inputs.triangles.empty(),
+          "A current compatibility-only instance suppresses its old authored "
+          "ray geometry");
+  current.blend.src = 4;
+  current.blend.dst = 2;
+  require(capture({&current, 1}).inputs.triangles.empty(),
+          "Modulation without explicit decal identity cannot become a surface-colour layer");
+  current.decal = true;
+  const auto modulated = capture({&current, 1});
+  require(modulated.inputs.triangles.size() == 2 &&
+              (modulated.inputs.materials[0].flags[3] & forward::bake::modulatingDecalFlag),
+          "Live rays preserve a static modulating decal's separate transport identity");
+  current.decal = false;
+  current.blend.src = current.blend.dst = 1;
+  current.material = std::make_shared<scene::Material>(*current.material);
+  current.material->transmission = current.material->bakeSmoothBoundary = true;
+  current.material->transmittanceDistance = 1;
+  current.material->refractiveIndex = 1.333f;
+  require(capture({&current, 1}).inputs.triangles.empty(),
+          "A smooth optical policy cannot turn an additive effect into transport geometry");
+  current.blend.enabled = false;
+  const auto boundary = capture({&current, 1});
+  require(boundary.inputs.triangles.size() == 2 &&
+              (boundary.inputs.materials[0].flags[3] & forward::bake::dielectricBoundaryFlag),
+          "Live ray capture includes explicit smooth optical boundaries");
+  current = resources.retained(handle)->records[0];
+  current.instanceId = 901;
+  current.classification = REMIXAPI_INSTANCE_DYNAMIC_EXT;
+  require(capture({&current, 1}).inputs.triangles.size() == 4,
+          "Current dynamic actors augment complete static ray geometry");
+  current.surface = std::make_shared<scene::Surface>(*current.surface);
+  current.surface->bonesPerVertex = 1;
+  current.surface->bones.assign(4, 0);
+  current.surface->weights.assign(4, 1);
+  current.bones = std::make_shared<std::vector<scene::Matrix>>(1, scene::identity());
+  auto posed = capture({&current, 1});
+  const size_t actorVertex = posed.source->draws[0].instanceId == 901 ? 0 : 4;
+  (*current.bones)[0][12] = 1;
+  auto reposed = capture({&current, 1});
+  require(posed.key != reposed.key && std::abs(reposed.inputs.vertices[actorVertex].position[0] -
+                                               posed.inputs.vertices[actorVertex].position[0] - 1) < 1e-5f,
+          "Live acceleration inputs follow current bone transforms");
+  current.material = std::make_shared<scene::Material>(*current.material);
+  current.material->columns = 2;
+  current.material->fps = 1;
+  auto firstFrame = capture({&current, 1}, 0), secondFrame = capture({&current, 1}, 1);
+  require(firstFrame.key != secondFrame.key &&
+              std::abs(secondFrame.inputs.vertices[actorVertex].uv[0] -
+                       firstFrame.inputs.vertices[actorVertex].uv[0] - .5f) < 1e-5f,
+          "Live material animation carries its UV frame offset into ray-hit "
+          "shading");
+  current.material->texture = std::make_shared<scene::Texture>();
+  current.material->texture->updates = std::make_shared<scene::TextureUpdates>();
+  const auto textureKey = capture({&current, 1}).key;
+  ++current.material->texture->updates->revision;
+  require(textureKey != capture({&current, 1}).key,
+          "Dynamic texture revisions invalidate the sampled ray material atlas");
+  std::puts("Mixed chart/light ownership, bounded overlap, shape invalidation "
+            "and visibility channels passed");
+}

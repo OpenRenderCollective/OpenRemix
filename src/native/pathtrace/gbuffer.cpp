@@ -29,7 +29,7 @@ namespace remix {
     // Position and previous position retain float32 precision. Normal/flags and
     // linear albedo use smaller attachments to limit G-buffer bandwidth.
     const VkFormat formats[] = {VK_FORMAT_R32G32B32A32_SFLOAT, VK_FORMAT_R16G16B16A16_SFLOAT,
-                                VK_FORMAT_R8G8B8A8_UNORM,      VK_FORMAT_R32G32B32A32_SFLOAT,
+                                VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_R32G32B32A32_SFLOAT,
                                 VK_FORMAT_R32_SFLOAT,          VK_FORMAT_R16G16B16A16_SFLOAT,
                                 VK_FORMAT_R16G16B16A16_SFLOAT};
     for (unsigned i = 0; i < 7; ++i)
@@ -130,30 +130,30 @@ namespace remix {
         VkPipelineVertexInputStateCreateInfo vertex{.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
         VkPipelineInputAssemblyStateCreateInfo assembly{.sType =
                                                             VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
-                                                        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST};
+            .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST};
         VkPipelineViewportStateCreateInfo viewport{
             .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO, .viewportCount = 1, .scissorCount = 1};
         VkPipelineRasterizationStateCreateInfo raster{.sType =
                                                           VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
-                                                      .polygonMode = VK_POLYGON_MODE_FILL,
-                                                      .cullMode = VK_CULL_MODE_NONE,
-                                                      .frontFace = VK_FRONT_FACE_CLOCKWISE,
-                                                      .lineWidth = 1};
+            .polygonMode = VK_POLYGON_MODE_FILL,
+            .cullMode = VK_CULL_MODE_NONE,
+            .frontFace = VK_FRONT_FACE_CLOCKWISE,
+            .lineWidth = 1};
         VkPipelineMultisampleStateCreateInfo samples{.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-                                                     .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT};
+            .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT};
         VkPipelineDepthStencilStateCreateInfo depthState{.sType =
                                                              VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-                                                         .depthTestEnable = VK_TRUE,
-                                                         .depthWriteEnable = VK_TRUE,
-                                                         .depthCompareOp = VK_COMPARE_OP_GREATER_OR_EQUAL,
-                                                         .maxDepthBounds = 1};
+            .depthTestEnable = VK_TRUE,
+            .depthWriteEnable = VK_TRUE,
+            .depthCompareOp = VK_COMPARE_OP_GREATER_OR_EQUAL,
+            .maxDepthBounds = 1};
         VkPipelineColorBlendAttachmentState blend[6] = {};
         for (unsigned i = 0; i < colors; ++i)
           blend[i].colorWriteMask =
               VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
         VkPipelineColorBlendStateCreateInfo blending{.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-                                                     .attachmentCount = colors,
-                                                     .pAttachments = blend};
+            .attachmentCount = colors,
+            .pAttachments = blend};
         VkDynamicState states[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
         VkPipelineDynamicStateCreateInfo dynamic{.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
                                                  .dynamicStateCount = 2,
@@ -191,13 +191,13 @@ namespace remix {
 
   void PathTracer::Gpu::recordPrimary(VkCommandBuffer command, bool rasterPrimary) {
     if (!rasterPrimary) {
-      // The reference shader statically declares these descriptors even when it
-      // does not read them. Keep their descriptor layouts valid from first use.
+      // Ray-primary tracing still writes previous-position and metering guides.
+      // Keep every descriptor valid, including write access from first use.
       if (!primaryInitialized) {
         VkImageMemoryBarrier transitions[7] = {};
         for (unsigned i = 0; i < 7; ++i)
           transitions[i] = {.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-                            .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
+                            .dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
                             .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
                             .newLayout = VK_IMAGE_LAYOUT_GENERAL,
                             .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,

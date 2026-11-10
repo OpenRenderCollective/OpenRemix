@@ -20,7 +20,7 @@ import fsr31
 ROOT = Path(__file__).resolve().parents[2]
 # Where the generated backends are written and read (--output): the build passes its
 # src/native, so the sources' "pathtrace/shaders/embedded.h" includes find them.
-OUTPUT = ROOT / '_work/shaders'
+OUTPUT = ROOT / '_work/shaders/src/native'
 # Every file a glslang compile read (--depfile).
 DEPENDENCIES = set()
 _dependencies_lock = threading.Lock()
@@ -28,22 +28,121 @@ _dependencies_lock = threading.Lock()
 # XZ-compressed in embedded.bin. Inlined modules are ~10x larger, but NVIDIA's
 # driver compiles them about twice as fast; the runtime decompresses on use.
 OPTIMIZED = {'pathtrace'}
+# Offline transport benefits from inlining too, but retains its word-array ABI.
+INLINED = {'bake'}
+# Optimize the expensive depth-primed world shaders without expanding every
+# auxiliary pass. Keep their readable GLSL and the existing word-array ABI.
+INLINED_STAGES = {('forward', 'prepassedFrag'), ('forward', 'prepassedSsrFrag'), ('forward', 'inlinePrepassedFrag'), ('forward', 'inlinePrepassedFragCube')}
 BACKENDS = {
-    'postfx': ('postfx', 'vulkan1.2', ('meter', 'resolve', 'down', 'up')),
+    'styled_lighting': ('forward::styled_lighting', 'vulkan1.1', ('compose',)),
+    'probe_batch_test': ('forward::test::probe_batch_input', 'vulkan1.1', ('query',)),
+    'probe_batch': ('forward::probe_batch', 'vulkan1.1', ('gather',)),
+    'sun_depth_test': ('forward::test::sun_depth_input', 'vulkan1.1', ('query',)),
+    'cluster_test': ('forward::test::cluster_input', 'vulkan1.1', ('query',)),
+    'shadow_test': ('forward::test::shadow_input', 'vulkan1.1', ('query',)),
+    'style_test': ('forward::test::style_input', 'vulkan1.1', ('query',)),
+    'probe_test': ('forward::test::probe_input', 'vulkan1.1', ('reflection', 'reflectionCube')),
+    'mask_test': ('forward::test::mask_input', 'vulkan1.1', ('decode',)),
+    'water_ray': ('forward::water::hardware', 'vulkan1.2', ('frag', 'liveDiffuse', 'liveDiffuseRay', 'composedDiffuse', 'composedDiffuseRay')),
+    'water_test': ('forward::test::water_input', 'vulkan1.1', ('vert', 'frag', 'query', 'depth')),
+    'water': ('forward::water', 'vulkan1.1', ('snapshot', 'snapshotSingle', 'vert', 'frag', 'overlayVert', 'overlayFrag', 'compositeFrag', 'compositeSingle')),
+    'live_gi': ('forward::ray::gi', 'vulkan1.2', ('frag', 'guides', 'viewModel', 'viewModelEarly', 'composedFrag', 'composedGuides', 'composedViewModel', 'composedViewModelEarly')),
+    'live_ray': ('forward::ray', 'vulkan1.2', ('launch', 'merge')),
+    'bake': ('forward::bake', 'vulkan1.2', ('atlas', 'transport', 'parallel', 'radianceParallel', 'visibility', 'aggregate', 'aggregateParallel', 'receiverDirect', 'receiverDirectParallel', 'depth')),
+    'forward_test': ('forward::test', 'vulkan1.2', ('comp', 'probes', 'water', 'coarseTransfer')),
+    'forward': ('forward', 'vulkan1.1', ('vert', 'lightmapVert', 'frag', 'prepassedFrag', 'inlineFrag', 'inlinePrepassedFrag', 'viewModelFrag', 'viewModelEarlyFrag', 'cluster', 'shadowVert', 'shadowFrag', 'opaqueDepthFrag', 'localShadowVert', 'localShadowFrag', 'depthBatchVert', 'depthBatchFrag', 'compositeVert', 'compositeFrag', 'compositeSingle', 'ssrFrag', 'prepassedSsrFrag', 'ssrResolve', 'ssrResolveSingle', 'ssrReduce', 'ssrTrace', 'ssrFilter', 'ssrFilterSingle', 'opaqueCull', 'opaqueTiles', 'opaqueTilesSingle')),
+    # Shared with the raster fallback, which supports Vulkan 1.1 devices.
+    'postfx': ('postfx', 'vulkan1.1', ('meter', 'resolve', 'down', 'up')),
     'upscale': ('upscale', 'vulkan1.2', ('comp', 'vert', 'frag', 'hdr10', 'hdrUi')),
     'raster': ('raster', 'vulkan1.1', ('vert', 'frag', 'haloMask', 'haloVert', 'haloBlur', 'haloComposite', 'maskWithin', 'maskOverlay', 'spriteVert', 'spriteFrag', 'skyComposite', 'infectedVert', 'infectedFrag')),
     'pathtrace': ('trace', 'vulkan1.2', ('vert', 'frag', 'comp', 'temporal', 'transparency', 'temporalTransparency', 'frontGuides', 'psr', 'regirPresample', 'volumeUpdate', 'orcaSparse', 'sharcOrcaSparse', 'singleTransparency', 'singleTemporalTransparency', 'sharcSingleTransparency', 'sharcSingleTemporalTransparency', 'confidence', 'gbufferVert', 'gbufferFrag', 'depthFrag', 'sharcUpdate', 'sharcResolve', 'sharcQuery', 'sharcTransparency', 'sharcTemporal', 'sharcTemporalTransparency', 'sharcConfidence', 'sigmaTemporal', 'sharcSigmaTemporal', 'localTemporal', 'localSigmaTemporal', 'sharcLocalTemporal', 'sharcLocalSigmaTemporal', 'splitLocalTemporal', 'splitLocalSigmaTemporal', 'sharcSplitLocalTemporal', 'sharcSplitLocalSigmaTemporal', 'splitLocalDirect', 'splitRestirInitial', 'splitRestirSpatial', 'indirectTemporal', 'sharcIndirectTemporal', 'vertexAssemble', 'vertexSkin', 'vertexWound', 'sparseCompact', 'sparseArgs', 'indirect', 'sharcIndirect', 'sheetLighting', 'sheetLightingTemporal', 'sharcSheetLighting', 'sharcSheetLightingTemporal', 'wavefrontStartTemporal', 'wavefrontTraceTemporal', 'wavefrontShadeTemporal', 'wavefrontFinishTemporal', 'sharcWavefrontStartTemporal', 'sharcWavefrontTraceTemporal', 'sharcWavefrontShadeTemporal', 'sharcWavefrontFinishTemporal', 'wavefrontTailTemporal', 'sharcWavefrontTailTemporal', 'wavefrontArgs', 'wavefrontShadowTemporal', 'sharcWavefrontShadowTemporal', 'wavefrontShadeDeferTemporal', 'sharcWavefrontShadeDeferTemporal', 'wavefrontSkyTemporal', 'sharcWavefrontSkyTemporal', 'wavefrontShadePlainTemporal', 'sharcWavefrontShadePlainTemporal', 'wavefrontShadeDeferPlainTemporal', 'sharcWavefrontShadeDeferPlainTemporal')),
     'denoise': ('denoise', 'vulkan1.2', ('comp', 'sigma', 'local', 'localSigma', 'splitLocal', 'splitLocalSigma')),
     'particles': ('particles', 'vulkan1.1', ('simulate', 'spawn', 'args', 'vert', 'frag', 'light', 'spawnTraced')),
 }
+# Reflection consumers share one image layout per device.
+CUBE_VARIANTS = {
+    'forward': ('inlineFrag', 'inlinePrepassedFrag', 'viewModelFrag', 'viewModelEarlyFrag',
+                'ssrFilter', 'ssrFilterSingle'),
+    'water': ('frag',),
+    'water_ray': BACKENDS['water_ray'][2],
+    'live_gi': ('viewModel', 'viewModelEarly', 'composedViewModel', 'composedViewModelEarly'),
+}
+for backend, variants in CUBE_VARIANTS.items():
+    namespace, target, stages = BACKENDS[backend]
+    BACKENDS[backend] = namespace, target, stages + tuple(stage + 'Cube' for stage in variants)
+
 # Stages that need a newer target than their backend's (ray queries: SPIR-V 1.4).
 STAGE_ENVIRONMENTS = {('particles', 'light'): 'vulkan1.2', ('particles', 'spawnTraced'): 'vulkan1.2'}
 
 
+def shader_directory(backend):
+    if backend == 'styled_lighting':
+        return ROOT / 'src/native/forward/styled_lighting/shaders'
+    if backend == 'probe_batch_test':
+        return ROOT / 'tests/forward/probe_batch_shaders'
+    if backend == 'probe_batch':
+        return ROOT / 'src/native/forward/probe_batch/shaders'
+    if backend == 'sun_depth_test':
+        return ROOT / 'tests/forward/sun_depth_shaders'
+    if backend == 'cluster_test':
+        return ROOT / 'tests/forward/cluster_shaders'
+    if backend == 'shadow_test':
+        return ROOT / 'tests/forward/shadow_shaders'
+    if backend == 'probe_test':
+        return ROOT / 'tests/forward/probe_shaders'
+    if backend == 'style_test':
+        return ROOT / 'tests/forward/style_shaders'
+    if backend == 'mask_test':
+        return ROOT / 'tests/forward/mask_shaders'
+    if backend == 'water_ray':
+        return ROOT / 'src/native/forward/water/ray_shaders'
+    if backend == 'water_test':
+        return ROOT / 'tests/forward/water_shaders'
+    if backend == 'water':
+        return ROOT / 'src/native/forward/water/shaders'
+    if backend == 'live_gi':
+        return ROOT / 'src/native/forward/ray/gi_shaders'
+    if backend == 'live_ray':
+        return ROOT / 'src/native/forward/ray/shaders'
+    if backend == 'bake':
+        return ROOT / 'src/native/forward/bake/shaders'
+    if backend == 'forward_test':
+        return ROOT / 'tests/forward/shaders'
+    return ROOT / 'src/native' / backend / 'shaders'
+
+
+def generated_directory(backend):
+    source = shader_directory(backend)
+    native = ROOT / 'src/native'
+    if source.is_relative_to(native):
+        return OUTPUT / source.relative_to(native)
+    return OUTPUT.parent.parent / source.relative_to(ROOT)
+
+
 def defines_for(backend, stage, stages):
     """Preprocessor defines and source file of one embedded stage."""
-    directory = ROOT / 'src/native' / backend / 'shaders'
+    if stage.endswith('Cube') and stage[:-4] in CUBE_VARIANTS.get(backend, ()):
+        defines, source = defines_for(backend, stage[:-4], stages)
+        return defines + ['-DNATIVE_PROBE_CUBE=1'], source
+    directory = shader_directory(backend)
+    if backend in ('shadow_test', 'cluster_test', 'sun_depth_test', 'probe_batch_test'):
+        return [], directory / 'query.comp'
+    if backend == 'probe_test':
+        return (['-DNATIVE_PROBE_CUBE=1'] if stage == 'reflectionCube' else []), directory / 'reflection.comp'
     defines = ['-DTEMPORAL=1'] if stage in ('temporal', 'temporalTransparency', 'confidence') else []
+    if backend == 'probe_batch':
+        return [], directory / (stage + '.comp')
+    if backend == 'water_test':
+        return [], directory / (stage + '.comp' if stage in ('query', 'depth') else 'input.' + stage)
+    if backend == 'water':
+        forward = ROOT / 'src/native/forward/shaders'
+        if stage == 'vert': return [], forward / 'forward.vert'
+        if stage == 'frag': return ['-DWATER_SURFACE=1'], forward / 'forward.frag'
+        if stage == 'overlayVert': return [], forward / 'composite.vert'
+        if stage == 'overlayFrag': return [], directory / 'overlay.frag'
+        if stage in ('compositeFrag', 'compositeSingle'):
+            return ['-DWATER_VOLUME=1'] + (['-DSINGLE_SAMPLE=1'] if stage == 'compositeSingle' else []), forward / 'composite.frag'
+        return (['-DSINGLE_SAMPLE=1'] if stage == 'snapshotSingle' else []), directory / 'snapshot.comp'
     if stage in ('sigma', 'sigmaTemporal', 'sharcSigmaTemporal'): defines += ['-DSIGMA_PASS=1']
     if stage in ('sigmaTemporal', 'sharcSigmaTemporal'): defines += ['-DTEMPORAL=1']
     if stage in ('indirectTemporal', 'sharcIndirectTemporal'): defines += ['-DTEMPORAL=1', '-DINDIRECT_PASS=1']
@@ -98,6 +197,73 @@ def defines_for(backend, stage, stages):
     if stage == 'sharcUpdate': defines += ['-DSHARC_UPDATE_PASS=1']
     source_stage = 'comp' if defines else stage
     source = directory / (backend + '.' + source_stage)
+    if backend == 'styled_lighting':
+        source = directory / 'compose.comp'
+    if backend == 'style_test':
+        source = directory / 'query.comp'
+    if backend == 'mask_test':
+        source = directory / 'decode.comp'
+    if backend == 'water_ray':
+        source = ROOT / 'src/native/forward/shaders/forward.frag'
+        defines = ['-DWATER_SURFACE=1']
+        if stage in ('frag', 'liveDiffuseRay', 'composedDiffuseRay'): defines += ['-DWATER_RAY=1']
+        if stage.startswith('composed'): defines += ['-DOPENREMIX_BAKED_DIRECT_LIVE_INDIRECT=1']
+        if stage != 'frag': defines += ['-DLIVE_GI=1', '-DRAY_SCENE_SET=3']
+    if backend == 'live_gi':
+        composed = stage.startswith('composed')
+        if composed:
+            stage = stage[len('composed'):]
+            stage = stage[0].lower() + stage[1:]
+        source = ROOT / 'src/native/forward/shaders/forward.frag'
+        defines = ['-DLIVE_GI=1'] + (['-DREFLECTION_GUIDES=1'] if stage == 'guides' else [])
+        if stage in ('viewModel', 'viewModelEarly'): defines += ['-DVIEWMODEL_PASS=1']
+        if stage == 'viewModelEarly': defines += ['-DEARLY_OPAQUE=1']
+        if composed: defines += ['-DOPENREMIX_BAKED_DIRECT_LIVE_INDIRECT=1']
+    if backend == 'live_ray':
+        source = directory / 'screen.comp'
+        defines = ['-DRAY_LAUNCH=1'] if stage == 'launch' else []
+    if backend == 'bake':
+        source = directory / ('transport.comp' if stage in ('parallel', 'radianceParallel', 'visibility', 'aggregate', 'aggregateParallel', 'receiverDirect', 'receiverDirectParallel') else stage + '.comp')
+        if stage in ('parallel', 'radianceParallel', 'visibility', 'aggregateParallel', 'receiverDirectParallel'): defines = ['-DPARALLEL_BAKE=1']
+        if stage == 'radianceParallel': defines += ['-DRADIANCE_BAKE=1']
+        if stage == 'visibility': defines += ['-DCOMPACT_VISIBILITY=1']
+        if stage in ('aggregate', 'aggregateParallel', 'receiverDirect', 'receiverDirectParallel'): defines += ['-DAGGREGATE_DIFFUSE=1']
+        if stage in ('receiverDirect', 'receiverDirectParallel'): defines += ['-DRECEIVER_DIRECT_ONLY=1']
+    if backend == 'forward_test':
+        source = directory / ('ray-scene.comp' if stage == 'comp' else stage + '.comp')
+    if backend == 'forward':
+        source = directory / {
+            'vert': 'forward.vert', 'lightmapVert': 'forward.vert', 'frag': 'forward.frag', 'cluster': 'cluster.comp',
+            'shadowVert': 'forward.vert', 'shadowFrag': 'forward.frag', 'opaqueDepthFrag': 'depth.frag',
+            'localShadowVert': 'forward.vert', 'localShadowFrag': 'forward.frag',
+            'depthBatchVert': 'depth-batch.vert', 'depthBatchFrag': 'depth-batch.frag',
+            'compositeVert': 'composite.vert', 'compositeFrag': 'composite.frag',
+            'compositeSingle': 'composite.frag',
+            'ssrFrag': 'forward.frag', 'prepassedFrag': 'forward.frag',
+            'inlineFrag': 'forward.frag', 'inlinePrepassedFrag': 'forward.frag',
+            'prepassedSsrFrag': 'forward.frag', 'viewModelFrag': 'forward.frag', 'viewModelEarlyFrag': 'forward.frag', 'ssrResolve': 'reflections.comp',
+            'ssrResolveSingle': 'reflections.comp', 'ssrReduce': 'reflections.comp',
+            'ssrTrace': 'reflections.comp', 'ssrFilter': 'reflections.comp', 'ssrFilterSingle': 'reflections.comp',
+            'opaqueCull': 'opaque-visibility.comp', 'opaqueTiles': 'opaque-visibility.comp',
+            'opaqueTilesSingle': 'opaque-visibility.comp',
+        }[stage]
+        if stage == 'lightmapVert': defines = ['-DSURFACE_LIGHTMAP=1']
+        if stage in ('shadowVert', 'shadowFrag'): defines = ['-DSHADOW_PASS=1']
+        if stage in ('localShadowVert', 'localShadowFrag'): defines = ['-DSHADOW_PASS=1', '-DLOCAL_SHADOW_PASS=1']
+        if stage == 'compositeSingle': defines = ['-DSINGLE_SAMPLE=1']
+        if stage in ('ssrFrag', 'prepassedSsrFrag'): defines = ['-DREFLECTION_GUIDES=1']
+        if stage in ('inlineFrag', 'inlinePrepassedFrag'): defines += ['-DINLINE_WORLD_REFLECTIONS=1']
+        if stage in ('prepassedFrag', 'prepassedSsrFrag', 'inlinePrepassedFrag'): defines += ['-DPREPASSED_WORLD=1']
+        if stage in ('viewModelFrag', 'viewModelEarlyFrag'): defines = ['-DVIEWMODEL_PASS=1']
+        if stage == 'viewModelEarlyFrag': defines += ['-DEARLY_OPAQUE=1']
+        if stage in ('ssrResolve', 'ssrResolveSingle'): defines = ['-DSSR_RESOLVE=1']
+        if stage == 'ssrResolveSingle': defines += ['-DSINGLE_SAMPLE=1']
+        if stage == 'ssrReduce': defines = ['-DSSR_REDUCE=1']
+        if stage == 'ssrTrace': defines = ['-DSSR_TRACE=1']
+        if stage in ('ssrFilter', 'ssrFilterSingle'): defines = ['-DSSR_FILTER=1']
+        if stage == 'ssrFilterSingle': defines += ['-DSINGLE_SAMPLE=1']
+        if stage.startswith('opaqueTiles'): defines = ['-DREDUCE_DEPTH=1']
+        if stage == 'opaqueTilesSingle': defines += ['-DSINGLE_SAMPLE=1']
     if backend == 'postfx':
         source = directory / 'postfx.comp'
         defines += ['-DPOST_PASS=' + str(stages.index(stage))]
@@ -147,16 +313,19 @@ def defines_for(backend, stage, stages):
     return defines, source
 
 
+def depfile_inputs(text):
+    """Decode glslang's Make paths before resolving Windows drive letters."""
+    dependencies = re.split(r':\s', text, maxsplit=1)[1].replace('\\\n', ' ')
+    tokens = re.findall(r'(?:\\[ :#\\]|[^\s])+', dependencies)
+    return [re.sub(r'\\([ :#\\])', r'\1', token).replace('$$', '$') for token in tokens]
+
+
 def glslang(arguments, output):
     """glslangValidator -V, recording the files it read."""
     depfile = output.with_suffix('.d')
     subprocess.run(['glslangValidator', '-V', *arguments, '--depfile', str(depfile), '-o', str(output)],
                    check=True, stdout=subprocess.DEVNULL)
-    # "output: input include ...", spaces and Windows drive colons in paths escaped with a backslash.
-    # The separator is the first colon before a space.
-    text = re.split(r':\s', depfile.read_text(), maxsplit=1)[1].replace('\\\n', ' ')
-    paths = [path.replace('\\ ', ' ').replace('\\:', ':') for path in re.findall(r'(?:\\ |[^\s])+', text)]
-    depend(*paths)
+    depend(*depfile_inputs(depfile.read_text()))
 
 
 def depend(*paths):
@@ -175,10 +344,17 @@ def compile_stage(backend, stage, temporary):
     binary = Path(temporary) / (backend + '-' + stage + '.spv')
     glslang(['--target-env', environment, *defines, '-I' + str(ROOT/'third_party/nrd/Shaders'),
              '-I' + str(ROOT/'third_party/sharc/include'), str(source)], binary)
-    if backend in OPTIMIZED:
+    if backend in OPTIMIZED or backend in INLINED or (backend, stage) in INLINED_STAGES:
+
         optimized = binary.with_suffix('.opt.spv')
-        subprocess.run(['spirv-opt', '-O', '--target-env=' + environment, str(binary), '-o', str(optimized)],
-                       check=True)
+        optimization = ['-O']
+        if backend == 'pathtrace':
+            # Inlining combined material paths can exhaust temporary IDs even
+            # when dead-code removal leaves a small final module. Compact the
+            # result before validating it against the normal SPIR-V limits.
+            optimization = ['--max-id-bound=16777216', '-O', '--compact-ids']
+        subprocess.run(['spirv-opt', *optimization, '--target-env=' + environment,
+                        str(binary), '-o', str(optimized)], check=True)
         binary = optimized
     subprocess.run(['spirv-val', '--target-env', environment, str(binary)], check=True)
     data = binary.read_bytes()
@@ -195,7 +371,8 @@ def compress(data):
 
 def decompressed_stages(backend):
     """SPIR-V of every stage from a compressed backend's embedded.h and embedded.bin."""
-    directory = OUTPUT / backend / 'shaders'
+    directory = generated_directory(backend)
+
     blob = (directory / 'embedded.bin').read_bytes()
     entries = re.findall(r'\{(\d+)u, (\d+)u, (\d+)u\}, // (\w+)', (directory / 'embedded.h').read_text())
     stages = {}
@@ -205,6 +382,7 @@ def decompressed_stages(backend):
             raise SystemExit(f'{directory}: {stage} size mismatch')
         stages[stage] = data
     return stages
+
 
 
 def compressed_output(backend, stages, results):
@@ -242,16 +420,18 @@ def embedded_data(generator, namespace):
             'const size_t embeddedDataBytes = sizeof(embeddedData);\n}\n')
 
 
-def process(backends):
+def process(backends, jobs=None):
     """Compiles every stage of the backends concurrently, one task per stage."""
     with tempfile.TemporaryDirectory() as temporary, \
-            ThreadPoolExecutor(max_workers=os.cpu_count() or 1) as pool:
+            ThreadPoolExecutor(max_workers=jobs or os.cpu_count() or 1) as pool:
+
         tasks = {(b, stage): pool.submit(compile_stage, b, stage, temporary)
                  for b in backends for stage in BACKENDS[b][2]}
         for backend in backends:
             namespace, _, stages = BACKENDS[backend]
-            target = OUTPUT / backend / 'shaders/embedded.h'
+            target = generated_directory(backend) / 'embedded.h'
             target.parent.mkdir(parents=True, exist_ok=True)
+
             if backend in OPTIMIZED:
                 header, blob = compressed_output(backend, stages, {s: tasks[backend, s].result() for s in stages})
                 target.write_text(header)
@@ -282,23 +462,27 @@ def use_tools(record):
 
 def write_depfile(path, target):
     def escape(name):
-        return name.replace('\\', '/').replace(' ', '\\ ')
+        return name.replace('\\', '/').replace(':', '\\:').replace(' ', '\\ ')
     Path(path).write_text(escape(target) + ': ' + ' '.join(escape(d) for d in sorted(DEPENDENCIES)) + '\n')
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     # metal translates the other backends' SPIR-V; 'all' leaves it out (it needs macOS and Xcode).
-    parser.add_argument('backend', choices=['postfx', 'upscale', 'raster', 'pathtrace', 'denoise', 'particles', 'nrd', 'fsr31', 'metal', 'sky', 'all'])
-    parser.add_argument('--output', type=Path, help='Generated src/native tree (the build\'s); default _work/shaders')
+    parser.add_argument('backend', choices=[*BACKENDS, 'nrd', 'fsr31', 'metal', 'sky', 'all'])
+    parser.add_argument('--jobs', type=int, help='Maximum concurrent GLSL compilation tasks')
+    parser.add_argument('--output', type=Path, help='Generated src/native tree (the build\'s); default _work/shaders/src/native')
     parser.add_argument('--tools', type=Path, help='Pinned tools recorded by toolchain.py --output')
     parser.add_argument('--depfile', type=Path, help='Make-style dependencies of the generated files')
     parser.add_argument('--depfile-target', default='', help='The output the depfile names')
+
     mode = parser.add_mutually_exclusive_group()
     # Only NRD's and FSR 3.1's SPIR-V is committed; the other backends' is generated by the build.
     mode.add_argument('--check', action='store_true', help='nrd, fsr31: compare generated output without modifying files')
     mode.add_argument('--validate', action='store_true', help='nrd, fsr31: validate committed SPIR-V using only spirv-val')
     args = parser.parse_args()
+    if args.jobs is not None and args.jobs < 1:
+        parser.error('--jobs must be positive')
     global OUTPUT
     if args.output:
         OUTPUT = args.output.resolve()
@@ -309,7 +493,8 @@ def main():
     if (args.check or args.validate) and (glsl or 'metal' in selected or 'sky' in selected):
         parser.error('--check and --validate apply to the committed nrd and fsr31 SPIR-V only')
     if glsl:
-        process(glsl)
+        process(glsl, args.jobs)
+
     if 'metal' in selected:
         import metal
         metal.process()

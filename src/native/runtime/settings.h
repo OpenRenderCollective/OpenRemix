@@ -1,5 +1,7 @@
 #pragma once
 #include "pathtrace/options.h"
+#include "forward/presets.h"
+#include "runtime/backend.h"
 #include <array>
 #include <map>
 #include <string>
@@ -42,7 +44,8 @@ namespace remix::config {
   };
   struct Settings {
     TraceOptions trace;
-    uint32_t backend = 1;
+    forward::Options forward = forward::presets::source2();
+    uint32_t backend = Backend::PathTrace;
     bool vsync = false;
     // HDR10 output (runtime/hdr_output.h): BT.2020 ST.2084 PQ while Windows
     // has HDR on for the window's display, SDR otherwise. The scene is tone

@@ -80,14 +80,15 @@ namespace remix::scene {
     // the last replay, from the records of memberRevision. logged: the handle
     // is in the consumer's change list.
     uint64_t revision = 0, memberRevision = 0;
+    uint64_t resolvedModGeneration = 0;
     bool staticEligible = false, member = false, logged = false;
-    bool staticEmissive = false;  // a traced record has emission (Settings' local-light detection)
+    bool staticEmissive = false; // a traced record has emission (Settings' local-light detection)
     uint64_t freshRetire = ~0ull; // NativeResources' retire generation it was last found not stale at
     uint32_t surfaceCount = 0;
-    uint32_t replicaSlot = ~0u; // publishFrame: its slot in the published replica, when still valid
-    std::shared_ptr<Mesh> mesh; // what the mesh handle resolved to
-    std::vector<std::shared_ptr<Material>> resolved; // what the material handles resolved to
-    std::vector<Draw> records;                       // instance-major, surfaceCount per instance
+    uint32_t replicaSlot = ~0u;   // publishFrame: its slot in the published replica, when still valid
+    std::shared_ptr<Mesh> mesh;                       // what the mesh handle resolved to
+    std::vector<std::shared_ptr<Material>> resolved;  // what the material handles resolved to
+    std::vector<Draw> records;                        // instance-major, surfaceCount per instance
     uint32_t instanceCount() const { return description.instanced ? uint32_t(locals.size()) : 1u; }
   };
 

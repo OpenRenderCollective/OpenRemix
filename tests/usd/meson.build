@@ -8,7 +8,9 @@ usd_mods_probe = executable('remix-usd-mods-probe', 'mods_probe.cpp',
 usd_probe = executable('remix-usd-probe', 'probe.cpp',
   include_directories : test_includes, cpp_args : usd_args,
   dependencies : usd_deps + [threads_dep], link_with : [usd_library, scene_library])
-replacements_test = executable('remix-usd-replacements-test', 'replacements.cpp',
+replacements_test = executable('remix-usd-replacements-test', 'replacements.cpp', 'pbr_materials.cpp',
+  '../../src/native/forward/material.cpp', '../../src/native/forward/bake/data.cpp',
+  '../../src/native/forward/lighting.cpp',
   include_directories : test_includes, cpp_args : usd_args,
   dependencies : usd_deps + [threads_dep], link_with : [usd_library, scene_library])
 test('USD captured hash replay and replacement reload', replacements_test, args : [meson.current_source_dir() / 'fixtures'], timeout : 120)
@@ -23,3 +25,5 @@ capture_test = executable('remix-usd-capture-test', 'capture.cpp',
   include_directories : test_includes, cpp_args : usd_args,
   dependencies : usd_deps + [threads_dep], link_with : [usd_library, scene_library])
 test('USD scene capture round trip', capture_test, timeout : 120)
+
+test('USD generated PBR materials and immutable bake reload', replacements_test, args : ['--pbr'], timeout : 30)

@@ -14,7 +14,7 @@ shader_tools = custom_target('shader-tools',
              (numos_enabled ? ['--slang'] : []),
   depend_files : files('../../scripts/shaders/toolchain.py', '../../scripts/shaders/toolchain.lock.json'),
   env : shader_env, console : true)
-shader_generate = [shader_python, shader_scripts / 'generate.py', '--tools', shader_tools,
+shader_generate = [shader_python, shader_scripts / 'generate.py', '--jobs', get_option('shader_jobs').to_string(), '--tools', shader_tools,
                    '--output', meson.current_build_dir(), '--depfile', '@DEPFILE@', '--depfile-target', '@OUTPUT0@']
 shader_generator_files = files('../../scripts/shaders/generate.py', '../../scripts/shaders/metal.py')
 subdir('raster/shaders')
@@ -81,8 +81,9 @@ if get_option('usd')
   subdir('usd')
 endif
 subdir('raster')
-subdir('denoise')
 subdir('postfx')
+subdir('forward')
+subdir('denoise')
 subdir('upscale')
 sky_libraries = []
 if numos_enabled
@@ -114,7 +115,7 @@ remix = shared_library('remix',
   # runtime/hdr_output.cpp embeds the upscaler's HDR10 present stage.
   api_sources + runtime_sources + ui_sources + [upscale_shaders],
   name_prefix : system == 'windows' ? '' : 'lib',
-  link_with : usd_libraries + sky_libraries + [shell_platform, imgui_vulkan, scene_library, raster_library, pathtrace_library, denoise_library, upscale_library, particles_library], dependencies : shell_deps,
+  link_with : usd_libraries + sky_libraries + [shell_platform, imgui_vulkan, scene_library, raster_library, forward_library, pathtrace_library, denoise_library, upscale_library, particles_library], dependencies : shell_deps,
   include_directories : [remix_public_include, native_include, image_include], cpp_args : shell_args,
   link_args : shell_link_args, link_depends : 'api/remix.map',
   gnu_symbol_visibility : 'hidden',

@@ -1,0 +1,96 @@
+#pragma once
+#include "forward/bake/data.h"
+#include "forward/bake/grid.h"
+#include "forward/probes/space.h"
+#include <optional>
+#include <span>
+#include <stop_token>
+
+namespace remix { class WorkerPool; }
+
+namespace remix::forward::probes {
+  constexpr uint32_t maxProbes = 64;
+  // CPU publication metadata. Zero denotes an automatic/unbound image layer.
+  using LayerIdentities = std::array<uint64_t, maxProbes>;
+  struct Record {
+    // position.w: captured solid-angle agreement with the projection box.
+    // maximum.w/influenceMinimum.w/influenceMaximum.w: inverse XYZ feather
+    // widths. Zero is the legacy/unknown value and keeps the original blend
+    // weight.
+    Vec4 minimum{}, maximum{}, influenceMinimum{}, influenceMaximum{}, position{};
+    ProjectionSpace worldToLocal = worldSpace; // minimum.w stores signed overlap priority
+  };
+  struct Header {
+    // probe count, base resolution, mip count, texels per probe
+    std::array<uint32_t, 4> parameters{};
+    std::array<Record, maxProbes> probes{};
+  };
+  static_assert(sizeof(Record) == 128 && sizeof(Header) == 8208);
+  struct Capture {
+    Bounds bounds;
+    Vec3 position{};
+    uint32_t resolution = 0;
+    // Six faces, +X -X +Y -Y +Z -Z, row-major linear HDR radiance.
+    std::vector<Vec4> radiance;
+    // Optional receiver/blend bounds, independent of the parallax proxy.
+    Bounds influence{};
+    ProjectionSpace worldToLocal = worldSpace;
+    int32_t priority = 0; // core priority; edges feather toward lower containing priorities
+    float blendDistance =
+        0; // scene units; zero derives a 20%-of-half-extent edge band
+  };
+  struct AuthoringStatistics {
+    uint64_t revision = 0;
+    uint64_t publishedSceneId = 0, publishedRevision = 0;
+    uint64_t captureScratchBytes = 0;
+    uint32_t rays = 0, completed = 0, reused = 0;
+    uint32_t automatic = 0, covered = 0, omitted = 0;
+    bool pending = false, active = false, sceneReused = false, requested = false, failed = false;
+  };
+  struct Data {
+    Header header;
+    // Per probe, successive mip levels; six faces at every level.
+    std::vector<Vec4> texels;
+  };
+  struct FaceUv {
+    uint32_t face;
+    std::array<float, 2> uv;
+  };
+  // Vulkan cube-face orientation. UV is in [-1,1], also outside that range
+  // when remapping a filter footprint across an edge.
+  Vec3 direction(uint32_t face, float u, float v);
+  FaceUv project(Vec3 direction);
+  void validateCapture(const Capture &capture);
+  // Lighting rays depend on resolution and the exact origin bits (including
+  // signed zero in the shader seed), not on projection/blending metadata.
+  bool sameCaptureRays(const Capture &a, const Capture &b);
+  std::vector<bake::Point> rays(const Capture &capture);
+  // Append directly to a caller's planned work buffer, avoiding a temporary
+  // six-face ray array per capture. Failure preserves the existing prefix.
+  void appendRays(const Capture &capture, std::vector<bake::Point> &output,
+                  std::stop_token cancelled = {});
+  // Ordered authored/automatic candidates. The controller validates these
+  // against captured geometry before fitting, including static props and masks.
+  std::vector<Vec3> candidateSites(const scene::BakeScene &scene, const bake::Grid &grid, uint32_t count,
+                                   std::stop_token cancelled = {});
+  std::vector<Capture> place(const scene::BakeScene &scene, const bake::Grid &grid, uint32_t count,
+                             uint32_t resolution, std::stop_token cancelled = {}, float detailTolerance = .5f,
+                             const std::vector<Vec3> *validatedSites = nullptr);
+  uint32_t levelOffset(uint32_t resolution, uint32_t level);
+  // Image dimensions/layers and the independent compact metadata table.
+  uint32_t imageCapacity(uint32_t resolution, uint32_t maximumDimension,
+                          uint32_t maximumLayers, uint64_t maximumMetadataBytes);
+  // Interior props are allowed; geometry substantially beyond a proxy lowers
+  // its preference where another capture overlaps. Unknown distances are neutral.
+  float projectionConfidence(const Capture &capture);
+  Record projectionInputRecord(const Capture &capture); // no captured-depth scan
+  Record projectionRecord(const Capture &capture);
+  // Optional caller-owned workers process independent mip rows without changing
+  // per-texel accumulation order. The pool must not be running another task.
+  Data filter(std::span<const Capture> captures, uint32_t samples = 128,
+              std::stop_token cancelled = {}, WorkerPool *workers = nullptr);
+  std::vector<std::byte> serialize(const Data &data);
+  // CPU reference for the shader's box projection, cross-face bilinear
+  // filtering, roughness mip interpolation and overlapping-volume blending.
+  std::optional<Vec3> sample(const Data &data, Vec3 position, Vec3 reflected, float roughness);
+} // namespace remix::forward::probes

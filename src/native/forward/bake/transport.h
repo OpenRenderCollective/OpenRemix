@@ -1,0 +1,293 @@
+#pragma once
+#include "forward/bake/data.h"
+#include "forward/bake/irradiance_contents.h"
+#include "forward/bake/dispatch.h"
+#include "forward/bake/policy.h"
+#include <optional>
+#include <span>
+#include <vulkan/vulkan.h>
+
+namespace remix {
+  class RasterRenderer;
+}
+namespace remix::forward::bake {
+  struct Options {
+    uint32_t textureResolution = 256, batchPoints = 1024;
+    uint32_t initialBatchPoints = 0, queueFamily = VK_QUEUE_FAMILY_IGNORED;
+    bool parallel = true; // sample-parallel offline transport; single radiance rays and site queries stay serial
+    bool lightImportanceSampling = true; // static snapshots; live lighting retains uniform selection
+    // Offline irradiance consumer: retain eligible receiver-direct NEE only.
+    // Incoming environment/emission/bounce paths are omitted; sun/style fields
+    // remain separate. Does not alter immutable scene sharing or radiance queries.
+    bool receiverDirectOnly = false;
+    bool lightingComponents = false; // retain styled power in the immutable component proposal
+    DirectPolicy directLighting; // explicit fully baked diffuse membership; default preserves legacy output
+    bool cpuReadback = true; // prefer CPU-cached results for baking
+    bool depthCapture = false; // optional compact depth pipeline, prepared on the worker
+    bool deviceLocalBatches = false; // GPU-produced points/results; CPU batch/read APIs are unavailable
+    uint32_t rayBudget = 1u << 20; // point * sample * bounce ceiling per dispatch
+    uint64_t atlasBudget = 256ull << 20;
+    float distance = 100, bias = .002f; // metres
+    // Classify new options here: these fields alter immutable prepared inputs or
+    // their queue ownership. All remaining fields configure a private consumer.
+    bool sameTextureAndQueuePolicy(const Options &other) const {
+      return textureResolution == other.textureResolution && atlasBudget == other.atlasBudget &&
+          queueFamily == other.queueFamily;
+    }
+    bool sameScenePolicy(const Options &other) const {
+      return sameTextureAndQueuePolicy(other) && lightingComponents == other.lightingComponents &&
+          directLighting == other.directLighting;
+    }
+    IrradianceContents irradianceContents() const {
+      return receiverDirectOnly ? IrradianceContents::ReceiverDirect : IrradianceContents::Combined;
+    }
+    bool operator==(const Options &) const = default;
+  };
+  // One scene snapshot's hardware diffuse/radiance transport. The caller owns
+  // scheduling, submission and fences; no queue waits or hidden work occur here.
+  class Transport {
+    struct PreparedScene;
+  public:
+    struct Memory;
+    // Demand-scoped immutable ownership, independent of the donor's mutable
+    // dispatch buffers and lifetime. Acquire after its preparation fence.
+    class SceneLease {
+    public:
+      explicit operator bool() const { return bool(m_scene); }
+      bool compatible(const scene::BakeScene &source, const Options &options) const;
+      Memory memory() const; // scene-only accounting; deduplicates with consumers
+      // Ordinary unstyled outgoing-radiance queries do not consume diffuse
+      // ownership or component proposals. Explicitly inherit those input fields;
+      // the returned options describe the actual scene, including for reuse.
+      std::optional<Options> radianceOptions(const scene::BakeScene &source, Options requested) const;
+    private:
+      friend class Transport;
+      std::shared_ptr<PreparedScene> m_scene;
+      Options m_options;
+      VkPhysicalDevice m_physical = VK_NULL_HANDLE;
+      VkPhysicalDeviceLimits m_limits{};
+      bool m_aggregateDiffuse = false;
+      bool consumerCompatible(const Options &options) const;
+    };
+    SceneLease leaseScene() const;
+    // Worker-only; rejects incompatible leases before replacing this consumer.
+    void initializeShared(const SceneLease &lease, const scene::BakeScene &source, const Options &options);
+
+    Transport();
+    ~Transport();
+    // Compile immutable transport pipelines during renderer preparation, so a
+    // live scene update never needs to compile them on the rendering thread.
+    static void preparePipelines(VkDevice device);
+    static uint64_t shaderFingerprint(); // immutable atlas/radiance transport provenance
+    // Shared read-only scene contract for compute and optional fragment queries.
+    // Caller owns the returned layout reference.
+    static VkDescriptorSetLayout createSceneLayout(VkDevice device);
+    // Pipeline creation runs through the runtime's preparation service. Complete
+    // this instance's submitted work before replacement or destruction.
+    void initialize(VkPhysicalDevice physical, VkDevice device, std::shared_ptr<const scene::BakeScene> scene,
+                    Options options = {});
+    // Reuse a caller's packed inputs (for example a live posed-scene cache).
+    void initialize(VkPhysicalDevice physical, VkDevice device, std::shared_ptr<const scene::BakeScene> scene,
+                    Inputs inputs, Options options);
+    // Create independent dispatch slots over the same immutable prepared scene.
+    // The owner's preparation fence must have completed and releaseBuildInputs
+    // must have run. All transport options are retained; no repacking/rebuild.
+    // Call on a preparation worker. The original transport may then be retired.
+    void initializeShared(const Transport &prepared);
+    // Explicitly inherit the donor's packed inputs, including caller overrides,
+    // while selecting valid private settings. Immutable scene policy must match.
+    void initializeShared(const Transport &prepared, const Options &options);
+
+    // Exact prepared consumer identity/policy, for reusing the same mutable slots
+    // only after their fences. Caller-supplied packed overrides are not inferred.
+    bool matchesRequest(const scene::BakeScene &source, const Options &options) const;
+    // Immutable scene compatibility; valid private execution/query settings may
+    // differ. Observe only after the preparation worker/fence handoff.
+    bool canShareScene(const scene::BakeScene &source, const Options &options) const;
+    bool canShareRadianceScene(const scene::BakeScene &source, const Options &options) const;
+    // Reject incompatible input policy before allocating/replacing a consumer;
+    // accepted private options configure its own pipelines, slots and queries.
+    void initializeShared(const Transport &prepared, const scene::BakeScene &source, const Options &options);
+    void recordPrepare(VkCommandBuffer command, RasterRenderer &textures);
+    // The selected slot's prior fence has completed. Call after recordPrepare.
+    // A nonzero normal identifies a surface receiver: offset it along the normal
+    // and integrate its incident hemisphere. Zero normals identify volume probes
+    // and retain full-sphere lighting. Surface SH is constrained to the sampled
+    // cosine integral at that normal; both retain directional irradiance SH.
+    void recordBatch(VkCommandBuffer command, uint32_t slot, std::span<const Point> points, uint32_t samples,
+                     uint32_t bounces = 3, uint32_t firstSample = 0);
+    // Offline SH control: identical transport/proposal, omitting only analytic
+    // direct NEE at the receiver. Geometry moments and path lighting remain.
+    // Contradicts receiverDirectOnly consumers and is rejected before recording.
+    void recordIncomingIrradiance(VkCommandBuffer command, uint32_t slot, std::span<const Point> points,
+                                  uint32_t samples, uint32_t bounces = 3, uint32_t firstSample = 0,
+                                  std::optional<uint32_t> component = {});
+    // Separate authored lighting: 0 is the unstyled base, 1..127 a captured
+    // style group, and combinedLighting includes all groups for reference.
+    // Requires Options.lightingComponents. Components share random paths and
+    // proposal PDFs, so RGB/SH can be summed; geometry metadata is shared, not
+    // additive. Style energy uses captured authored envelope units. This does
+    // not schedule, store or publish style lightmaps/probes by itself.
+    static constexpr uint32_t combinedLighting = 128;
+    void recordComponent(VkCommandBuffer command, uint32_t slot, std::span<const Point> points,
+                         uint32_t component, uint32_t samples, uint32_t bounces = 3,
+                         uint32_t firstSample = 0);
+    void recordRadianceComponent(VkCommandBuffer command, uint32_t slot, std::span<const Point> rays,
+                                 uint32_t component, uint32_t bounces = 3, uint32_t samples = 1,
+                                 uint32_t firstSample = 0);
+    // Directional radiance for reflection capture. Point.normal.xyz is a ray
+    // direction; no surface-normal bias is applied. Result.irradiance[0] holds
+    // RGB radiance and first-hit distance, without SH/cosine convolution.
+    // Offline captures can average independent lighting samples at the same
+    // direction; distance/back/miss metadata belongs to the first sample.
+    void recordRadiance(VkCommandBuffer command, uint32_t slot, std::span<const Point> rays,
+                        uint32_t bounces = 3, uint32_t samples = 1, uint32_t firstSample = 0);
+    // Geometry-only rays for candidate projection evaluation. Directions use
+    // Point.normal.xyz without a surface offset. Returns first-hit distance in
+    // irradiance[0].w and backface/miss/count in statistics.xyz; RGB stays zero.
+    // Backface means an opaque surface normal faces along the ray, matching
+    // spherical admission; dielectric exits are not classified as solid interiors.
+    // Misses carry an explicit flag even when their distance reaches the cap.
+    void recordGeometry(VkCommandBuffer command, uint32_t slot, std::span<const Point> rays);
+    // Write one scene-unit first-hit distance per ray directly into caller-owned
+    // STORAGE_BUFFER memory; -1 means miss and -2 means unresolved transmission
+    // requiring the existing lighting fallback. Traversal uses at least
+    // the frozen scene diagonal; place origins at its sun-facing boundary.
+    // A positive distance overrides traversal range in scene units; zero uses the diagonal.
+    // The caller owns output through the slot fence and supplies a concrete descriptor range/aligned offset.
+    // Output is made visible to fragment/compute reads and transfer copies.
+    void recordDepth(VkCommandBuffer command, uint32_t slot, std::span<const Point> rays,
+                     VkDescriptorBufferInfo output, uint32_t firstWord = 0, float distance = 0);
+    struct DepthRay { Vec3 origin{}, direction{}; uint32_t destination = 0; };
+    // Scatter into a caller-owned atlas without copies or per-row dispatches.
+    // Each destination is a unique float index relative to the output descriptor.
+    void recordIndexedDepth(VkCommandBuffer command, uint32_t slot, std::span<const DepthRay> rays,
+                            VkDescriptorBufferInfo output, float distance = 0);
+    // Four geometry rays per 8x8 octahedral bin, packed into one raw Result
+    // per probe. Readback is ProbeDepth::Record words, not irradiance/statistics.
+    void recordProbeDepth(VkCommandBuffer command, uint32_t slot, std::span<const Point> probes);
+    // GPU producers may fill this slot's points directly, then dispatch radiance
+    // without a CPU copy. Producer writes must be visible to COMPUTE shader reads;
+    // the returned results become visible to COMPUTE reads after the dispatch.
+    // Point.normal.w < 0 marks an inactive ray; no traversal is performed for it.
+    struct DeviceBatch {
+      VkDescriptorBufferInfo points, results;
+      uint32_t capacity;
+    };
+    DeviceBatch deviceBatch(uint32_t slot) const;
+    // Reacquire deviceBatch after a CPU-recorded batch: growing that completed
+    // slot may replace its buffers. GPU producers must obey its actual capacity.
+    // Each consumer keeps independent constants/descriptors for the submission.
+    // Compute batches cannot overwrite either fragment configuration.
+    // Prepare once per consumer after the selected slot's fence has completed.
+    enum class FragmentUse : uint32_t {
+      Diffuse,
+      Reflection,
+      Count
+    };
+    VkDescriptorSet prepareFragment(uint32_t slot, uint32_t samples, uint32_t bounces, float distance,
+                                    FragmentUse use = FragmentUse::Diffuse);
+    // Stream current analytic lighting into a completed frame slot without
+    // rebuilding geometry. Dome texture membership still belongs to the atlas.
+    void updateLighting(uint32_t slot, std::span<const TransportLight> lights, const scene::DistantLight &sun,
+                        const scene::DomeLight &dome, float distance, float animationSeconds = 0);
+    // Repeated batches in one submission share slot constants: keep count and
+    // bounces fixed, padding a short tail with inactive rays when necessary.
+    void recordDeviceRadiance(VkCommandBuffer command, uint32_t slot, uint32_t count, uint32_t bounces = 3);
+    // Soft static visibility toward one captured emitter, independent of
+    // receiver BRDF/albedo and current light colour. Result.irradiance[0].x
+    // is a shape-weighted visible fraction; statistics.z is the sample count.
+    // With directDiffuse, irradiance[0..8].y additionally holds unit-radiance
+    // cosine-convolved SH, including static visibility, for this same light.
+    // Geometry-only spherical queries for origin validation. No lighting is evaluated.
+    void recordSiteValidation(VkCommandBuffer command, uint32_t slot, std::span<const Point> points,
+                              uint32_t samples = 64);
+    void recordVisibility(VkCommandBuffer command, uint32_t slot, std::span<const VisibilityPoint> points,
+                          uint32_t samples = 256, bool directDiffuse = false);
+    // Preparation worker, before recordPrepare. Validate and own immutable
+    // receivers once. CPU packing avoids repeated validation and temporary vectors.
+    // A declined memory budget retains ordinary input.
+    bool prepareVisibilityReceivers(std::span<const Point> points, uint64_t byteBudget = 128ull << 20);
+    bool hasVisibilityReceivers() const;
+    uint64_t visibilityReceiverBytes() const;
+    void recordIndexedVisibility(VkCommandBuffer command, uint32_t slot, std::span<const VisibilityTask> tasks,
+                                 uint32_t samples = 256);
+    // Bounded task batches against caller-owned receivers (for example relocated
+    // probes). Packs directly into the completed slot's mapped upload buffer;
+    // receiver storage only needs to survive this call. Returns scalar masks, or
+    // VisibilityResult with unit direct SH when directDiffuse is requested.
+    void recordVisibilityTasks(VkCommandBuffer command, uint32_t slot, std::span<const Point> receivers,
+                               std::span<const VisibilityTask> tasks, uint32_t samples = 256,
+                               bool directDiffuse = false);
+    // Unit-radiance static sunlight, independent of the captured sun's colour.
+    // Same result layout as local visibility/direct SH, using the distant disc.
+    void recordSun(VkCommandBuffer command, uint32_t slot, std::span<const Point> points,
+                   uint32_t samples = 256, bool directDiffuse = false);
+    // Four or sixteen actual sunlight origins per receiver, packed consecutively. Distribute
+    // the existing ray count over those sites; do not multiply the requested ray count.
+    // Requires sample-parallel transport and a sample count divisible by the site count.
+    // Ordinary probes/radiance rays retain their single-origin semantics.
+    void recordSurfaceSun(VkCommandBuffer command, uint32_t slot, std::span<const Point> sites,
+                          uint32_t samples = 256, bool directDiffuse = false, uint32_t receiverSites = 4);
+    void recordSurfaceVisibility(VkCommandBuffer command, uint32_t slot,
+                                 std::span<const VisibilityPoint> sites, uint32_t samples = 256,
+                                 bool directDiffuse = false);
+    // The selected slot's submission fence has completed.
+    void read(uint32_t slot, std::span<Result> results) const;
+    // Compact parallel CPU visibility/sun batches only; same completed-slot fence.
+    void readVisibility(uint32_t slot, std::span<VisibilityResult> results) const;
+    // Visibility-only compact batches; no directional coefficient expansion.
+    void readScalarVisibility(uint32_t slot, std::span<float> results) const;
+    bool timingSupported() const;
+    struct FragmentQuery {
+      float distance; // scene units
+      uint32_t samples, bounces;
+    };
+    // Validate query policy and units independently of descriptor allocation.
+    FragmentQuery fragmentQuery(uint32_t samples, uint32_t bounces, float distanceMetres) const;
+    std::optional<double> elapsed(uint32_t slot) const; // owning slot fence completed
+    void releaseBuildInputs();                          // after the preparation fence
+    struct Memory {
+      struct Bytes { uint64_t buffers = 0, images = 0, acceleration = 0; };
+      const void *sceneIdentity = nullptr, *consumerIdentity = nullptr;
+      Bytes scene, consumer;
+    };
+    // Identities are borrowed only while this consumer is retained. Shared
+    // scene bytes and private dispatch bytes are disjoint accounting domains.
+    Memory memory() const;
+    uint64_t memoryBytes() const;
+    uint64_t imageBytes() const;
+    uint64_t accelerationBytes() const;
+    uint32_t textureResolution() const;
+
+  private:
+    bool consumerCompatible(const Options &options) const;
+    void initializeConsumer(const Transport &prepared, const Options &options);
+    void initializeConsumer(std::shared_ptr<PreparedScene> scene, VkPhysicalDevice physical,
+                            const VkPhysicalDeviceLimits &limits, bool aggregateDiffuse, const Options &options);
+    struct Gpu;
+    std::unique_ptr<Gpu> m_gpu;
+    enum class Mode : uint32_t {
+      Irradiance,
+      Radiance,
+      Visibility,
+      DirectVisibility,
+      SiteValidation,
+      SunVisibility,
+      SunDirectVisibility,
+      Geometry,
+      ProbeDepth
+    };
+    void recordDepthBatch(VkCommandBuffer command, uint32_t slot, std::span<const Point> rays,
+                          VkDescriptorBufferInfo output, uint32_t firstWord, bool indexed, float distance);
+    void record(VkCommandBuffer command, uint32_t slot, std::span<const Point> points, uint32_t samples,
+                uint32_t bounces, uint32_t firstSample, Mode mode,
+                std::optional<uint32_t> component = {}, uint32_t receiverSites = 1, bool receiverDirect = true);
+    void dispatch(VkCommandBuffer command, uint32_t slot, uint32_t count, uint32_t samples, uint32_t bounces,
+                  uint32_t firstSample, Mode mode, std::optional<uint32_t> component = {},
+                  uint32_t receiverSites = 1, bool receiverDirect = true, bool surfaceSun = false);
+    void recordTaskVisibility(VkCommandBuffer command, uint32_t slot, std::span<const Point> receivers,
+                              std::span<const VisibilityTask> tasks, uint32_t samples, bool validatedReceivers,
+                              bool directDiffuse = false);
+  };
+} // namespace remix::forward::bake

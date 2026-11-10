@@ -61,6 +61,8 @@ namespace {
     // motion refits, dynamic membership rebuilds, a known generation skips
     // the static comparison.
     require(instanceMask(false, false) == allInstancesMask && instanceMask(false, true) == allInstancesMask &&
+                !(allInstancesMask & reflectionOnlyInstanceMask) &&
+                !(viewModelInstanceMask & reflectionOnlyInstanceMask) &&
                 !(allInstancesMask & viewModelInstanceMask) && (allInstancesMask & skyOccluderInstanceMask) &&
                 instanceMask(true, false) == (staticInstanceMask | skyOccluderInstanceMask) &&
                 instanceMask(true, true) == (dynamicInstanceMask | skyOccluderInstanceMask) &&

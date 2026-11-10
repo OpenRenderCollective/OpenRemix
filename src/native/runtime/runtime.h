@@ -23,6 +23,7 @@
 #pragma once
 
 #include "pathtrace/renderer.h"
+#include "forward/renderer.h"
 #include "particles/renderer.h"
 #include "platform/gpu_frames.h"
 #include "platform/gpu_timers.h"
@@ -56,7 +57,7 @@ namespace remix {
   }
   class RemixNativeRuntime {
   public:
-    RemixNativeRuntime() = default;
+    RemixNativeRuntime();
     ~RemixNativeRuntime();
     RemixNativeRuntime(const RemixNativeRuntime &) = delete;
     RemixNativeRuntime &operator=(const RemixNativeRuntime &) = delete;
@@ -70,7 +71,21 @@ namespace remix {
     postfx::Statistics postProcessingStatistics() const {
       if (const auto *busy = busyState())
         return busy->post;
-      return m_postProcessing ? m_postProcessing->statistics() : postfx::Statistics{};
+      return m_forward          ? m_forward->statistics().postProcessing
+             : m_postProcessing ? m_postProcessing->statistics()
+                                : postfx::Statistics{};
+    }
+    std::string reflectionProbeReport() const;
+    forward::Statistics::CpuRecording forwardCpuRecording() const;
+    remixapi_BakeStatisticsEXT bakingStatistics() const {
+      const auto forward = forwardStatistics();
+      auto statistics = forward.baking;
+      statistics.supported = m_forwardRaySupported;
+      statistics.reflectionRequested = forward.authoredReflections.requested;
+      statistics.reflectionPending = forward.authoredReflections.pending;
+      statistics.reflectionActive = forward.authoredReflections.active;
+      statistics.reflectionFailed = forward.authoredReflections.failed;
+      return statistics;
     }
     const std::string &postProcessingFailure() const { return m_postFailure; }
     remixapi_ErrorCode present(const remixapi_PresentInfo *info);
@@ -258,6 +273,7 @@ namespace remix {
     // last completed frame's values, taken at the handoff. Written and read
     // under the API mutex only.
     struct Published {
+      forward::Statistics forward;
       remixapi_FramePerformanceEXT performance{};
       remixapi_FrameBreakdownEXT breakdown{};
       uint64_t presentations = 0, digest = 0;
@@ -276,6 +292,7 @@ namespace remix {
       gpu::FrameTimings gpuTimings;
     };
     void publishState();
+    forward::Statistics forwardStatistics() const;
     // Non-null while the render thread works on a frame. Only Present hands a
     // frame over, under the API mutex, so a caller holding the mutex that sees
     // null keeps the render thread idle until it releases the mutex.
@@ -441,6 +458,25 @@ namespace remix {
     scene::FreeCameraState m_freeCamera;
     std::shared_ptr<upscale::Ngx> m_ngx;
     std::unique_ptr<PathTracer> m_pathTracer;
+    std::unique_ptr<forward::Renderer> m_forward;
+    // Map bake ownership survives target recreation, but not backend exit or
+    // device destruction. Preparation workers only retain this shared owner.
+    std::shared_ptr<forward::bake::Controller> m_forwardBaking;
+    std::shared_ptr<forward::probes::Authoring> m_forwardReflections;
+    std::shared_ptr<forward::probes::StandaloneCapture> m_forwardStandaloneReflections;
+    std::shared_ptr<postfx::State> m_forwardExposure;
+    struct PreparedForward {
+      pipeline::PreparationQueue::Ticket job;
+      std::unique_ptr<forward::Renderer> renderer;
+      forward::Options options;
+    };
+    std::shared_ptr<PreparedForward> m_forwardPreparation;
+    std::vector<std::shared_ptr<PreparedForward>> m_obsoleteForward;
+    std::string m_forwardFailure;
+    forward::Options m_forwardAttempt;
+    bool prepareForwardSettings();
+    // The caller has drained GPU work, or the device is lost.
+    void retireForward(bool preserveBaking = false);
     // The raster backend's NUMOS sky (raster_sky.cpp): recordRasterSky before
     // the target pass, false without a sky this frame; compositeRasterSky after
     // the world's layers, inside the pass, which it leaves and re-enters.
@@ -482,7 +518,7 @@ namespace remix {
     bool m_loading = false, m_rasterPreparing = false;
     uint32_t m_reconstructionFailureMask = 0;
     std::string m_reconstructionFailureKey, m_reconstructionFailure;
-    bool m_localSourcesSeen = false;
+    bool m_localSourcesSeen = false, m_emissiveSourcesSeen = false;
     // When an upscaler profile first met a non-perspective camera (a menu or
     // loading screen) with no renderer yet: prepareSettings holds the first
     // preparation for the world's camera, within a bound.
@@ -498,6 +534,8 @@ namespace remix {
     bool m_backendFailed = false;
     uint32_t m_backend = 0, m_requestedBackend = 0, m_instanceApiVersion = VK_API_VERSION_1_1;
     bool m_traceSupported = false;
+    bool m_forwardSupported = false;
+    bool m_forwardRaySupported = false;
     bool m_textureCompression = false; // textureCompressionBC enabled on m_device.
     bool m_opacityMicromaps = false;   // VK_EXT_opacity_micromap enabled on m_device.
     bool m_memoryBudget = false;       // VK_EXT_memory_budget queries available.

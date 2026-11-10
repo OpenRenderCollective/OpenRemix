@@ -1,8 +1,11 @@
 #include "scene/images.h"
+#include "scene/bake_material.h"
 #include "scene/portals.h"
 #include "scene/resources.h"
 #include "scene/validation.h"
 #include <remix/remix_native_ext.h>
+#include <remix/remix_bake_ext.h>
+#include <remix/remix_reflection_ext.h>
 
 #include <algorithm>
 #include <cmath>
@@ -173,10 +176,20 @@ namespace remix {
       // Without a thin wall, a body (water): Fresnel reflection by the
       // refractive index, and what passes is the colour to the power of the
       // distance behind over the measurement distance (Beer-Lambert). A thin
-      // wall keeps the tinted-sheet approximation.
+      // wall retains its thickness for finite optical transport; primary thin
+      // refraction is routed separately from containing-body rendering.
       finite(&translucent->refractiveIndex, 1);
       finite(&translucent->transmittanceMeasurementDistance, 1);
-      if (!translucent->thinWallThickness_hasvalue && translucent->transmittanceMeasurementDistance > 0) {
+      if (translucent->thinWallThickness_hasvalue) {
+        finite(&translucent->thinWallThickness_value, 1);
+        if (translucent->thinWallThickness_value < 0)
+          throw invalid;
+        material->thinWallThickness = translucent->thinWallThickness_value;
+      }
+      // Zero-thickness legacy sheets retain their tinted compatibility path.
+      // A positive measured thickness supplies finite sheet absorption.
+      if ((!translucent->thinWallThickness_hasvalue || material->thinWallThickness > 0) &&
+          translucent->transmittanceMeasurementDistance > 0) {
         material->refractiveIndex = translucent->refractiveIndex >= 1 ? translucent->refractiveIndex : 1.5f;
         material->transmittanceDistance = translucent->transmittanceMeasurementDistance;
         material->roughness = .04f; // a smooth surface, shaded as PBR for its reflection
@@ -197,6 +210,25 @@ namespace remix {
         std::copy_n(tint, 3, material->refractTint);
         material->fogStart = fog->fogStart;
       }
+    }
+    if (const auto *scroll = static_cast<const remixapi_MaterialTransmittanceScrollEXT *>(
+            extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_TRANSMITTANCE_SCROLL_EXT))) {
+      finite(scroll->rate, 2);
+      if (!validSmoothBoundary(*material) || material->thinWallThickness <= 0)
+        throw invalid;
+      std::copy_n(scroll->rate, 2, material->transmittanceScroll);
+    }
+    if (const auto *average = static_cast<const remixapi_MaterialBakeTintAverageEXT *>(
+            extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_BAKE_TINT_AVERAGE_EXT))) {
+      if ((average->axes & ~3u) || !validSmoothBoundary(*material) || material->thinWallThickness <= 0)
+        throw invalid;
+      material->bakeTintAxes = average->axes;
+    }
+    if (const auto *boundary = static_cast<const remixapi_MaterialBakeBoundaryEXT *>(
+            extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_BAKE_BOUNDARY_EXT))) {
+      if (boundary->smoothBoundary > 1 || (boundary->smoothBoundary && !validSmoothBoundary(*material)))
+        throw invalid;
+      material->bakeSmoothBoundary = boundary->smoothBoundary != 0;
     }
     finite(material->tint, 4);
     if (material->tint[3] < 0 || material->tint[3] > 1) {
@@ -471,8 +503,27 @@ namespace remix {
     if (const auto *replacement = static_cast<const remixapi_MaterialInfoReplacementHashEXT *>(
             extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_REPLACEMENT_HASH_EXT)))
       material->sourceHash = replacement->materialHash;
+    if (const auto *alternates = static_cast<const remixapi_MaterialReplacementKeysEXT *>(
+            extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_REPLACEMENT_KEYS_EXT))) {
+      if (alternates->count > 32 || (alternates->count && !alternates->keys))
+        throw invalid;
+      for (uint32_t i = 0; i < alternates->count; ++i) {
+        const auto hash = alternates->keys[i];
+        if (hash && hash != info.hash && hash != material->sourceHash &&
+            std::find(material->replacementKeys.begin(), material->replacementKeys.end(), hash) ==
+                material->replacementKeys.end())
+          material->replacementKeys.push_back(hash);
+      }
+    }
+    scene::ReflectionBinding reflection;
+    if (const auto *binding = static_cast<const remixapi_MaterialReflectionBindingEXT *>(
+            extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_REFLECTION_BINDING_EXT))) {
+      if (bool(binding->sceneId) != bool(binding->volumeId) || material->translucent || material->transmission)
+        throw invalid;
+      reflection = {binding->sceneId, binding->volumeId};
+    }
     auto equal = [&](const Material &a, const Material &b) {
-      return a.sourceHash == b.sourceHash && a.texture == b.texture && a.emissionTexture == b.emissionTexture &&
+      return a.sourceHash == b.sourceHash && a.replacementKeys == b.replacementKeys && a.texture == b.texture && a.emissionTexture == b.emissionTexture &&
              a.suppressEmissionLight == b.suppressEmissionLight && a.selfIllumination == b.selfIllumination &&
              a.selfIlluminationScale == b.selfIlluminationScale && a.roughnessTexture == b.roughnessTexture &&
              a.metallicTexture == b.metallicTexture && a.normalTexture == b.normalTexture &&
@@ -481,7 +532,10 @@ namespace remix {
              std::equal(a.scroll, a.scroll + 6, b.scroll) && a.refractiveIndex == b.refractiveIndex &&
              a.transmittanceDistance == b.transmittanceDistance && a.fogBody == b.fogBody &&
              std::equal(a.refractTint, a.refractTint + 3, b.refractTint) && a.fogStart == b.fogStart &&
-             a.iridescence == b.iridescence &&
+             a.bakeSmoothBoundary == b.bakeSmoothBoundary &&
+             a.thinWallThickness == b.thinWallThickness &&
+             std::equal(a.transmittanceScroll, a.transmittanceScroll + 2, b.transmittanceScroll) &&
+             a.bakeTintAxes == b.bakeTintAxes && a.iridescence == b.iridescence &&
              a.subsurface == b.subsurface && a.metalColored == b.metalColored &&
              std::equal(a.metalColor, a.metalColor + 3, b.metalColor) && a.pbrBlur == b.pbrBlur &&
              (a.gradient == b.gradient || (a.gradient && b.gradient && *a.gradient == *b.gradient)) &&
@@ -505,10 +559,12 @@ namespace remix {
       ++m_resourceGeneration;
       textureCounters.materialsCreated.fetch_add(1, std::memory_order_relaxed);
     }
+    setMaterialReflection(info.hash, reflection);
     handle = reinterpret_cast<remixapi_MaterialHandle>(uintptr_t(info.hash));
   }
 
   void NativeResources::destroyMaterial(remixapi_MaterialHandle handle) {
+    setMaterialReflection(key(handle), {});
     if (auto it = m_materials.find(key(handle)); it != m_materials.end()) {
       it->second->retired = true;
       ++m_retireGeneration;

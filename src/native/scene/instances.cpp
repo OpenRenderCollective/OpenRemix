@@ -1,4 +1,5 @@
 #include "scene/images.h"
+#include "scene/bake_material.h"
 #include "scene/resources.h"
 #include "scene/validation.h"
 #include <remix/remix_native_ext.h>
@@ -390,11 +391,20 @@ namespace remix {
     }
     // A mod replaces the material by its own hash (ownKey; 0: unknown), by
     // the key its host named for it (sourceHash: a captured material's hash,
-    // or remixapi_MaterialInfoReplacementHashEXT) or by its albedo texture's
-    // hash, in that order.
+    // or remixapi_MaterialInfoReplacementHashEXT), alternate host keys, or its
+    // albedo texture's hash, in that order.
     auto modMaterial = [&](const std::shared_ptr<Material> &original, uint64_t ownKey) -> std::shared_ptr<Material> {
-      const uint64_t modKeys[3] = {ownKey, original->sourceHash, original->texture ? original->texture->getHash() : 0};
-      for (const uint64_t modKey : modKeys) {
+      const auto &alternates = original->replacementKeys;
+      for (size_t index = 0; index < alternates.size() + 3; ++index) {
+        uint64_t modKey = 0;
+        if (index == 0)
+          modKey = ownKey;
+        else if (index == 1)
+          modKey = original->sourceHash;
+        else if (index < alternates.size() + 2)
+          modKey = alternates[index - 2];
+        else if (original->texture)
+          modKey = original->texture->getHash();
         if (!modKey)
           continue;
         if (auto replacement = m_modMaterials.find(modKey); replacement != m_modMaterials.end()) {
@@ -483,22 +493,30 @@ namespace remix {
           // sampling, as the capture runtime does; alone it would paint
           // the surface its constant colour.
           // (No albedo texture: the default one every such material gets.)
-          if (mod->texture != m_default->texture || original->texture == m_default->texture)
+          const bool keepAlbedo = mod->texture == m_default->texture && original->texture != m_default->texture;
+          const bool keepBoundary = original->bakeSmoothBoundary && validSmoothBoundary(*mod);
+          if (!keepAlbedo && !keepBoundary)
             return mod;
           auto &entry = m_modMerged[ownKey ? ownKey : modKey];
           if (!entry.merged || entry.mod.lock() != mod || entry.original.lock() != original) {
             auto merged = std::make_shared<scene::Material>(*mod);
-            merged->texture = original->texture;
-            std::copy(std::begin(original->tint), std::end(original->tint), merged->tint);
-            merged->compare = original->compare;
-            merged->reference = original->reference;
-            merged->drawAlpha = original->drawAlpha;
-            merged->filter = original->filter;
-            merged->wrapU = original->wrapU;
-            merged->wrapV = original->wrapV;
-            merged->rows = original->rows;
-            merged->columns = original->columns;
-            merged->fps = original->fps;
+            if (keepAlbedo) {
+              merged->texture = original->texture;
+              // A transmissive material's RGB describes absorption, rather
+              // than the diffuse multiplier of an opaque generated material.
+              if (!mod->transmission)
+                std::copy(std::begin(original->tint), std::end(original->tint), merged->tint);
+              merged->compare = original->compare;
+              merged->reference = original->reference;
+              merged->drawAlpha = original->drawAlpha;
+              merged->filter = original->filter;
+              merged->wrapU = original->wrapU;
+              merged->wrapV = original->wrapV;
+              merged->rows = original->rows;
+              merged->columns = original->columns;
+              merged->fps = original->fps;
+            }
+            merged->bakeSmoothBoundary |= keepBoundary;
             entry = {mod, original, std::move(merged)};
           }
           return entry.merged;
@@ -563,6 +581,7 @@ namespace remix {
                       (REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_STATIC | REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_DYNAMIC |
                        REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_SINGLE_OFFSET |
                        REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_NO_OFFSET)) != 0;
+        draw.terrain = (d.categoryFlags & REMIXAPI_INSTANCE_CATEGORY_BIT_TERRAIN) != 0;
         draw.material = m_default;
         if (surface->material) {
           auto it = m_materials.find(key(surface->material));
@@ -575,15 +594,18 @@ namespace remix {
             if (resolved && i == 0)
               resolved->push_back(it->second);
             draw.material = modMaterial(it->second, key(surface->material));
+            draw.reflectionMaterial = key(surface->material);
           }
         }
         // An instance's override is replaced as a mesh's own material is: a
         // host that names every draw's material that way (a translation
         // layer whose meshes are shared between materials) has no other.
-        if (materialOverride)
+        if (materialOverride) {
           draw.material = modMaterial(materialOverride, d.materialOverride);
+          draw.reflectionMaterial = d.materialOverride;
+        }
         // A scene instance replays these records without coming back here.
-        if (draw.material->streamUse)
+        if (draw.material && draw.material->streamUse)
           *draw.material->streamUse = std::max<uint8_t>(*draw.material->streamUse, resolved ? 2 : 1);
         if (surface->bonesPerVertex) {
           if (!d.bones || d.bones->empty()) {

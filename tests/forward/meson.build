@@ -1,0 +1,392 @@
+forward_policy_test = executable('remix-forward-policy-test', 'lighting.cpp',
+  '../../src/native/forward/shadows/sun_cache.cpp',
+  '../../src/native/forward/lighting.cpp', '../../src/native/runtime/settings.cpp',
+  '../../src/native/forward/water/data.cpp',
+  '../../src/native/forward/viewmodel/lighting.cpp',
+  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
+test('Forward+ cluster, cascade and configuration policy', forward_policy_test)
+receiver_only_test = executable('remix-bake-receivers-test', 'bake_receivers.cpp',
+  '../../src/native/forward/bake/data.cpp', '../../src/native/forward/material.cpp',
+  '../../src/native/forward/lighting.cpp',
+  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
+test('Receiver-only bake charts exclude transport and preserve live material edits', receiver_only_test)
+receiver_triangles_test = executable('remix-receiver-triangles-test', 'receiver_triangles.cpp',
+  include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
+  cpp_args : test_cpp_args)
+test('Live receiver triangle subsets preserve attributes and chart ownership', receiver_triangles_test)
+if get_option('gpu_tests')
+  test('Receiver subset GPU buffers reuse content and retain bounded ownership', receiver_triangles_test,
+    args : ['gpu'])
+endif
+reference_capture_test = executable('remix-reference-capture-test', 'reference_capture.cpp',
+  '../../src/native/forward/bake/reference_capture.cpp',
+  '../../src/native/forward/lighting.cpp',
+  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
+test('Bounded offline irradiance reference requests and fenced readback', reference_capture_test,
+  args : [meson.current_build_dir() / 'reference-capture-points.txt'])
+probe_depth_test = executable('remix-probe-depth-test', 'probe_depth.cpp',
+  '../../src/native/forward/bake/probe_depth.cpp', '../../src/native/forward/lighting.cpp',
+  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
+test('Directional probe depth packing, octahedral seams and unknown coverage', probe_depth_test)
+material_constants_test = executable('remix-forward-material-constants-test', 'material_constants.cpp',
+  '../../src/native/forward/material.cpp',
+  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
+test('Forward+ draw constants preserve transforms and sRGB byte factors', material_constants_test)
+local_reflection_cache_test = executable('remix-local-reflection-cache-test', 'local_reflection_cache.cpp',
+  include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
+  cpp_args : test_cpp_args)
+test('Local reflection cache evidence, identity and corruption guards', local_reflection_cache_test,
+  args : [meson.current_build_dir() / 'local-reflection-cache'])
+model_chart_study = executable('remix-model-chart-study', 'model_chart_study.cpp',
+  include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
+  cpp_args : test_cpp_args)
+test('Imported model chart study preserves complete shared atlas coverage', model_chart_study)
+model_receivers_test = executable('remix-model-receivers-test', 'model_receivers.cpp',
+  include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
+  cpp_args : test_cpp_args)
+test('Uncharted model receivers preserve geometry, coverage and budgets', model_receivers_test,
+  args : [meson.current_build_dir() / 'model-receivers.json'])
+probe_receiver_report_test = executable('remix-probe-receiver-report-test', 'probe_receiver_report.cpp',
+  include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
+  cpp_args : test_cpp_args)
+test('Probe receiver picking preserves transformed opaque geometry and query budgets', probe_receiver_report_test,
+  args : [meson.current_build_dir() / 'probe-receiver-rays.txt'])
+receiver_preparation_test = executable('remix-receiver-preparation-test', 'receiver_preparation.cpp',
+  include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
+  cpp_args : test_cpp_args)
+test('Local reflection evidence preparation is independent of report files', receiver_preparation_test,
+  args : [meson.current_build_dir() / 'receiver-preparation-report.json'])
+cache_persistence_test = executable('remix-cache-persistence-test', 'cache_persistence.cpp',
+  include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
+  cpp_args : test_cpp_args)
+test('Background bake persistence bounds slow writes, failures and shutdown', cache_persistence_test, timeout : 30)
+capture_cache_test = executable('remix-standalone-cache-test', 'standalone_cache.cpp',
+  include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
+  cpp_args : test_cpp_args)
+test('Standalone reflection persistence preserves content and rejects corrupt inputs', capture_cache_test,
+  args : [meson.current_build_dir() / 'standalone-cache'], timeout : 30)
+
+forward_denoise_test = executable('remix-forward-lightmap-denoise-test', 'lightmap_denoise.cpp',
+  include_directories : test_includes, link_with : lightmap_denoise_library, cpp_args : test_cpp_args + oidn_args)
+test('Offline lightmap denoising preserves directional SH and chart isolation', forward_denoise_test,
+  timeout : 120)
+forward_grid_test = executable('remix-forward-grid-test', 'grid.cpp',
+  '../../src/native/forward/bake/grid.cpp', '../../src/native/forward/bake/grid_sampling.cpp', '../../src/native/forward/bake/coarse_transfer_sampling.cpp', '../../src/native/forward/bake/probe_depth.cpp', '../../src/native/forward/bake/grid_directory.cpp', '../../src/native/forward/bake/sparse_grid.cpp', '../../src/native/forward/bake/relocation.cpp',
+  '../../src/native/forward/lighting.cpp',
+  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
+test('Irradiance grid placement and visibility reconstruction', forward_grid_test)
+adaptive_grid_test = executable('remix-adaptive-grid-test', 'adaptive_grid.cpp', 'refinement.cpp',
+  '../../src/native/forward/bake/coarse_transfer.cpp',
+  '../../src/native/forward/bake/grid.cpp', '../../src/native/forward/bake/grid_sampling.cpp', '../../src/native/forward/bake/coarse_transfer_sampling.cpp', '../../src/native/forward/bake/probe_depth.cpp',
+  '../../src/native/forward/bake/adaptive_grid.cpp', '../../src/native/forward/bake/receiver_support.cpp', '../../src/native/forward/bake/refinement_builder.cpp', '../../src/native/forward/bake/sparse_grid.cpp',
+  '../../src/native/forward/bake/relocation.cpp',
+  '../../src/native/forward/bake/grid_directory.cpp', '../../src/native/forward/lighting.cpp',
+  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
+test('Adaptive irradiance ownership, energy and smooth resolution transitions', adaptive_grid_test)
+
+forward_probe_visibility_test = executable('remix-forward-probe-visibility-test', 'probe_visibility.cpp',
+  '../../src/native/forward/bake/probe_visibility.cpp', '../../src/native/forward/bake/probe_visibility_gpu.cpp', '../../src/native/forward/bake/probe_visibility_plan.cpp',
+  '../../src/native/forward/bake/grid_directory.cpp',
+  '../../src/native/forward/bake/grid_sampling.cpp', '../../src/native/forward/bake/coarse_transfer_sampling.cpp', '../../src/native/forward/bake/probe_depth.cpp',
+  '../../src/native/forward/lighting.cpp',
+  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
+test('Sparse probe local-light visibility preserves unknown coverage and budgets', forward_probe_visibility_test)
+
+forward_receiver_report_test = executable('remix-forward-receiver-report-test', 'receiver_report.cpp',
+  '../../src/native/forward/bake/probe_receiver_report.cpp',
+  '../../src/native/forward/bake/probe_anchor_report.cpp',
+  '../../src/native/forward/bake/probe_connection_audit.cpp',
+  '../../src/native/forward/bake/model_receivers.cpp',
+  '../../src/native/forward/bake/probe_receiver_geometry.cpp',
+  '../../src/native/forward/bake/receiver_report.cpp', '../../src/native/forward/bake/receiver_projection.cpp', '../../src/native/forward/bake/receiver_tiles.cpp', '../../src/native/forward/bake/sun_depth_layout.cpp', '../../src/native/forward/bake/grid.cpp', '../../src/native/forward/bake/grid_sampling.cpp', '../../src/native/forward/bake/coarse_transfer_sampling.cpp', '../../src/native/forward/bake/probe_depth.cpp', '../../src/native/forward/bake/grid_directory.cpp',
+  '../../src/native/forward/lightmap/data.cpp', '../../src/native/forward/material.cpp',
+  '../../src/native/forward/lighting.cpp',
+  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
+test('Surface and probe receiver comparison preserves coordinates and indirect units', forward_receiver_report_test)
+forward_probes_test = executable('remix-forward-probes-test', 'probes.cpp', 'capture_work.cpp', 'probe_image_data.cpp', 'probe_composition.cpp',
+  '../../src/native/forward/probes/composition.cpp', '../../src/native/forward/probes/coverage_baseline.cpp', '../../src/native/forward/probes/coverage_context.cpp', '../../src/native/forward/probes/coverage_image_plan.cpp',
+  '../../src/native/forward/probes/image_data.cpp',
+  '../../src/native/forward/probes/normalization.cpp',
+  '../../src/native/forward/probes/capture_work.cpp', '../../src/native/forward/probes/capture_content.cpp', '../../src/native/forward/probes/automatic_readback.cpp', '../../src/native/forward/probes/automatic_placement.cpp', '../../src/native/forward/probes/automatic_preparation.cpp', '../../src/native/forward/probes/placement_geometry.cpp', '../../src/native/forward/probes/evaluation.cpp', '../../src/native/forward/probes/refinement.cpp', '../../src/native/forward/probes/local_capture_work.cpp',
+  '../../src/native/forward/probes/data.cpp', '../../src/native/forward/probes/placement.cpp', '../../src/native/forward/probes/placement_grid.cpp', '../../src/native/forward/probes/selection.cpp',
+  '../../src/native/forward/probes/regions.cpp', '../../src/native/forward/probes/sites.cpp',
+  '../../src/native/forward/lighting.cpp',
+  include_directories : test_includes, link_with : scene_library, dependencies : vulkan_dep, cpp_args : test_cpp_args)
+test('Reflection probe parallax, filtering and packed data', forward_probes_test)
+forward_projection_test = executable('remix-forward-projection-test', 'evaluation.cpp',
+  '../../src/native/forward/probes/refinement.cpp',
+  '../../src/native/forward/probes/data.cpp', '../../src/native/forward/probes/placement.cpp', '../../src/native/forward/probes/placement_grid.cpp',
+  '../../src/native/forward/probes/selection.cpp', '../../src/native/forward/probes/evaluation.cpp',
+  '../../src/native/forward/probes/regions.cpp', '../../src/native/forward/probes/sites.cpp',
+  '../../src/native/forward/lighting.cpp',
+  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
+test('Reflection candidate geometry assessment and bounded streaming', forward_projection_test)
+receiver_visibility_test = executable('remix-receiver-visibility-test', 'receiver_visibility.cpp',
+  '../../src/native/forward/probes/receiver_pairs.cpp', '../../src/native/forward/probes/receiver_sites.cpp', '../../src/native/forward/probes/data.cpp',
+  '../../src/native/forward/lighting.cpp', link_with : scene_library,
+  include_directories : test_includes, cpp_args : test_cpp_args)
+test('Reflection receiver segments preserve unknown and blocked coverage', receiver_visibility_test)
+probe_receivers_test = executable('remix-probe-receivers-test', 'probe_receivers.cpp',
+  '../../src/native/forward/probes/receivers.cpp', '../../src/native/forward/material.cpp',
+  '../../src/native/forward/lighting.cpp',
+  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
+test('Reflection receiver sampling preserves physical area and bounded work', probe_receivers_test)
+forward_regions_test = executable('remix-forward-regions-test', 'regions.cpp',
+  '../../src/native/forward/probes/refinement.cpp',
+  '../../src/native/forward/probes/receiver_fits.cpp', '../../src/native/forward/probes/receiver_fit_pairs.cpp', '../../src/native/forward/probes/evaluation.cpp',
+  '../../src/native/forward/probes/regions.cpp', '../../src/native/forward/probes/sites.cpp', '../../src/native/forward/lighting.cpp',
+  '../../src/native/forward/probes/data.cpp', '../../src/native/forward/probes/placement.cpp', '../../src/native/forward/probes/placement_grid.cpp', '../../src/native/forward/probes/selection.cpp',
+  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
+test('BSP reflection region occupancy and room fitting', forward_regions_test)
+if get_option('gpu_tests')
+  subdir('probe_batch_shaders')
+  subdir('sun_depth_shaders')
+  subdir('cluster_shaders')
+  subdir('shadow_shaders')
+  subdir('probe_shaders')
+  subdir('style_shaders')
+  subdir('mask_shaders')
+  subdir('water_shaders')
+  subdir('shaders')
+  forward_gpu_shaders = [probe_batch_test_shaders, sun_depth_test_shaders, cluster_test_shaders, shadow_test_shaders, probe_test_shaders, style_test_shaders, mask_test_shaders, water_test_shaders, forward_test_shaders]
+  depth_batch_test = executable('remix-forward-depth-batch-test', 'depth_batch.cpp',
+    include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
+    cpp_args : test_cpp_args)
+  test('Static depth batch preserves geometry, visibility and fenced ownership', depth_batch_test, timeout : 60)
+  image_dump_test = executable('remix-image-dump-test', 'image_dump.cpp',
+    include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
+    cpp_args : test_cpp_args)
+  test('Image dump requests retain complete fenced submissions', image_dump_test,
+    args : [meson.current_build_dir() / 'image-dump-readback'], timeout : 60)
+  probe_batch_test = executable('remix-probe-batch-test', forward_gpu_shaders, 'probe_batch.cpp',
+    include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
+    cpp_args : test_cpp_args)
+  test('Selected probe visibility gather preserves values and completed ownership', probe_batch_test, timeout : 60)
+  cluster_gpu_test = executable('remix-forward-cluster-gpu-test', forward_gpu_shaders, 'clusters_gpu.cpp',
+    include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
+    cpp_args : test_cpp_args)
+  test('Clustered baked fallback GPU membership and independent overflow', cluster_gpu_test, timeout : 120)
+  shadow_filter_test = executable('remix-forward-shadow-filter-test', forward_gpu_shaders, 'shadow_filter.cpp',
+    include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
+    cpp_args : test_cpp_args)
+  test('Fractional point and sun shadow filtering with receiver-plane and baked exclusion', shadow_filter_test, timeout : 60)
+  forward_probe_sampling_test = executable('remix-forward-probe-sampling-test', forward_gpu_shaders, 'probe_sampling.cpp',
+    include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
+    cpp_args : test_cpp_args)
+  test('GPU oriented cubemap projection, priorities and roughness', forward_probe_sampling_test, timeout : 60)
+  forward_probe_image_test = executable('remix-forward-probe-image-test', forward_gpu_shaders, 'probe_image_upload.cpp', 'local_selection_preparation.cpp',
+    include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
+    cpp_args : test_cpp_args)
+  test('GPU HDR reflection image layers and mip uploads', forward_probe_image_test, timeout : 60)
+  forward_mask_decode_test = executable('remix-forward-mask-decode-test', forward_gpu_shaders, 'mask_decode.cpp',
+    include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
+    cpp_args : test_cpp_args)
+  test('GPU visibility tile decoding and bilinear boundaries', forward_mask_decode_test, timeout : 60)
+  water_snapshot_test = executable('remix-forward-water-snapshot-test', forward_gpu_shaders, 'water_snapshot.cpp',
+    include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
+    cpp_args : test_cpp_args)
+  test('Water opaque HDR and actual MSAA depth snapshots', water_snapshot_test, timeout : 60)
+  water_test = executable('remix-forward-water-test', forward_gpu_shaders, 'water.cpp',
+    include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
+    cpp_args : test_cpp_args)
+  test('Water boundary optics and opaque-depth refraction queries', water_test, timeout : 60)
+  bake_transport_test = executable('remix-bake-transport-test', forward_gpu_shaders, 'bake_transport.cpp',
+    include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
+    cpp_args : test_cpp_args)
+  test('Hardware diffuse bake transport and textured visibility', bake_transport_test, timeout : 180)
+  test('Hardware bake dielectric sheet transmission', bake_transport_test,
+    args : ['--dielectric-sheet-only'], timeout : 60)
+  test('Encoded and linear environment color agree in reflection capture transport', bake_transport_test,
+    args : ['--color-capture-only'], timeout : 120)
+  test('Receiver-direct and incoming irradiance partitions conserve surface and probe energy', bake_transport_test,
+    args : ['--irradiance-partitions-only'], timeout : 180)
+  reflection_publication_test = executable('remix-reflection-publication-test', 'reflection_publication.cpp',
+    include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
+    cpp_args : test_cpp_args)
+  test('Reflection publication precedes diffuse finishing and survives cancellation', reflection_publication_test,
+    timeout : 90)
+
+  test('Coarse probe transfer GPU geometry and conservative reconstruction prototype', bake_transport_test,
+    args : ['--coarse-transfer-only'], timeout : 120)
+  test('Sparse sun depth capture matches narrow opening and receiver height', bake_transport_test,
+    args : ['--sun-depth-only'], timeout : 180)
+  test('Sun depth owners preserve moving receivers across replacement and cancellation', bake_transport_test,
+    args : ['--sun-depth-owner-only'], timeout : 180)
+  forward_ray_test = executable('remix-forward-ray-test', forward_gpu_shaders, 'ray_scene.cpp',
+    include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
+    cpp_args : test_cpp_args)
+  test('Forward+ hardware ray scene and candidate traversal', forward_ray_test, timeout : 60)
+  forward_lifecycle_test = executable('remix-forward-lifecycle-test', forward_gpu_shaders, 'lifecycle.cpp',
+    include_directories : [test_includes, include_directories('../../samples')],
+    dependencies : sdl3_dep, link_with : remix, cpp_args : test_cpp_args)
+  test('Forward+ runtime backend transitions and publication', forward_lifecycle_test,
+    timeout : 240, is_parallel : false)
+  test('Forward+ asynchronous target replacements retain bake publication', forward_lifecycle_test,
+    args : ['--targets-only'], timeout : 120, is_parallel : false)
+endif
+
+forward_lightmaps_test = executable('remix-forward-lightmaps-test', 'lightmaps.cpp',
+  '../../src/native/forward/lightmap/interior_donors.cpp',
+  '../../src/native/forward/lightmap/layout.cpp', '../../src/native/forward/lightmap/receiver_footprint.cpp', '../../src/native/forward/lightmap/receiver_sampler.cpp', '../../src/native/forward/bake/sun_antialiasing.cpp', '../../src/native/forward/lightmap/packing.cpp', '../../src/native/forward/lightmap/fit.cpp', '../../src/native/forward/lightmap/parameterization.cpp', '../../src/native/forward/lightmap/curved.cpp', '../../src/native/forward/lightmap/harmonic.cpp', '../../src/native/forward/lightmap/fan.cpp', '../../src/native/forward/lightmap/seams.cpp', '../../src/native/forward/lightmap/curved_seams.cpp', '../../src/native/forward/lightmap/seam_mesh.cpp', '../../src/native/forward/lightmap/surface_walk.cpp', '../../src/native/forward/lightmap/coverage.cpp', '../../src/native/forward/lightmap/data.cpp', '../../src/native/forward/lighting.cpp',
+  '../../src/native/forward/material.cpp',
+  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
+test('Surface lightmap atlas planning and world texel ownership', forward_lightmaps_test)
+
+forward_mixed_test = executable('remix-forward-mixed-test', 'mixed.cpp',
+  '../../src/native/forward/mixed/chart_highlights.cpp',
+  '../../src/native/forward/mixed/data.cpp', '../../src/native/forward/lightmap/layout.cpp', '../../src/native/forward/lightmap/receiver_footprint.cpp', '../../src/native/forward/lightmap/receiver_sampler.cpp', '../../src/native/forward/bake/sun_antialiasing.cpp', '../../src/native/forward/lightmap/packing.cpp', '../../src/native/forward/lightmap/fit.cpp', '../../src/native/forward/lightmap/parameterization.cpp', '../../src/native/forward/lightmap/curved.cpp', '../../src/native/forward/lightmap/harmonic.cpp', '../../src/native/forward/lightmap/fan.cpp', '../../src/native/forward/lightmap/seams.cpp', '../../src/native/forward/lightmap/curved_seams.cpp', '../../src/native/forward/lightmap/seam_mesh.cpp', '../../src/native/forward/lightmap/surface_walk.cpp', '../../src/native/forward/lightmap/coverage.cpp',
+  '../../src/native/forward/mixed/refine.cpp', '../../src/native/forward/mixed/direct_work.cpp', '../../src/native/forward/mixed/ownership.cpp', '../../src/native/forward/mixed/directional_links.cpp', '../../src/native/forward/mixed/overflow.cpp', '../../src/native/forward/mixed/occlusion.cpp', '../../src/native/forward/mixed/masks.cpp', '../../src/native/forward/mixed/mask_codec.cpp', '../../src/native/forward/mixed/mask_palette.cpp',
+  '../../src/native/forward/ray/capture.cpp', '../../src/native/forward/bake/data.cpp', '../../src/native/forward/bake/policy.cpp',
+  '../../src/native/forward/lightmap/data.cpp', '../../src/native/forward/material.cpp',
+  '../../src/native/forward/lighting.cpp',
+  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
+test('Mixed light channel ownership and visibility planning', forward_mixed_test)
+
+forward_shadow_test = executable('remix-forward-shadow-test', 'shadows.cpp',
+  '../../src/native/forward/shadows/moving_cache.cpp',
+  '../../src/native/forward/shadows/plan.cpp', '../../src/native/forward/lighting.cpp',
+  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
+test('Local shadow projection, selection and explicit caster membership', forward_shadow_test)
+
+forward_budget_test = executable('remix-forward-budget-test', 'budget.cpp',
+  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
+test('Forward+ adaptive bake work and lighting identity', forward_budget_test)
+forward_cache_test = executable('remix-forward-cache-test', bake_shaders, 'cache.cpp',
+  '../../src/native/forward/bake/probe_depth.cpp',
+  '../../src/native/forward/bake/sparse_sh.cpp', '../../src/native/forward/bake/styles.cpp',
+  '../../src/native/forward/bake/cache.cpp', '../../src/native/forward/probes/cache_codec.cpp', '../../src/native/forward/probes/capture_cache.cpp', '../../src/native/forward/bake/grid_directory.cpp', '../../src/native/forward/bake/probe_visibility.cpp', '../../src/native/forward/bake/probe_visibility_gpu.cpp', '../../src/native/forward/bake/policy.cpp', '../../src/native/forward/probes/data.cpp',
+  '../../src/native/forward/lightmap/data.cpp', '../../src/native/forward/mixed/data.cpp',
+  '../../src/native/forward/mixed/occlusion.cpp', '../../src/native/forward/mixed/masks.cpp', '../../src/native/forward/mixed/mask_codec.cpp', '../../src/native/forward/mixed/mask_palette.cpp',
+  '../../src/native/forward/lighting.cpp',
+  '../../src/native/forward/mixed/directional_links.cpp', '../../src/native/forward/mixed/directional_coverage.cpp',
+  '../../src/native/forward/mixed/directional_fields.cpp', '../../src/native/forward/mixed/directional_field.cpp',
+  include_directories : test_includes, link_with : [scene_library, lightmap_denoise_library], cpp_args : test_cpp_args)
+test('Bake cache identity, payload integrity and mixed light ownership', forward_cache_test,
+  args : [meson.current_build_dir() / 'cache'])
+
+forward_world_grid_test = executable('remix-forward-world-grid-test', 'world_grid.cpp', 'curved.cpp', 'curved_join.cpp',
+  '../../src/native/forward/lightmap/layout.cpp', '../../src/native/forward/lightmap/receiver_footprint.cpp', '../../src/native/forward/lightmap/receiver_sampler.cpp', '../../src/native/forward/bake/sun_antialiasing.cpp', '../../src/native/forward/lightmap/packing.cpp', '../../src/native/forward/lightmap/fit.cpp', '../../src/native/forward/lightmap/parameterization.cpp', '../../src/native/forward/lightmap/curved.cpp', '../../src/native/forward/lightmap/harmonic.cpp', '../../src/native/forward/lightmap/fan.cpp',
+  '../../src/native/forward/lightmap/seams.cpp', '../../src/native/forward/lightmap/curved_seams.cpp', '../../src/native/forward/lightmap/seam_mesh.cpp', '../../src/native/forward/lightmap/surface_walk.cpp', '../../src/native/forward/lightmap/coverage.cpp', '../../src/native/forward/lightmap/data.cpp',
+  '../../src/native/forward/material.cpp', '../../src/native/forward/lighting.cpp',
+  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
+test('World-space lightmap density and connected chart seams', forward_world_grid_test)
+
+forward_directional_field_test = executable('remix-forward-directional-field-test', 'directional_field.cpp',
+  '../../src/native/forward/mixed/directional_field.cpp', '../../src/native/forward/mixed/directional_fields.cpp', '../../src/native/forward/mixed/directional_capture.cpp',
+  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
+test('Lossless directional surface blocks preserve signed SH and chunk bounds', forward_directional_field_test)
+
+forward_mask_codec_test = executable('remix-forward-mask-codec-test', 'mask_codec.cpp',
+  '../../src/native/forward/mixed/mask_codec.cpp', '../../src/native/forward/mixed/mask_palette.cpp',
+  include_directories : test_includes, cpp_args : test_cpp_args)
+test('Lossless visibility tile encoding and cache bounds', forward_mask_codec_test)
+
+forward_mask_pages_test = executable('remix-forward-mask-pages-test', 'mask_pages.cpp', '../../src/native/forward/mixed/unified_masks.cpp',
+  '../../src/native/forward/mixed/mask_pages.cpp', '../../src/native/forward/mixed/masks.cpp',
+  '../../src/native/forward/mixed/mask_codec.cpp', '../../src/native/forward/mixed/mask_palette.cpp',
+  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
+test('Reusable visibility pages preserve independent overlapping light masks', forward_mask_pages_test)
+
+light_selection_test = executable('remix-bake-light-selection-test', 'light_sampling.cpp',
+  '../../src/native/forward/bake/light_sampling.cpp',
+  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
+test('Bake light hierarchy preserves indices and normalized exploration', light_selection_test)
+
+direct_policy_test = executable('remix-bake-direct-policy-test', 'direct_policy.cpp',
+  '../../src/native/forward/bake/policy.cpp',
+  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
+test('Baked diffuse policy preserves mixed and moving light identities', direct_policy_test)
+
+style_scale_test = executable('remix-bake-style-scale-test', 'styles.cpp',
+  '../../src/native/forward/bake/styles.cpp',
+  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
+test('Styled component scalar units, ownership and stale colour rejection', style_scale_test)
+
+sparse_style_test = executable('remix-bake-sparse-style-test', 'sparse_sh.cpp',
+  '../../src/native/forward/bake/sparse_sh.cpp', '../../src/native/forward/lightmap/data.cpp',
+  '../../src/native/forward/lighting.cpp',
+  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
+test('Sparse styled SH preserves atlas mapping, signed values and bounded storage', sparse_style_test)
+
+style_work_test = executable('remix-bake-style-work-test', 'style_work.cpp',
+  '../../src/native/forward/bake/style_work.cpp', '../../src/native/forward/bake/sparse_sh.cpp',
+  '../../src/native/forward/bake/styles.cpp', '../../src/native/forward/lighting.cpp',
+  include_directories : test_includes, link_with : [scene_library, lightmap_denoise_library], cpp_args : test_cpp_args)
+test('Attributed workspace preserves group ownership across fences and cancellation', style_work_test)
+
+if get_option('gpu_tests')
+  sparse_style_gpu_test = executable('remix-bake-sparse-style-gpu-test', forward_gpu_shaders, 'sparse_sh_gpu.cpp',
+    include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
+    cpp_args : test_cpp_args)
+  test('Sparse styled GPU surface and probe reconstruction', sparse_style_gpu_test, timeout : 120)
+  test('Stable styled GPU composition preserves signed surfaces, probes and cancelled chunks', sparse_style_gpu_test,
+    args : ['bicubic', 'composition'], timeout : 120)
+  test('Stable styled GPU composition preserves adaptive depth probes', sparse_style_gpu_test,
+    args : ['adaptive-depth', 'composition'], timeout : 120)
+  test('Bicubic lightmaps preserve signed styles and chart boundaries', sparse_style_gpu_test,
+       args : ['bicubic'], timeout : 120)
+  foreach mode : ['adaptive-transfer', 'adaptive-transfer-stitched', 'adaptive-transfer-depth']
+    test('Coarse transfer production GPU reconstruction ' + mode,
+         sparse_style_gpu_test, args : [mode], timeout : 120)
+  endforeach
+  test('Indexed irradiance GPU holes, record permutations and styled reconstruction',
+       sparse_style_gpu_test, args : ['indexed'], timeout : 120)
+  test('Adaptive irradiance GPU blends, local spacing and styled reconstruction',
+       sparse_style_gpu_test, args : ['adaptive'], timeout : 120)
+  test('Unsupported fine irradiance preserves coarse GPU coverage and styled lighting',
+       sparse_style_gpu_test, args : ['adaptive-fallback'], timeout : 120)
+  test('Per-region irradiance subdivision GPU addressing and styled reconstruction',
+       sparse_style_gpu_test, args : ['adaptive-localfactor'], timeout : 120)
+  test('Shared irradiance faces preserve fine lighting and biased GPU queries',
+       sparse_style_gpu_test, args : ['adaptive-stitched'], timeout : 120)
+  test('Directional probe depth GPU visibility, adaptive confidence and styled reconstruction',
+       sparse_style_gpu_test, args : ['adaptive-depth'], timeout : 120)
+endif
+
+forward_styled_direct_test = executable('remix-forward-styled-direct-test', 'styled_direct.cpp', '../../src/native/forward/lighting.cpp',
+  '../../src/native/forward/bake/styled_direct.cpp', '../../src/native/forward/bake/sparse_sh.cpp',
+  '../../src/native/forward/bake/styles.cpp', '../../src/native/forward/bake/probe_visibility.cpp',
+  '../../src/native/forward/bake/probe_visibility_gpu.cpp',
+  '../../src/native/forward/mixed/directional_fields.cpp', '../../src/native/forward/mixed/directional_field.cpp',
+  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
+test('Grouped styled direct reuses complete surface and probe captures', forward_styled_direct_test)
+
+forward_decal_test = executable('remix-forward-decal-test', 'decal.cpp',
+  '../../src/native/forward/lightmap/decal.cpp', '../../src/native/forward/lighting.cpp',
+  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
+test('Decals borrow receiver chart coordinates and light ownership', forward_decal_test)
+
+forward_probe_mask_test = executable('remix-forward-probe-mask-test', 'probe_receiver_mask.cpp',
+  '../../src/native/forward/probes/receiver_mask.cpp', '../../src/native/forward/lighting.cpp',
+  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
+test('Reflection probe receiver masks preserve padded and rotated coverage', forward_probe_mask_test)
+
+sun_depth_cache_test = executable('remix-sun-depth-cache-test', 'sun_depth_cache.cpp',
+  '../../src/native/forward/bake/sun_depth_cache.cpp', '../../src/native/forward/bake/sun_depth_layout.cpp',
+  '../../src/native/forward/lighting.cpp', include_directories : test_includes,
+  link_with : scene_library, cpp_args : test_cpp_args)
+test('Sun depth cache validates identity and packs captured rows only', sun_depth_cache_test,
+  args : [meson.current_build_dir() / 'sun-depth-cache'])
+
+coverage_selection_test = executable('remix-reflection-coverage-test', 'coverage_selection.cpp',
+  '../../src/native/forward/probes/coverage_selection.cpp',
+  include_directories : test_includes, cpp_args : test_cpp_args)
+test('Reflection coverage replacements preserve sampled baselines', coverage_selection_test)
+
+# Explicit offline fitting study; not part of ordinary rendering or the test run.
+probe_fit_study = executable('remix-probe-fit-study', 'probe_fit_study.cpp',
+  '../../src/native/forward/probes/regions.cpp', '../../src/native/forward/lighting.cpp',
+  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
+
+coverage_guards_test = executable('remix-coverage-guards-test', 'coverage_guards.cpp',
+  '../../src/native/forward/probes/coverage_guards.cpp',
+  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
+test('Reflection preservation guards retain ordering and projection space', coverage_guards_test)
+
+test('Material and reflection values are independent of pass resources', python,
+  args : [meson.current_source_dir() / 'shading_values.py', shader_tools,
+          meson.current_build_dir() / 'shading-values'], depends : [shader_tools])
+
+test('Custom shading composes sources without the standard shading model', python,
+  args : [meson.current_source_dir() / 'custom_shading.py', shader_tools,
+          meson.current_build_dir() / 'custom-shading'], depends : [shader_tools])

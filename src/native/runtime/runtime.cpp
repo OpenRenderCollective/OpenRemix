@@ -22,6 +22,8 @@
 
 #include "platform/memory_release.h"
 #include "runtime/runtime.h"
+#include "forward/bake/cache_persistence.h"
+#include "forward/probes/capture_cache.h"
 #include "upscale/xess.h"
 
 #include <algorithm>
@@ -32,6 +34,13 @@
 #include <limits>
 
 namespace remix {
+  RemixNativeRuntime::RemixNativeRuntime() {
+    // Establish destruction order before this runtime can launch persistence.
+    // The service itself starts no thread until a completed map is submitted.
+    forward::bake::cache::persistence();
+    forward::probes::capture_cache::persistence();
+    forward::probes::capture_cache::sharedPersistence();
+  }
   RemixNativeRuntime::~RemixNativeRuntime() {
     // Without a Shutdown: the render thread's frame completes first.
     waitRenderThread();
@@ -40,6 +49,9 @@ namespace remix {
     if (m_asyncActive)
       switchPresentation(false);
     m_renderThread.stop();
+    forward::bake::cache::persistence().stop();
+    forward::probes::capture_cache::persistence().stop();
+    forward::probes::capture_cache::sharedPersistence().stop();
     if (m_device && !m_deviceLost) {
       vkDeviceWaitIdle(m_device);
     }
@@ -100,7 +112,7 @@ namespace remix {
       if (!m_profiles.message().empty())
         SDL_Log("OpenRemix profiles: %s", m_profiles.message().c_str());
       // Headless with a host window: the UI runs on the host's window.
-      auto status = !m_headless  ? m_window.initialize(info)
+      auto status = !m_headless ? m_window.initialize(info)
                     : hostWindow ? m_window.adopt(hostWindow)
                                  : REMIXAPI_ERROR_CODE_SUCCESS;
       if (status != REMIXAPI_ERROR_CODE_SUCCESS) {
@@ -163,6 +175,10 @@ namespace remix {
     if (m_asyncActive)
       switchPresentation(false);
     m_renderThread.stop();
+    // Join CPU-only persistence during explicit Shutdown, before DLL unload.
+    forward::bake::cache::persistence().stop();
+    forward::probes::capture_cache::persistence().stop();
+    forward::probes::capture_cache::sharedPersistence().stop();
     m_frameScene.reset();
     m_asyncCaller = m_previousAsyncCaller = m_asyncRender = {};
     m_renderedMemory = {};
@@ -211,11 +227,11 @@ namespace remix {
     if (m_pipelines) {
       const auto s = m_pipelines->statistics();
       SDL_Log("OpenRemix pipelines: created=%llu reused=%llu failed=%llu "
-              "compile_ms=%.3f cache_hits=%llu "
-              "driver_ns=%llu presentations=%llu longest_presentation_gap_ms=%.3f",
+          "compile_ms=%.3f cache_hits=%llu "
+          "driver_ns=%llu presentations=%llu longest_presentation_gap_ms=%.3f",
               (unsigned long long)s.created, (unsigned long long)s.reused, (unsigned long long)s.failed, s.milliseconds,
               (unsigned long long)s.cacheHits, (unsigned long long)s.driverNanoseconds,
-              (unsigned long long)m_presentationCount, m_longestPresentationGap);
+          (unsigned long long)m_presentationCount, m_longestPresentationGap);
     }
     // Join before releasing staging objects, immutable layouts or the device.
     m_preparation.reset();
@@ -231,6 +247,16 @@ namespace remix {
     m_screenshot.reset(m_device);
     shutdownUi();
     m_pathTracer.reset();
+    m_forward.reset();
+    m_forwardPreparation.reset();
+    m_obsoleteForward.clear();
+    m_forwardBaking.reset();
+    m_forwardReflections.reset();
+    m_forwardStandaloneReflections.reset();
+    m_forwardExposure.reset();
+    m_forwardFailure.clear();
+    m_forwardSupported = false;
+    m_forwardRaySupported=false;
     m_rasterSky.reset();
     m_rasterSkyReady = false;
     m_postProcessing.reset();
@@ -248,7 +274,7 @@ namespace remix {
     m_failedPreparationKey.clear();
     m_preparationFailure.clear();
     m_loading = m_rasterPreparing = false;
-    m_localSourcesSeen = false;
+    m_localSourcesSeen = m_emissiveSourcesSeen = false;
     m_reconstructionFailureMask = 0;
     m_reconstructionFailureKey.clear();
     m_reconstructionFailure.clear();

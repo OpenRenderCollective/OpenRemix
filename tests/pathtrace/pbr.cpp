@@ -38,6 +38,7 @@ int main(int argc, char **argv) {
   startup.windowWidth = startup.windowHeight = 64;
 #endif
   ok(api.Startup(&startup));
+  ok(api.SetConfigVariable("rtx.native.hdr", "0"));
   // These fixtures measure the unexposed lighting/display contract.
   ok(api.SetConfigVariable("rtx.native.pathtrace.autoExposure", "0"));
   ok(api.SetConfigVariable("rtx.native.pathtrace.bloom", "0"));
@@ -151,10 +152,12 @@ int main(int argc, char **argv) {
     for (int i = 0; i < 16; ++i)
       frame();
     const auto file = (directory / (std::string(name) + ".png")).string();
-    ok(remix::test::requestScreenshot(api, file.c_str(), frame));
+    std::filesystem::file_time_type previous;
+    ok(remix::test::requestScreenshot(api, file.c_str(), frame, &previous));
     frame();
     frame();
     int w, h, c;
+    ok(remix::test::waitForScreenshot(api, file.c_str(), previous));
     auto *bytes = stbi_load(file.c_str(), &w, &h, &c, 4);
     require(bytes, "Missing PBR screenshot");
     std::array<double, 3> result{};

@@ -5,8 +5,12 @@ option('sharc', type : 'boolean', value : true, description : 'Build optional NV
 option('nrd', type : 'boolean', value : true, description : 'Build the pinned diffuse REBLUR SH CPU library and Vulkan adapter.')
 option('sky', type : 'feature', value : 'auto', description : 'Build the NUMOS sky core library (needs the third_party/numos/numos-sky submodule).')
 option('gpu_tests', type : 'boolean', value : false, description : 'Run SDL/Vulkan lifecycle tests on a display and Vulkan device.')
+option('oidn_root', type : 'string', value : '', description : 'Optional Open Image Denoise 2.5 installation prefix for offline lightmap denoising.')
+option('shader_jobs', type : 'integer', min : 1, value : 4,
+  description : 'Maximum parallel shader compilation workers per generator.')
 option('shader_tools', type : 'string', value : '',
   description : 'Cache of the pinned shader tools the build generates the shaders with (default: _work/tools/shader-toolchain).')
+
 option('vulkan_probes', type : 'boolean', value : false, description : 'Build standalone ray-query/pipeline probes (requires glslangValidator).')
 option('dlss', type : 'boolean', value : true, description : 'Build pinned NGX DLSS SR and Ray Reconstruction on Linux/Windows x64.')
 option('dlss5', type : 'boolean', value : false, description : 'Enable DLSS 5 (DLSS-NR neural uplift) support. Off by default; requires -Ddlss=true.')

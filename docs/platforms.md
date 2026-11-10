@@ -1,6 +1,8 @@
 # Platform builds and packages
 
-All builds use Meson/Ninja and Clang. Initialize the `include/vulkan` submodule.
+All builds use Meson/Ninja and Clang. Vulkan headers are committed under `include/vulkan`; they are not a submodule.
+For the optional NUMOS sky backend, run
+`git submodule update --init third_party/numos/numos-sky` without `--recursive`.
 SDL3 remains pinned to 3.4.14; `scripts/common/build-dependencies.py` verifies the
 archive checksum and builds only SDL3. Dear ImGui v1.92.9b is vendored with checksums.
 PNG/DDS decoders are included in the source tree. The build generates the renderer's
@@ -79,6 +81,22 @@ RDNA 4 GPUs and FSR 3.1 elsewhere. For testing, `REMIX_FSR_VERSION=3` asks the l
 their FSR 3.1 provider, and builds configured with `-Dfsr_linked=true` also contain the linked
 FSR 3.1.4 that Linux uses, which `REMIX_FSR_LINKED=1` selects. Intel's XeSS SDK 3.0.2
 library is in `bin/xess` (XeSS Super Resolution, Windows only; any GPU with Vulkan 1.3).
+For a wrapper that loads a flat `openremix` runtime directory, the Windows-only
+bundler also reads the build's USD and OIDN options and includes their runtime
+libraries, plugin resources and notices:
+
+```powershell
+python scripts/windows/package-runtime.py --build _work/build/windows --sdl _work/deps/windows/prefix/bin/SDL3.dll --output _work/packages/windows-runtime
+```
+
+Use a fresh output directory and the SDL DLL linked by that build (the pinned
+fallback can name it `SDL3_shared.dll`). The bundle records source paths and
+SHA-256 hashes in `runtime-manifest.json`. OIDN builds include all SDK device
+plugins and use its newer oneTBB DLL where USD shares that dependency; validate
+the combined runtime on the target machine. Builds without OIDN use the USD TBB
+prefix and its adjacent `sources/onetbb` notices. This command does not install
+files into a game. It targets the repository's pinned Windows dependency layouts.
+
 The Vulkan loader/driver and Visual C++ runtime are platform prerequisites. Null HWND
 startup creates a 1280×720 window. Existing HWNDs retain native ownership after Shutdown.
 GPU tests (`meson configure _work/build/windows -Dgpu_tests=true`) include owned/borrowed HWNDs

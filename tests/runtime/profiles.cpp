@@ -27,6 +27,7 @@ int main(int argc, char **argv) {
   const fs::path root = argv[1];
   fs::create_directories(root);
   config::Settings changed;
+  changed.forward.baking.modelLightmaps = false;
   changed.backend = 0;
   changed.vsync = true;
   changed.clearColor = {.1f, .2f, .3f, .4f};
@@ -113,11 +114,13 @@ int main(int argc, char **argv) {
   require(changed == parsed, "Complete nondefault snapshot did not round-trip");
   require(config::serialize(changed).find("sharcReset") == std::string::npos, "One-shot action was serialized");
   require(config::parse("profile.version = 1\nrtx.native.pathtrace.samples = 5\nfuture.setting = alpha = beta\n",
-                        parsed, unknown, warnings, error),
-          "Partial profile rejected");
+                    parsed, unknown, warnings, error),
+      "Partial profile rejected");
   config::Settings partial;
   partial.trace.samples = 5;
   require(parsed == partial, "Omitted keys leaked previous values");
+  require(parsed.forward.baking.modelLightmaps,
+          "Profiles written before static mesh lightmaps inherit the current runtime default");
   require(parsed.trace.translucencyDenoiser && parsed.trace.translucencyReuse,
           "Translucent denoising and opaque reuse must default on");
   require(unknown.at("future.setting") == "alpha = beta" && warnings.size() == 1,
@@ -125,12 +128,12 @@ int main(int argc, char **argv) {
   require(config::serialize(parsed, unknown).find("future.setting = alpha = beta") != std::string::npos,
           "Unknown key lost on save");
   for (const auto &bad : {"profile.version = 2\n", "rtx.native.vsync = true\n", "profile.version = 1\nbad line\n",
-                          "profile.version = 1\nrtx.native.pathtrace.samples = 17\n",
-                          "profile.version = 1\nrtx.native.pathtrace.localRange = 0.001\n",
-                          "profile.version = 1\nrtx.native.pathtrace.lightIntensity = nan\n",
-                          "profile.version = 1\nrtx.native.clearColor.r = inf\n",
-                          "profile.version = 1\nrtx.native.pathtrace.upscaler = unknown\n",
-                          "profile.version = 1\nprofile.version = 1\n"}) {
+        "profile.version = 1\nrtx.native.pathtrace.samples = 17\n",
+        "profile.version = 1\nrtx.native.pathtrace.localRange = 0.001\n",
+        "profile.version = 1\nrtx.native.pathtrace.lightIntensity = nan\n",
+        "profile.version = 1\nrtx.native.clearColor.r = inf\n",
+        "profile.version = 1\nrtx.native.pathtrace.upscaler = unknown\n",
+        "profile.version = 1\nprofile.version = 1\n"}) {
     const auto before = parsed;
     const auto extra = unknown;
     const auto notices = warnings;
@@ -154,8 +157,8 @@ int main(int argc, char **argv) {
           "Inherited sun diameter rejected");
   require(
       config::parse("profile.version = 1\nrtx.native.pathtrace.sharcReset = 1\n", parsed, unknown, warnings, error) &&
-          !parsed.trace.sharcReset && unknown.empty(),
-      "File replayed one-shot action");
+              !parsed.trace.sharcReset && unknown.empty(),
+          "File replayed one-shot action");
 
   config::Profiles profiles;
   profiles.startup(root);

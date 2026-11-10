@@ -242,7 +242,9 @@ namespace remix {
     auto next = m_profiles.current();
     if (config::set(next, "rtx.native.backend", value) != config::SetResult::Success)
       return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
-    if (next.backend && !m_traceSupported) {
+    if (next.backend == config::Backend::ForwardPlus)
+      return REMIXAPI_ERROR_CODE_FEATURE_UNAVAILABLE;
+    if (next.backend == config::Backend::PathTrace && !m_traceSupported) {
       SDL_Log("Path tracing unavailable: %s", m_traceUnavailable.c_str());
       return REMIXAPI_ERROR_CODE_FEATURE_UNAVAILABLE;
     }
@@ -265,6 +267,13 @@ namespace remix {
 
   // runtime/configuration.cpp configureDefault.
   remixapi_ErrorCode RemixNativeRuntime::configureDefault(const char *key, const char *value) {
+    if (std::strcmp(key, "rtx.native.backend") == 0) {
+      auto next = m_profiles.current();
+      if (config::set(next, key, value) != config::SetResult::Success)
+        return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
+      if (next.backend == config::Backend::ForwardPlus)
+        return REMIXAPI_ERROR_CODE_FEATURE_UNAVAILABLE;
+    }
     if (!m_profiles.setDefault(key, value))
       return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
     const auto &settings = m_profiles.current();
@@ -326,14 +335,15 @@ namespace remix {
                                  const auto &e = draw.material->emission;
                                  return draw.traced() && (e[0] > 0 || e[1] > 0 || e[2] > 0);
                                });
-    m_localSourcesSeen = settings.backend && (m_localSourcesSeen || detectedLocal);
+    const bool requestedTrace = settings.backend == config::Backend::PathTrace;
+    m_localSourcesSeen = requestedTrace && (m_localSourcesSeen || detectedLocal);
     const bool local = m_localSourcesSeen || (settings.trace.sigma && settings.trace.localLights);
     std::erase_if(m_obsoletePreparations, [](const auto &preparation) { return preparation->done.load(); });
     auto retire = [&] {
       if (m_preparation)
         m_obsoletePreparations.push_back(std::move(m_preparation));
     };
-    if (!settings.backend || !m_traceSupported) {
+    if (!requestedTrace || !m_traceSupported) {
       retire();
       if (m_pathTracer) {
         id<MTLCommandBuffer> drain = [g.queue commandBuffer];
@@ -402,8 +412,8 @@ namespace remix {
     // A tracer prepared for another size cannot render into this one.
     const bool sized = m_pathTracer && m_pathTracer->configuration().displayWidth == width &&
                        m_pathTracer->configuration().displayHeight == height;
-    m_backend = settings.backend && sized ? 1 : 0;
-    m_loading = settings.backend && m_traceSupported && !m_backend;
+    m_backend = requestedTrace && sized ? config::Backend::PathTrace : config::Backend::Raster;
+    m_loading = requestedTrace && m_traceSupported && !m_backend;
     m_appliedSettings = settings;
     m_traceOptions = settings.trace;
     m_traceOptions.sharcReset = m_sharcReset;
@@ -457,7 +467,10 @@ namespace remix {
                                               .supportedBackends = m_traceSupported ? 3u : 1u,
                                               .activeBackend = m_backend,
                                               .requestedBackend = m_profiles.current().backend};
-    std::strncpy(result.unavailableReason, m_traceUnavailable.c_str(), sizeof(result.unavailableReason) - 1);
+    const char *reason = result.requestedBackend == config::Backend::ForwardPlus
+                             ? "Forward+ is unavailable on Metal"
+                             : m_traceUnavailable.c_str();
+    std::strncpy(result.unavailableReason, reason, sizeof(result.unavailableReason) - 1);
     return result;
   }
 

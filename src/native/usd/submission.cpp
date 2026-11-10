@@ -76,17 +76,17 @@ namespace remix::usd {
 #endif
 
   } // namespace
-  remixapi_Transform transformed(const remixapi_Transform &delta, const remixapi_Transform &original) {
-    remixapi_Transform result{};
-    for (int r = 0; r < 3; ++r)
-      for (int c = 0; c < 4; ++c) {
-        for (int k = 0; k < 3; ++k)
-          result.matrix[r][c] += delta.matrix[r][k] * original.matrix[k][c];
-        if (c == 3)
-          result.matrix[r][c] += delta.matrix[r][3];
-      }
-    return result;
-  }
+    remixapi_Transform transformed(const remixapi_Transform &delta, const remixapi_Transform &original) {
+      remixapi_Transform result{};
+      for (int r = 0; r < 3; ++r)
+        for (int c = 0; c < 4; ++c) {
+          for (int k = 0; k < 3; ++k)
+            result.matrix[r][c] += delta.matrix[r][k] * original.matrix[k][c];
+          if (c == 3)
+            result.matrix[r][c] += delta.matrix[r][3];
+        }
+      return result;
+    }
   Submission::Submission(NativeResources &resources, const Snapshot &snapshot, uint64_t namespaceId, bool applyMods)
       : resources_(resources), namespace_(namespaceId), applyMods_(applyMods),
         snapshot_({{"cameras", snapshot.scene["cameras"]}}) {
@@ -755,7 +755,7 @@ namespace remix::usd {
     glass.transmittanceTexture = albedo.c_str();
     glass.transmittanceColor = vector3(data.value("transmittance", Json::array({1, 1, 1})));
     glass.transmittanceMeasurementDistance = data.value("transmittance_distance", 1.f);
-    glass.thinWallThickness_hasvalue = data.value("thin_walled", false);
+    glass.thinWallThickness_hasvalue = data.value("thin_walled", false) && data.value("thin_wall_thickness", 1.f) > 0;
     glass.thinWallThickness_value = data.value("thin_wall_thickness", 1.f);
     glass.useDiffuseLayer = data.value("use_diffuse_layer", false);
     info.pNext = data.value("kind", std::string("opaque")) == "translucent" ? static_cast<void *>(&glass)

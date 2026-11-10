@@ -44,7 +44,9 @@ namespace remix {
     auto next = m_profiles.current();
     if (config::set(next, "rtx.native.backend", value) != config::SetResult::Success)
       return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
-    if (next.backend && !m_traceSupported) {
+    if (next.backend == config::Backend::ForwardPlus && !m_forwardSupported)
+      return REMIXAPI_ERROR_CODE_FEATURE_UNAVAILABLE;
+    if (next.backend == config::Backend::PathTrace && !m_traceSupported) {
       SDL_Log("Path tracing unavailable: %s", m_traceUnavailable.c_str());
       return REMIXAPI_ERROR_CODE_FEATURE_UNAVAILABLE;
     }
@@ -84,7 +86,7 @@ namespace remix {
     if (!m_profiles.setDefault(key, value))
       return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
     const auto &settings = m_profiles.current();
-    if (settings.backend && !m_traceSupported) {
+    if (settings.backend == config::Backend::PathTrace && !m_traceSupported) {
       // A path-tracing default where it cannot run: the raster backend stays.
       auto next = settings;
       next.backend = 0;
@@ -99,41 +101,37 @@ namespace remix {
   }
 
   namespace {
-    std::string resourceKey(const config::Settings &settings, VkExtent2D extent, bool perspective, bool local) {
+    std::string resourceKey(const config::Settings &settings, VkExtent2D extent, bool perspective, bool local,
+                            bool emissive) {
       // Only changes to resource/pipeline contracts replace the renderer.
       // Continuous lighting and display edits keep their temporal state.
-      config::Settings resources;
-      resources.backend = settings.backend;
-      auto &out = resources.trace;
-      const auto &in = settings.trace;
-      out.accumulate = in.accumulate;
-      out.validation = in.validation;
-      out.denoiser = in.denoiser;
-      out.taa = in.taa;
-      out.sigma = in.sigma;
-      out.localDenoiser = in.localDenoiser;
-      out.separateLocalLighting = normalized(in).separateLocalLighting;
-      out.restir = in.restir;
-      out.upscaler = in.upscaler;
-      out.dlssQuality = in.dlssQuality;
-      out.fsrQuality = in.fsrQuality;
-      out.xessQuality = in.xessQuality;
-      out.dlssRayReconstruction = in.dlssRayReconstruction;
-      out.sharc = in.sharc;
-      out.sharcDebug = in.sharcDebug;
-      out.sharcCapacityLog2 = in.sharcCapacityLog2;
-      out.bounces = in.bounces ? 1 : 0;
-      out.rasterPrimary = in.rasterPrimary;
-      return config::serialize(resources) + std::to_string(extent.width) + ":" + std::to_string(extent.height) + ":" +
-             std::to_string(perspective) + ":" + std::to_string(local);
+      const auto &trace = settings.trace;
+      const uint32_t separateLocal = normalized(trace).separateLocalLighting;
+      const uint32_t fields[] = {
+          settings.backend, trace.accumulate, trace.validation, trace.denoiser, trace.taa,
+          trace.sigma, trace.localDenoiser, separateLocal, trace.restir, uint32_t(trace.upscaler),
+          trace.dlssQuality, trace.fsrQuality, trace.xessQuality, trace.dlssRayReconstruction,
+          trace.sharc, trace.sharcDebug, trace.sharcCapacityLog2, trace.bounces != 0, trace.rasterPrimary,
+          extent.width, extent.height, perspective, local, emissive && separateLocal != 0};
+      // A delimited integer tuple preserves the same resource distinctions
+      // without serializing profile fields that cannot affect this key.
+      std::string key;
+      key.reserve(std::size(fields) * 11);
+      for (const uint32_t field : fields) {
+        char value[10];
+        const auto result = std::to_chars(std::begin(value), std::end(value), field);
+        key.append(value, result.ptr);
+        key.push_back(':');
+      }
+      return key;
     }
   } // namespace
   bool RemixNativeRuntime::preparationPending() const {
     const auto pipelines = m_pipelines ? m_pipelines->statistics() : pipeline::Statistics{};
     return pipelines.completed != pipelines.requested || bool(m_preparation) || bool(m_postPreparation) ||
-           m_rasterPreparing || (m_ngxPreparing && m_ngxPreparing->load()) ||
-           (m_traceSupported && m_profiles.current().backend && !m_pathTracer && !m_worldCameraHold &&
-            m_preparationFailure.empty());
+           m_rasterPreparing || (m_ngxPreparing && m_ngxPreparing->load()) || bool(m_forwardPreparation) ||
+           (m_traceSupported && m_profiles.current().backend == config::Backend::PathTrace && !m_pathTracer &&
+            !m_worldCameraHold && m_preparationFailure.empty());
   }
   void RemixNativeRuntime::retireTracer(std::unique_ptr<PathTracer> tracer, std::shared_ptr<void> depth) {
     if (!tracer)
@@ -190,14 +188,20 @@ namespace remix {
     // presentation (published before settings are prepared).
     const auto &frame = renderer();
     const bool perspective = frame.cameraValid() && upscale::supportsCamera(frame.projection());
-    const bool detectedLocal = frame.hasSphereLights() || frame.staticEmissiveCount() ||
-                               std::any_of(frame.draws().begin(), frame.draws().end(), [](const auto &draw) {
-                                 const auto &e = draw.material->emission;
-                                 return draw.traced() && (e[0] > 0 || e[1] > 0 || e[2] > 0);
-                               });
+    const bool detectedEmissive =
+        frame.staticEmissiveCount() || std::any_of(frame.draws().begin(), frame.draws().end(), [](const auto &draw) {
+          const auto &e = draw.material->emission;
+          return draw.traced() && (e[0] > 0 || e[1] > 0 || e[2] > 0);
+        });
     // Match the tracer's sticky local-light contract: temporary culling must
     // not repeatedly rebuild denoisers or discard their histories.
-    m_localSourcesSeen = settings.backend && (m_localSourcesSeen || detectedLocal);
+    m_localSourcesSeen = settings.backend && (m_localSourcesSeen || frame.hasSphereLights() || detectedEmissive);
+    // Emissive discovery can require split temporal lighting. Treat that as a
+    // prepared resource contract, not an in-place render-thread pipeline change.
+    m_emissiveSourcesSeen =
+        settings.backend &&
+        (m_emissiveSourcesSeen || (settings.trace.localLights && settings.trace.emissiveLights && detectedEmissive));
+    const bool emissive = m_emissiveSourcesSeen;
     // SIGMA's sun-only composition multiplies the whole direct signal by its
     // shadow mask. Reserve a separate local signal when local lighting is
     // enabled, so a newly appearing torch is never treated as sunlight while
@@ -209,8 +213,8 @@ namespace remix {
     // the workers meanwhile. Hold the first preparation for the world's
     // camera, within a bound.
     const auto now = std::chrono::steady_clock::now();
-    const bool wantsWorldCamera = !m_pathTracer && !m_preparation && settings.backend && m_traceSupported &&
-                                  settings.trace.upscaler != upscale::Mode::Off && !perspective;
+    const bool wantsWorldCamera = !m_pathTracer && !m_preparation && settings.backend == config::Backend::PathTrace &&
+                                  m_traceSupported && settings.trace.upscaler != upscale::Mode::Off && !perspective;
     if (!wantsWorldCamera)
       m_worldCameraWait = {};
     else if (m_worldCameraWait == std::chrono::steady_clock::time_point{})
@@ -218,7 +222,7 @@ namespace remix {
     const bool holding = wantsWorldCamera && now - m_worldCameraWait < std::chrono::seconds(120);
     // Not loading while held: the raster backend presents the menu as it is.
     m_worldCameraHold = holding;
-    const auto requestedKey = resourceKey(settings, m_swapchainExtent, perspective, local);
+    const auto requestedKey = resourceKey(settings, m_swapchainExtent, perspective, local, emissive);
     if (requestedKey != m_reconstructionFailureKey) {
       m_reconstructionFailureMask = 0;
       m_reconstructionFailure.clear();
@@ -227,7 +231,7 @@ namespace remix {
     if (m_pathTracer) {
       const auto reconstruction = m_pathTracer->upscalingStatistics();
       if (reconstruction.failed &&
-          requestedKey == resourceKey(m_appliedSettings, m_swapchainExtent, perspective, local)) {
+          requestedKey == resourceKey(m_appliedSettings, m_swapchainExtent, perspective, local, emissive)) {
         m_reconstructionFailureMask |= 1u << uint32_t(reconstruction.backend);
         m_reconstructionFailure = reconstruction.failure;
       }
@@ -258,6 +262,19 @@ namespace remix {
       }
       retireTracer(std::move(old.tracer), old.depth);
       it = m_obsoletePreparations.erase(it);
+    }
+    if (prepareForwardSettings()) {
+      retire();
+      if (m_pathTracer) {
+        const auto status = vkDeviceWaitIdle(m_device);
+        if (status != VK_SUCCESS)
+          throw status;
+        retireTracer(std::move(m_pathTracer), renderer().depthLifetime());
+      }
+      m_activePreparationKey.clear();
+      m_traceOptions = normalized(settings.trace);
+      preparePostProcessing();
+      return;
     }
     if (!settings.backend || !m_traceSupported) {
       retire();
@@ -307,7 +324,7 @@ namespace remix {
           tracer->initialize(physical, device, family, true, options.rasterPrimary, exposureState, micromaps);
           tracer->setNgx(ngx);
           tracer->configureTarget(pass, extent, depthFormat, depth);
-          tracer->prepareConfiguration(options, perspective, local, failedBackends, reconstructionFailure);
+          tracer->prepareConfiguration(options, perspective, local, emissive, failedBackends, reconstructionFailure);
           next->tracer = std::move(tracer);
           (void)sdkGuard;
         });
@@ -377,7 +394,8 @@ namespace remix {
     m_traceOptions.sharcReset = m_sharcReset;
     preparePostProcessing();
     std::copy(m_appliedSettings.clearColor.begin(), m_appliedSettings.clearColor.end(), m_clearColor);
-    m_loading = (m_preparation && needsNgx) || (settings.backend && m_traceSupported && !m_pathTracer && !holding) ||
+    m_loading = (m_preparation && needsNgx) ||
+                (settings.backend == config::Backend::PathTrace && m_traceSupported && !m_pathTracer && !holding) ||
                 m_ngxPreparing->load() != 0;
   }
 
@@ -401,10 +419,13 @@ namespace remix {
 
   remixapi_BackendCapabilitiesEXT RemixNativeRuntime::backendCapabilities() const {
     remixapi_BackendCapabilitiesEXT result = {.structSize = sizeof(result),
-                                              .supportedBackends = m_traceSupported ? 3u : 1u,
+                                              .supportedBackends =
+                                                  1u | (m_traceSupported ? 2u : 0u) | (m_forwardSupported ? 4u : 0u),
                                               .activeBackend = m_backend,
                                               .requestedBackend = m_profiles.current().backend};
-    std::strncpy(result.unavailableReason, m_traceUnavailable.c_str(), sizeof(result.unavailableReason) - 1);
+    const auto &reason =
+        m_profiles.current().backend == config::Backend::ForwardPlus ? m_forwardFailure : m_traceUnavailable;
+    std::strncpy(result.unavailableReason, reason.c_str(), sizeof(result.unavailableReason) - 1);
     return result;
   }
 
@@ -413,8 +434,7 @@ namespace remix {
     auto result = busy           ? busy->tracing
                   : m_pathTracer ? m_pathTracer->statistics()
                                  : remixapi_TracingStatisticsEXT{.structSize = sizeof(remixapi_TracingStatisticsEXT)};
-    result.redrawRequested = preparationPending() ||
-                             (m_backend && m_postProcessing && postProcessingStatistics().adapting) ||
+    result.redrawRequested = preparationPending() || (m_backend && postProcessingStatistics().adapting) ||
                              (m_backend && (result.redrawRequested || m_profiles.current().trace.accumulate)) ||
                              m_backend != m_targetBackend || m_profiles.current() != m_appliedSettings;
     return result;
@@ -504,6 +524,10 @@ namespace remix {
     stats.forkTextureCacheCount = raster.textureCount;
     stats.usedBufferBytes = raster.geometryBytes;
     stats.poolRetainedBytes = raster.pooledBytes;
+    const auto forward = forwardStatistics();
+    stats.usedBufferBytes += forward.bufferBytes;
+    stats.usedRenderTargetBytes += forward.targetBytes;
+    stats.usedAccelerationStructureBytes += forward.accelerationBytes;
     if (m_pathTracer) {
       stats.usedAccelerationStructureBytes =
           busy ? busy->tracing.accelerationBytes : m_pathTracer->statistics().accelerationBytes;
@@ -553,13 +577,16 @@ namespace remix {
     // Render thread idle: the last completed frame's values, for the getters
     // while the frame about to be handed over renders.
     auto &s = m_published;
+    s.forward = forwardStatistics();
     s.performance = m_framePerformance;
     s.breakdown = m_frameBreakdown;
     s.presentations = m_presentationCount;
     s.frameStarted = m_frameStarted;
     s.digest = (m_pathTracer ? m_pathTracer->frameDigest() : 0) * 31 + renderer().profile().digest;
     s.upscaling = m_pathTracer ? m_pathTracer->upscalingStatistics() : upscale::Statistics{};
-    s.post = m_postProcessing ? m_postProcessing->statistics() : postfx::Statistics{};
+    s.post = m_forward          ? m_forward->statistics().postProcessing
+             : m_postProcessing ? m_postProcessing->statistics()
+                                : postfx::Statistics{};
     if (m_pathTracer) {
       s.tracing = m_pathTracer->statistics();
       s.sharc = m_pathTracer->sharcStatistics();

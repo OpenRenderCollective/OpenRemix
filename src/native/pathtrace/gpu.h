@@ -126,7 +126,7 @@ namespace remix::trace::detail {
   };
   // TraceSurface: pathtrace/frame_tables.h.
   static_assert(sizeof(TraceVertex) == 48);
-  struct Frame {
+  struct alignas(16) Frame {
     Matrix inverseCamera, camera;
     float eye[4] = {}, direction[4] = {}, radiance[4] = {}; // radiance w: the sun's volumetric scale
     uint32_t config[4] = {}, target[4] = {};
@@ -192,7 +192,8 @@ namespace remix::trace::detail {
     // scattering albedo, extinction per world unit. volumeHeight: up axis,
     // density falloff per world unit. volumeEye/Previous: the windows' centre.
     uint64_t volumeGrid = 0;
-    // Seconds of the runtime's clock (wrapped), for scrolling maps; the world's
+    // Seconds of the runtime's clock (wrapped), zero without scrolling maps or
+    // during progressive reference accumulation; the world's
     // up axis (0 x, 1 y, 2 z: rtx.native.pathtrace.volumetricUpAxis).
     float animationTime = 0, upAxis = 2;
     uint32_t volumeConfig[4] = {}, volumeFrame[4] = {};
@@ -210,6 +211,7 @@ namespace remix::trace::detail {
     // IES profiles (scene/ies.h): kIesBins floats each, a sphere emitter's
     // corners[2].x the profile + 1.
     uint64_t iesProfiles = 0;
+
     uint32_t skyGuideConfig[4] = {};
     // Camera rays (pathtrace.comp ray()): inverseCamera relative to the eye,
     // which the shader adds back. In single precision the absolute matrix
@@ -223,8 +225,7 @@ namespace remix::trace::detail {
     // terminator lift length.
     uint64_t localProbeRead = 0, localProbeWrite = 0;
     float localProbeParams[4] = {};
-    // Volumetrics: each source's share of the scattered light (sun, lights,
-    // emissive surfaces, sky; the volumetric*Scale options).
+    // Volumetric source shares: sun, lights, emissive surfaces, sky.
     float volumeLightScales[4] = {1, 1, 1, 1};
     // The NUMOS sky's cloud shadow (sky::Renderer::cloudShadow): rows taking
     // a world position (w 1) to (u, v, slice) in its box; cloudShadowConfig:
@@ -243,11 +244,13 @@ namespace remix::trace::detail {
     // history restarts), right and up scaled to the image plane's half
     // extents, forward.
     float screenCameras[8][4][4] = {};
+    uint64_t sheetMaterials = 0; // Descriptor-indexed measured-sheet optics.
     // remixapi_InstanceInfoWoundCutEXT: the frame's wound vertices
     // (vertex-wound.comp; 0: none); scene units per metre of a subsurface
     // radius (rtx.subsurface.diffusionProfileScale in them) and the thickness scale.
     uint64_t woundVertices = 0;
     float subsurfaceUnits = 0, subsurfaceThickness = 1;
+    uint32_t rayPortalPadding[2] = {}; // The frame signature compares these bytes too.
     // remixapi_MaterialInfoPortalEXT by index (scene::RayPortals): the rows of
     // the map to the partner portal, then the front's normal with flags (w: 1
     // the pair is open, plus 2 when it moved since the last frame: what is
@@ -255,7 +258,7 @@ namespace remix::trace::detail {
     // camera ray (rtx.native.pathtrace.rayPortalTeleports), the exit offset
     // (float bits, rtx.native.pathtrace.rayPortalExitOffset), reserved.
     // rayPortalPlanes: each opening's plane (scene::RayPortals::planes).
-    float rayPortals[scene::rayPortalSlots][4][4] = {};
+    alignas(16) float rayPortals[scene::rayPortalSlots][4][4] = {};
     uint32_t rayPortalConfig[4] = {};
     float rayPortalPlanes[scene::rayPortalSlots] = {};
     // rtx.native.pathtrace.wavefrontIndirect: the wavefront indirect kernels'
@@ -265,9 +268,10 @@ namespace remix::trace::detail {
     uint64_t wavefrontPaths = 0;
     uint32_t wavefrontStride = 0, wavefrontFlags = 0;
   };
-  static_assert(sizeof(Frame) == 2912 && offsetof(Frame, wavefrontPaths) == 2896 &&
-                offsetof(Frame, rayPortalPlanes) == 2864 &&
-                offsetof(Frame, rayPortals) == 2336 && offsetof(Frame, woundVertices) == 2320 &&
+  static_assert(offsetof(Frame, sheetMaterials) == 2320 && offsetof(Frame, woundVertices) == 2328 &&
+                offsetof(Frame, subsurfaceUnits) == 2336 && offsetof(Frame, rayPortalPadding) == 2344 &&
+                offsetof(Frame, rayPortals) == 2352 && offsetof(Frame, rayPortalPlanes) == 2880 &&
+                offsetof(Frame, wavefrontPaths) == 2912 && sizeof(Frame) == 2928 &&
                 offsetof(Frame, screenCameras) == 1808 && offsetof(Frame, srgbTextures) == 1280 &&
                 offsetof(Frame, pathDebug) == 1792 && offsetof(Frame, localProbeRead) == 1168 &&
                 offsetof(Frame, localProbeParams) == 1184 && offsetof(Frame, volumeLightScales) == 1200 &&
@@ -279,6 +283,7 @@ namespace remix::trace::detail {
                 offsetof(Frame, cutConfig) == 816 && offsetof(Frame, orcaParams) == 800 &&
                 offsetof(Frame, regirConfig) == 752 && offsetof(Frame, restirCurrent) == 656 &&
                 offsetof(Frame, visibilityNodes) == 592 && offsetof(Frame, pathConfig) == 528 &&
+
                 offsetof(Frame, firefly) == 512 && offsetof(Frame, indirectResults) == 496 &&
                 offsetof(Frame, lightGuideRead) == 384 && offsetof(Frame, lightGuideConfig) == 400 &&
                 offsetof(Frame, lightNodes) == 336 && offsetof(Frame, localConfig) == 352 &&
@@ -662,7 +667,6 @@ namespace remix {
     // Emissive (surface) lights were present: only then is local lighting
     // split by family or into a separate pass (API "torch" lights alone use
     // the combined local signal).
-    bool emissiveSeen = false;
     uint32_t emissiveHold = 0; // frames the emissive estimator outlasts the last emissive light
     bool postLocalDenoise = false, postLocalDenoiseRequested = false;
 
@@ -687,7 +691,7 @@ namespace remix {
     std::chrono::steady_clock::time_point previousTime{}, pendingTime{};
     uint64_t historyResets = 0, denoisedFrames = 0, postPeakMemory = 0;
     std::vector<std::shared_ptr<Arena>> arenas;
-    std::unique_ptr<Buffer> scratch, table, uniform;
+    std::unique_ptr<Buffer> scratch, table, uniform, sheetMaterials;
     scene::LightBvh lightBvh;
     std::vector<scene::SphereLight> lightInput; // prepareScene's gathered lights (storage kept)
     scene::LightVisibility lightVisibility;
@@ -1087,7 +1091,7 @@ namespace remix {
       uint32_t compactionCapacity = 0;
       bool timingPending = false, sharcPending = false, guidingPending = false, reusePending = false,
            rayPending = false;
-      std::unique_ptr<Buffer> table, uniform, scratch, topScratch, instances[3], woundVertices;
+      std::unique_ptr<Buffer> table, uniform, scratch, topScratch, sheetMaterials, instances[3], woundVertices;
       uint64_t combinedPrefix = 0; // Tlas::prefix of the combined TLAS's instances
       std::unique_ptr<Buffer> tableUpload;
       std::vector<uint8_t> tableShadow;
@@ -1208,7 +1212,7 @@ namespace remix {
     std::chrono::steady_clock::time_point epoch = std::chrono::steady_clock::now();
 
     bool preparing = false, preparedRasterPrimary = true;
-    bool preparedPerspective = false, preparedLocal = false;
+    bool preparedPerspective = false, preparedLocal = false, preparedEmissive = false;
     void createRawPipelines();
     void configureFrame(const TraceOptions &options, bool perspective, bool local);
     ~Gpu();

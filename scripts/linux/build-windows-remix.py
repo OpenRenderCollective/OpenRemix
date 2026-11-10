@@ -48,11 +48,13 @@ def main():
     parser.add_argument('--output', type=Path, default=root / '_work/dist/windows/openremix',
                         help="the runtime's folder (a game's bin/win64/openremix); files are replaced, others kept")
     parser.add_argument('--cmake', default='cmake')
-    parser.add_argument('--jobs', type=int, default=8)
+    parser.add_argument('--jobs', type=int, default=8, help='Build job limit, also used to bound shader workers')
     parser.add_argument('--tests', action='store_true', help='run the test suite under Wine after building')
     parser.add_argument('--accept-msvc-license', action='store_true',
                         help="accept Microsoft's license for the CRT and Windows SDK xwin downloads (first run)")
     args = parser.parse_args()
+    if args.jobs < 1:
+        parser.error('--jobs must be positive')
     build, deps, output = args.build.resolve(), args.deps.resolve(), args.output.resolve()
     for tool in ('clang-cl', 'lld-link', 'llvm-lib', 'llvm-rc', 'llvm-mt', 'meson', 'ninja', 'pkg-config',
                  'patch', args.cmake) + (('wine',) if args.tests else ()):
@@ -195,10 +197,14 @@ pkg_config_libdir = '{prefix}/lib/pkgconfig'
 ''')
     # lld-link finds the CRT and SDK import libraries through LIB.
     env = dict(os.environ, LIB=';'.join(str(p) for p in libraries + [tbb / 'lib']))
+    # Ninja can run the generator beside a C++ compile. Leave one worker
+    # free for that compile on memory-limited runners.
+    shader_jobs = max(1, min(4, args.jobs - 1))
     setup = ['meson', 'setup', str(build), str(root), '--cross-file', str(cross),
              '-Dbuildtype=release', '-Dwerror=true', '-Ddeps_root=' + str(prefix),
              '-Dusd=true', '-Dusd_root=' + str(usd), '-Dusd_tbb_root=' + str(tbb),
              '-Djson_include=' + str(deps / 'json'), '-Ddlss=true', '-Dgpu_tests=false',
+             '-Dshader_jobs=' + str(shader_jobs),
              '-Denable_tests=' + ('true' if args.tests else 'false'),
              '-Dc_args=/Z7', '-Dcpp_args=/Z7', '-Dc_link_args=/DEBUG', '-Dcpp_link_args=/DEBUG']
     if (build / 'meson-private/coredata.dat').exists():

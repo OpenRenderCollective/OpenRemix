@@ -1,3 +1,4 @@
+#include "color.glsl"
 struct Vertex { vec4 position; vec4 uv; vec4 color; };
 vec3 vertexNormal(Vertex v) { return vec3(v.position.w,v.uv.zw); }
 vec3 shadingNormal(vec3 n,vec3 geometric,vec3 wo) {
@@ -8,6 +9,7 @@ vec3 shadingNormal(vec3 n,vec3 geometric,vec3 wo) {
 }
 layout(buffer_reference, std430, buffer_reference_align=16) readonly buffer Vertices { Vertex v[]; };
 layout(buffer_reference, std430, buffer_reference_align=4) readonly buffer Indices { uint i[]; };
+const uint measuredSheetMaterialFlag = 32768u;
 struct Surface {
   Vertices vertices;
   Indices indices;
@@ -24,7 +26,7 @@ struct Surface {
   vec4 emission;
   vec4 pbr;
   uvec4 pbrTextures;
-  // scene::MaterialDecode: x flags (self-illumination); the rest unused.
+  // scene::MaterialDecode: x flags (self-illumination, measured sheet, etc.).
   uvec4 material;
   // A thin film (frame_tables.h filmFields): strength (0: none), film index,
   // thickness in nm, structural colour; then half2(min, max) of the thickness
@@ -117,6 +119,7 @@ layout(set=0,binding=3,std140) uniform Frame {
   uint64_t skyGuideRead; // sky guiding: last frame's learned sky directions (0: none)
   uint64_t skyGuideWrite;
   uint64_t iesProfiles; // IES profiles (scene/ies.h): 256 floats each
+
   uvec4 skyGuideConfig; // slot capacity, cells per world unit (float bits), guided share (float bits), active
   mat4 inverseCameraRelative; // camera rays: world = point.xyz / point.w + eye.xyz
   uint64_t localProbeRead, localProbeWrite; // local occlusion probes: last frame's (0: none), this frame's
@@ -127,6 +130,7 @@ layout(set=0,binding=3,std140) uniform Frame {
   uvec4 srgbTextures[32]; // a bit per texture slot: sRGB-encoded texels (stored UNORM), decoded with pow 2.2
   uvec4 pathDebug; // path inspector: record buffer address (x low, y high), pixel (x | y << 16; ~0 none), capacity
   vec4 screenCameras[32]; // remixapi_CameraScreensEXT, 4 per slot: position (w: 1 set, +2 moved), right and up (half extents), forward
+  uint64_t sheetMaterials; // Optional measured-sheet optics, keyed by albedo descriptor.
   uint64_t woundVertices; float subsurfaceUnits,subsurfaceThickness; // remixapi_InstanceInfoWoundCutEXT: WoundVertex per wounded vertex (vertex-wound.comp)
   vec4 rayPortals[32]; // remixapi_MaterialInfoPortalEXT, 4 per index: the map to the partner (3 rows), the front's normal (w: 1 open pair, +2 moved)
   uvec4 rayPortalConfig; // teleports per camera ray, exit offset (float bits, world units), reserved
@@ -243,12 +247,16 @@ vec2 uvGradX=vec2(0),uvGradY=vec2(0);
 // A texel of texture slot `index` as linear colour: the slot's sRGB-encoded
 // texels (frame.srgbTextures) decoded with gamma 2.2, as filtered.
 vec4 slotTexel(uint index,vec4 texel) {
-  if(((frame.srgbTextures[index>>7u][(index>>5u)&3u]>>(index&31u))&1u)!=0u)texel.rgb=pow(texel.rgb,vec3(2.2));
-  return texel;
+  return decodeColorTexel(texel,((frame.srgbTextures[index>>7u][(index>>5u)&3u]>>(index&31u))&1u)!=0u);
 }
 // A material texture at mesh UV `uv`, filtered over the footprint.
 vec4 materialTexel(Surface s,uint index,vec2 uv) {
   return slotTexel(index,textureGrad(textures[nonuniformEXT(index)],uv*s.uv.xy+s.uv.zw,uvGradX*s.uv.xy,uvGradY*s.uv.xy));
+}
+vec2 intersectionUV(Surface s, uint triangle, vec2 bary) {
+  uint base = triangle * 3;
+  return s.vertices.v[s.indices.i[base]].uv.xy * (1 - bary.x - bary.y) +
+      s.vertices.v[s.indices.i[base + 1]].uv.xy * bary.x + s.vertices.v[s.indices.i[base + 2]].uv.xy * bary.y;
 }
 vec3 environmentRadiance(vec3 direction) {
   if(frame.skyRadiance.w<=0)return frame.skyRadiance.rgb;
@@ -535,7 +543,8 @@ vec4 combineColor(uint op, vec4 a, vec4 b) { return op == 7 ? vec4(mix(a.rgb, mi
 // background unchanged, regardless of their RGB. Only authored thin-sheet
 // materials (constant opacity or glass) retain the colored-transmission model.
 vec3 transmissionColor(vec3 color, bool tinted) { return tinted ? color : vec3(1); }
-// What a sheet met at distance t along a light or shadow ray lets through. A
+// A measured sheet has finite, angle-dependent transmission independent of t.
+// Legacy translucent bodies retain their existing segment-distance model. A
 // translucent body (frame_tables.h materialFields: refractive index and
 // measurement distance in pbr.w) passes its colour to the power of t over the
 // measurement distance (the ray's length inside it, as from a surface under
@@ -549,10 +558,22 @@ vec3 transmissionColor(vec3 color, bool tinted) { return tinted ? color : vec3(1
 vec3 bodyTransmittance(vec3 color, float t, float d) {
   return d<0 ? vec3(clamp(1+t/d,0,1)) : pow(clamp(color,vec3(1e-4),vec3(1)),vec3(t/max(d,1e-3)));
 }
-// Light crossing a fog body (Source's water) passes unfogged: Source fogs only
-// what the camera sees through it (its lightmaps ignore the water), and
-// fogging the light as well darkened the bottom twice.
-vec3 sheetTransmission(Surface s, vec4 color, float t) {
+#include "../../forward/shaders/dielectric.glsl"
+struct SheetMaterial { vec4 depth, parameters; };
+layout(buffer_reference,std430,buffer_reference_align=16) readonly buffer SheetMaterials { SheetMaterial data[]; };
+vec2 sheetTintUv(SheetMaterial sheet, vec2 uv) {
+  return uv + vec2(sheet.depth.w, sheet.parameters.w) * frame.animationTime;
+}
+vec3 sheetTransmission(Surface s, vec4 color, uint triangle, vec2 bary, float cosine, float t) {
+  if ((s.material.x & measuredSheetMaterialFlag) != 0u && frame.sheetMaterials != 0) {
+    SheetMaterial sheet = SheetMaterials(frame.sheetMaterials).data[s.textureState.x];
+    // Light visibility has no camera footprint. Do not inherit UV gradients
+    // left by shading the receiver; coverage traversal also uses the finest mip.
+    vec2 uv = sheetTintUv(sheet, intersectionUV(s, triangle, bary)) * s.uv.xy + s.uv.zw;
+    vec3 tint = textureLod(textures[nonuniformEXT(s.textureState.x)], uv, 0).rgb;
+    vec3 depth = min(sheet.depth.rgb - log(clamp(tint, vec3(1e-6), vec3(1))) * sheet.parameters.z, vec3(80));
+    return dielectricSheet(depth, 1, cosine, 1, sheet.parameters.x).transmission;
+  }
   if ((s.state.w&8)!=0 && s.pbr.w!=0) {
     vec2 body=unpackHalf2x16(floatBitsToUint(s.pbr.w));
     float f0=(body.x-1)/(body.x+1);

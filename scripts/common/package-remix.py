@@ -28,11 +28,12 @@ for directory in ['bin', 'lib', 'include/remix', 'share/remix/licenses']:
 licenses = output / 'share/remix/licenses'
 for name in ['LICENSE', 'ThirdPartyLicenses.txt', 'README.md']:
     shutil.copy2(root / name, output / 'share/remix' / name)
-for name in ['remix.h', 'remix_c.h', 'remix_native_ext.h', 'remix_reconstruction_ext.h', 'remix_sky_ext.h']:
-    shutil.copy2(root / 'public/include/remix' / name, output / 'include/remix' / name)
+for header in sorted((root / 'public/include/remix').glob('*.h')):
+    shutil.copy2(header, output / 'include/remix' / header.name)
 shutil.copy2(root / 'third_party/imgui/LICENSE.txt', licenses / 'ImGui.txt')
 shutil.copy2(root / 'third_party/image/LICENSES.txt', licenses / 'ImageDecoders.txt')
 shutil.copy2(root / 'src/native/pathtrace/shaders/LICENSE-eon.txt', licenses / 'EON.txt')
+shutil.copy2(root / 'src/native/forward/shaders/SBOX-LICENSE.txt', licenses / 'sbox-SSR.txt')
 for source, name in [('LICENSE.txt','NRD.txt'), ('External/MathLib/LICENSE.txt','MathLib.txt'),
                      ('External/ShaderMake/LICENSE.txt','ShaderMake.txt'), ('External/sse2neon/LICENSE','sse2neon.txt')]:
     shutil.copy2(root / 'third_party/nrd' / source, licenses / name)

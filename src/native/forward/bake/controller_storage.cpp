@@ -1,0 +1,151 @@
+#include "forward/bake/job.h"
+#include "forward/bake/cache.h"
+#include "forward/bake/receiver_report.h"
+#include "forward/bake/storage_options.h"
+#include "forward/mixed/chart_highlights.h"
+#include "forward/mixed/directional_links.h"
+#include <algorithm>
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <new>
+
+namespace remix::forward::bake {
+  void Controller::Job::prepareDiffusePublicationData(uint64_t storageRange, const Config &config) {
+    prepareGroupedStyles(storageRange, config);
+    if (!mixed::chartHighlightsEnabled() || !config.aggregateDiffuse ||
+        irradianceContents != IrradianceContents::Combined) return;
+
+    const auto start = std::chrono::steady_clock::now();
+    try {
+      chartHighlights = mixed::ChartHighlightField::prepare(*mixedLights, surfaceLayout, surfacePixels,
+          groupedStyles.styles, cancellation.get_token());
+    } catch (const std::bad_alloc &) {
+      chartHighlights.reset(); // The ordinary light list needs no optional field.
+    }
+    if (const auto &field = chartHighlights) {
+      const auto bytes = field->visibility.size() + field->points.size() * sizeof(Point) +
+                         field->chartOffsets.size() * sizeof(uint32_t) + field->exactOcclusion.bytes();
+      std::fprintf(stderr, "Forward chart highlight worker: %zu blocks, %zu bytes, %.3f ms\n",
+          field->points.size(), bytes, std::chrono::duration<double, std::milli>(
+              std::chrono::steady_clock::now() - start).count());
+    }
+  }
+
+  void Controller::Job::prepareGroupedStyles(uint64_t storageRange, const Config &config) {
+    if (!config.groupedStyledDirect || !directionalFieldsRequested() || !completeDirectionals ||
+        !localProbes || !localProbes->directional() || styleIds(*source).empty()) return;
+    const uint64_t reserved = gridBytes(grid) +
+                               localProbes->gpuBytes() + 15;
+    if (reserved + sparse::headerWords * 4 > storageRange) return;
+    const auto began = std::chrono::steady_clock::now();
+    auto stageBegan = began;
+    double compositionMs = 0, reportMs = 0, mergeMs = 0;
+    auto finishStage = [&] {
+      const auto now = std::chrono::steady_clock::now();
+      const double milliseconds = std::chrono::duration<double, std::milli>(now - stageBegan).count();
+      stageBegan = now;
+      return milliseconds;
+    };
+    const uint64_t budget = std::min(uint64_t(config.styleStorageMiB) << 20, storageRange - reserved);
+    try {
+      const auto owners = mixed::positiveDirectionalLinks(*mixedLights, cancellation.get_token());
+      groupedStyles = groupStyledDirect(*source, surfaceLayout, owners, directionalWords,
+                                         *localProbes, budget, cancellation.get_token());
+      compositionMs = finishStage();
+      dumpGroupedDirectReport(*source, surfaceLayout, surfacePixels, grid, directionalWords,
+                                groupedStyles, cancellation.get_token());
+      reportMs = finishStage();
+      if (!styleWords.empty() && !groupedStyles.styles.empty()) {
+        auto combined = sparse::sumComponents(styleWords, groupedStyles.words,
+            {surfaceLayout.pageSize, surfaceLayout.pages, uint32_t(grid.probes.size())},
+            styleIds(*source), budget, cancellation.get_token());
+        if (combined) groupedStyles.words = std::move(*combined);
+        else {
+          for (uint32_t style : groupedStyles.styles)
+            groupedStyles.declined.push_back({style, StyledDirectDecline::Storage});
+          groupedStyles.styles.clear();
+          groupedStyles.words.clear(); // Existing indirect data remains authoritative.
+        }
+        mergeMs = finishStage();
+      }
+    } catch (const std::bad_alloc &) {
+      groupedStyles = {}; // Optional derivation; the original cache and runtime path remain valid.
+    }
+    std::fprintf(stderr, "Forward grouped styled direct: %zu groups, %zu declined, %zu bytes, %.3f ms"
+                         " (composition_ms=%.3f report_ms=%.3f merge_ms=%.3f)\n",
+                 groupedStyles.styles.size(), groupedStyles.declined.size(), groupedStyles.words.size() * 4,
+                 std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - began).count(),
+                 compositionMs, reportMs, mergeMs);
+    logGroupedDirectDeclines(*source, *localProbes, groupedStyles);
+  }
+  void Controller::Job::prepareSurfaceStorage() {
+    const char *override = std::getenv("REMIX_DEBUG_UNIFIED_MASKS");
+    if (surfacePixels.empty()) return;
+    const auto began = std::chrono::steady_clock::now();
+    const uint64_t visibilityBytes = uint64_t(surfaceLayout.pageSize) * surfaceLayout.pageSize * surfaceLayout.pages * 8;
+    const uint64_t budget = std::min<uint64_t>(mixed::Masks::maximumPublishedBytes,
+        mixed::Masks::maximumBytes + visibilityBytes);
+    if (!override || std::strcmp(override, "0") != 0)
+      unifiedMasks = mixed::unifyMasks(*mixedLights, surfaceLayout, surfacePixels, budget, cancellation.get_token());
+    std::fprintf(stderr, "Forward unified visibility preparation: %.3f ms, fits %u\n",
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - began).count(),
+        unsigned(bool(unifiedMasks)));
+    // The codec reduces memory, but its indexed shader lookup still needs
+    // matched performance acceptance. Keep it opt-in until that gate passes.
+    if (!directionalFieldsRequested() || completeDirectionals) return;
+    const auto directBegan = std::chrono::steady_clock::now();
+    size_t owners = 0;
+    try {
+      const auto fields = mixed::retainedDirectionals(*mixedLights, surfaceLayout, surfacePixels,
+          mixed::DirectionalFields::defaultBytes, cancellation.get_token());
+      if (fields) {
+        owners = fields->size();
+        // An empty directory can also replace the otherwise unused nine
+        // directional layers when no local light retains direct attribution.
+        directionalWords = fields->words(cancellation.get_token());
+      }
+    } catch (const std::bad_alloc &) {
+      // This is an optional, complete replacement. Memory pressure keeps the
+      // existing atlas; cancellation and invalid input still propagate.
+      directionalWords.clear();
+    }
+    std::fprintf(stderr, "Forward directional field preparation: %.3f ms, %zu owners, %zu encoded bytes\n",
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - directBegan).count(),
+        owners, directionalWords.size() * sizeof(uint32_t));
+  }
+  std::unique_ptr<const cache::Snapshot> Controller::Job::takeCacheSnapshot() {
+    auto snapshot = std::make_unique<cache::Snapshot>();
+    snapshot->contents = irradianceContents;
+    snapshot->takeGrid(grid);
+    // Keep only serialized allocations/mappings, never transient sample arrays.
+    snapshot->layout.pageSize = surfaceLayout.pageSize;
+    snapshot->layout.pages = surfaceLayout.pages;
+    snapshot->layout.luxelMetres = surfaceLayout.luxelMetres;
+    snapshot->layout.seamSamples = surfaceLayout.seamSamples;
+    snapshot->layout.curvedSeamSamples = surfaceLayout.curvedSeamSamples;
+    snapshot->layout.charts = std::move(surfaceLayout.charts);
+    snapshot->layout.mappings = std::move(surfaceLayout.mappings);
+    snapshot->mixed.lights = std::move(mixedLights->lights);
+    snapshot->mixed.charts = std::move(mixedLights->charts);
+    snapshot->mixed.directCharts = std::move(mixedLights->directCharts);
+    snapshot->mixed.overflow = mixedLights->overflow;
+    snapshot->mixed.occlusion = std::move(mixedLights->occlusion);
+    snapshot->mixed.masks = std::move(mixedLights->masks);
+    snapshot->diffuseReference = diffuseReference;
+    snapshot->reflectionKey = reflectionCacheKey;
+    snapshot->reflectionOwner = reflections.retainPayload();
+    snapshot->pixels = std::move(surfacePixels);
+    snapshot->styles = std::move(styleWords);
+    snapshot->localProbes = std::move(localProbes);
+    snapshot->directionalAttempted = directionalAttempted;
+    snapshot->directionalBudget = directionalBudget;
+    if (completeDirectionals) snapshot->directionals = std::move(directionalWords);
+    snapshot->surfaceSamples = surfaceReceived;
+    snapshot->directDiffuse = hasDirectDiffuse;
+    snapshot->sun = hasSun;
+    snapshot->localReflections = std::move(localReflectionCache);
+    return snapshot;
+  }
+}

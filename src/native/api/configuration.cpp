@@ -37,6 +37,8 @@ namespace remix::api {
       return g_runtime.selectBackend(value);
     if (std::strncmp(key, "rtx.native.pathtrace.", 21) == 0)
       return g_runtime.configureTracing(key + 21, value);
+    if (std::strncmp(key, "rtx.native.forward.", 19) == 0)
+      return g_runtime.configureSetting(key, value);
     const bool clearColor =
         std::strlen(key) == 23 && std::strncmp(key, "rtx.native.clearColor.", 22) == 0 && std::strchr("rgba", key[22]);
     if (std::strcmp(key, "rtx.native.vsync") == 0 || clearColor ||
@@ -46,7 +48,12 @@ namespace remix::api {
         std::strcmp(key, "rtx.native.meshes.refreshInPlace") == 0 || std::strcmp(key, "rtx.native.hostPasses") == 0 ||
         std::strcmp(key, "rtx.native.scene.persistentStatic") == 0 ||
         std::strcmp(key, "rtx.native.scene.persistentStaticValidation") == 0 ||
-        std::strcmp(key, "rtx.native.asyncPresent") == 0 || std::strcmp(key, "rtx.native.frameGeneration") == 0 ||
+        std::strcmp(key, "rtx.native.asyncPresent") == 0 ||
+        std::strcmp(key, "rtx.native.hdr") == 0 ||
+        std::strcmp(key, "rtx.native.hdrPeakNits") == 0 ||
+        std::strcmp(key, "rtx.native.hdrPaperWhiteNits") == 0 ||
+        std::strcmp(key, "rtx.native.hdrUiNits") == 0 ||
+        std::strcmp(key, "rtx.native.frameGeneration") == 0 ||
         std::strcmp(key, "rtx.native.frameGenerationBackend") == 0 ||
         std::strcmp(key, "rtx.native.frameGenerationFrames") == 0 || std::strcmp(key, "rtx.native.lowLatency") == 0 ||
         std::strcmp(key, "rtx.native.gpuPassTimers") == 0 || std::strncmp(key, "rtx.native.sky.", 15) == 0 ||

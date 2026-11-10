@@ -1,0 +1,34 @@
+#ifndef FORWARD_EMITTER_GLSL
+#define FORWARD_EMITTER_GLSL
+// Matches pathtrace/shaders/light_bvh.glsl: softness is the fraction of the
+// outer cone angle occupied by its transition, rather than a cosine interval.
+float emitterConeWeight(vec3 axis, float outer, float softness, float focus, vec3 outgoing) {
+  float cosine = dot(axis, outgoing);
+  float weight = focus > 0 ? pow(max(cosine, 0), focus) : 1;
+  if (outer <= -1) return weight;
+  if (cosine <= outer) return 0;
+  float inner = cos(acos(clamp(outer, -1, 1)) * (1 - clamp(softness, 0, 1)));
+  return weight * (inner > outer ? smoothstep(outer, inner, cosine) : 1);
+}
+// Runtime lights prepare the angular transition once on the CPU. Bake inputs
+// retain their authored softness and use emitterConeWeight above.
+float preparedEmitterConeWeight(vec3 axis, float outer, float inner, float focus, vec3 outgoing) {
+  float cosine = dot(axis, outgoing);
+  float weight = focus > 0 ? pow(max(cosine, 0), focus) : 1;
+  if (outer <= -1) return weight;
+  if (cosine <= outer) return 0;
+  return weight * (inner > outer ? smoothstep(outer, inner, cosine) : 1);
+}
+// 1-sqrt(1-x) loses distant emitters to float cancellation. The equivalent
+// quotient retains their radial inverse-square energy, as in the path tracer.
+float sphereOneMinusCos(float distanceSquared, float radius) {
+  if (distanceSquared <= radius * radius) return 2;
+  float sineSquared = min(1, radius * radius / max(distanceSquared, 1e-20));
+  return sineSquared / (1 + sqrt(max(0, 1 - sineSquared)));
+}
+float emitterRangeFade(float distance, float influence, float sphereFadeRange, bool triangle) {
+  // Triangle vertices occupy the sphere's optional uncapped range field.
+  float range = triangle ? influence : max(influence, sphereFadeRange);
+  return pow(clamp(1 - pow(distance / range, 4), 0, 1), 2);
+}
+#endif

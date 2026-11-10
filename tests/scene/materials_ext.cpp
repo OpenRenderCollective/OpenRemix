@@ -1,20 +1,199 @@
 // The per-instance material (remixapi_InstanceInfoMaterialEXT) and dynamic
 // textures.
-#include "scene/fixtures.h"
 #include "scene/emission.h"
+#include "scene/fixtures.h"
 #include "scene/opacity.h"
 #include "scene/temporal.h"
+#include <remix/remix_reflection_ext.h>
 #include <chrono>
-#include <thread>
 #include <cmath>
 #include <cstring>
 #include <filesystem>
 #include <limits>
+#include <thread>
 
 using namespace remix::test;
 namespace scene = remix::scene;
 
 namespace {
+  std::shared_ptr<scene::Material> drawn(remix::NativeResources &r, remixapi_MeshHandle mesh);
+  void reflectionBinding() {
+    remix::NativeResources r;
+    remixapi_MaterialInfoOpaqueEXT opaque{};
+    opaque.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
+    opaque.albedoConstant = {1, 1, 1}; opaque.opacityConstant = 1; opaque.alphaTestType = 7;
+    remixapi_MaterialReflectionBindingEXT binding{
+        REMIXAPI_STRUCT_TYPE_MATERIAL_REFLECTION_BINDING_EXT, &opaque, 501, UINT64_MAX};
+    remixapi_MaterialInfo info{};
+    info.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO; info.hash = 0x912; info.pNext = &binding;
+    remixapi_MaterialHandle handle;
+    r.createMaterial(info, handle);
+    const auto first = drawn(r, quad(r, 0x913, handle));
+    const auto receiver = r.draws().back().reflectionMaterial;
+    require(r.materialReflection(receiver) == scene::ReflectionBinding{501, UINT64_MAX},
+            "Opaque materials retain exact scene-scoped reflection identities");
+    const auto boundMesh = quad(r, 0x916, handle);
+    const auto replacement = material(r, 0x917, .2f, .3f, .4f);
+    r.addModMaterial(info.hash, replacement);
+    r.finishFrame();
+    drawn(r, boundMesh);
+    require(r.draws().back().material->tint[0] == .2f &&
+                r.materialReflection(r.draws().back().reflectionMaterial) == scene::ReflectionBinding{501, UINT64_MAX},
+            "Shading replacements preserve the source receiver's authored reflection assignment");
+    r.clearModMaterials();
+    auto frozenIdentity = [&] {
+      r.finishFrame();
+      drawn(r, boundMesh);
+      scene::BakeScene snapshot;
+      snapshot.ready = true;
+      snapshot.draws.push_back(r.draws().back());
+      snapshot.draws.back().classification = REMIXAPI_INSTANCE_STATIC_EXT;
+      scene::freezeBakeScene(snapshot);
+      return snapshot.contentHash;
+    };
+    const auto originalBake = frozenIdentity();
+    const auto retained = r.createRetained(instance(boundMesh));
+    r.finishFrame();
+    r.drawRetained(nullptr);
+    remixapi_BakeSceneInfoEXT bake{};
+    bake.structSize = sizeof(bake); bake.version = REMIXAPI_BAKE_SCENE_VERSION_EXT;
+    bake.sceneId = 501; bake.revision = 1; bake.sceneScale = 1;
+    bake.state = REMIXAPI_BAKE_SCENE_READY_EXT; bake.instanceCount = 1; bake.instances = &retained;
+    r.setBakeScene(&bake);
+    const auto captured = r.bakeScene();
+    remix::NativeResources published;
+    r.publishFrame(published);
+    binding.volumeId = 3;
+    r.createMaterial(info, handle);
+    require(drawn(r, quad(r, 0x914, handle)) == first && !first->retired &&
+                r.materialReflection(receiver) == scene::ReflectionBinding{501, 3} &&
+                published.materialReflection(receiver) == scene::ReflectionBinding{501, UINT64_MAX},
+            "Binding-only updates preserve shading ownership and independently published frame metadata");
+    r.finishFrame();
+    r.drawRetained(nullptr);
+    require(r.retainedStatistics().resolved == 0 &&
+                r.materialReflection(r.draws().back().reflectionMaterial).volumeId == 3,
+            "Cached retained receivers resolve against current binding metadata without geometry replacement");
+    r.setBakeScene(&bake);
+    require(r.bakeScene() == captured,
+            "Binding metadata updates reuse the actual frozen bake snapshot and receiver ownership");
+    require(frozenIdentity() == originalBake,
+            "Changing only the receiver reflection binding preserves frozen diffuse lighting identity");
+    binding.sceneId = 0;
+    rejected([&] { r.createMaterial(info, handle); });
+    binding.sceneId = 501; binding.volumeId = 0;
+    rejected([&] { r.createMaterial(info, handle); });
+    binding.sceneId = 0;
+    r.createMaterial(info, handle);
+    drawn(r, quad(r, 0x915, handle));
+    require(r.materialReflection(receiver).volumeId == 0 &&
+                published.materialReflection(receiver).volumeId == UINT64_MAX,
+            "Zero binding explicitly retains ordinary local reflection selection");
+    binding.sceneId = 501; binding.volumeId = 3;
+    opaque.albedoConstant = {.3f, .4f, .5f};
+    r.createMaterial(info, handle);
+    const auto refreshed = drawn(r, boundMesh);
+    require(refreshed != first && refreshed->tint[0] == .3f &&
+                r.materialReflection(receiver) == scene::ReflectionBinding{501, 3},
+            "A shading refresh replaces shader resources while retaining the receiver assignment");
+    remix::NativeResources refreshedFrame;
+    r.publishFrame(refreshedFrame);
+    r.destroyMaterial(handle);
+    require(r.materialReflection(receiver) == scene::ReflectionBinding{} &&
+                refreshedFrame.materialReflection(receiver) == scene::ReflectionBinding{501, 3},
+            "Material destruction clears future bindings without mutating an already published frame");
+    info.pNext = &opaque;
+    r.createMaterial(info, handle);
+    require(r.materialReflection(receiver) == scene::ReflectionBinding{},
+            "Reusing an unbound material hash cannot inherit a destroyed receiver assignment");
+    info.pNext = &binding;
+    r.createMaterial(info, handle);
+    r.destroyRetained(&retained, 1);
+    r.reset();
+    require(r.materialReflection(receiver) == scene::ReflectionBinding{} &&
+                refreshedFrame.materialReflection(receiver) == scene::ReflectionBinding{501, 3},
+            "Scene reset clears binding metadata while published frames retain their own ownership");
+  }
+  void replacementKeys() {
+    remix::NativeResources r;
+    remixapi_MaterialInfoOpaqueEXT opaque{};
+    opaque.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
+    opaque.albedoConstant = {1, 1, 1};
+    opaque.opacityConstant = 1;
+    opaque.alphaTestType = 7;
+    uint64_t keys[] = {0, 901, 901, 902, 900, 800};
+    remixapi_MaterialReplacementKeysEXT alternates{};
+    alternates.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_REPLACEMENT_KEYS_EXT;
+    alternates.count = 6;
+    alternates.keys = keys;
+    remixapi_MaterialInfoReplacementHashEXT primary{};
+    primary.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_REPLACEMENT_HASH_EXT;
+    primary.materialHash = 900;
+    primary.pNext = &alternates;
+    opaque.pNext = &primary;
+    remixapi_MaterialInfo info{};
+    info.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
+    info.pNext = &opaque;
+    info.hash = 800;
+    remixapi_MaterialHandle handle;
+    r.createMaterial(info, handle);
+    const auto mesh = quad(r, 810, handle);
+    const auto original = drawn(r, mesh);
+    require(original->replacementKeys == std::vector<uint64_t>({901, 902}),
+            "Alternate material keys omit zero, duplicates and the primary key");
+    keys[1] = 999;
+    require(original->replacementKeys[0] == 901, "Material creation must own its alternate key array");
+    const auto strong = material(r, 820, .2f, .3f, .4f);
+    const auto weak = material(r, 821, .6f, .7f, .8f);
+    r.addModMaterial(902, weak);
+    r.finishFrame();
+    require(drawn(r, mesh)->tint[0] == .6f,
+            "An available alternate applies while the preferred key is unavailable");
+    r.addModMaterial(901, strong);
+    r.finishFrame();
+    require(drawn(r, mesh)->tint[0] == .2f, "The first available alternate replaces the material");
+    r.addModMaterial(900, weak);
+    r.finishFrame();
+    require(drawn(r, mesh)->tint[0] == .6f, "The single source key takes priority over alternate keys");
+    r.addModMaterial(800, strong);
+    r.finishFrame();
+    require(drawn(r, mesh)->tint[0] == .2f, "The material's own key retains highest priority");
+    r.clearModMaterials();
+    r.addModMaterial(902, weak);
+    r.finishFrame();
+    require(drawn(r, mesh)->tint[0] == .6f, "An absent preferred key permits a compatibility fallback");
+    r.clearModMaterials();
+    const auto retained = r.createRetained(instance(mesh));
+    remixapi_BakeSceneInfoEXT bake{};
+    bake.structSize = sizeof(bake);
+    bake.version = REMIXAPI_BAKE_SCENE_VERSION_EXT;
+    bake.sceneId = bake.revision = 1;
+    bake.sceneScale = 1;
+    bake.state = REMIXAPI_BAKE_SCENE_READY_EXT;
+    bake.instanceCount = 1;
+    bake.instances = &retained;
+    r.setBakeScene(&bake);
+    const auto snapshot = r.bakeScene();
+    alternates.count = 33;
+    rejected([&] { r.createMaterial(info, handle); });
+    alternates.count = 1;
+    alternates.keys = nullptr;
+    rejected([&] { r.createMaterial(info, handle); });
+    alternates.count = 0;
+    r.createMaterial(info, handle);
+    r.finishFrame();
+    require(drawn(r, mesh)->replacementKeys.empty() && original->replacementKeys.size() == 2,
+            "Empty aliases replace live metadata without mutating an existing material");
+    r.finishFrame();
+    r.drawRetained(nullptr);
+    require(r.retained(retained)->records.front().material->replacementKeys.empty(),
+            "Retained instances refresh after the material's alternate keys change");
+    r.setBakeScene(&bake);
+    require(snapshot && r.bakeScene()->contentHash == snapshot->contentHash &&
+                snapshot->draws.front().material->replacementKeys.size() == 2,
+            "Matching metadata preserves transport identity and immutable snapshot metadata");
+  }
+
   std::shared_ptr<scene::Material> drawn(remix::NativeResources &r, remixapi_MeshHandle mesh) {
     auto info = instance(mesh);
     r.drawInstance(info);
@@ -78,7 +257,8 @@ namespace {
   // and what was made from it stay; only the pixels change.
   void dynamicTexture() {
     remix::NativeResources r;
-    const uint8_t red[4][4] = {{0, 0, 255, 255}, {0, 0, 255, 255}, {0, 0, 255, 255}, {0, 0, 255, 255}}; // B8G8R8A8
+    const uint8_t red[4][4] = {
+        {0, 0, 255, 255}, {0, 0, 255, 255}, {0, 0, 255, 255}, {0, 0, 255, 255}}; // B8G8R8A8
     remixapi_TextureInfoDynamicEXT dynamic{};
     dynamic.sType = REMIXAPI_STRUCT_TYPE_TEXTURE_DYNAMIC_EXT;
     dynamic.dynamic = 1;
@@ -118,7 +298,8 @@ namespace {
       remixapi_MaterialHandle mh{};
       r.createMaterial(m, mh);
       const auto t = drawn(r, quad(r, 0x57, mh))->texture;
-      require(t->dynamic && t->pixels.mips.size() == 2 && t->pixels.mips[1][0] == 255, "Dynamic texture with mips");
+      require(t->dynamic && t->pixels.mips.size() == 2 && t->pixels.mips[1][0] == 255,
+              "Dynamic texture with mips");
       const uint8_t green[16] = {0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255};
       r.updateTexture(mipped, 0, 0, 2, 2, REMIXAPI_FORMAT_R8G8B8A8_UNORM, green, 8);
       std::lock_guard lock(t->updates->lock);
@@ -170,7 +351,8 @@ namespace {
     require(texture->dynamic && texture->updates && texture->pixels.mips.size() == 1 &&
                 texture->pixels.mips[0][0] == 255 && texture->pixels.mips[0][2] == 0,
             "Dynamic texture creation");
-    const uint64_t fingerprint = texture->fingerprint(), signature = scene::TemporalHistory::materialSignature(draw);
+    const uint64_t fingerprint = texture->fingerprint(),
+                   signature = scene::TemporalHistory::materialSignature(draw);
 
     // Estimates of the first image.
     scene::SurfaceEmissionCache emission;
@@ -210,7 +392,8 @@ namespace {
     r.drawInstance(info2);
     require(r.draws().back().material == draw.material && r.draws().back().material->texture == texture &&
                 texture->fingerprint() == fingerprint &&
-                scene::TemporalHistory::materialSignature(r.draws().back()) == signature && texture->pixels.srgb,
+                scene::TemporalHistory::materialSignature(r.draws().back()) == signature &&
+                texture->pixels.srgb,
             "An update changed the texture's identity");
     // The emissive estimate is the first image's until it is old enough, for
     // this surface and for a new one of the same material.
@@ -228,7 +411,8 @@ namespace {
     for (const auto &triangle : *second)
       for (int c = 0; c < 3; ++c)
         sum[c] += triangle.radiance[c];
-    require(second != first && sum[0] > .5f && sum[1] > .5f && sum[2] == 0, "Emission did not follow the new image");
+    require(second != first && sum[0] > .5f && sum[1] > .5f && sum[2] == 0,
+            "Emission did not follow the new image");
     require(emission.reduce(draw, uv) == second, "Emission of an unchanged image was estimated again");
     // A direct estimate reads the current pixels.
     r.updateTexture(handle, 0, 0, 2, 2, REMIXAPI_FORMAT_B8G8R8A8_SRGB, red, 8);
@@ -241,12 +425,14 @@ namespace {
     r.createTexture(info, handle);
     r.finishFrame();
     r.drawInstance(info2);
-    require(r.draws().back().material->texture == texture, "CreateTexture replaced a material's dynamic texture");
+    require(r.draws().back().material->texture == texture,
+            "CreateTexture replaced a material's dynamic texture");
   }
 
   // remixapi_MaterialPbrRemapEXT and the SSBump normal encoding.
   void pbrRemap() {
     remix::NativeResources r;
+    const auto texturePath = std::filesystem::path("0x61").native();
     const uint8_t texel[4] = {0, 0, 255, 128};
     remixapi_TextureInfo texture{};
     texture.sType = REMIXAPI_STRUCT_TYPE_TEXTURE_INFO;
@@ -271,11 +457,7 @@ namespace {
     opaque.albedoConstant = {1, 1, 1};
     opaque.opacityConstant = 1;
     opaque.alphaTestType = 7;
-#ifdef _WIN32
-    opaque.roughnessTexture = L"0x61";
-#else
-    opaque.roughnessTexture = "0x61";
-#endif
+    opaque.roughnessTexture = texturePath.c_str();
     remixapi_MaterialInfo info{};
     info.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
     info.pNext = &opaque;
@@ -307,11 +489,7 @@ namespace {
     encoding.encoding = 5;
     rejected([&] { r.createMaterial(info, handle); }); // a roughness map
     opaque.roughnessTexture = nullptr;
-#ifdef _WIN32
-    info.normalTexture = L"0x61";
-#else
-    info.normalTexture = "0x61";
-#endif
+    info.normalTexture = texturePath.c_str();
     info.hash = 0x63;
     r.createMaterial(info, handle);
     const auto water = drawn(r, quad(r, 0x64, handle));
@@ -344,6 +522,81 @@ namespace {
     bodyInfo.hash = 0x67;
     r.createMaterial(bodyInfo, handle);
     const auto sheet = drawn(r, quad(r, 0x68, handle));
+    const auto originalBody = body;
+    const auto originalBodyInfo = bodyInfo;
+    require(sheet->transmission && !sheet->pbr && sheet->transmittanceDistance == 0,
+            "Thin translucent sheet");
+    body.thinWallThickness_value = .25f;
+    bodyInfo.hash = 0x671;
+    r.createMaterial(bodyInfo, handle);
+    const auto measuredSheet = drawn(r, quad(r, 0x681, handle));
+    require(measuredSheet->thinWallThickness == .25f && measuredSheet->transmittanceDistance == 300 &&
+                measuredSheet->refractiveIndex == 1.333f,
+            "A positive measured sheet retains finite thickness and optical units");
+    remixapi_MaterialTransmittanceScrollEXT tintScroll{};
+    tintScroll.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_TRANSMITTANCE_SCROLL_EXT;
+    tintScroll.pNext = &body;
+    tintScroll.rate[0] = .125f;
+    tintScroll.rate[1] = -.25f;
+    bodyInfo.pNext = &tintScroll;
+    bodyInfo.hash = 0x682;
+    r.createMaterial(bodyInfo, handle);
+    const auto scrollingSheet = drawn(r, quad(r, 0x683, handle));
+    require(scrollingSheet->transmittanceScroll[0] == .125f && scrollingSheet->transmittanceScroll[1] == -.25f,
+            "Measured sheets retain independent signed tint scroll rates");
+    tintScroll.rate[0] = std::numeric_limits<float>::infinity();
+    rejected([&] { r.createMaterial(bodyInfo, handle); });
+    tintScroll.rate[0] = .125f;
+    remixapi_MaterialBakeTintAverageEXT average{};
+    average.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_BAKE_TINT_AVERAGE_EXT;
+    average.pNext = &tintScroll;
+    average.axes = REMIXAPI_MATERIAL_BAKE_TINT_U_EXT;
+    bodyInfo.pNext = &average;
+    bodyInfo.hash = 0x684;
+    r.createMaterial(bodyInfo, handle);
+    require(drawn(r, quad(r, 0x685, handle))->bakeTintAxes == 1, "Material retains explicit optical tint bake axes");
+    average.axes = 4;
+    rejected([&] { r.createMaterial(bodyInfo, handle); });
+    average.axes = 3;
+    body.thinWallThickness_value = 0;
+    rejected([&] { r.createMaterial(bodyInfo, handle); }); // no containing-body texture model
+    bodyInfo.pNext = &body;
+    body.thinWallThickness_value = -1;
+    rejected([&] { r.createMaterial(bodyInfo, handle); });
+    body.thinWallThickness_value = std::numeric_limits<float>::quiet_NaN();
+    rejected([&] { r.createMaterial(bodyInfo, handle); });
+    body.thinWallThickness_value = 0;
+    remixapi_MaterialBakeBoundaryEXT boundary{};
+    boundary.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_BAKE_BOUNDARY_EXT;
+    boundary.pNext = &body;
+    boundary.smoothBoundary = 1;
+    bodyInfo.pNext = &boundary;
+    rejected([&] { r.createMaterial(bodyInfo, handle); }); // no measured body
+    body.thinWallThickness_value = .25f;
+    bodyInfo.hash = 0x672;
+    r.createMaterial(bodyInfo, handle);
+    require(drawn(r, quad(r, 0x682, handle))->bakeSmoothBoundary,
+            "Measured sheets can explicitly freeze their mean optical interface");
+    body.thinWallThickness_value = 0;
+    body.thinWallThickness_hasvalue = 0;
+    bodyInfo.hash = 0x69;
+    r.createMaterial(bodyInfo, handle);
+    const auto mean = drawn(r, quad(r, 0x70, handle));
+    require(mean->bakeSmoothBoundary && !water2->bakeSmoothBoundary,
+            "Mean-interface baking is explicit and leaves older material definitions intact");
+    body.refractiveIndex = 5;
+    rejected([&] { r.createMaterial(bodyInfo, handle); });
+    body.refractiveIndex = 1.333f;
+    body.transmittanceMeasurementDistance = 1e-20f;
+    rejected([&] { r.createMaterial(bodyInfo, handle); });
+    body.transmittanceMeasurementDistance = 300;
+    body.transmittanceColor.x = -1;
+    rejected([&] { r.createMaterial(bodyInfo, handle); });
+    body.transmittanceColor.x = .1f;
+    boundary.smoothBoundary = 2;
+    rejected([&] { r.createMaterial(bodyInfo, handle); });
+    body = originalBody;
+    bodyInfo = originalBodyInfo;
     require(sheet->transmission && !sheet->pbr && sheet->transmittanceDistance == 0, "Thin translucent sheet");
 
     // Caustics: translucent materials with a normal map, water and glass alike.
@@ -371,6 +624,7 @@ namespace {
     plainInfo.hash = 0x6d;
     r.createMaterial(plainInfo, handle);
     require(!drawn(r, quad(r, 0x6e, handle))->caustics, "Caustics on an opaque material");
+
   }
 
   // A thin film: the opaque info's legacy thickness fields, then
@@ -863,119 +1117,121 @@ namespace {
 // A dynamic texture with generated mips: an update makes each level again
 // only where it reads the changed texels, and the region stays level 0's.
 void scopedMipUpdate() {
-  remix::NativeResources r;
-  remixapi_TextureInfoGenerateMipsEXT mips{};
-  mips.sType = REMIXAPI_STRUCT_TYPE_TEXTURE_GENERATE_MIPS_EXT;
-  mips.generate = 1;
-  remixapi_TextureInfoDynamicEXT dynamic{};
-  dynamic.sType = REMIXAPI_STRUCT_TYPE_TEXTURE_DYNAMIC_EXT;
-  dynamic.pNext = &mips;
-  dynamic.dynamic = 1;
-  std::vector<uint8_t> black(4 * 4 * 4, 0);
-  for (size_t i = 3; i < black.size(); i += 4)
-    black[i] = 255;
-  remixapi_TextureInfo info{};
-  info.sType = REMIXAPI_STRUCT_TYPE_TEXTURE_INFO;
-  info.pNext = &dynamic;
-  info.hash = 0x81;
-  info.format = REMIXAPI_FORMAT_R8G8B8A8_UNORM;
-  info.width = info.height = 4;
-  info.depth = info.mipLevels = 1;
-  info.data = black.data();
-  info.dataSize = black.size();
-  remixapi_TextureHandle handle{};
-  r.createTexture(info, handle);
-  remixapi_MaterialInfoOpaqueEXT o{};
-  o.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
-  o.albedoConstant = {1, 1, 1};
-  o.opacityConstant = 1;
-  o.alphaTestType = 7;
-  remixapi_MaterialInfo m{};
-  m.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
-  m.pNext = &o;
-  m.hash = 0x82;
+    remix::NativeResources r;
+    remixapi_TextureInfoGenerateMipsEXT mips{};
+    mips.sType = REMIXAPI_STRUCT_TYPE_TEXTURE_GENERATE_MIPS_EXT;
+    mips.generate = 1;
+    remixapi_TextureInfoDynamicEXT dynamic{};
+    dynamic.sType = REMIXAPI_STRUCT_TYPE_TEXTURE_DYNAMIC_EXT;
+    dynamic.pNext = &mips;
+    dynamic.dynamic = 1;
+    std::vector<uint8_t> black(4 * 4 * 4, 0);
+    for (size_t i = 3; i < black.size(); i += 4)
+      black[i] = 255;
+    remixapi_TextureInfo info{};
+    info.sType = REMIXAPI_STRUCT_TYPE_TEXTURE_INFO;
+    info.pNext = &dynamic;
+    info.hash = 0x81;
+    info.format = REMIXAPI_FORMAT_R8G8B8A8_UNORM;
+    info.width = info.height = 4;
+    info.depth = info.mipLevels = 1;
+    info.data = black.data();
+    info.dataSize = black.size();
+    remixapi_TextureHandle handle{};
+    r.createTexture(info, handle);
+    remixapi_MaterialInfoOpaqueEXT o{};
+    o.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
+    o.albedoConstant = {1, 1, 1};
+    o.opacityConstant = 1;
+    o.alphaTestType = 7;
+    remixapi_MaterialInfo m{};
+    m.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
+    m.pNext = &o;
+    m.hash = 0x82;
 #ifdef _WIN32
-  m.albedoTexture = L"0x81";
+    m.albedoTexture = L"0x81";
 #else
-  m.albedoTexture = "0x81";
+    m.albedoTexture = "0x81";
 #endif
-  remixapi_MaterialHandle mh{};
-  r.createMaterial(m, mh);
-  const auto t = drawn(r, quad(r, 0x83, mh))->texture;
-  require(t->pixels.mips.size() == 3, "Scoped mips: chain");
-  const uint8_t white[4] = {255, 255, 255, 255};
-  r.updateTexture(handle, 0, 0, 1, 1, REMIXAPI_FORMAT_R8G8B8A8_UNORM, white, 4);
-  std::lock_guard lock(t->updates->lock);
-  const auto &p = t->pixels;
-  const auto &u = *t->updates;
-  require(u.dirty[0] == 0 && u.dirty[1] == 0 && u.dirty[2] == 1 && u.dirty[3] == 1, "Scoped mips: level 0 region");
-  require(p.mips[1][0] == 64 && p.mips[1][4] == 0 && p.mips[1][12] == 0, "Scoped mips: level 1 texels");
-  require(p.mips[2][0] == 16, "Scoped mips: level 2 texel");
+    remixapi_MaterialHandle mh{};
+    r.createMaterial(m, mh);
+    const auto t = drawn(r, quad(r, 0x83, mh))->texture;
+    require(t->pixels.mips.size() == 3, "Scoped mips: chain");
+    const uint8_t white[4] = {255, 255, 255, 255};
+    r.updateTexture(handle, 0, 0, 1, 1, REMIXAPI_FORMAT_R8G8B8A8_UNORM, white, 4);
+    std::lock_guard lock(t->updates->lock);
+    const auto &p = t->pixels;
+    const auto &u = *t->updates;
+    require(u.dirty[0] == 0 && u.dirty[1] == 0 && u.dirty[2] == 1 && u.dirty[3] == 1, "Scoped mips: level 0 region");
+    require(p.mips[1][0] == 64 && p.mips[1][4] == 0 && p.mips[1][12] == 0, "Scoped mips: level 1 texels");
+    require(p.mips[2][0] == 16, "Scoped mips: level 2 texel");
 }
 
 // A float dynamic texture (an HDR sky): RGBA32F texels updated from halves.
 void floatDynamicTexture() {
-  remix::NativeResources r;
-  remixapi_TextureInfoDynamicEXT dynamic{};
-  dynamic.sType = REMIXAPI_STRUCT_TYPE_TEXTURE_DYNAMIC_EXT;
-  dynamic.dynamic = 1;
-  const float bright[8] = {4, 0.5f, 0, 1, 4, 0.5f, 0, 1};
-  remixapi_TextureInfo info{};
-  info.sType = REMIXAPI_STRUCT_TYPE_TEXTURE_INFO;
-  info.pNext = &dynamic;
-  info.hash = 0x71;
-  info.format = REMIXAPI_FORMAT_R32G32B32A32_SFLOAT_EXT;
-  info.width = 2;
-  info.height = 1;
-  info.depth = info.mipLevels = 1;
-  info.data = bright;
-  info.dataSize = sizeof(bright);
-  remixapi_TextureHandle handle{};
-  r.createTexture(info, handle);
-  remixapi_MaterialInfoOpaqueEXT o{};
-  o.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
-  o.albedoConstant = {1, 1, 1};
-  o.opacityConstant = 1;
-  o.alphaTestType = 7;
-  remixapi_MaterialInfo m{};
-  m.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
-  m.pNext = &o;
-  m.hash = 0x72;
+    remix::NativeResources r;
+    remixapi_TextureInfoDynamicEXT dynamic{};
+    dynamic.sType = REMIXAPI_STRUCT_TYPE_TEXTURE_DYNAMIC_EXT;
+    dynamic.dynamic = 1;
+    const float bright[8] = {4, 0.5f, 0, 1, 4, 0.5f, 0, 1};
+    remixapi_TextureInfo info{};
+    info.sType = REMIXAPI_STRUCT_TYPE_TEXTURE_INFO;
+    info.pNext = &dynamic;
+    info.hash = 0x71;
+    info.format = REMIXAPI_FORMAT_R32G32B32A32_SFLOAT_EXT;
+    info.width = 2;
+    info.height = 1;
+    info.depth = info.mipLevels = 1;
+    info.data = bright;
+    info.dataSize = sizeof(bright);
+    remixapi_TextureHandle handle{};
+    r.createTexture(info, handle);
+    remixapi_MaterialInfoOpaqueEXT o{};
+    o.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
+    o.albedoConstant = {1, 1, 1};
+    o.opacityConstant = 1;
+    o.alphaTestType = 7;
+    remixapi_MaterialInfo m{};
+    m.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
+    m.pNext = &o;
+    m.hash = 0x72;
 #ifdef _WIN32
-  m.albedoTexture = L"0x71";
+    m.albedoTexture = L"0x71";
 #else
-  m.albedoTexture = "0x71";
+    m.albedoTexture = "0x71";
 #endif
-  remixapi_MaterialHandle mh{};
-  r.createMaterial(m, mh);
-  const auto t = drawn(r, quad(r, 0x73, mh))->texture;
+    remixapi_MaterialHandle mh{};
+    r.createMaterial(m, mh);
+    const auto t = drawn(r, quad(r, 0x73, mh))->texture;
   require(t->dynamic && t->pixels.hdrMips.size() == 1 && t->pixels.hdrMips[0][0] == 4 && t->pixels.mips[0][0] == 255 &&
               t->pixels.mips[0][1] == 127,
-          "Float dynamic texture");
-  // The second texel turns to (0.25, 2, 0, 1) in halves.
-  const uint16_t halves[4] = {0x3400, 0x4000, 0x0000, 0x3c00};
-  r.updateTexture(handle, 1, 0, 1, 1, REMIXAPI_FORMAT_R16G16B16A16_SFLOAT_EXT, halves, 8);
-  {
-    std::lock_guard lock(t->updates->lock);
-    const auto &u = *t->updates;
-    require(u.revision == 1 && u.dirty[0] == 1 && u.dirty[2] == 2 && t->pixels.hdrMips[0][4] == .25f &&
-                t->pixels.hdrMips[0][5] == 2 && t->pixels.hdrMips[0][0] == 4 && t->pixels.mips[0][5] == 255,
-            "Float update");
-  }
-  // An 8-bit update of a float texture, and a float one of an 8-bit texture: rejected.
-  const uint8_t texel[4] = {1, 2, 3, 4};
-  rejected([&] { r.updateTexture(handle, 0, 0, 1, 1, REMIXAPI_FORMAT_R8G8B8A8_UNORM, texel, 4); });
-  info.hash = 0x74;
-  info.format = REMIXAPI_FORMAT_R8G8B8A8_UNORM;
-  info.data = texel;
-  info.dataSize = sizeof(texel);
-  info.width = 1;
-  remixapi_TextureHandle plain{};
-  r.createTexture(info, plain);
-  rejected([&] { r.updateTexture(plain, 0, 0, 1, 1, REMIXAPI_FORMAT_R16G16B16A16_SFLOAT_EXT, halves, 8); });
+            "Float dynamic texture");
+    // The second texel turns to (0.25, 2, 0, 1) in halves.
+    const uint16_t halves[4] = {0x3400, 0x4000, 0x0000, 0x3c00};
+    r.updateTexture(handle, 1, 0, 1, 1, REMIXAPI_FORMAT_R16G16B16A16_SFLOAT_EXT, halves, 8);
+    {
+      std::lock_guard lock(t->updates->lock);
+      const auto &u = *t->updates;
+      require(u.revision == 1 && u.dirty[0] == 1 && u.dirty[2] == 2 && t->pixels.hdrMips[0][4] == .25f &&
+                  t->pixels.hdrMips[0][5] == 2 && t->pixels.hdrMips[0][0] == 4 && t->pixels.mips[0][5] == 255,
+              "Float update");
+    }
+    // An 8-bit update of a float texture, and a float one of an 8-bit texture: rejected.
+    const uint8_t texel[4] = {1, 2, 3, 4};
+    rejected([&] { r.updateTexture(handle, 0, 0, 1, 1, REMIXAPI_FORMAT_R8G8B8A8_UNORM, texel, 4); });
+    info.hash = 0x74;
+    info.format = REMIXAPI_FORMAT_R8G8B8A8_UNORM;
+    info.data = texel;
+    info.dataSize = sizeof(texel);
+    info.width = 1;
+    remixapi_TextureHandle plain{};
+    r.createTexture(info, plain);
+    rejected([&] { r.updateTexture(plain, 0, 0, 1, 1, REMIXAPI_FORMAT_R16G16B16A16_SFLOAT_EXT, halves, 8); });
 }
 
 int main() {
+  reflectionBinding();
+  replacementKeys();
   materialOverride();
   dynamicTexture();
   floatDynamicTexture();

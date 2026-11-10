@@ -304,9 +304,12 @@ namespace remix {
     const size_t prefixBytes = prefixSurfaceCount * sizeof(TraceSurface);
     const size_t tableBytes = surfaceCount * sizeof(TraceSurface);
     tables.signature(signature);
+    const auto optical = tables.sheetMaterials();
     if (digestEnabled) {
       // Device addresses depend on allocation order; hash everything else.
       digest = tables.geometryDigest();
+      if (!optical.empty())
+        digest = hashBytes(optical.data(), optical.size() * sizeof(trace::SheetMaterial), digest);
       auto hashSurface = [&](const TraceSurface &surface) {
         auto copy = surface;
         const bool history = copy.previousVertices != 0;
@@ -438,7 +441,6 @@ namespace remix {
     else if (emissiveHold)
       --emissiveHold;
     const bool hasEmissiveLights = lighting.hasEmissive || emissiveHold;
-    emissiveSeen |= hasEmissiveLights;
     emissionHistory = std::move(lighting.history);
     lightBvh = std::move(lighting.combined);
     lightVisibility = std::move(lighting.visibility);
@@ -838,10 +840,11 @@ namespace remix {
       append(frame.rayPortalPlanes, sizeof(frame.rayPortalPlanes));
     }
     frame.upAxis = float(std::min(options.volumetricUpAxis, 2u));
-    {
-      // Scrolling maps (water): wrapped well before float precision suffers.
-      static const auto start = std::chrono::steady_clock::now();
-      const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+    static const auto animationStart = std::chrono::steady_clock::now();
+    if (flags.usesAnimationTime && !options.accumulate) {
+      // Keep the shared material clock available to portal rims and film flow.
+      // Progressive references freeze it so successive samples agree.
+      const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - animationStart).count();
       frame.animationTime = float(std::fmod(seconds, 4096.0));
     }
     if (options.caustics && options.causticsStrength > 0) {
@@ -950,6 +953,13 @@ namespace remix {
     if (sceneChanged) {
       ++stats.sceneGeneration;
       stats.accumulationCount = 0;
+    }
+    // Optical values are already in the material signature. The per-slot
+    // upload address is independent of the scene and can rotate every frame.
+    if (!optical.empty()) {
+      hostBuffer(sheetMaterials, optical.data(), optical.size() * sizeof(trace::SheetMaterial),
+                 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+      frame.sheetMaterials = sheetMaterials->address;
     }
     lap(breakdown.signatureMilliseconds);
     if (options.accumulate != bool(stats.accumulationEnabled))
@@ -1942,11 +1952,8 @@ namespace remix {
     const auto stageEnd = lightStart;
     // Storage kept from frame to frame (megabytes with many emissive triangles).
     auto &lights = m_gpu->lightInput;
-    lights.clear();
-    if (options.torchLights) {
-      const auto spheres = resources.sphereLights();
-      lights.assign(spheres.begin(), spheres.end());
-    }
+    if (options.torchLights) resources.copySphereLights(lights);
+    else lights.clear();
     const auto sphereCount = lights.size();
     // The static set's emitters where the set keeps them (scene::mergedEmitters
     // has them in trace order; the light tree orders its input itself), then
@@ -2157,7 +2164,7 @@ namespace remix {
     g.prepare(command, resources, options, scene);
     ScopedMilliseconds post{g.breakdown.postMilliseconds};
     const auto hdr = g.upscaler && !g.debugView ? g.upscaler->output() : upscale::Input{g.world->handle, g.world->view};
-    g.postProcessing->record(command, hdr, options, resources.temporalEpoch(), g.rendered,
+    g.postProcessing->record(command, hdr, postfx::settings(options), resources.temporalEpoch(), g.rendered,
                              (g.postProcessing == g.postFallback.get() && !g.retainPostExposure) || options.debugView ||
                                  options.shadowDebug || options.sharcDebug || options.validation,
                              -1, g.stats.sceneGeneration);

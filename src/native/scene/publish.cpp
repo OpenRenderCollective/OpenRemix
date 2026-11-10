@@ -8,15 +8,21 @@ namespace remix {
   using namespace scene;
 
   void NativeResources::publishFrame(NativeResources &frame) {
-    // The frame's draw lists move; state that persists across frames here is
-    // copied. finishFrame below leaves this side as a finished frame would.
-    frame.m_draws = std::move(m_draws);
+    frame.m_bakeScene = m_bakeScene;
+    frame.m_reflectionVolumes = m_reflectionVolumes;
+    frame.m_materialReflections = m_materialReflections;
+    frame.m_publishedBakeLightValidity = bakeLightValidity();
+    // The caller has retired the previous frame. Reuse its draw capacity
+    // on the producer instead of releasing it and growing a new list.
+    frame.m_draws.clear();
+    frame.m_draws.swap(m_draws);
     frame.m_hiddenTextures = m_hiddenTextures;
     if (!frame.m_hiddenTextures.empty()) {
       for (auto &d : frame.m_draws)
         frame.applyDrawHidden(d);
     }
-    frame.m_uiDraws = std::move(m_uiDraws);
+    frame.m_uiDraws.clear();
+    frame.m_uiDraws.swap(m_uiDraws);
     frame.m_halos = std::move(m_halos);
     frame.m_haloDraws = m_haloDraws;
     frame.m_masks = std::move(m_masks);
@@ -44,7 +50,7 @@ namespace remix {
     // Lights resolve now, as the tracer would have at this Present: a light
     // destroyed afterwards still lights this frame, one created does not.
     frame.m_frameLights = m_frameLights;
-    frame.m_publishedLights = sphereLights();
+    copySphereLights(frame.m_publishedLights);
     frame.m_lightsPublished = true;
     // The frame's consumers share this side's default material and white
     // texture, so their GPU copies are the ones the draws already use.

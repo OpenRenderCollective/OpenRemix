@@ -36,6 +36,7 @@ int main(int argc, char **argv) {
   startup.windowWidth = startup.windowHeight = 64;
 #endif
   ok(api.Startup(&startup));
+  ok(api.SetConfigVariable("rtx.native.hdr", "0"));
   // These fixtures measure the unexposed lighting/display contract.
   ok(api.SetConfigVariable("rtx.native.pathtrace.autoExposure", "0"));
   ok(api.SetConfigVariable("rtx.native.pathtrace.bloom", "0"));
@@ -174,9 +175,11 @@ int main(int argc, char **argv) {
   };
   auto readback = [&](const std::string &name) {
     const auto file = (directory / (name + ".png")).string();
-    ok(remix::test::requestScreenshot(api, file.c_str(), frame));
+    std::filesystem::file_time_type previous;
+    ok(remix::test::requestScreenshot(api, file.c_str(), frame, &previous));
     frame();
     frame();
+    ok(remix::test::waitForScreenshot(api, file.c_str(), previous));
     int width, height, channels;
     auto pixels = stbi_load(file.c_str(), &width, &height, &channels, 4);
     require(pixels, "Missing sky screenshot");
@@ -256,6 +259,9 @@ int main(int argc, char **argv) {
     auto visible = quad(2, .25f, -1, 1, -1, 1, emitterMaterial);
     auto blocker = quad(2, -.5f, -1, 1, -1, 1, black);
     const double radiance = 2 * std::pow(128. / 255, 2.2);
+    // The screenshot decoder undoes gamma, leaving Prism's display-linear values.
+    constexpr std::array<double, 3> visibleRed{.41753234, .00375904, .00154083};
+    constexpr std::array<double, 3> visibleGreen{.00397680, .42112346, .00090891};
     double expected = 0;
     for (int y = 0; y < 128; ++y)
       for (int x = 0; x < 128; ++x) {
@@ -284,10 +290,11 @@ int main(int argc, char **argv) {
         require(blocked[0] < .004, "Opaque wall leaked emissive light");
         enclosure = {visible};
         auto glow = capture(prefix + "emission-visible", filtered ? 80 : 32);
-        require(std::abs(glow[0] - radiance) < .015 && glow[1] < .004, "Visible emission lost energy or was shadowed");
+        for (size_t c = 0; c < glow.size(); ++c)
+          require(std::abs(glow[c] - visibleRed[c]) < .015, "Visible emission lost energy or was shadowed");
         config("localLights", "0");
         auto glowOff = capture(prefix + "emission-visible-local-off", 8);
-        require(std::abs(glowOff[0] - radiance) < .015, "Local toggle disabled visible emission");
+        require(std::abs(glowOff[0] - visibleRed[0]) < .015, "Local toggle disabled visible emission");
         enclosure = {emitter};
         require(capture(prefix + "emission-local-off", 16)[0] < .004,
                 "Local toggle failed to disable emission lighting");
@@ -295,7 +302,7 @@ int main(int argc, char **argv) {
         config("emissiveLights", "0");
         require(capture(prefix + "emissive-casting-off", 16)[0] < .004, "Emissive toggle retained cast light");
         enclosure = {visible};
-        require(std::abs(capture(prefix + "emissive-visible-casting-off", 16)[0] - radiance) < .015,
+        require(std::abs(capture(prefix + "emissive-visible-casting-off", 16)[0] - visibleRed[0]) < .015,
                 "Emissive casting toggle hid the visible map");
         config("emissiveLights", "1");
         remixapi_MaterialInfoEmissionEXT policy{};
@@ -303,7 +310,7 @@ int main(int argc, char **argv) {
         policy.suppressLightGeneration = 1;
         opaque.pNext = &policy;
         ok(api.CreateMaterial(&info, &emitterMaterial));
-        require(std::abs(capture(prefix + "visible-only-emission", 16)[0] - radiance) < .015,
+        require(std::abs(capture(prefix + "visible-only-emission", 16)[0] - visibleRed[0]) < .015,
                 "Per-material suppression hid the visible emissive map");
         ok(remixapi_GetLocalLightStatisticsEXT(&stats));
         require(stats.activeLights == 0, "Visible-only material generated duplicate area lights");
@@ -343,7 +350,7 @@ int main(int argc, char **argv) {
             unsigned x = (2 * stripe + 1) * w / 8;
             float value = data[((h / 2) * w + x) * 4 + c] / 255.f;
             value = std::pow(value, 2.2f);
-            double expectedPixel = (stripe == 0 && c == 0) || (stripe == 2 && c == 1) ? radiance : 0;
+            const double expectedPixel = stripe == 0 ? visibleRed[c] : stripe == 2 ? visibleGreen[c] : 0;
             require(std::abs(value - expectedPixel) < .02, "Visible emissive map flattened or sampled incorrectly");
           }
         stbi_image_free(data);

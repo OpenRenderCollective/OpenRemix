@@ -11,8 +11,10 @@ endif
 if cpp.get_id() not in ['clang', 'clang-cl']
   error('Use Clang (clang-cl with the Visual Studio toolchain on Windows).')
 endif
+platform_defines = []
 if system == 'windows'
-  add_project_arguments('-DNOMINMAX', '-D_CRT_SECURE_NO_WARNINGS', '-D_SILENCE_ALL_CXX20_DEPRECATION_WARNINGS', '-D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH', language : ['c', 'cpp'])
+  platform_defines = ['-DNOMINMAX', '-D_CRT_SECURE_NO_WARNINGS', '-D_SILENCE_ALL_CXX20_DEPRECATION_WARNINGS', '-D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH']
+  add_project_arguments(platform_defines, language : ['c', 'cpp'])
   if cpp.get_id() == 'clang'
     add_project_arguments('-include', meson.project_source_root() / 'src/native/platform/mingw_compat.h', language : 'cpp')
   endif
@@ -52,7 +54,8 @@ if not metal_backend
     vulkan_dep = dependency('vulkan', version : '>=1.1')
   endif
   vulkan_dep = declare_dependency(dependencies : vulkan_dep,
-    include_directories : include_directories('include/vulkan/include', is_system : true))
+    # The SDK supplies the loader; pinned runtime headers take precedence.
+    include_directories : include_directories('include/vulkan/include'))
 endif
 subdir('third_party/imgui')
 subdir('third_party/nrd')
@@ -115,3 +118,5 @@ install_data('third_party/image/LICENSES.txt', rename : 'ImageDecoders.txt',
 install_data('third_party/inter/LICENSE.txt', rename : 'Inter.txt', install_dir : get_option('datadir') / 'remix/licenses')
 
 install_data('src/native/scene/OpenUSD-LICENSE.txt', install_dir : get_option('datadir') / 'remix/licenses')
+install_data('src/native/forward/shaders/SBOX-LICENSE.txt', rename : 'sbox-SSR.txt',
+  install_dir : get_option('datadir') / 'remix/licenses')

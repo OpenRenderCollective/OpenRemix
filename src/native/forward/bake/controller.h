@@ -1,0 +1,166 @@
+#pragma once
+#include "forward/probes/reference_provenance.h"
+#include "forward/bake/content.h"
+#include "forward/bake/irradiance_contents.h"
+#include "forward/bake/grid.h"
+#include "forward/lightmap/geometry.h"
+#include "forward/mixed/data.h"
+#include "forward/mixed/map.h"
+#include "forward/probes/data.h"
+#include "forward/probes/placement_seeds.h"
+#include "forward/probes/capture_publication.h"
+#include "forward/probes/capture_step.h"
+#include "forward/probes/local_capture_source.h"
+#include "forward/probes/capture_content.h"
+#include "forward/probes/image_asset.h"
+#include "forward/resources.h"
+#include "forward/styled_lighting/composition.h"
+#include "platform/gpu_frames.h"
+#include "runtime/pipelines.h"
+#include <remix/remix_bake_ext.h>
+
+namespace remix {
+  class RasterRenderer;
+}
+namespace remix::forward::probes { struct ReceiverCoverageEvidence; struct ReceiverCoveragePlan; struct CoverageReadyImage; }
+namespace remix::forward::mixed { struct ChartHighlightField; }
+namespace remix::forward::bake {
+  class SunDepth;
+  class TransportMemory;
+  class SceneRequest;
+  struct Volume {
+    uint64_t hash = 0;
+    DiffuseContent content;
+    probes::ReferenceProvenance reflectionReference; // immutable receiver-field publication identity
+    IrradianceContents irradianceContents = IrradianceContents::Combined;
+    bool directDiffuse = false, styledLighting = false;
+    std::vector<uint32_t> groupedStyles; // complete direct groups, separate from permanent aggregate policy
+    std::shared_ptr<SunDepth> sunDepth;
+    scene::DistantLight sun; // shape provenance for matching surface/probe static sunlight
+    GridHeader irradianceHeader;
+    std::vector<uint32_t> probeEndpointCellSides;
+    uint32_t usableIrradianceProbes = 0;
+    // Immutable private transfer candidate; GPU publication requires an explicit sampling flag.
+    std::shared_ptr<const std::vector<uint32_t>> coarseTransferWords;
+    // Immutable placement diagnostics, computed once when the volume publishes.
+    std::array<uint32_t, 3> irradiancePatchCounts{}; // 2x, 4x, 8x
+    uint32_t coarseIrradianceProbes = 0;
+    float finestIrradianceSpacing = 0; // scene units, before sceneScale
+    float sceneScale = 1;
+    std::array<uint32_t, 4> occlusionParameters{}; // stride + compact-atlas flag, charts, shortlist, indexed-mask tail
+    std::shared_ptr<const mixed::ChartHighlightField> chartHighlights;
+    uint32_t surfaceDirectOffset = 0; // sparse directional table in the R32_UINT lookup; zero keeps atlas SH
+    std::unique_ptr<Buffer> data, staging;
+    std::unique_ptr<Image> surfaceAtlas;
+    styled_lighting::SourceLayout compositionLayout;
+    std::unique_ptr<mixed::OcclusionMap> occlusion, visibilityPages;
+    std::shared_ptr<lightmap::Geometry> surfaces;
+    std::shared_ptr<const mixed::Bindings> mixedLights;
+  };
+  struct Memory {
+    uint64_t buffers = 0, images = 0, acceleration = 0;
+  };
+  // Render-thread controller. selectFrame observes only the slot whose fence
+  // the caller completed. Submitted frames retain their job and volume owners.
+  class Controller {
+  public:
+    Controller(VkPhysicalDevice physical, VkDevice device, pipeline::Service *pipelines, bool hardware,
+               uint32_t queueFamily = VK_QUEUE_FAMILY_IGNORED);
+    ~Controller();
+    // Constructor-only identity; replacement-target workers may validate it
+    // without inspecting mutable jobs, frame submissions or published data.
+    bool compatible(VkPhysicalDevice physical, VkDevice device, pipeline::Service *pipelines, bool hardware,
+                    uint32_t queueFamily = VK_QUEUE_FAMILY_IGNORED) const {
+      return physical == m_physical && device == m_device && pipelines == m_pipelines &&
+             bool(m_statistics.supported) == bool(hardware && pipelines) && queueFamily == m_queueFamily;
+    }
+    void selectFrame(uint32_t slot);
+    void record(VkCommandBuffer command, RasterRenderer &resources, const Config &config,
+                float lightCutoff = .001f, SceneRequest *sceneRequest = nullptr);
+    const std::shared_ptr<Volume> &volume() const { return m_volume; }
+    ContentHashes content() const {
+      const auto diffuse = m_volume ? m_volume->content : DiffuseContent{};
+      return {diffuse.grid, m_captures.content.filtered, diffuse.surfaces,
+              diffuse.staticOcclusion, m_captures.content.radiance,
+              m_captures.content.inputs, diffuse.styledIndirect};
+    }
+    VkDescriptorBufferInfo descriptor() const;
+    VkDescriptorBufferInfo sunDepthTable() const;
+    VkDescriptorBufferInfo sunDepthValues() const;
+    probes::Descriptors reflectionDescriptor() const;
+    probes::CaptureSource reflectionSource() const {
+      return m_captures.source();
+    }
+    const std::shared_ptr<const probes::LocalCaptureSource> &localReflectionSource() const {
+      return m_captures.local;
+    }
+    const probes::ImageAsset *reflectionImage() const { return m_captures.image.get(); }
+    const probes::Header *reflectionHeader() const { return m_captures.header(); }
+    float reflectionSceneScale() const { return m_captures.image && m_source ? m_source->sceneScale : 1; }
+    VkDescriptorImageInfo surfaceDescriptor() const;
+    VkDescriptorImageInfo occlusionDescriptor() const;
+    VkDescriptorImageInfo visibilityDescriptor() const;
+    const remixapi_BakeStatisticsEXT &statistics() const { return m_statistics; }
+    Memory memory(TransportMemory *transportMemory = nullptr) const;
+
+  private:
+    struct Job;
+    struct Submission {
+      std::shared_ptr<Job> job;
+      std::shared_ptr<Volume> upload;
+      std::shared_ptr<Volume> sampled;
+      std::shared_ptr<probes::ImageAsset> reflectionUpload, reflectionSampled, localReflectionUpload;
+      uint32_t first = 0, count = 0, styled = 0;
+      std::vector<VisibilityTask> directTasks;
+      probes::CaptureStep reflection = probes::CaptureStep::None;
+      bool preparation = false, surface = false, visibility = false,
+           sun = false, sunDepth = false, sunDepthCache = false, probeSun = false, probeLocal = false, overflowVisibility = false,
+           sunAntialiasing = false, direct = false, directionalField = false, reference = false, probeDepth = false,
+           localReflection = false, reflectionReceiver = false, receiverSite = false, receiverSiteCheck = false, receiverFit = false, receiverFitCoverage = false,
+           coarseTransfer = false, receiverGuardCoverage = false;
+    };
+    VkPhysicalDevice m_physical;
+    VkDevice m_device;
+    pipeline::Service *m_pipelines;
+    uint32_t m_slot = 0;
+    uint32_t m_queueFamily;
+    Config m_config;
+    uint64_t m_hash = 0;
+    float m_lightCutoff = .001f;
+    std::shared_ptr<Job> m_job;
+    std::shared_ptr<const scene::BakeScene> m_source;
+    std::vector<std::shared_ptr<Job>> m_obsolete;
+    std::shared_ptr<Volume> m_volume;
+    probes::CapturePublication m_captures;
+    std::array<Submission, gpuFrameCount> m_submissions;
+    std::unique_ptr<Buffer> m_empty, m_emptySunDepth;
+    std::unique_ptr<probes::ImageAsset> m_emptyReflections;
+    uint32_t m_emptyReflectionUpload = ~0u;
+    std::unique_ptr<Image> m_emptySurface;
+    std::unique_ptr<mixed::OcclusionMap> m_emptyOcclusion;
+    bool m_emptySurfaceReady = false;
+    remixapi_BakeStatisticsEXT m_statistics{};
+    void invalidate(bool preserveDiffuse = false);
+    void status(uint32_t state, const char *message);
+    std::shared_ptr<Volume> prepareVolume(VkCommandBuffer command);
+    void activate(VkCommandBuffer command);
+    void recordStyles(VkCommandBuffer command, const Config &config);
+    void recordSurfaces(VkCommandBuffer command, const Config &config);
+    void recordVisibility(VkCommandBuffer command, const Config &config);
+    void recordDirect(VkCommandBuffer command, const Config &config);
+    void recordOverflowVisibility(VkCommandBuffer command, const Config &config);
+    void recordDirectionals(VkCommandBuffer command, const Config &config);
+    bool recordSunDepth(VkCommandBuffer command, const Config &config);
+    void recordSun(VkCommandBuffer command, const Config &config);
+    void recordSunAntialiasing(VkCommandBuffer command, const Config &config);
+    void recordProbeSun(VkCommandBuffer command, const Config &config);
+    void recordProbeDepth(VkCommandBuffer command, const Config &config);
+    bool recordCoarseTransfer(VkCommandBuffer command, const Config &config);
+    void recordProbeLocal(VkCommandBuffer command, const Config &config);
+    void recordReflections(VkCommandBuffer command, const Config &config);
+    void publishReadyReflections(VkCommandBuffer command);
+    bool recordLocalReflections(VkCommandBuffer command, const Config &config);
+    bool recordReceiverDiagnostics(VkCommandBuffer command, const Config &config);
+    bool recordCoverageGuardDiagnostics(VkCommandBuffer command, const Config &config);
+  };
+} // namespace remix::forward::bake

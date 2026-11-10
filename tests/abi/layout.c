@@ -1,4 +1,5 @@
 #include <remix/remix_native_ext.h>
+#include <remix/remix_bake_ext.h>
 #include <remix/remix_editor_ext.h>
 #include <remix/remix_usd_ext.h>
 #include <remix/remix_particles_ext.h>
@@ -8,6 +9,18 @@
 #include "posix_layout.h"
 #endif
 _Static_assert(REMIXAPI_VERSION_MINOR == 1003, "ABI line");
+_Static_assert(sizeof(remixapi_LightInfoBakingEXT) == 24, "Optional light baking hint ABI");
+_Static_assert(offsetof(remixapi_LightInfoBakingEXT, hint) == 16, "Light baking hint alignment");
+_Static_assert(sizeof(remixapi_BakeSceneInfoEXT) == 56, "Bake scene extension ABI");
+_Static_assert(sizeof(remixapi_BakeSceneBoundsInfoEXT) == 80, "Bake scene bounds extension ABI");
+_Static_assert(offsetof(remixapi_BakeSceneBoundsInfoEXT, minimum) == 56, "Bake scene bounds alignment");
+_Static_assert(sizeof(remixapi_BakeSurfaceChartEXT) == 40, "Bake surface chart extension ABI");
+_Static_assert(offsetof(remixapi_BakeSurfaceChartEXT, texcoords) == 32, "Bake chart coordinate alignment");
+_Static_assert(sizeof(remixapi_BakeSceneSurfacesInfoEXT) == 104, "Bake surfaces descriptor ABI");
+_Static_assert(offsetof(remixapi_BakeSceneSurfacesInfoEXT, charts) == 96, "Bake chart array alignment");
+_Static_assert(sizeof(remixapi_BakeStatisticsEXT) == 272, "Bake statistics extension ABI");
+_Static_assert(offsetof(remixapi_BakeStatisticsEXT, reflectionRequested) == 256, "Bake statistics reflection readiness alignment");
+_Static_assert(offsetof(remixapi_BakeSceneInfoEXT, instances) == 40, "Bake scene array alignment");
 _Static_assert(sizeof(remixapi_MaterialInfoEmissionEXT) == 24, "Material emission extension ABI");
 _Static_assert(offsetof(remixapi_MaterialInfoEmissionEXT, suppressLightGeneration) == 16,
                "Material emission policy alignment");
@@ -63,6 +76,8 @@ _Static_assert(sizeof(remixapi_HostPassListFlagsEXT) == 32, "Host pass list flag
 _Static_assert(sizeof(remixapi_HostPassStatisticsEXT) == 80, "Host pass statistics ABI");
 _Static_assert(offsetof(remixapi_HostPassStatisticsEXT, always) == 72, "Host pass statistics version 1 size");
 _Static_assert(sizeof(remixapi_InstanceInfoWireframeEXT) == 24, "Wireframe instance ABI");
+_Static_assert(sizeof(remixapi_MaterialBakeBoundaryEXT) == 24, "Smooth bake boundary ABI");
+_Static_assert(sizeof(remixapi_BakeSceneReflectionsInfoEXT) == 128, "Reflection seed descriptor ABI");
 _Static_assert(sizeof(remixapi_MaterialPortalRimEXT) == 32, "Portal rim material ABI");
 _Static_assert(sizeof(remixapi_MaterialSolidEnergyEXT) == 72, "Solid energy material ABI");
 _Static_assert(offsetof(remixapi_MaterialSolidEnergyEXT, intensity) == 32, "Solid energy material intensity");

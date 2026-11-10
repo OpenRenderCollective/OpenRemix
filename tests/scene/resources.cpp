@@ -14,6 +14,15 @@ namespace {
     auto red = material(r, 1, 1, 0, 0);
     auto mesh = quad(r, 2, red);
     auto draw = instance(mesh);
+    for (uint32_t category : {0u, uint32_t(REMIXAPI_INSTANCE_CATEGORY_BIT_THIRD_PERSON_PLAYER_MODEL),
+                              uint32_t(REMIXAPI_INSTANCE_CATEGORY_BIT_THIRD_PERSON_PLAYER_BODY)}) {
+      auto player = draw;
+      player.categoryFlags = category;
+      r.drawInstance(player);
+      require(r.draws().back().reflectionOnly == (category != 0),
+              "Third-person player categories preserve reflection-only scene metadata");
+      r.finishFrame();
+    }
     for (auto category :
          {REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_STATIC, REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_DYNAMIC,
           REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_SINGLE_OFFSET, REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_NO_OFFSET}) {
@@ -34,6 +43,24 @@ namespace {
     red = material(r, 1, 1, 0, 0);
     mesh = quad(r, 2, red);
     require(reinterpret_cast<uintptr_t>(mesh) == 2, "Hash handle identity");
+    {
+      const auto firstMesh = r.findMesh(2);
+      const auto firstSurface = firstMesh->surfaces.front();
+      r.destroyMesh(mesh);
+      const auto recreated = quad(r, 3, red);
+      const auto secondMesh = r.findMesh(3);
+      require(firstMesh != secondMesh && firstMesh->retired && !secondMesh->retired &&
+                  firstSurface == secondMesh->surfaces.front(),
+              "Identical recreated geometry did not share payload independently of mesh lifetime");
+      const auto changed = quad(r, 4, red, 0xff112233);
+      require(r.findMesh(4)->surfaces.front() != firstSurface, "Changed vertex colours aliased an immutable surface");
+      const auto skinned = quad(r, 5, red, 0xffffffff, true);
+      require(r.findMesh(5)->surfaces.front() != firstSurface, "Changed skinning payload aliased rigid geometry");
+      r.destroyMesh(recreated);
+      r.destroyMesh(changed);
+      r.destroyMesh(skinned);
+      mesh = quad(r, 2, red);
+    }
     remixapi_MeshInfo bad = {};
     bad.hash = 2;
     rejected([&] { r.createMesh(bad, mesh); });
@@ -346,6 +373,32 @@ namespace {
     texture.format = REMIXAPI_FORMAT_BC1_RGBA_SRGB_EXT;
     auto rgbaBc1 = remix::scene::decodeTexture(texture);
     require(rgbaBc1.srgb && rgbaBc1.mips[0][3] == 0, "sRGB BC1 changed alpha or transfer function");
+    const float hdr[] = {8, .125f, 2, 1};
+    texture.format = REMIXAPI_FORMAT_R32G32B32A32_SFLOAT_EXT;
+    texture.data = hdr;
+    texture.dataSize = sizeof(hdr);
+    auto linearHdr = remix::scene::decodeTexture(texture);
+    require(!linearHdr.srgb && linearHdr.hdrMips[0] == std::vector<float>({8, .125f, 2, 1}),
+            "Immutable float upload preserves linear HDR radiance");
+    remix::scene::Texture panorama;
+    panorama.pixels = {2, 1, false, {{0, 0, 0, 255, 0, 0, 0, 255}, {0, 0, 0, 255}}};
+    require(remix::scene::textureHasZeroRgb(panorama), "Opaque alpha does not make black sky emit");
+    panorama.pixels.hdrMips = {{0, 0, 0, 1, 0, 0, 0, 1}, {0, 0, 0, 1}};
+    require(remix::scene::textureHasZeroRgb(panorama), "All linear HDR levels can prove zero radiance");
+    panorama.pixels.hdrMips[1][1] = .0001f;
+    require(!remix::scene::textureHasZeroRgb(panorama), "A dim HDR mip still emits despite its black byte preview");
+    panorama.pixels.hdrMips[1][1] = 0;
+    panorama.dynamic = true;
+    require(!remix::scene::textureHasZeroRgb(panorama), "Dynamic textures never prove stable zero radiance");
+    texture.dataSize = sizeof(hdr) - 1;
+    rejected([&] { remix::scene::decodeTexture(texture); });
+    const uint16_t halfHdr[] = {0x4800, 0x3000, 0x4000, 0x3c00};
+    texture.format = REMIXAPI_FORMAT_R16G16B16A16_SFLOAT_EXT;
+    texture.data = halfHdr;
+    texture.dataSize = sizeof(halfHdr);
+    require(remix::scene::decodeTexture(texture).hdrMips == linearHdr.hdrMips, "Half and float HDR uploads agree");
+    texture.data = nullptr;
+    rejected([&] { remix::scene::decodeTexture(texture); });
     // Tiny valid DDS fixtures cover channel masks, BC1/2/3, odd dimensions and truncation.
     auto save = [&](const char *name, const std::vector<uint8_t> &data) {
       auto path = directory / name;

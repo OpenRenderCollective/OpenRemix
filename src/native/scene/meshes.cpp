@@ -1,5 +1,6 @@
 #include "scene/resources.h"
 #include "scene/images.h"
+#include "scene/hash_stream.h"
 #include "scene/validation.h"
 #include <remix/remix_native_ext.h>
 
@@ -25,6 +26,51 @@ namespace remix {
       return squares > 1e-30f && squares < 1e30f ? std::sqrt(squares) : std::hypot(n[0], n[1], n[2]);
     }
   } // namespace
+
+  namespace {
+    template <class T> bool samePayload(const std::vector<T> &a, const std::vector<T> &b) {
+      return a.size() == b.size() && (a.empty() || !std::memcmp(a.data(), b.data(), a.size() * sizeof(T)));
+    }
+    bool sameSurface(const Surface &a, const Surface &b) {
+      return a.material == b.material && a.bonesPerVertex == b.bonesPerVertex && samePayload(a.vertices, b.vertices) &&
+             a.indices == b.indices && a.weights == b.weights && a.bones == b.bones && samePayload(a.sprite, b.sprite);
+    }
+  } // namespace
+  std::shared_ptr<Surface> NativeResources::shareSurface(std::shared_ptr<Surface> surface) {
+    // Hosts may rebuild identical transient geometry under different handles.
+    // Compare once here, so all renderer consumers see the same immutable data.
+    // Weak, bounded entries cannot keep destroyed geometry or mesh lineage alive.
+    const size_t bytes = surface->vertices.size() * sizeof(Vertex) + surface->indices.size() * sizeof(uint32_t) +
+                         surface->weights.size() * sizeof(float) + surface->bones.size() * sizeof(uint32_t) +
+                         surface->sprite.size() * sizeof(SpriteVertex);
+    if (bytes > 1024 * 1024)
+      return surface;
+    HashStream hash;
+    hash.append(&surface->material, sizeof(surface->material));
+    hash.append(&surface->bonesPerVertex, sizeof(surface->bonesPerVertex));
+    auto append = [&](const auto &values) {
+      const size_t size = values.size();
+      hash.append(&size, sizeof(size));
+      hash.append(values.data(), values.size() * sizeof(values[0]));
+    };
+    append(surface->vertices);
+    append(surface->indices);
+    append(surface->weights);
+    append(surface->bones);
+    append(surface->sprite);
+    const auto key = hash.digest();
+    if (auto found = m_surfaceContent.find(key); found != m_surfaceContent.end()) {
+      // A fingerprint is only a lookup hint: collisions never alias geometry.
+      if (auto previous = found->second.lock(); previous && sameSurface(*previous, *surface))
+        return previous;
+      found->second = surface;
+    } else {
+      if (m_surfaceContent.size() == 512)
+        m_surfaceContent.erase(m_surfaceContent.begin());
+      m_surfaceContent.emplace(key, surface);
+    }
+    return surface;
+  }
 
   std::shared_ptr<Surface> NativeResources::prepareSurface(const remixapi_MeshInfoSurfaceTriangles &source,
                                                            bool spriteVertices, uint64_t &bytes) {
@@ -152,7 +198,7 @@ namespace remix {
       if (source.material && m_materials.find(key(source.material)) == m_materials.end()) {
         throw invalid;
       }
-      mesh->surfaces.push_back(prepareSurface(source, spriteVertices, bytes));
+      mesh->surfaces.push_back(shareSurface(prepareSurface(source, spriteVertices, bytes)));
     }
     auto previous = m_meshes.find(info.hash);
     if (update && update->enabled && std::none_of(mesh->surfaces.begin(), mesh->surfaces.end(), [](const auto &s) {
@@ -204,11 +250,7 @@ namespace remix {
         return false;
       for (size_t i = 0; i < a.surfaces.size(); ++i) {
         const auto &x = *a.surfaces[i], &y = *b.surfaces[i];
-        if (x.material != y.material || x.vertices.size() != y.vertices.size() || x.indices != y.indices ||
-            x.weights != y.weights || x.bones != y.bones || x.bonesPerVertex != y.bonesPerVertex ||
-            std::memcmp(x.vertices.data(), y.vertices.data(), x.vertices.size() * sizeof(Vertex)) ||
-            x.sprite.size() != y.sprite.size() ||
-            std::memcmp(x.sprite.data(), y.sprite.data(), x.sprite.size() * sizeof(SpriteVertex)))
+        if (!sameSurface(x, y))
           return false;
       }
       return true;

@@ -16,6 +16,12 @@ namespace remix {
   NativeResources::NativeResources() { reset(); }
 
   void NativeResources::reset() {
+    m_bakeScene.reset();
+    m_reflectionVolumes.reset();
+    m_materialReflections.reset();
+    m_bakeInstances.clear();
+    m_bakeLights.clear();
+    m_publishedBakeLightValidity.reset();
     m_draws.clear();
     m_frameIds.clear();
     m_hiddenTextures.clear();
@@ -40,6 +46,7 @@ namespace remix {
     m_materials.clear();
     m_modMaterials.clear();
     m_meshes.clear();
+    m_surfaceContent.clear();
     m_textures.clear();
     m_uiTextures.clear();
     m_paths.clear();

@@ -1,0 +1,44 @@
+#pragma once
+#include "forward/probes/coverage_selection.h"
+#include "forward/probes/coverage_context.h"
+#include "forward/probes/receiver_fits.h"
+
+namespace remix::forward::probes {
+  struct ReceiverCoverageObservation {
+    uint32_t receiver = 0, capture = 0;
+    ReceiverVisibility visibility = ReceiverVisibility::Unknown;
+  };
+  // Compact completed evidence: no GPU transport, query rays or readback buffers.
+  // Receiver and attempt indices retain the deterministic planning input order.
+  struct ReceiverCoverageEvidence {
+    CoveragePlanContext sourceContext;
+    ReceiverFits fits;
+    std::vector<ReceiverCoverageObservation> observations;
+  };
+  ReceiverCoverageEvidence retainReceiverCoverage(const scene::BakeScene &source,
+      const ReceiverFits &fits, const ReceiverAudit &coverage);
+  struct ReceiverCoveragePlan {
+    CoveragePlanContext context;
+    float maximumError = .2f;
+    uint32_t maximumChanges = 4;
+    uint32_t surfaceSamples = 0, guardSamples = 0;
+    bool composedBaseline = false, disabledBaseline = false;
+    std::vector<CoverageReplacement> replacements;
+    std::vector<std::array<uint32_t, 2>> owners; // Local attempt and variant.
+    std::vector<float> errors;
+    std::vector<Record> candidateRecords; // Geometry approved by the footprint plan; pixel-dependent fields are deferred.
+  };
+  // Replan from one metadata snapshot; authored entries are locked. Visibility
+  // evidence must belong to the same frozen scene. Unqueried samples remain unknown.
+  ReceiverCoveragePlan planReceiverCoverage(const scene::BakeScene &source,
+      const CoverageBaselineSet &baseline, const ReceiverFits &fits, const ReceiverAudit &coverage,
+      std::stop_token cancelled = {});
+  ReceiverCoveragePlan planReceiverCoverage(const scene::BakeScene &source,
+      const CoverageBaselineSet &baseline, const ReceiverCoverageEvidence &evidence,
+      std::stop_token cancelled = {}, std::span<const uint32_t> eligibleCandidates = {});
+  // Diagnostic automatic baseline, before authored composition. Do not apply
+  // this plan to a published authored-plus-automatic set without replanning.
+  ReceiverCoveragePlan planReceiverCoverage(const scene::BakeScene &source,
+      std::span<const Capture> baseline, const ReceiverFits &fits, const ReceiverAudit &coverage,
+      std::stop_token cancelled = {});
+}

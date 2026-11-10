@@ -1,19 +1,20 @@
 # Remix native runtime
 
 This repository is an SDL3/Vulkan renderer with the retained Remix 0.1003 API.
-Raster remains the default; an opt-in ray-query backend adds diffuse world lighting.
+Path tracing is the configured default, with raster fallback on unsupported hardware.
+The opt-in Forward+ backend provides baked surface/probe lighting and optional ray-query effects.
 Gameplay effects and UI remain rasterized. Compatibility exports remain supported;
 the original RTX renderer and Direct3D injection runtime have been removed.
 
 Use Clang, Meson and Ninja; on Windows use clang-cl in a Visual Studio developer environment.
-First-party code is grouped under `src/native/{api,runtime,scene,raster,pathtrace,platform,ui}`.
-Tests mirror feature folders under `tests`. See [architecture](docs/architecture.md) for ownership.
+First-party code is grouped under `src/native/{api,runtime,scene,raster,forward,pathtrace,platform,ui}`.
+Tests mirror feature folders under `tests`. See [Forward+ architecture](docs/architecture/forward-lighting.md) for ownership.
 CPU-only `scene` code must not depend on Vulkan, SDL, or either GPU backend. Backend GPU state
 is private to each feature. Preserve existing API locking, resource lifetimes, callback re-entry,
 and GPU synchronization when splitting or modifying methods.
 
 Keep `public/include/remix` layouts, calling conventions and exports compatible.
-Keep vendor sources/pins in `third_party` and the `include/vulkan` submodule unchanged unless
+Keep vendor sources/pins in `third_party` and the vendored `include/vulkan` tree unchanged unless
 updating that dependency explicitly. NUMOS (sky) is the git submodule `third_party/numos/numos-sky`,
 pinned in `third_party/numos/upstream.json`; check it out without `--recursive`
 (`git submodule update --init third_party/numos/numos-sky`). `-Dsky=auto` builds without it.
@@ -64,5 +65,8 @@ artifacts without an explicit cleanup scope from the user. Track architecture an
 `.gitignore` allows the existing guides plus `docs/architecture/` and `docs/features/`.
 Add new standalone architecture/feature guides to that allowlist. Required license notices stay tracked.
 Write testing, verification, benchmark, and deployment reports under `_work/reports/`, not tracked docs.
+Keep local benchmark output lean. Reuse the working build, bake cache, and package. Keep compact timing
+summaries and the captures needed to support them. Clean up disposable captures and temporary binaries
+from your own run once verified, and check available space before long runs.
 Legacy reports in `docs/` remain local and ignored. Do not force-add reports or link tracked guides
 to local testing evidence. Historical report paths describe the recorded revisions.

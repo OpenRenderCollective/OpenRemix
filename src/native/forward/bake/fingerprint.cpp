@@ -1,0 +1,121 @@
+#include "forward/bake/fingerprint.h"
+#include "forward/probes/data.h"
+#include <array>
+#include <bit>
+#include <cstdio>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <locale>
+#include <mutex>
+
+namespace remix::forward::bake {
+  namespace {
+    std::mutex outputMutex;
+    template <class T> uint64_t hash(std::span<const T> values) {
+      return scene::fastHash(values.data(), values.size_bytes());
+    }
+    struct FloatDigest {
+      std::array<float, 4096> block;
+      size_t used = 0;
+      uint64_t result = 0;
+      void append(float value) {
+        block[used++] = value;
+        if (used == block.size()) {
+          result = scene::fastHash(block.data(), used * sizeof(float), result);
+          used = 0;
+        }
+      }
+      uint64_t finish() const {
+        return used ? scene::fastHash(block.data(), used * sizeof(float), result) : result;
+      }
+    };
+  }
+  void dumpInputFingerprint(uint64_t source, const Inputs &inputs, std::span<const scene::LightNode> nodes,
+                            std::span<const scene::LightNode> componentNodes, const Frame &frame,
+                            uint32_t resolution, float sunDistance) noexcept {
+    const char *name = std::getenv("REMIX_DEBUG_BAKE_PHASE_HASHES");
+    if (!name || !*name)
+      return;
+    try {
+      uint64_t textures = 0;
+      for (const auto &texture : inputs.textures) {
+        const uint64_t identity = texture.image ? texture.image->fingerprint() : 0;
+        textures = scene::fastHash(&identity, sizeof(identity), textures);
+      }
+      const std::filesystem::path path(name);
+      std::lock_guard lock(outputMutex);
+      if (!path.parent_path().empty())
+        std::filesystem::create_directories(path.parent_path());
+      std::ofstream out(path, std::ios::app);
+      out.exceptions(std::ios::failbit | std::ios::badbit);
+      out.imbue(std::locale::classic());
+      out << "{\"version\":1,\"phase\":\"packedInputs\",\"source\":\"" << source
+          << "\",\"vertexCount\":" << inputs.vertices.size() << ",\"triangleCount\":" << inputs.triangles.size()
+          << ",\"materialCount\":" << inputs.materials.size() << ",\"lightCount\":" << inputs.lights.size()
+          << ",\"textureCount\":" << inputs.textures.size() << ",\"vertices\":\"" << hash(std::span(inputs.vertices))
+          << "\",\"triangles\":\"" << hash(std::span(inputs.triangles))
+          << "\",\"materials\":\"" << hash(std::span(inputs.materials))
+          << "\",\"lights\":\"" << hash(std::span(inputs.lights)) << "\",\"lightNodes\":\"" << hash(nodes)
+          << "\",\"componentLightNodes\":\"" << hash(componentNodes)
+          << "\",\"textureSources\":\"" << textures << "\",\"domeLayer\":" << inputs.domeLayer
+          << ",\"frame\":\"" << scene::fastHash(&frame, sizeof(frame))
+          << "\",\"atlasResolution\":" << resolution
+          << ",\"sunDistanceBits\":" << std::bit_cast<uint32_t>(sunDistance) << "}\n";
+    } catch (const std::exception &error) {
+      std::fprintf(stderr, "Bake input fingerprint unavailable: %s\n", error.what());
+    }
+  }
+  ReflectionFingerprint fingerprintCaptures(std::span<const probes::Capture> captures) noexcept {
+    const char *name = std::getenv("REMIX_DEBUG_BAKE_PHASE_HASHES");
+    if (!name || !*name) return {};
+    FloatDigest captureLighting;
+    uint64_t radiance = 0;
+    uint64_t sites = 0;
+    for (const auto &capture : captures) {
+      radiance = scene::fastHash(capture.radiance.data(), capture.radiance.size() * sizeof(Vec4), radiance);
+      sites = scene::fastHash(capture.position.data(), sizeof(capture.position), sites);
+      sites = scene::fastHash(&capture.resolution, sizeof(capture.resolution), sites);
+      for (const auto &pixel : capture.radiance)
+        for (uint32_t c = 0; c < 3; ++c) captureLighting.append(pixel[c]);
+    }
+    return {captures.size(), radiance, sites, captureLighting.finish()};
+  }
+  void dumpPhaseFingerprint(const char *phase, uint64_t source, const Grid &grid, const lightmap::Layout &layout,
+                            std::span<const Result> surfaces, std::span<const lightmap::Sun> sun,
+                            ReflectionFingerprint reflections) noexcept {
+    const char *name = std::getenv("REMIX_DEBUG_BAKE_PHASE_HASHES");
+    if (!name || !*name)
+      return;
+    try {
+      FloatDigest surfaceLighting, surfaceAlpha;
+      for (const auto &surface : surfaces)
+        for (const auto &coefficient : surface.irradiance) {
+          for (uint32_t c = 0; c < 3; ++c) surfaceLighting.append(coefficient[c]);
+          surfaceAlpha.append(coefficient[3]);
+        }
+      const std::filesystem::path path(name);
+      std::lock_guard lock(outputMutex);
+      if (!path.parent_path().empty())
+        std::filesystem::create_directories(path.parent_path());
+      std::ofstream out(path, std::ios::app);
+      out.exceptions(std::ios::failbit | std::ios::badbit);
+      out.imbue(std::locale::classic());
+      out << "{\"version\":1,\"phase\":\"" << phase << "\",\"source\":\"" << source
+          << "\",\"gridCount\":" << grid.probes.size()
+          << ",\"surfaceCount\":" << surfaces.size() << ",\"sunCount\":" << sun.size()
+          << ",\"captureCount\":" << reflections.count << ",\"grid\":\"" << hash(std::span(grid.probes))
+          << "\",\"gridPoints\":\"" << hash(std::span(grid.points))
+          << "\",\"points\":\"" << hash(std::span(layout.points))
+          << "\",\"pointCharts\":\"" << hash(std::span(layout.pointCharts))
+          << "\",\"owners\":\"" << hash(std::span(layout.owners))
+          << "\",\"addresses\":\"" << hash(std::span(layout.addresses))
+          << "\",\"surfaces\":\"" << hash(surfaces) << "\",\"surfaceLighting\":\"" << surfaceLighting.finish()
+          << "\",\"surfaceAlpha\":\"" << surfaceAlpha.finish()
+          << "\",\"sun\":\"" << hash(sun) << "\",\"captures\":\"" << reflections.radiance
+          << "\",\"captureSites\":\"" << reflections.sites << "\",\"captureLighting\":\"" << reflections.lighting << "\"}\n";
+    } catch (const std::exception &error) {
+      std::fprintf(stderr, "Bake phase fingerprint unavailable: %s\n", error.what());
+    }
+  }
+}

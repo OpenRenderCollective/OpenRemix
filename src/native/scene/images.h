@@ -12,6 +12,8 @@ namespace remix::scene {
   // of a mipped block-compressed DDS only those bytes are read. A smaller
   // stand-in otherwise (its preview, or a decoded mip) from loading it whole.
   Pixels loadTexturePreview(const std::filesystem::path &path, uint32_t maxEdge);
+  // Prove that every mip of an immutable decoded texture has zero RGB.
+  bool textureHasZeroRgb(const Texture &texture);
   // BC1/BC3/BC4/BC5/BC6H/BC7 formats that compressTexture accepts.
   bool isBlockCompressed(remixapi_Format format);
   // R16G16B16A16 or R32G32B32A32 SFLOAT: decoded into Pixels::hdrMips.

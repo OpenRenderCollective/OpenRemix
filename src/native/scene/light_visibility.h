@@ -28,6 +28,11 @@ namespace remix::scene {
     // Every child names a node or a leaf that exists (checked when set), so a
     // walk from the root needs no bounds checks.
     bool closed = false;
+    enum class SegmentState { Unknown, Clear, Solid };
+    struct SegmentResult { SegmentState state = SegmentState::Unknown; double fraction = 0; }; // entry in [0,1], clear=1
+    // First solid/unplayable leaf along a segment in a closed partition.
+    // Unknown covers absent/malformed partitions and exhausted traversal budgets.
+    SegmentResult firstSolid(const float start[3], const float end[3], uint32_t budget = 4096) const;
     // Cluster of a point, or -1.
     int32_t cluster(const float point[3]) const;
     bool visible(int32_t from, int32_t to) const {
@@ -88,6 +93,6 @@ namespace remix::scene {
     std::vector<uint8_t> m_unrestricted;
     void locate(const VisibilityPartition &partition, size_t light, const float *position, float probe);
     void build(const VisibilityPartition &partition, const LightBvh &tree);
-    std::vector<float> m_positions; // per static emitter, since the tree was built
+    std::vector<float> m_positions;       // per static emitter, since the tree was built
   };
 } // namespace remix::scene

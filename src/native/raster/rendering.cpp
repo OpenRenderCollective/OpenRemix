@@ -1,4 +1,5 @@
 #include "raster/gpu.h"
+#include "forward/lighting.h"
 #include <remix/remix_native_ext.h>
 #include <deque>
 #include <limits>
@@ -7,7 +8,11 @@ namespace remix {
   using namespace scene;
   using namespace raster::detail;
 
-  void RasterRenderer::prepare(VkCommandBuffer command, bool tracing) {
+  void RasterRenderer::prepare(VkCommandBuffer command, bool tracing, bool forward, DrawOwner owner) {
+    // Keep physical world positions for probe/shadow sampling. Forward+ uses
+    // independent overlay depth rather than shrinking the weapon into the eye.
+    if (forward)
+      applyViewModel(1.f);
     auto &g = *m_gpu;
     m_profile = {};
     g.uploadBytes = 0;
@@ -95,8 +100,11 @@ namespace remix {
     m_profile.retirePathsMilliseconds = since(part);
     m_profile.retireMilliseconds = since(phase) - m_profile.refreshMilliseconds;
     phase = Clock::now();
-    auto layer = [](const Draw &d) {
-      return d.ui ? 3 : d.camera == REMIXAPI_CAMERA_TYPE_SKY ? 0 : d.camera == REMIXAPI_CAMERA_TYPE_VIEW_MODEL ? 2 : 1;
+    auto layer = [forward](const Draw &d) {
+      return d.ui                                                                      ? 3
+             : d.camera == REMIXAPI_CAMERA_TYPE_SKY                                    ? 0
+             : d.camera == REMIXAPI_CAMERA_TYPE_VIEW_MODEL || (forward && d.viewModel) ? 2
+                                                                                       : 1;
     };
     auto distance = [&](const Draw &d) {
       const auto mvp = multiply(m_cameras[d.camera], d.model);
@@ -120,7 +128,8 @@ namespace remix {
     ordered.reserve(m_draws.size() + m_overlay.size() + m_uiDraws.size() + 1);
     std::deque<Draw> adjusted;
     for (const auto &draw : m_draws) {
-      if (draw.rasterVisible && !draw.reflectionOnly && (!tracing || !draw.traced())) {
+      if (draw.rasterVisible && !draw.reflectionOnly && (!tracing || !draw.traced()) &&
+          (!forward || !(owner ? owner(draw) : forward::accepts(draw)))) {
         const Draw *source = &draw;
         // Traced barycentric depth and raster interpolation can differ by ULPs.
         // Bias coplanar EQUAL feedback toward the camera while preserving occlusion.

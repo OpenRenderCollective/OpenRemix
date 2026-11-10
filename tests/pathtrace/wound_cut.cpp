@@ -5,6 +5,7 @@
 // blood, the blood a wound's W adds and the burn) and fades out below
 // opacity 1.
 #include "runtime/prepared.h"
+#include <SDL3/SDL.h>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -53,6 +54,15 @@ int main(int argc, char **argv) {
   startup.windowHeight = 128;
 #endif
   ok(api.Startup(&startup));
+  ok(api.SetConfigVariable("rtx.native.asyncPresent", "0"));
+  ok(api.SetConfigVariable("rtx.native.lowLatency", "0"));
+  // Windows StartupInfo names a host HWND, not dimensions. Resize the owned
+  // SDL window just as the other cross-platform pixel fixtures do.
+  int windowCount = 0;
+  SDL_Window **windows = SDL_GetWindows(&windowCount);
+  require(windows && windowCount > 0, "Owned test window");
+  SDL_SetWindowSize(windows[0], 256, 128);
+  SDL_free(windows);
   ok(api.SetConfigVariable("rtx.native.pathtrace.autoExposure", "0"));
   ok(api.SetConfigVariable("rtx.native.pathtrace.bloom", "0"));
   remixapi_BackendCapabilitiesEXT caps{};

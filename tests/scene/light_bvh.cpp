@@ -14,10 +14,10 @@
 
 namespace {
   void require(bool value, const char *message) {
-    if (!value) {
-      std::fprintf(stderr, "%s\n", message);
-      std::exit(1);
-    }
+  if (!value) {
+    std::fprintf(stderr, "%s\n", message);
+    std::exit(1);
+  }
   }
 } // namespace
 int main() {
@@ -349,6 +349,32 @@ int main() {
     }
     std::puts("1331 torches: interior receiver energy and selection variance passed");
   }
+  {
+    VisibilityPartition p;
+    p.closed = true; p.clusterCount = 1; p.leafClusters = {0, -1};
+    VisibilityPartition::Node a{}, b{};
+    a.plane[0] = b.plane[0] = 1; a.plane[3] = 2; b.plane[3] = 3;
+    a.children[0] = 1; a.children[1] = -1;
+    b.children[0] = -1; b.children[1] = -2;
+    p.nodes = {a, b};
+    const float start[3] = {0,0,0}, end[3] = {4,0,0}, clear[3] = {1,0,0}, solid[3] = {2.5f,0,0};
+    using State = VisibilityPartition::SegmentState;
+    require(p.firstSolid(start, end).state == State::Solid && p.firstSolid(start, end).fraction == .5,
+            "Segment traversal finds a thin solid even when both endpoints are playable");
+    require(p.firstSolid(end, start).fraction == .25 && p.firstSolid(solid, end).fraction == 0 &&
+                p.firstSolid(start, clear).state == State::Clear,
+            "Segment traversal preserves direction, solid starts and entirely free intervals");
+    require(p.firstSolid(start, end, 1).state == State::Unknown,
+            "Insufficient traversal budget cannot claim a clear segment");
+    p.nodes[0].children[1] = 0;
+    require(p.firstSolid(start, clear).state == State::Unknown, "Cyclic partitions exhaust their bounded walk");
+    p.nodes[0].children[1] = 9999;
+    require(p.firstSolid(start, clear).state == State::Unknown, "Malformed children cannot prove free space");
+    p.nodes[0].plane[0] = 0;
+    require(p.firstSolid(start, end).state == State::Unknown, "A zero-normal plane supplies no segment proof");
+    p.closed = false;
+    require(p.firstSolid(start, end).state == State::Unknown, "Open partitions cannot prove solid containment");
+  }
   // Lights that come and go, and the emitters of dynamic instances, live in
   // the hierarchy's dynamic part: the static part keeps its indices (no
   // build), and the visibility table, which covers the static nodes only,
@@ -498,7 +524,7 @@ int main() {
         require(bvh.builds == 2, "Dynamic-instance lights rebuilt the hierarchy");
         require(visibility.version() == tables, "Dynamic-instance lights remade the visibility table");
         require(bvh.staticNodes() == staticNodes.size() + 3 && std::memcmp(staticNodes.data(), bvh.nodes().data() + 3,
-                                                                           staticNodes.size() * sizeof(LightNode)) == 0,
+                                staticNodes.size() * sizeof(LightNode)) == 0,
                 "Dynamic-instance lights changed static nodes");
       }
       require(bvh.staticLights == lamps.size() && bvh.instanceLights == frame.size() - lamps.size() &&
@@ -570,7 +596,8 @@ int main() {
     // Lights that leave the host's view (its culling) keep their slots for
     // kRetain updates, through builds, and return to them; gone longer, a
     // build drops them.
-    std::mt19937 random(400);
+    std::mt19937 random(1531);
+
     std::vector<SphereLight> all;
     for (unsigned i = 0; i < 400; ++i) {
       SphereLight light;

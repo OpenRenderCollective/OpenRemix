@@ -1,0 +1,25 @@
+#include "forward/gpu.h"
+
+namespace remix::forward {
+  void Renderer::Gpu::recordExposure(VkCommandBuffer command, RasterRenderer &resources, float seconds) {
+    const auto post = postfx::settings(options);
+    const auto &frame = frames[slot];
+    const auto &hdr = resolved ? resolved : color;
+    // Late water has already incorporated screen reflections into HDR. Other
+    // frames add the same separate reflection image used by the compositor.
+    const auto reflected = reflections && !frame.waterComposed && options.debugView == 0
+        ? reflections->output() : VkDescriptorImageInfo{};
+    const auto &material = resolvedMeterMaterial ? resolvedMeterMaterial : meterMaterial;
+    const VkDescriptorImageInfo meterGuide = material
+        ? VkDescriptorImageInfo{frame.skyImage.sampler, material->view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}
+        : VkDescriptorImageInfo{};
+    auto epoch = resources.temporalEpoch();
+    if (const auto &source = resources.bakeScene(); source && source->ready)
+      epoch.world = scene::fastHash(&source->sceneId, sizeof(source->sceneId), epoch.world);
+    postProcessing->record(command, {hdr->handle, hdr->view}, post, epoch, true,
+                            options.debugView != 0, seconds, 0,
+                            {VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, reflected,
+                             frame.skyImage, frame.skyConstants->descriptor(), meterGuide});
+    statistics.postProcessing = postProcessing->statistics();
+  }
+}

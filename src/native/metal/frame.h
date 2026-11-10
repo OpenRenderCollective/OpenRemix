@@ -119,11 +119,13 @@ namespace remix::metal::trace {
     // history restarts), right and up scaled to the image plane's half
     // extents, forward.
     float screenCameras[8][4][4] = {};
+    uint64_t sheetMaterials = 0; // Measured-sheet records are supplied by Vulkan.
     // remixapi_InstanceInfoWoundCutEXT: the frame's wound vertices
     // (vertex-wound.comp; 0: none); scene units per metre of a subsurface
     // radius (rtx.subsurface.diffusionProfileScale in them) and the thickness scale.
     uint64_t woundVertices = 0;
     float subsurfaceUnits = 0, subsurfaceThickness = 1;
+    uint32_t rayPortalPadding[2] = {};
     // remixapi_MaterialInfoPortalEXT (pathtrace/gpu.h): the Metal backend
     // writes none, so every pair stays closed.
     float rayPortals[scene::rayPortalSlots][4][4] = {};
@@ -133,9 +135,9 @@ namespace remix::metal::trace {
     uint64_t wavefrontPaths = 0;
     uint32_t wavefrontStride = 0, wavefrontFlags = 0;
   };
-  static_assert(sizeof(Frame) == 2912 && offsetof(Frame, wavefrontPaths) == 2896 &&
-                offsetof(Frame, rayPortalPlanes) == 2864 &&
-                offsetof(Frame, rayPortals) == 2336 && offsetof(Frame, woundVertices) == 2320 &&
+  static_assert(sizeof(Frame) == 2928 && offsetof(Frame, wavefrontPaths) == 2912 && offsetof(Frame, rayPortalPlanes) == 2880 &&
+                offsetof(Frame, rayPortals) == 2352 && offsetof(Frame, rayPortalPadding) == 2344 &&
+                offsetof(Frame, woundVertices) == 2328 && offsetof(Frame, sheetMaterials) == 2320 &&
                 offsetof(Frame, screenCameras) == 1808 && offsetof(Frame, srgbTextures) == 1280 &&
                 offsetof(Frame, pathDebug) == 1792 && offsetof(Frame, localProbeRead) == 1168 &&
                 offsetof(Frame, localProbeParams) == 1184 && offsetof(Frame, volumeLightScales) == 1200 &&

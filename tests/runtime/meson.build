@@ -7,7 +7,7 @@ host_pass_test = executable('remix-host-pass-test', 'host_passes.cpp',
   include_directories : test_includes, dependencies : [dl_dep, threads_dep])
 if get_option('gpu_tests')
   test(metal_backend ? 'Metal presentation and lifecycle' : 'Vulkan presentation and lifecycle', runtime_test, args : [remix.full_path(), 'gpu'], timeout : 90)
-  test('Host passes on the GPU', host_pass_test, args : [remix.full_path()], timeout : 120)
+    test('Host passes on the GPU', host_pass_test, args : [remix.full_path()], timeout : 120)
   test('Compressed BC textures on the GPU', runtime_test, args : [remix.full_path(), 'compressed'], timeout : 90)
   if system != 'windows'
     test('Live process exit cleanup', runtime_test, args : [remix.full_path(), 'exit'], timeout : 30)
@@ -39,6 +39,13 @@ if numos_enabled
   test('Sky settings and NUMOS keys in profiles', sky_settings_test)
 endif
 if get_option('gpu_tests')
+  if not metal_backend
+    emissive_preparation_test = executable('remix-emissive-preparation-test', 'emissive_preparation.cpp',
+      include_directories : [test_includes, include_directories('../../samples')],
+      dependencies : [sdl3_dep, filesystem_dep], link_with : remix)
+    test('Late emissive lights prepare split temporal lighting', emissive_preparation_test,
+      env : ['REMIX_PIPELINE_THREADS=4', 'REMIX_FG_PRESENT_METERING=0'], timeout : 1200, is_parallel : false)
+  endif
   profile_runtime_test = executable('remix-profile-runtime-test', 'profile_runtime.cpp',
     '../../src/native/runtime/settings.cpp', '../../src/native/runtime/profiles.cpp',
     include_directories : [test_includes, include_directories('../../samples')],
