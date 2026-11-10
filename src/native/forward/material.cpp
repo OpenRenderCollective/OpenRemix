@@ -48,11 +48,18 @@ namespace remix::forward {
         result[c * 4 + r] = inverse[r * 4 + c];
     return result;
   }
+  Matrix drawNormalMatrix(const Matrix &model) {
+    try {
+      return normalMatrix(model);
+    } catch (remixapi_ErrorCode) {
+      return Matrix{};
+    }
+  }
   DrawData materialData(const scene::Draw &draw, double seconds) {
     const auto &m = *draw.material;
     DrawData data;
     data.model = draw.model;
-    data.normal = normalMatrix(draw.model);
+    data.normal = drawNormalMatrix(draw.model);
     std::copy_n(m.tint, 4, data.tint.begin());
     uint32_t animationFrame = 0;
     data.uv = scene::surfaceTexcoord(draw, seconds, animationFrame);
