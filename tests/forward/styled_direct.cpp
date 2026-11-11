@@ -70,6 +70,12 @@ int main() {
   value = bake::sparse::probe(grouped.words, 127, 0);
   require(value[0][1] == 12 && value[1][1] == -2 && value[0][0] == 0,
           "Probe coefficients use the same independently attributed colour envelope");
+  auto spotSource = source;
+  spotSource.lights[1].coneCos = .85f;
+  const auto spot = bake::groupStyledDirect(spotSource, layout, owners, complete, visibility, 1u << 20);
+  require(spot.styles == std::vector<uint32_t>{127} && spot.declined.size() == 1 &&
+          spot.declined[0].reason == bake::StyledDirectDecline::DirectionalEmitter,
+          "A styled spotlight keeps per-receiver cone evaluation without disabling independent groups");
   auto cachedLayout = layout;
   cachedLayout.points.clear(); cachedLayout.pointCharts.clear(); cachedLayout.owners.clear();
   const auto restored = bake::groupStyledDirect(source, cachedLayout, owners, complete, visibility, 1u<<20);

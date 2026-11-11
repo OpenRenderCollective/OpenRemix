@@ -390,6 +390,8 @@ namespace remix::forward {
     }
     auto &lights = lightScratch;
     auto &bakedLights = bakedLightScratch;
+    auto &probeLights = probeLightScratch;
+    probeLights.clear();
     lights.clear();
     lights.reserve(sources.size());
     bakedLights.clear();
@@ -442,6 +444,8 @@ namespace remix::forward {
           light.shaping[3] = float(captured + 1);
           const auto &bindings = *publishedBake->mixedLights;
           responseInput.aggregate = bindings.bakedDiffuse(captured) || grouped(captured);
+          responseInput.bakedSurface = captured < bindings.directLighting.lights.size() &&
+              bindings.directLighting.lights[captured] == bake::DirectMode::BakedSurface;
           responseInput.attributed = bindings.retainsVisibility(captured);
           responseInput.requireMixed = bindings.source->lights[captured].bakeHint ==
                                     REMIXAPI_LIGHT_BAKING_REQUIRE_MIXED_EXT;
@@ -449,6 +453,7 @@ namespace remix::forward {
       }
       const auto response = lightResponse(responseInput);
       switch (response.mode) {
+      case LightResponse::BakedSurface:
       case LightResponse::Analytic: ++statistics.analyticLights; break;
       case LightResponse::Aggregate: ++statistics.aggregateLights; break;
       case LightResponse::SelectedAggregate:
@@ -475,9 +480,15 @@ namespace remix::forward {
         light.responseWeights[1] = emptyMovingShadows[slot] ? 1.f : 0.f;
         light.responseWeights[3] = disableShadowCoverage ? 0.f : 1.f;
       }
-      auto &destination = response.mode == LightResponse::BakedFallback ? bakedLights : lights;
+      auto &destination = response.mode == LightResponse::BakedFallback ? bakedLights :
+          response.mode == LightResponse::BakedSurface ? probeLights : lights;
       destination.push_back(light);
     }
+    // Sorted cluster indices let charted receivers stop before the probe-only
+    // lights. The ordinary runtime prefix still includes both groups.
+    if (!probeLights.empty() && lights.size() < (UINT32_MAX >> clusterChartPrefixShift))
+      data.clusterInfo[3] |= (uint32_t(lights.size()) + 1) << clusterChartPrefixShift;
+    lights.insert(lights.end(), probeLights.begin(), probeLights.end());
     // Append the fallback tail without reordering either group of lights.
     const uint32_t runtimeLights = uint32_t(lights.size());
     lights.insert(lights.end(), bakedLights.begin(), bakedLights.end());

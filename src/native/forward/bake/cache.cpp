@@ -47,7 +47,7 @@ namespace remix::forward::bake::cache {
   }
   namespace {
     // Bump whenever incompatible planning, transport or wire semantics change.
-    constexpr uint32_t algorithmRevision = 36; // refinement binning and relocation share contained clearance
+    constexpr uint32_t algorithmRevision = 39; // shaped-light ownership differs for probes and charts
     void require(bool value) {
       if (!value)
         throw std::runtime_error("Invalid bake cache metadata");

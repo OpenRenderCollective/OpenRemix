@@ -262,7 +262,12 @@ void main() {
   } else {
     for (uint batch = 0u; batch < lightCount; batch += 64u) {
       uint size = min(64u, lightCount - batch);
-      if (lane < size) lightBounds[lane] = lights[batch + lane].clusterBounds;
+      vec4 bound;
+      if (lane < size) {
+        bound = lights[batch + lane].clusterBounds;
+        lightBounds[lane] = bound;
+      }
+      if (shareCandidates && lane < 4u) candidateMask[lane] = 0u;
       if (clusterConeMasksEnabled() && lane < size && batch + lane < ClusterLightCount) {
         Light light = lights[batch + lane];
         coneBounds[lane] = aggregateConeBounds(light, coneIntervals, movingCones, chartCones, coneMinimum[lane], coneMaximum[lane]);
@@ -272,15 +277,10 @@ void main() {
       }
       barrier();
       if (shareCandidates) {
-        // The union of these cells rejects a light for the whole group.
-        // Four lanes each encode an ordered block of 16 candidate lights.
-        if (lane < 4u) {
-          uint begin = lane * 16u, mask = 0u;
-          for (uint j = begin; j < min(begin + 16u, size); ++j)
-            if (intersects(lightBounds[j], groupMinimum, groupMaximum))
-              mask |= 1u << (j - begin);
-          candidateMask[lane] = mask;
-        }
+        // Test one light per lane against the union of all cells. The bit
+        // position preserves index order for the receiver's prefix lookup.
+        if (lane < size && intersects(bound, groupMinimum, groupMaximum))
+          atomicOr(candidateMask[lane / 16u], 1u << (lane % 16u));
         barrier();
       }
       if (validCell) {

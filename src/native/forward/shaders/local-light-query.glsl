@@ -3,6 +3,9 @@
 // the standard function preserves its existing early-rejection control flow.
   vec4 surfaceLightmap = receiver.coordinate;
   Light light = lights[index];
+  bool bakedSurface = localLightUsesBakedSurface(light);
+  if (aggregateReceiver && bakedSurface && surfaceLightmap.w >= .5)
+    LOCAL_LIGHT_MISS(1u);
   bool aggregateDiffuse = aggregateReceiver && localLightUsesBakedDiffuse(light);
   vec3 delta = light.positionRadius.xyz - p;
   float distance2 = max(dot(delta, delta), 1e-8), distance = sqrt(distance2);
