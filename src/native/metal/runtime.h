@@ -72,6 +72,7 @@ namespace remix {
     ui::DeviceStatus uiDevice() const;
     ui::PreparationStatus uiPreparation() const;
     ui::FrameGenerationStatus uiFrameGeneration() const;
+    ui::LatencyStatus uiLatency() const;
     ui::PostStatus uiPost() const;
     ui::PresentStatus uiPresent() const;
     ui::ReconstructionChoices uiReconstructionChoices() const;
@@ -165,6 +166,7 @@ namespace remix {
     WaitedFrame waitedFrame() const { return {}; }
     double asyncCallerWait() const { return 0; }
     double latencySleepMilliseconds() const { return 0; }
+    latency::Summary latencySummary() const { return {}; } // not recorded on Metal
     // The compiled and compiling pipelines (pipelines.request).
     std::string pipelineReport() const;
     const gpu::FrameTimings &gpuPassTimings() const { return busyState() ? busyState()->gpuTimings : m_gpuTimings; }

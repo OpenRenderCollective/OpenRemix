@@ -26,6 +26,8 @@
 #include "forward/renderer.h"
 #include "particles/renderer.h"
 #include "platform/gpu_frames.h"
+#include "platform/frame_latency.h"
+#include "platform/frame_stamps.h"
 #include "platform/gpu_timers.h"
 #include "platform/present_queue.h"
 #include "platform/render_thread.h"
@@ -215,6 +217,8 @@ namespace remix {
     WaitedFrame waitedFrame() const { return m_waitedFrame; }
     // How long the last Present's low latency sleep held the host.
     double latencySleepMilliseconds() const { return m_latencySleepMilliseconds; }
+    // Frame latency statistics (timings.txt; the Latency panel uses uiLatency).
+    latency::Summary latencySummary() const { return m_latencyRecorder.summary(); }
     // The caller's side of the last asynchronous Present (inactive otherwise).
     AsyncPresentStatistics asyncCallerStatistics() const { return m_previousAsyncCaller; }
     remixapi_ErrorCode configureSetting(const char *key, const char *value);
@@ -340,6 +344,7 @@ namespace remix {
     ui::ReconstructionStatus uiReconstruction() const;
     ui::ReconstructionChoices uiReconstructionChoices() const;
     ui::FrameGenerationStatus uiFrameGeneration() const;
+    ui::LatencyStatus uiLatency() const;
     ui::SkyStatus uiSky() const;
     ui::PostStatus uiPost() const;
     ui::HdrStatus uiHdr() const;
@@ -400,7 +405,10 @@ namespace remix {
     // from fresher input. applyLatencyMode: render thread idle.
     remixapi_ErrorCode presentUnpaced(const remixapi_PresentInfo *info);
     void applyLatencyMode();
+    // Ends the host's frame: the low latency hold (Anti-Lag's input stage or
+    // reflexSleep), then the next frame's number and start.
     void latencySleep();
+    void reflexSleep();
     // Whether the driver's low latency mode should be on now.
     bool latencyWanted() const;
     void latencyMarker(VkLatencyMarkerNV marker, uint64_t frame);
@@ -675,6 +683,7 @@ namespace remix {
     PFN_vkSetLatencySleepModeNV m_setLatencySleepMode = nullptr;
     PFN_vkLatencySleepNV m_latencySleep = nullptr;
     PFN_vkSetLatencyMarkerNV m_setLatencyMarker = nullptr;
+    PFN_vkGetLatencyTimingsNV m_getLatencyTimings = nullptr; // Reflex's own report (uiLatency)
     VkSemaphore m_latencySemaphore = VK_NULL_HANDLE; // timeline: the driver signals the end of a sleep
     uint64_t m_latencyValue = 0;
     double m_latencySleepMilliseconds = 0;
@@ -771,6 +780,11 @@ namespace remix {
     // GPU pass timers: render-owned recorder; the setting is copied at Present
     // setup (applySettings) for the render thread.
     gpu::GpuTimers m_gpuTimers;
+    // Frame latency statistics (Diagnostics' Latency panel, timings.txt): host
+    // times at the low latency markers' points (latencyMarker, latencySleep)
+    // and the GPU's start and end of each frame (m_frameStamps, recordFrame).
+    latency::Recorder m_latencyRecorder;
+    latency::FrameStamps m_frameStamps;
     bool m_gpuTimersEnabled = false;
     uint64_t m_recordedFrames = 0;
     // Presentation may still consume a semaphore after the submission fence

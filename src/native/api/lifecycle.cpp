@@ -231,6 +231,9 @@ namespace {
         char line[1024];
         if (!t.available) {
           text = "unavailable (enable rtx.native.gpuPassTimers)\n";
+          // Frame latency needs no pass timers.
+          if (const auto latency = g_runtime.latencySummary(); !latency.frames.empty())
+            text += remix::latency::describe(latency, "# ");
         } else {
           std::snprintf(line, sizeof(line),
                         "GPU frame %.3f ms (passes %.3f, between passes %.3f); render %ux%u, output %ux%u\n",
@@ -541,6 +544,8 @@ namespace {
                           g_runtime.latencyActive() ? "on" : "off (raster backend)");
             text += line;
           }
+          if (const auto latency = g_runtime.latencySummary(); !latency.frames.empty())
+            text += remix::latency::describe(latency, "# ");
           if (const auto caller = g_runtime.asyncCallerStatistics(); caller.active) {
             std::snprintf(
                 line, sizeof(line),

@@ -4,6 +4,9 @@ test('Render thread handoff, draining and errors', render_thread_test, timeout :
 gpu_timings_test = executable('remix-gpu-timings-test', 'gpu_timings.cpp',
   include_directories : test_includes)
 test('GPU pass timings: own times, order and counter wrap', gpu_timings_test, timeout : 30)
+frame_latency_test = executable('remix-frame-latency-test', 'frame_latency.cpp',
+  include_directories : test_includes, dependencies : threads_dep)
+test('Frame latency: stages, history, late GPU times and clock conversion', frame_latency_test, timeout : 30)
 if get_option('gpu_tests') and not metal_backend
   input_events_test = executable('remix-input-events-test', 'input_events.cpp',
     link_with : shell_platform, include_directories : test_includes,
