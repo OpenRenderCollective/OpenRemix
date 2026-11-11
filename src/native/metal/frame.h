@@ -134,8 +134,10 @@ namespace remix::metal::trace {
     // The wavefront indirect pass (pathtrace/gpu.h): Vulkan only.
     uint64_t wavefrontPaths = 0;
     uint32_t wavefrontStride = 0, wavefrontFlags = 0;
+    uint64_t primaryLocal = 0; // the split primary's results (Vulkan only; 0 here)
+    uint32_t primaryLocalPadding[2] = {};
   };
-  static_assert(sizeof(Frame) == 2928 && offsetof(Frame, wavefrontPaths) == 2912 && offsetof(Frame, rayPortalPlanes) == 2880 &&
+  static_assert(sizeof(Frame) == 2944 && offsetof(Frame, wavefrontPaths) == 2912 && offsetof(Frame, rayPortalPlanes) == 2880 &&
                 offsetof(Frame, rayPortals) == 2352 && offsetof(Frame, rayPortalPadding) == 2344 &&
                 offsetof(Frame, woundVertices) == 2328 && offsetof(Frame, sheetMaterials) == 2320 &&
                 offsetof(Frame, screenCameras) == 1808 && offsetof(Frame, srgbTextures) == 1280 &&

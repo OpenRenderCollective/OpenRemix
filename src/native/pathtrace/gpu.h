@@ -267,11 +267,15 @@ namespace remix::trace::detail {
     // queue, rtx.native.pathtrace.wavefrontShadowQueue).
     uint64_t wavefrontPaths = 0;
     uint32_t wavefrontStride = 0, wavefrontFlags = 0;
+    // rtx.native.pathtrace.splitPrimary: the split primary's per-pixel
+    // results (pathtrace.comp PrimaryLocals; 0: the opaque pass in one launch).
+    uint64_t primaryLocal = 0;
+    uint32_t primaryLocalPadding[2] = {};
   };
   static_assert(offsetof(Frame, sheetMaterials) == 2320 && offsetof(Frame, woundVertices) == 2328 &&
                 offsetof(Frame, subsurfaceUnits) == 2336 && offsetof(Frame, rayPortalPadding) == 2344 &&
                 offsetof(Frame, rayPortals) == 2352 && offsetof(Frame, rayPortalPlanes) == 2880 &&
-                offsetof(Frame, wavefrontPaths) == 2912 && sizeof(Frame) == 2928 &&
+                offsetof(Frame, wavefrontPaths) == 2912 && offsetof(Frame, primaryLocal) == 2928 && sizeof(Frame) == 2944 &&
                 offsetof(Frame, screenCameras) == 1808 && offsetof(Frame, srgbTextures) == 1280 &&
                 offsetof(Frame, pathDebug) == 1792 && offsetof(Frame, localProbeRead) == 1168 &&
                 offsetof(Frame, localProbeParams) == 1184 && offsetof(Frame, volumeLightScales) == 1200 &&
@@ -379,6 +383,9 @@ namespace remix {
     VkPipeline sheetCompute{}, sheetTemporalCompute{};
     bool multiSheetFailed = false; // the multi-sheet pass's compile failed: the composition pass composes layers
     std::unique_ptr<Buffer> sheetResults;
+    // rtx.native.pathtrace.splitPrimary: the producer's results for the
+    // consumer, 48 bytes a pixel (pathtrace.comp PrimaryLocals).
+    std::unique_ptr<Buffer> primaryLocal;
     VkPipeline compute = VK_NULL_HANDLE, composite[2] = {};
     VkPipeline splitDirectCompute = VK_NULL_HANDLE;
     struct IndirectPass {
@@ -454,6 +461,9 @@ namespace remix {
       variantSparseShift = 14,
       variantNoPaint = 1u << 16,
       variantNoSubsurface = 1u << 17,
+      // The split primary's two launches (pathtrace.comp primaryRole).
+      variantPrimaryProducer = 1u << 18,
+      variantPrimaryConsumer = 1u << 19,
     };
     // The options the lighting pipelines were last configured with
     // (beginFrame): the settings the scene variants are prewarmed for.
@@ -519,8 +529,10 @@ namespace remix {
     bool rouletteActive = false, rouletteFailed = false;
     // sparse: the launch of the opaque pass under sparse rendering (1 the
     // selected pixels, 2 the others); null until that variant has compiled.
+    // primaryRole: the split primary's producer (1) or consumer (2), also
+    // null until compiled.
     VkPipeline selectLightingPipeline(VkPipeline pipeline, bool combinedDirect = false, bool separateIndirect = false,
-                                      uint32_t sparse = 0);
+                                      uint32_t sparse = 0, uint32_t primaryRole = 0);
     void forgetLightingPipeline(VkPipeline pipeline);
     VkShaderModule shaders[3] = {};
     VkQueryPool compaction = VK_NULL_HANDLE, timestamps = VK_NULL_HANDLE;

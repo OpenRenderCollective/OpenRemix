@@ -136,6 +136,7 @@ layout(set=0,binding=3,std140) uniform Frame {
   uvec4 rayPortalConfig; // teleports per camera ray, exit offset (float bits, world units), reserved
   vec4 rayPortalPlanes[2]; // per index: dot(front normal, p) at its opening's plane (local x = 0)
   uint64_t wavefrontPaths; uint wavefrontStride,wavefrontFlags; // wavefront indirect records (pathtrace.comp WavefrontPlanes), plane stride in 16 bytes, bit 0: shadow queue
+  uint64_t primaryLocal; uvec2 primaryLocalPadding; // split primary results (pathtrace.comp PrimaryLocals; 0: one launch)
 } frame;
 // Instance mask bit of view models (pathtrace/tlas_policy.h).
 const uint viewModelInstanceMask=64u;

@@ -1416,6 +1416,14 @@ namespace remix {
                           "in, as before. SIGMA's sun shadow ray keeps its nearest-blocker search. Same image.\n"
                           "Applies at the next frame (the specialized shaders compile in the background).\n"
                           "rtx.native.pathtrace.shadowEarlyOut");
+      ui::Checkbox("Split primary surface", &options.splitPrimary);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("The opaque lighting pass as two launches: the first resolves each pixel's primary\n"
+                          "surface and local light (and shades the pixels that need a traced camera ray or the\n"
+                          "sheet walk), the second shades the rest without the surface fallbacks or the light\n"
+                          "sampler, in fewer registers. Needs the denoiser. Same image. Applies at the next\n"
+                          "frame (the two launches compile in the background).\n"
+                          "rtx.native.pathtrace.splitPrimary");
       ui::Checkbox("Wavefront indirect lighting", &options.wavefrontIndirect);
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("The separate indirect pass as small kernels: the paths' start, then each bounce's\n"

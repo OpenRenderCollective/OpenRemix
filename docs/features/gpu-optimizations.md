@@ -149,6 +149,28 @@ On `ep2_outland_06a`'s forest (Garry's Mod, RTX 5080, 960x540 render, paint)
 the indirect pass took 3.30 ms as one kernel and 2.18 ms as wavefront
 kernels with the shadow queue (frame 8.28 to 7.33 ms).
 
+## Split primary surface
+
+`rtx.native.pathtrace.splitPrimary` (0/1, default 1) runs the denoised opaque
+lighting pass as two launches over the screen (`pathtrace.comp`
+`primaryRole`, a specialization of the opaque pipeline's own variant):
+
+- **producer**: every pixel's primary surface and, where it came from the
+  raster G-buffer alone, its local light (after the subsurface draw, as the
+  one launch takes it), stored with the random state it leaves (48 bytes a
+  pixel). A pixel whose surface needed a traced camera ray or the sheet walk
+  (decals, films, subsurface records, sheets) it shades whole and marks done.
+- **consumer**: the other pixels, the surface read from the G-buffer and the
+  local light from the producer; sun, guides and stores as before.
+
+The consumer holds neither the surface fallbacks (`cameraHit`, the material
+record) nor the light sampler: 168 registers where the opaque pass takes the
+255 maximum (8 to 12 warps an SM on NVIDIA). Same image within noise. Until
+both launches have compiled, and with sparse rendering, the single launch
+runs. On `cp_brew` (Garry's Mod, RTX 5080, 1280x720 render) the two take
+1.08 + 0.26 ms where the one took 1.20 ms; the frame is unchanged within run
+noise.
+
 ## Tests
 
 - `remix-micromap-test`: hardware-measured order anchors, table nesting, and a

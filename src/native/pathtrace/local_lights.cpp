@@ -15,7 +15,7 @@ namespace remix {
   // every stage. Variants are lazy, cached, and share the source pipeline's
   // fence/layout lifetime.
   VkPipeline PathTracer::Gpu::selectLightingPipeline(VkPipeline pipeline, bool combinedDirect, bool separateIndirect,
-                                                     uint32_t sparse) {
+                                                     uint32_t sparse, uint32_t primaryRole) {
     selectedLightingKey = UINT32_MAX;
     selectedFeatures = defaultFeatures;
     selectedLayout = layout;
@@ -44,7 +44,12 @@ namespace remix {
     // Combined mode also uses the split opaque pipeline in raw rendering.
     const uint32_t key = (split ? variantSplit : 0u) | (combinedDirect ? variantCombinedDirect : 0u) |
                          (rayProfile.path ? variantProfile : 0u) | (separateIndirect ? variantSeparateIndirect : 0u) |
-                         (earlyOut ? variantEarlyOut : 0u) | sparse << variantSparseShift;
+                         (earlyOut ? variantEarlyOut : 0u) | sparse << variantSparseShift |
+                         (primaryRole == 1   ? variantPrimaryProducer
+                          : primaryRole == 2 ? variantPrimaryConsumer
+                                             : 0u);
+    // A split primary launch has no stand-in: the caller keeps one launch.
+    const bool roleOnly = sparse || primaryRole || (separateIndirect && !source.baseSeparateIndirect);
     selectedLightingKey = key;
     // A scene without paint or subsurface scattering takes the role's lean
     // variant once it has compiled, and the full one until then.
@@ -75,7 +80,7 @@ namespace remix {
         attempted = false;
         // A consumer source stands in for its own variants (plain sampling);
         // a producer-dependent role without one has no fallback.
-        return sparse || (separateIndirect && !source.baseSeparateIndirect) ? VK_NULL_HANDLE : pipeline;
+        return roleOnly ? VK_NULL_HANDLE : pipeline;
       }
       // A failed specialization keeps the source pipeline (below).
       if (result == VK_ERROR_DEVICE_LOST)
@@ -83,7 +88,7 @@ namespace remix {
     }
     // A split consumer must never silently execute the inline fallback after
     // its producer has run (duplicate tracing and cache/profile side effects).
-    if ((sparse || (separateIndirect && !source.baseSeparateIndirect)) && !variant)
+    if (roleOnly && !variant)
       return VK_NULL_HANDLE;
     return variant ? variant : pipeline;
   }
@@ -104,7 +109,8 @@ namespace remix {
                                 bit(variantEarlyOut),
                                 (key >> variantSparseShift) & 3u,
                                 !bit(variantNoPaint),
-                                !bit(variantNoSubsurface)};
+                                !bit(variantNoSubsurface),
+                                bit(variantPrimaryProducer) ? 1u : bit(variantPrimaryConsumer) ? 2u : 0u};
     const VkSpecializationMapEntry entries[] = {{1, 0, sizeof(VkBool32)},
                                                 {4, sizeof(VkBool32), sizeof(VkBool32)},
                                                 {7, 2 * sizeof(VkBool32), sizeof(VkBool32)},
@@ -112,8 +118,9 @@ namespace remix {
                                                 {12, 4 * sizeof(VkBool32), sizeof(VkBool32)},
                                                 {13, 5 * sizeof(VkBool32), sizeof(uint32_t)},
                                                 {14, 6 * sizeof(VkBool32), sizeof(VkBool32)},
-                                                {15, 7 * sizeof(VkBool32), sizeof(VkBool32)}};
-    const VkSpecializationInfo specialization{8, entries, sizeof(enabled), enabled};
+                                                {15, 7 * sizeof(VkBool32), sizeof(VkBool32)},
+                                                {16, 8 * sizeof(VkBool32), sizeof(uint32_t)}};
+    const VkSpecializationInfo specialization{9, entries, sizeof(enabled), enabled};
     const VkComputePipelineCreateInfo create{.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
                                              .stage = {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
                                                        .stage = VK_SHADER_STAGE_COMPUTE_BIT,

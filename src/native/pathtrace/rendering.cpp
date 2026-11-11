@@ -1223,6 +1223,23 @@ namespace remix {
     const bool querySharc = sharc.stats.active && (sharc.hasReceivers || options.sharcDebug);
     configureIndirect(frame, options, querySharc);
     {
+      // The split primary's results (rtx.native.pathtrace.splitPrimary): the
+      // denoised opaque pass, densely launched.
+      frame.primaryLocal = 0;
+      if (options.splitPrimary && denoiser && !options.sparseRendering) {
+        const VkDeviceSize bytes = VkDeviceSize(extent.width) * extent.height * 48;
+        if (!primaryLocal || primaryLocal->size < bytes) {
+          auto next = buffer(bytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, false);
+          if (primaryLocal)
+            retiredBuffers.push_back(std::move(primaryLocal));
+          primaryLocal = std::move(next);
+        }
+        frame.primaryLocal = primaryLocal->address;
+      } else if (primaryLocal) {
+        retiredBuffers.push_back(std::move(primaryLocal));
+      }
+    }
+    {
       // The sheet lighting pass's transport.
       const VkDeviceSize bytes = VkDeviceSize(extent.width) * extent.height * 16;
       if (!sheetResults || sheetResults->size < bytes) {
@@ -1408,6 +1425,21 @@ namespace remix {
     const auto opaqueKey = selectedLightingKey;
     const auto opaqueFeatures = selectedFeatures;
     const auto opaqueLayout = selectedLayout;
+    // The split primary's two launches, in the opaque pipeline's role; until
+    // both have compiled, the one launch.
+    VkPipeline primaryProducer = VK_NULL_HANDLE, primaryConsumer = VK_NULL_HANDLE;
+    uint32_t primaryProducerFeatures = defaultFeatures, primaryConsumerFeatures = defaultFeatures;
+    VkPipelineLayout primaryProducerLayout = opaqueLayout, primaryConsumerLayout = opaqueLayout;
+    if (frame.primaryLocal && opaquePipeline && !sparse.active) {
+      const bool separate = indirectPass.active;
+      primaryProducer = selectLightingPipeline(opaqueSource, false, separate, 0, 1);
+      primaryProducerFeatures = selectedFeatures;
+      primaryProducerLayout = selectedLayout;
+      primaryConsumer = selectLightingPipeline(opaqueSource, false, separate, 0, 2);
+      primaryConsumerFeatures = selectedFeatures;
+      primaryConsumerLayout = selectedLayout;
+    }
+    const bool primarySplit = primaryProducer && primaryConsumer;
     // The consumer base pipeline without its producer this frame (the pass
     // failed, or its inline variant is still compiling): black indirect light.
     const auto opaqueEntry = lightingPipelines.find(opaqueSource);
@@ -1606,6 +1638,19 @@ namespace remix {
                             extent);
         bindTrace(command, sparseLit, opaqueLayout, sparseLitFeatures);
         vkCmdDispatchIndirect(command, sparse.count->handle, 16);
+      } else if (primarySplit) {
+        // The split primary: surfaces and local light (and the pixels with
+        // traced surfaces, whole), then the rest from its results.
+        {
+          gpu::GpuScope scope(command, "Trace opaque: primary surface, local (split primary)", extent);
+          bindTrace(command, primaryProducer, primaryProducerLayout, primaryProducerFeatures);
+          vkCmdDispatch(command, (extent.width + 7) / 8, (extent.height + 7) / 8, 1);
+        }
+        barrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+        gpu::GpuScope scope(command, "Trace opaque: direct, sun, emissive (split primary)", extent);
+        bindTrace(command, primaryConsumer, primaryConsumerLayout, primaryConsumerFeatures);
+        vkCmdDispatch(command, (extent.width + 7) / 8, (extent.height + 7) / 8, 1);
       } else {
         gpu::GpuScope scope(command, name, extent);
         bindTrace(command, opaquePipeline, opaqueLayout, opaqueFeatures);

@@ -114,6 +114,18 @@ layout(constant_id=4) const bool enableSplitLighting=false;
 // sampling rate. 2: over the screen, for the pixels that were not selected:
 // guides, emission and sky only.
 layout(constant_id=13) const uint sparseLaunch=0u;
+// Split primary (rtx.native.pathtrace.splitPrimary): the opaque lighting
+// pass as two launches over the screen, keeping the primary surface's
+// fallbacks and the local light sampler out of the second one's registers.
+// 1, the producer: every pixel's primary surface and, where it came from the
+// raster G-buffer alone, its local light (after the subsurface draw, as the
+// opaque pass takes it), stored with the random state it leaves
+// (PrimaryLocals); a pixel whose surface needed a traced camera ray or the
+// sheet walk (decals, films, subsurface records, sheets) it shades whole and
+// marks done. 2, the consumer: the other pixels, their surface read from the
+// G-buffer, their local light from the producer; everything else as the
+// opaque pass. 0: one launch.
+layout(constant_id=16) const uint primaryRole=0u;
 uint rng;
 // The pixel this invocation shades; the invocation's own coordinate except
 // in a launch over the selected-pixel list.
@@ -234,6 +246,14 @@ bool cameraRay=false;
 // screen's do (reflection-only instances), never view models, and no camera
 // culling (the camera's cluster is not where they are).
 bool screenSheets=false;
+// Set when the primary surface needed a traced camera ray or the sheet walk
+// (primarySurface, rasterSurface): the split primary producer shades it whole.
+bool primaryTraced=false;
+// The split primary's per-pixel results (primaryRole): three elements a
+// pixel, the local light and its distance, its specular share and the
+// emissive distance, then the random state after it and whether the
+// producer shaded the pixel whole (y).
+layout(buffer_reference,std430,buffer_reference_align=16) buffer PrimaryLocals { uvec4 data[]; };
 // Angle between neighbouring pixel rays at the screen centre, scaled to output
 // pixels (visibilityProbe.z: render/output size, the upscaler's mip bias).
 // Orthographic cameras give zero: finest mip.
@@ -713,7 +733,7 @@ bool portalView(Screen s) { return s.shown&&s.slot==0xffu&&s.portals!=0u; }
 #endif
 // First visibility comes from rasterization; secondary rays still query the full scene.
 // A painted pixel's ray is traced again (rasterPrimary, primarySurface).
-Hit rasterSurface(ivec2 pixel, vec3 origin) {
+Hit rasterSurface(ivec2 pixel, vec3 origin, bool traceCamera) {
   vec4 position=imageLoad(primaryPosition,pixel), normal=imageLoad(primaryNormal,pixel);
   // The kind plus 8: a view model, plus 16: a thin film, a metal colour or
   // subsurface scattering,
@@ -724,7 +744,8 @@ Hit rasterSurface(ivec2 pixel, vec3 origin) {
   if(normal.w>=32)normal.w-=32;
   if(normal.w>=16){normal.w-=16;hit.film.x=-1;}
   if(normal.w>=8){normal.w-=8;viewModelPath=true;}
-  if(normal.w==5) return cameraHit(origin,normalize(position.xyz-origin));
+  // (The split primary's consumer never reads such a pixel: the producer shades it.)
+  if(normal.w==5){primaryTraced=true;if(traceCamera)return cameraHit(origin,normalize(position.xyz-origin));}
   vec4 previous=imageLoad(primaryPrevious,pixel);
   hit.t=normal.w==0?1e30:length(position.xyz-origin);
   hit.p=position.xyz;hit.n=normal.w==0?vec3(0):normalize(normal.xyz);
@@ -758,7 +779,7 @@ Hit rasterSurface(ivec2 pixel, vec3 origin) {
   return hit;
 }
 Hit rasterPrimary(ivec2 pixel, vec3 origin) {
-  Hit hit=rasterSurface(pixel,origin);
+  Hit hit=rasterSurface(pixel,origin,true);
   // Re-query painted pixels to obtain the ray traversal's exact intersection
   // distance. Raster-interpolated positions can round to the other side of a
   // very close receiver; the common resolver advances tMin without an offset.
@@ -853,7 +874,7 @@ Hit primarySurface(ivec2 pixel,inout vec3 origin,inout vec3 direction,bool sheet
   vec3 traceOrigin=origin,traceDirection=direction;
   Hit hit;
   if(raster) {
-    hit=rasterSurface(pixel,origin);
+    hit=rasterSurface(pixel,origin,true);
     if(hit.decal||hit.film.x<0){trace=true;record=!hit.decal;traceDirection=normalize(hit.p-origin);}
 #if defined(TEMPORAL) && !defined(PSR_PASS)
     // A sheet seen through ray portals (replaceScreen keeps the first): the
@@ -865,6 +886,7 @@ Hit primarySurface(ivec2 pixel,inout vec3 origin,inout vec3 direction,bool sheet
   // At most: the primary (and its re-query), then per layer a body query and the layer's ray.
   for(uint step=0;step<66u;++step) {
     if(trace) {
+      primaryTraced=true;
       Hit traced=cameraHit(traceOrigin,traceDirection);trace=false;
       if(body) {
         body=false;
@@ -2735,6 +2757,38 @@ vec3 cameraMedium(float distance,out vec3 transmittance) {
   return (1-transmittance)*color*light;
 }
 #endif
+#if !defined(TRANSPARENCY_PASS) && !defined(SPLIT_LIGHTING_PASS) && !defined(INDIRECT_PASS) && WAVEFRONT_PASS==0
+// The opaque pass's local light at its lit point (the subsurface profile's
+// point when sssMoved): combined, or split into its torch and emissive
+// families and added up (their emissive hit distance in emissiveDistance),
+// its diffuse share tinted by the profile. The split primary's producer
+// takes it here for its consumer.
+void opaqueLocal(Hit lit,bool sssMoved,vec3 sssTint,float sssSpecular,out vec3 local,out vec3 localSpecular,
+                 out float localDistance,out float emissiveDistance) {
+  local=vec3(0);localSpecular=vec3(0);localDistance=0;emissiveDistance=0;
+  vec3 emissive=vec3(0),emissiveSpecular=vec3(0);
+  // The primary's paths (traceIndirect) follow whenever bounces are on.
+  emissiveSpecularFromPaths=frame.config.y>0u;
+#ifdef SPLIT_LOCAL_PASS
+  // Split direct lighting runs separately to keep its reservoirs out of the
+  // opaque/indirect kernel's register footprint.
+  if(!(enableSplitLighting&&frame.splitLocal.x!=0))
+    local=localLighting(lit,rng,frame.localConfig.y,localDistance,true,localSpecular);
+#else
+  if(enableSplitLighting&&frame.splitLocal.x!=0&&frame.splitLocal.x!=3)
+    splitLocalLighting(lit,rng,frame.localConfig.y,local,emissive,localDistance,emissiveDistance,localSpecular,emissiveSpecular);
+  else
+    local=localLighting(lit,rng,frame.localConfig.y,localDistance,true,localSpecular);
+  local+=emissive;localSpecular+=emissiveSpecular;
+#endif
+  emissiveSpecularFromPaths=false;
+  if(sssMoved) {
+    vec3 diffuse=sssTint*max(local-localSpecular,vec3(0));
+    localSpecular*=sssSpecular;
+    local=localSpecular+diffuse;
+  }
+}
+#endif
 void main() {
   ivec2 pixel=ivec2(gl_GlobalInvocationID.xy);
   shadingPixel=pixel;
@@ -3107,7 +3161,38 @@ void main() {
 #ifndef TRANSPARENCY_PASS
   // Opaque lighting owns the initial random sequence used by confidence retracing.
   uint sheetCount=0;vec3 diagnostic;
-  Hit primary=primarySurface(pixel,origin,direction,true,sheetCount,true,diagnostic);
+  // Split primary (primaryRole): the consumer's pixels came from the G-buffer
+  // alone; the producer's local light and random state are theirs.
+  const bool primaryProducer=primaryRole==1u&&sparseLaunch==0u,primaryConsumer=primaryRole==2u&&sparseLaunch==0u;
+  const uint primaryIndex=(uint(pixel.x)+uint(pixel.y)*frame.target.x)*3u;
+  uvec4 producedLocal=uvec4(0),producedSpecular=uvec4(0),producedState=uvec4(0);
+  Hit primary;
+  if(primaryConsumer) {
+    producedState=PrimaryLocals(frame.primaryLocal).data[primaryIndex+2u];
+    if(producedState.y!=0u)return; // shaded whole by the producer
+    producedLocal=PrimaryLocals(frame.primaryLocal).data[primaryIndex];
+    producedSpecular=PrimaryLocals(frame.primaryLocal).data[primaryIndex+1u];
+    primary=rasterSurface(pixel,origin,false);
+    diagnostic=frame.splitLocal.w!=0?debugGeometry(primary,pixel):vec3(0);
+  } else
+    primary=primarySurface(pixel,origin,direction,true,sheetCount,true,diagnostic);
+  if(primaryProducer) {
+    if(!primaryTraced) {
+      // The consumer's pixel: its local light where the opaque pass takes it.
+      vec3 local=vec3(0),localSpecular=vec3(0);float localDistance=0,emissiveDistance=0;
+      if(primary.t<1e30&&!primary.blended) {
+        Hit lit=primary;vec3 sssTint=vec3(1);float sssSpecular=1;bool sssMoved=false;
+        if(subsurfaceCapable&&primary.sss.w!=0&&random()<abs(primary.sss.w))sssMoved=subsurfaceMove(lit,sssTint,sssSpecular);
+        opaqueLocal(lit,sssMoved,sssTint,sssSpecular,local,localSpecular,localDistance,emissiveDistance);
+      }
+      PrimaryLocals(frame.primaryLocal).data[primaryIndex]=uvec4(floatBitsToUint(local),floatBitsToUint(localDistance));
+      PrimaryLocals(frame.primaryLocal).data[primaryIndex+1u]=
+          uvec4(floatBitsToUint(localSpecular),floatBitsToUint(emissiveDistance));
+      PrimaryLocals(frame.primaryLocal).data[primaryIndex+2u]=uvec4(rng,0u,0u,0u);
+      return;
+    }
+    PrimaryLocals(frame.primaryLocal).data[primaryIndex+2u]=uvec4(0u,1u,0u,0u);
+  }
 #ifdef TEMPORAL
   if(temporal.translucency.x!=0&&sheetCount!=1) {
     imageStore(frontDepth,pixel,vec4(1e10));
@@ -3146,26 +3231,13 @@ void main() {
                        max(0,dot(lit.n,-frame.lightDirection.xyz))*frame.lightRadiance.rgb;
     }
     primaryDirect=unshadowedDirect*sunTransmittance;
-    // The primary's paths (traceIndirect) follow whenever bounces are on.
-    emissiveSpecularFromPaths=frame.config.y>0u;
-#ifdef SPLIT_LOCAL_PASS
-    // Split direct lighting runs separately to keep its reservoirs out of the
-    // opaque/indirect kernel's register footprint.
-    if(!(enableSplitLighting&&frame.splitLocal.x!=0))
-      local=localLighting(lit,rng,frame.localConfig.y,localDistance,true,localSpecular);
-#else
-    if(enableSplitLighting&&frame.splitLocal.x!=0&&frame.splitLocal.x!=3)
-      splitLocalLighting(lit,rng,frame.localConfig.y,local,emissive,localDistance,emissiveDistance,localSpecular,emissiveSpecular);
-    else
-      local=localLighting(lit,rng,frame.localConfig.y,localDistance,true,localSpecular);
-    local+=emissive;localSpecular+=emissiveSpecular;
-#endif
-    emissiveSpecularFromPaths=false;
-    if(sssMoved) {
-      vec3 diffuse=sssTint*max(local-localSpecular,vec3(0));
-      localSpecular*=sssSpecular;
-      local=localSpecular+diffuse;
-    }
+    if(primaryConsumer) {
+      // The producer's, with the random state it left (the same subsurface draw before it).
+      local=uintBitsToFloat(producedLocal.xyz);localDistance=uintBitsToFloat(producedLocal.w);
+      localSpecular=uintBitsToFloat(producedSpecular.xyz);emissiveDistance=uintBitsToFloat(producedSpecular.w);
+      rng=producedState.x;
+    } else
+      opaqueLocal(lit,sssMoved,sssTint,sssSpecular,local,localSpecular,localDistance,emissiveDistance);
     if(separateIndirect) {
       IndirectTransport result=IndirectResults(frame.indirectResults).pixels[uint(pixel.x)+uint(pixel.y)*frame.target.x];
       vec2 rg=unpackHalf2x16(result.rg),bd=unpackHalf2x16(result.bd);

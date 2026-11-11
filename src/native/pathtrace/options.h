@@ -378,6 +378,13 @@ namespace remix {
     uint32_t wavefrontBounces = 1;
     // Its split bounces' sun and sky shadow rays in a kernel of their own.
     bool wavefrontShadowQueue = true;
+    // The denoised opaque pass as two launches (pathtrace.comp primaryRole):
+    // the first resolves every pixel's primary surface and local light (and
+    // shades whole the pixels whose surface needed a traced camera ray or the
+    // sheet walk), the second shades the rest from the G-buffer and its
+    // results, without the surface fallbacks or the light sampler in its
+    // registers. Same image; while either launch compiles, one launch.
+    bool splitPrimary = true;
     // Shadow-type rays (sun, sky, local light visibility) settle an opacity
     // micromap's unproved micro-triangles by their baked estimate instead of
     // the shader's alpha test (VK_EXT_opacity_micromap's forced two states).
