@@ -3121,7 +3121,24 @@ void main() {
   rng=hash(uint(pixel.x)+uint(pixel.y)*frame.target.x+hash(frame.config.z));
   vec3 origin,direction;
   ray((vec2(pixel)+.5+frame.jitter.xy)/vec2(frame.target.xy)*2-1,frame.inverseCameraRelative,frame.eye.xyz,origin,direction);
+#if WAVEFRONT_PASS==1
+  // The split primary (primaryRole) for the start kernel, as two launches
+  // over the screen: 2 takes the pixels whose surface the raster G-buffer
+  // alone describes, without the surface's traced fallbacks in its
+  // registers; 1 the others (a traced camera ray or the sheet walk), with
+  // them. Both tell from the G-buffer whose a pixel is (primarySurface's own
+  // conditions); a pixel left to the other launch starts no path here.
+  uint passed=0u;Hit primary;bool startSkipped=false;
+  if(primaryRole!=0u) {
+    primary=rasterSurface(pixel,origin,false);
+    const bool traced=frame.target.w==0||primaryTraced||primary.decal||primary.film.x<0||primary.blended;
+    startSkipped=traced!=(primaryRole==1u);
+    if(primaryRole==1u&&traced)primary=primarySurface(pixel,origin,direction,true,passed);
+  } else
+    primary=primarySurface(pixel,origin,direction,true,passed);
+#else
   uint passed;Hit primary=primarySurface(pixel,origin,direction,true,passed);
+#endif
   rng=hash(rng^0x696e6469u); // its own sequence, apart from the direct pass's
   vec3 diffuseFactor=vec3(1),specularFactor=vec3(1);
 #ifdef TEMPORAL
@@ -3130,7 +3147,8 @@ void main() {
       materialF0(primary),primary.rm.x,diffuseFactor,specularFactor);
 #endif
 #if WAVEFRONT_PASS==1
-  bool sky,going=wavefrontStart(primary,pixel,index,diffuseFactor,specularFactor,sky);
+  bool sky=false,going=false;
+  if(!startSkipped)going=wavefrontStart(primary,pixel,index,diffuseFactor,specularFactor,sky);
   wavefrontEnqueue(0u,index,going);
   // The sky kernel's list: list 1 until the first shade kernel.
   wavefrontEnqueue(1u,index,sky);

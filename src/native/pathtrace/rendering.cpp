@@ -1519,6 +1519,21 @@ namespace remix {
         kernelLayouts[i] = selectedLayout;
         wavefront = kernels[i] != VK_NULL_HANDLE;
       }
+      // The split primary's start kernel (rtx.native.pathtrace.splitPrimary):
+      // the pixels with traced surfaces, then the rest without the surface
+      // fallbacks; until both have compiled, the one start kernel.
+      VkPipeline startTraced = VK_NULL_HANDLE, startRaster = VK_NULL_HANDLE;
+      uint32_t startTracedFeatures = defaultFeatures, startRasterFeatures = defaultFeatures;
+      VkPipelineLayout startTracedLayout = VK_NULL_HANDLE, startRasterLayout = VK_NULL_HANDLE;
+      if (wavefront && options.splitPrimary) {
+        startTraced = selectLightingPipeline(indirectPass.wavefront[0], false, false, 0, 1);
+        startTracedFeatures = selectedFeatures;
+        startTracedLayout = selectedLayout;
+        startRaster = selectLightingPipeline(indirectPass.wavefront[0], false, false, 0, 2);
+        startRasterFeatures = selectedFeatures;
+        startRasterLayout = selectedLayout;
+      }
+      const bool startSplit = startTraced && startRaster;
       // The local light queue (rtx.native.pathtrace.wavefrontLocalQueue): the
       // deferring shade kernels' queue variants and the local kernel, as a
       // set; until all have compiled, the shade kernels sample themselves.
@@ -1563,7 +1578,17 @@ namespace remix {
                 VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT);
         vkCmdFillBuffer(command, paths, header, IndirectPass::wavefrontQueueHeader, 0);
         barrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, compute, computeAccess);
-        {
+        if (startSplit) {
+          {
+            gpu::GpuScope scope(command, "Trace indirect (wavefront start, traced surfaces)", extent);
+            bindTrace(command, startTraced, startTracedLayout, startTracedFeatures);
+            vkCmdDispatch(command, screenX, screenY, 1);
+          }
+          barrier(command, compute, computeWrite, compute, computeAccess);
+          gpu::GpuScope scope(command, "Trace indirect (wavefront start)", extent);
+          bindTrace(command, startRaster, startRasterLayout, startRasterFeatures);
+          vkCmdDispatch(command, screenX, screenY, 1);
+        } else {
           gpu::GpuScope scope(command, "Trace indirect (wavefront start)", extent);
           bindTrace(command, kernels[0], kernelLayouts[0], kernelFeatures[0]);
           vkCmdDispatch(command, screenX, screenY, 1);

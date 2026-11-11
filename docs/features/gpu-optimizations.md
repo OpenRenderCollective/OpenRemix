@@ -177,6 +177,12 @@ lighting pass as two launches over the screen (`pathtrace.comp`
 - **consumer**: the other pixels, the surface read from the G-buffer and the
   local light from the producer; sun, guides and stores as before.
 
+The wavefront start kernel splits the same way, without a buffer: both of
+its launches tell from the G-buffer whose a pixel is. The launch for
+G-buffer surfaces takes 123 registers where the start kernel took 236 to
+244; the one for traced surfaces runs the full kernel over its few pixels
+(0.05 ms on `cp_brew`, the other 0.31 ms where the one launch took 0.30).
+
 The consumer holds neither the surface fallbacks (`cameraHit`, the material
 record) nor the light sampler: 168 registers where the opaque pass takes the
 255 maximum (8 to 12 warps an SM on NVIDIA). Same image within noise. Until
