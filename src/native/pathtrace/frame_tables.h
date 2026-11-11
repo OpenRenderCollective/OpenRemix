@@ -1058,7 +1058,7 @@ namespace remix::trace {
       input.reflectionOnly = draw.reflectionOnly;
       input.cameraOnly = std::all_of(instance.begin(), instance.end(), [](const auto &surface) {
         const auto &material = *surface.draw.material;
-        return material.rayPortal && !material.rayPortalOverOpaque;
+        return surface.draw.cameraOnly || (material.rayPortal && !material.rayPortalOverOpaque);
       });
       input.decal =
           std::all_of(instance.begin(), instance.end(), [](const auto &surface) { return surface.draw.decal; });

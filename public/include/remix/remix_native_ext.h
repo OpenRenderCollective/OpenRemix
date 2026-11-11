@@ -278,6 +278,19 @@ typedef struct remixapi_InstanceInfoCameraCullingEXT {
   uint32_t flags; // REMIXAPI_INSTANCE_CAMERA_CULL_*_EXT
 } remixapi_InstanceInfoCameraCullingEXT;
 
+// Optional InstanceInfo pNext: only camera rays meet the instance (with the
+// rays a camera sends on through ray portals and screens); shadow, light,
+// bounce and reflection rays pass it, as they pass a ray portal's opening. A
+// backdrop drawn as geometry, such as a skybox mesh around a game's 3D-skybox
+// diorama, then shows without shutting the sun and sky out of what it
+// surrounds, or lighting it. Path-traced instances only: the raster backend
+// draws the instance as usual.
+#define REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_CAMERA_ONLY_EXT ((remixapi_StructType)0x7fff1077)
+typedef struct remixapi_InstanceInfoCameraOnlyEXT {
+  remixapi_StructType sType;
+  const void *pNext;
+} remixapi_InstanceInfoCameraOnlyEXT;
+
 // Optional TextureInfo pNext. With `generate` set and a single supplied level
 // (mipLevels = 1), the runtime completes the texture with a box-filtered mip
 // chain (sRGB colors averaged in linear space). For hosts that capture only a

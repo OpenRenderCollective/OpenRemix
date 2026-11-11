@@ -494,6 +494,9 @@ namespace remix {
       // remixapi_InstanceInfoCameraCullingEXT flags: what camera rays skip of
       // a traced instance (1 back faces, 2 clusters the camera cannot see).
       uint8_t cameraCull = 0;
+      // remixapi_InstanceInfoCameraOnlyEXT: only camera rays (and theirs past
+      // portals and screens) meet it, as a ray portal's opening.
+      bool cameraOnly = false;
       // remixapi_InstanceInfoWoundCutEXT (null: none): cut away for every ray
       // and raster pass, evaluated at the mesh's own (bind pose) positions.
       std::shared_ptr<const WoundCut> wound;

@@ -26,8 +26,9 @@ namespace remix::trace {
     // A wound cut (remixapi_InstanceInfoWoundCutEXT): every candidate is
     // tested (FORCE_NO_OPAQUE), whatever its geometry's opacity.
     bool noOpaque = false;
-    // Every surface is a standalone ray portal's opening (Material::rayPortal
-    // without rayPortalOverOpaque): cameraOnlyInstanceMask only.
+    // Only camera rays meet it: every surface is a standalone ray portal's
+    // opening (Material::rayPortal without rayPortalOverOpaque) or its draw is
+    // camera-only (remixapi_InstanceInfoCameraOnlyEXT). cameraOnlyInstanceMask.
     bool cameraOnly = false;
     bool operator==(const InstanceInput &) const = default;
   };
@@ -70,9 +71,10 @@ namespace remix::trace {
   // ground probes: NUMOS's shaders hard-code this bit (OBJECT_MASK_OPAQUE).
   // Blended, decal, view-model and reflection-only instances lack it.
   constexpr uint8_t skyOccluderInstanceMask = 8;
-  // Standalone ray portal openings: only camera rays include this bit (they
-  // teleport there); shadow, light-visibility and bounce rays pass through the
-  // opening as through the open doorway it stands in.
+  // Standalone ray portal openings and camera-only instances
+  // (remixapi_InstanceInfoCameraOnlyEXT): only camera rays include this bit
+  // (they teleport at an opening); shadow, light-visibility and bounce rays
+  // pass through, as through the open doorway an opening stands in.
   constexpr uint8_t cameraOnlyInstanceMask = 128;
   constexpr uint8_t allInstancesMask = 0xff & ~viewModelInstanceMask & ~reflectionOnlyInstanceMask,
                     staticInstanceMask = 1, dynamicInstanceMask = 2, blendedInstanceMask = 4, decalInstanceMask = 32;
