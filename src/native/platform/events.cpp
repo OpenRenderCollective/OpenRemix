@@ -34,6 +34,9 @@ namespace remix {
     if (threadStatus != REMIXAPI_ERROR_CODE_SUCCESS) {
       return threadStatus;
     }
+    // Text input changed by a Present on another thread (syncTextInput).
+    if (m_textInputPending && onWindowThread())
+      applyTextInput();
 
     if (m_adoptedWindow) {
       return REMIXAPI_ERROR_CODE_SUCCESS;
