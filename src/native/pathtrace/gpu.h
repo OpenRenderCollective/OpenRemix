@@ -257,7 +257,8 @@ namespace remix::trace::detail {
     // seen through it restarts its history). rayPortalConfig: teleports per
     // camera ray (rtx.native.pathtrace.rayPortalTeleports), the exit offset
     // (float bits, rtx.native.pathtrace.rayPortalExitOffset), teleports per
-    // bounce ray (rtx.native.pathtrace.rayPortalLightTeleports), reserved.
+    // bounce ray (rtx.native.pathtrace.rayPortalLightTeleports), 1 when some
+    // pair is open (the sun's shadow rays then look for portals).
     // rayPortalPlanes: each opening's plane (scene::RayPortals::planes).
     alignas(16) float rayPortals[scene::rayPortalSlots][4][4] = {};
     uint32_t rayPortalConfig[4] = {};
