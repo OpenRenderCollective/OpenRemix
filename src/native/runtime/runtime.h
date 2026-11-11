@@ -89,7 +89,8 @@ namespace remix {
     }
     const std::string &postProcessingFailure() const { return m_postFailure; }
     remixapi_ErrorCode present(const remixapi_PresentInfo *info);
-    bool lowLatencySupported() const { return m_lowLatencySupported; }
+    // NVIDIA Reflex or AMD Anti-Lag (a device has at most one).
+    bool lowLatencySupported() const { return m_lowLatencySupported || m_antiLagSupported; }
     // The device builds opacity micromaps (rtx.native.pathtrace.opacityMicromaps).
     bool opacityMicromapsSupported() const { return m_opacityMicromaps; }
     remixapi_ErrorCode requestScreenshot(const char *path);
@@ -192,7 +193,7 @@ namespace remix {
     // Low latency: asked for by the setting, and in effect (the path tracing
     // backend or frame generation).
     bool latencyRequested() const { return m_lowLatencyRequested; }
-    bool latencyActive() const { return m_lowLatencyActive; }
+    bool latencyActive() const { return m_lowLatencyActive || m_antiLagActive; }
     // The raster renderer's last prepare() (read while the render thread may
     // be writing it: diagnostics only).
     RasterRenderer::Profile rasterProfile() const { return renderer().completedProfile(); }
@@ -403,6 +404,11 @@ namespace remix {
     // Whether the driver's low latency mode should be on now.
     bool latencyWanted() const;
     void latencyMarker(VkLatencyMarkerNV marker, uint64_t frame);
+    // AMD Anti-Lag (VK_AMD_anti_lag), the same setting on AMD drivers: the
+    // INPUT stage where the host's frame begins (latencySleep; the driver may
+    // block there), the PRESENT stage as that frame's rendered image goes to
+    // presentation (presentImages), both with the frame's index.
+    void antiLagUpdate(VkAntiLagStageAMD stage, uint64_t frame);
     // "openremix_framegen.log" beside the runtime library, written once frame
     // generation has been asked for: the device, each swapchain, every change
     // of status and, every few seconds, the counters. What a user sends when
@@ -663,6 +669,9 @@ namespace remix {
     static constexpr auto presentMeteringFeaturesType = VkStructureType(1000613001);
     bool m_presentMeteringSupported = false;
     std::atomic<uint32_t> m_meteredFrames{0}, m_meteringRefused{0};
+    // AMD Anti-Lag: active is written by applyLatencyMode (render thread idle).
+    bool m_antiLagSupported = false, m_antiLagActive = false;
+    PFN_vkAntiLagUpdateAMD m_antiLagUpdate = nullptr;
     PFN_vkSetLatencySleepModeNV m_setLatencySleepMode = nullptr;
     PFN_vkLatencySleepNV m_latencySleep = nullptr;
     PFN_vkSetLatencyMarkerNV m_setLatencyMarker = nullptr;
