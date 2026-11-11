@@ -10,7 +10,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <limits>
+#include <set>
 #include <stdexcept>
+#include <stop_token>
 
 using namespace remix;
 using namespace remix::forward;
@@ -501,6 +503,34 @@ int main(int argc, char **argv) {
   const p::RegionSite nearFloor[] = {{{0, 0, 0}, 1, 3}, {{10, 0, 0}, .05f, 3}, {{9, 0, 1}, 1, 3}};
   require(p::spreadSites(nearFloor, 2, 1) == std::vector<size_t>{0, 2},
           "A slightly farther boundary sliver cannot displace a well-cleared origin in the same room");
+  const auto allocatorScene = unequalRooms();
+  const p::RegionSite allocatorSites[] = {
+      {{-9.2f, 0, .2f}, .1f, 3}, {{-8.2f, 0, .2f}, .1f, 3},
+      {{-5.2f, 0, .2f}, .1f, 3}, {{-4.5f, 0, .2f}, .1f, 3},
+      {{4, 0, 1.5f}, .1f, 3}};
+  const p::ReceiverSample allocatorReceivers[] = {
+      {{-9.1f, 0, .1f}, {0, 0, 1}, 10},
+      {{-8.4f, 0, .1f}, {0, 0, 1}, 2},
+      {{-5.1f, 0, .1f}, {0, 0, 1}, 5}};
+  const auto supportedFirst = p::receiverSupportedSites(allocatorScene, allocatorSites, allocatorReceivers, 1);
+  require(supportedFirst == std::vector<size_t>{0},
+          "A receiver-supported room receives the first fitting origin ahead of a remote empty cluster");
+  const auto supportedGroups = p::receiverSupportedSites(allocatorScene, allocatorSites, allocatorReceivers, 2);
+  require(supportedGroups == std::vector<size_t>{0, 2},
+          "Remaining budget reaches a second receiver-supported cluster");
+  const auto withFallback = p::receiverSupportedSites(allocatorScene, allocatorSites, allocatorReceivers, 3);
+  require(withFallback.size() == 3 && withFallback[0] == 0 && withFallback[1] == 2 && withFallback[2] == 4,
+          "An empty receiver cluster remains eligible through the existing spread fallback");
+  require(p::receiverSupportedSites(allocatorScene, allocatorSites, allocatorReceivers, 3) == withFallback &&
+              std::set<size_t>(withFallback.begin(), withFallback.end()).size() == withFallback.size(),
+          "Receiver-supported allocation is deterministic and never returns duplicate origins");
+  const p::RegionSite splitClusterSites[] = {
+      {{-1, 0, 0}, .1f, 3}, {{.5f, 0, 0}, .1f, 3}, {{-3.5f, 0, 0}, .1f, 3}};
+  const p::ReceiverSample splitClusterReceivers[] = {
+      {{-1, 0, -1}, {0, 0, 1}, 1}, {{1, 0, -1}, {0, 0, 1}, 1}};
+  require(p::receiverSupportedSites(localSource, splitClusterSites, splitClusterReceivers, 2) ==
+              std::vector<size_t>{0, 2},
+          "Clear receivers across adjacent BSP clusters do not force one supported slot per cluster");
   const p::FittedRegion adjoining[] = {
       {box({-2, 0, 0}, {0, 2, 2}), {{-1, 1, 1}, .1f, 3}},
       {box({0, 0, 0}, {2, 2, 2}), {{1, 1, 1}, .1f, 3}},
@@ -512,6 +542,75 @@ int main(int argc, char **argv) {
       {box({-2, -2, -2}, {2, 2, 2}), {{0, 0, 0}, .1f, 2}}};
   require(p::selectRegions(enclosing, 2) == std::vector<size_t>{0, 1},
           "Containing an earlier small box cannot disqualify a region that adds substantial space");
+  auto fitted = [](Bounds bounds, float quality = 1.f) {
+    return p::FittedRegion{bounds, {{0, 0, 0}, .1f, 3}, quality};
+  };
+  const p::FittedRegion supportedVsEmpty[] = {
+      fitted(box({-10, -10, -10}, {10, 10, 10})), fitted(box({-1, -1, -1}, {1, 1, 1}))};
+  const std::vector<uint32_t> supportedVsEmptyFootprints[] = {{}, {0}};
+  require(p::selectSupportedRegions(supportedVsEmpty, supportedVsEmptyFootprints,
+                                    std::array<double, 1>{2}, 1) == std::vector<size_t>{1},
+          "A small receiver-supported room outranks a large empty projection box");
+  const p::FittedRegion sameBoxes[] = {
+      fitted(box({-2, -2, -2}, {2, 2, 2})), fitted(box({-2, -2, -2}, {2, 2, 2}))};
+  const std::vector<uint32_t> separateWallFootprints[] = {{0}, {1}};
+  require(p::selectSupportedRegions(sameBoxes, separateWallFootprints,
+                                    std::array<double, 2>{2, 3}, 2) == std::vector<size_t>{1, 0},
+          "Identical projection boxes do not merge visibility-supported surfaces on separate walls");
+  const p::FittedRegion overlappingFootprints[] = {
+      fitted(box({-3, -1, -1}, {-1, 1, 1})), fitted(box({-1, -1, -1}, {1, 1, 1})),
+      fitted(box({1, -1, -1}, {3, 1, 1}))};
+  const std::vector<uint32_t> overlappingIds[] = {{0, 1}, {1, 2}, {3}};
+  require(p::selectSupportedRegions(overlappingFootprints, overlappingIds,
+                                    std::array<double, 4>{5, 5, 5, 7}, 2) == std::vector<size_t>{0, 2},
+          "Overlapping receiver footprints count shared surface area only once");
+  const p::FittedRegion qualityTie[] = {
+      fitted(box({-2, -1, -1}, {-1, 1, 1}), .5f), fitted(box({1, -1, -1}, {2, 1, 1}), 1.f)};
+  const std::vector<uint32_t> qualityTieFootprints[] = {{0}, {1}};
+  require(p::selectSupportedRegions(qualityTie, qualityTieFootprints,
+                                    std::array<double, 2>{2, 1}, 1) == std::vector<size_t>{0},
+          "Quality-weighted equal marginal scores retain deterministic input priority");
+  const p::FittedRegion fallbackRegions[] = {
+      fitted(box({-1, -1, -1}, {1, 1, 1})), fitted(box({-10, -10, -10}, {10, 10, 10})),
+      fitted(box({3, -1, -1}, {5, 1, 1}))};
+  const std::vector<uint32_t> fallbackFootprints[] = {{0}, {}, {}};
+  const auto supportedFallback = p::selectSupportedRegions(fallbackRegions, fallbackFootprints,
+                                                            std::array<double, 1>{1}, 2);
+  require(supportedFallback.size() == 2 && supportedFallback[0] == 0 && supportedFallback[1] == 1,
+          "Unused receiver-supported budget falls back to existing box-volume coverage");
+  std::stop_source stoppedSelection;
+  stoppedSelection.request_stop();
+  bool cancelledSelection = false;
+  try { (void)p::selectSupportedRegions(supportedVsEmpty, supportedVsEmptyFootprints,
+                                        std::array<double, 1>{2}, 1, stoppedSelection.get_token()); }
+  catch (const std::runtime_error &) { cancelledSelection = true; }
+  require(cancelledSelection, "Receiver-footprint selection observes cancellation");
+  bool oversizedSelection = false;
+  try { (void)p::selectSupportedRegions(supportedVsEmpty, supportedVsEmptyFootprints,
+                                       std::array<double, 1>{2}, 65); }
+  catch (const std::invalid_argument &) { oversizedSelection = true; }
+  require(oversizedSelection, "Receiver-footprint selection enforces its bounded capture budget");
+  const std::vector<uint32_t> invalidFootprints[] = {{2}, {1}};
+  bool invalidFootprintRejected = false;
+  try { (void)p::selectSupportedRegions(sameBoxes, invalidFootprints, std::array<double, 2>{1, 1}, 1); }
+  catch (const std::invalid_argument &) { invalidFootprintRejected = true; }
+  require(invalidFootprintRejected, "Receiver-footprint selection rejects out-of-range surface IDs");
+  auto footprintScene = unequalRooms();
+  footprintScene.sceneScale = 1;
+  const auto broadInfluence = box({-10, -3, 0}, {8, 3, 3});
+  p::Capture separatedCaptures[2];
+  separatedCaptures[0].bounds = broadInfluence;
+  separatedCaptures[0].influence = broadInfluence;
+  separatedCaptures[0].position = {-9, 0, .2f};
+  separatedCaptures[1].bounds = broadInfluence;
+  separatedCaptures[1].influence = broadInfluence;
+  separatedCaptures[1].position = {-5, 0, .2f};
+  const p::ReceiverSample separatedReceivers[] = {
+      {{-9.1f, 0, .1f}, {0, 0, 1}, 1}, {{-5.1f, 0, .1f}, {0, 0, 1}, 1}};
+  const auto separatedFootprints = p::receiverFootprints(footprintScene, separatedCaptures, separatedReceivers);
+  require(separatedFootprints.size() == 2 && separatedFootprints[0] == std::vector<uint32_t>{0} &&
+              separatedFootprints[1] == std::vector<uint32_t>{1},
+          "BSP first-solid checks keep broad overlapping influences from claiming a receiver behind a wall");
   authored.reflectionHints = {{0, 0, 0}, {-2, 0, 0}, {-2, .2f, 0}, {2, 0, 0}};
   const auto seeded = p::place(authored, sparse, 4, 8);
   require(seeded.size() == 2 && seeded[0].position[0] == -2 && seeded[1].position[0] == 2,
