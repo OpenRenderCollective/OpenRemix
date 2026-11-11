@@ -183,6 +183,20 @@ RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_DrawList_AddRectFilled(float x1, f
 RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_DrawList_AddText(float x, float y, uint32_t col, const char *text);
 RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_GetDisplaySize(float *out_w, float *out_h);
 
+// --- Viewport overlays and picking (overlay callback) ---
+// The background draw list: over the rendered image, under every window (a
+// host marking things in the scene). Mouse queries for picking in the
+// viewport: a click that no window or item took.
+RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_BackgroundDrawList_AddCircle(float x, float y, float radius,
+                                                                           uint32_t col, int segments,
+                                                                           float thickness);
+RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_BackgroundDrawList_AddText(float x, float y, uint32_t col,
+                                                                         const char *text);
+RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_GetMousePos(float *out_x, float *out_y);
+RIMGUI_EXPORT int RIMGUI_CALL remixapi_imgui_IsMouseClicked(int button);
+RIMGUI_EXPORT int RIMGUI_CALL remixapi_imgui_IsAnyWindowHovered(void);
+RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_SetScrollHereY(float center_y_ratio);
+
 #ifdef __cplusplus
 }
 #endif

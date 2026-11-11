@@ -22,6 +22,7 @@
 
 #include "api/imgui_compat.h"
 #include <atomic>
+#include <cfloat>
 #include <imgui.h>
 
 // Static callback storage - allows external plugins/wrappers to register ImGui draw callbacks.
@@ -660,4 +661,47 @@ extern "C" RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_GetDisplaySize(float *o
     *out_w = io.DisplaySize.x;
   if (out_h)
     *out_h = io.DisplaySize.y;
+}
+
+// --- Viewport overlays and picking ---
+
+extern "C" RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_BackgroundDrawList_AddCircle(float x, float y, float radius,
+                                                                                      uint32_t col, int segments,
+                                                                                      float thickness) {
+  if (!ImGui::GetCurrentContext())
+    return;
+  ImGui::GetBackgroundDrawList()->AddCircle(ImVec2(x, y), radius, col, segments, thickness);
+}
+
+extern "C" RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_BackgroundDrawList_AddText(float x, float y, uint32_t col,
+                                                                                    const char *text) {
+  if (!ImGui::GetCurrentContext() || !text)
+    return;
+  ImGui::GetBackgroundDrawList()->AddText(ImVec2(x, y), col, text);
+}
+
+extern "C" RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_GetMousePos(float *out_x, float *out_y) {
+  const ImVec2 p = ImGui::GetCurrentContext() ? ImGui::GetIO().MousePos : ImVec2(-FLT_MAX, -FLT_MAX);
+  if (out_x)
+    *out_x = p.x;
+  if (out_y)
+    *out_y = p.y;
+}
+
+extern "C" RIMGUI_EXPORT int RIMGUI_CALL remixapi_imgui_IsMouseClicked(int button) {
+  if (!ImGui::GetCurrentContext() || button < 0 || button >= ImGuiMouseButton_COUNT)
+    return 0;
+  return ImGui::IsMouseClicked(button) ? 1 : 0;
+}
+
+extern "C" RIMGUI_EXPORT int RIMGUI_CALL remixapi_imgui_IsAnyWindowHovered(void) {
+  if (!ImGui::GetCurrentContext())
+    return 0;
+  return ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow) || ImGui::IsAnyItemHovered() ? 1 : 0;
+}
+
+extern "C" RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_SetScrollHereY(float center_y_ratio) {
+  if (!ImGui::GetCurrentContext())
+    return;
+  ImGui::SetScrollHereY(center_y_ratio);
 }
