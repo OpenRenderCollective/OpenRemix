@@ -1,5 +1,59 @@
 # Forward+ handoff
 
+## Current work protocol
+
+The [roadmap](forward-plus-roadmap.md) is the current ordered queue. Sections below
+include historical qualification context: recheck revisions, PR states, defaults and
+installed binaries before treating them as current. Start with cubemap correctness;
+do not resume every historical experiment. A source inventory is not a test pass.
+
+Use one bounded task per implementation model: revisions/dirty state, exact repro,
+verified observations versus hypotheses, source entry points, smallest experiment,
+invariants, acceptance checks, storage budget and stopping criterion. A cheaper model
+can implement that packet; seek architectural review for energy ownership, GPU
+synchronization, cache-schema changes, contradictory evidence or two failed hypotheses.
+Do not run multiple agents editing overlapping renderer files.
+
+### Implementation entry points
+
+Paths are relative to src/native/forward; test paths are relative to the repository.
+Verify current call sites before changing code.
+
+| Concern | Code | Existing test entry points |
+| --- | --- | --- |
+| Cubemap placement | probes/placement.cpp: candidateSeedSites, fitSeedCandidates, captureCandidates, configureInfluence; probes/selection.cpp; probes/evaluation.cpp: ProjectionAudit | tests/forward/probes.cpp, probe_visibility.cpp |
+| Cubemap sampling | probes/data.cpp: sample; shaders/probes.glsl: probeParallaxDirection, sampleProjectedProbe, boundProbeSample | tests/forward/probe_sampling.cpp, probes.cpp |
+| Lightmap charts | lightmap/packing.cpp: packCharts; lightmap/layout.cpp: plan, rasterize, sampleCharts; lightmap/interior_donors.cpp, coverage.cpp | tests/forward/lightmaps.cpp |
+| Diffuse probes | bake/grid_sampling.cpp: probeStencil; shaders/diffuse-baked-field.glsl, irradiance.glsl, probe-tiles.glsl | tests/forward/probe_receivers.cpp, probe_visibility.cpp |
+| SSR filtering | shaders/radiance-filter.glsl: reflectionColorMip, reduceRadiance; surface.glsl; reflection-guide.glsl | Find SSR transport/MSAA, water and viewmodel cases in the current test list |
+| Persistence | cache_io.h; probes/cache_codec.cpp; bake/cache.cpp | tests/forward/cache.cpp, local_reflection_cache.cpp, cache_persistence.cpp |
+
+The inventory found chunked/checksummed serialization without general compression
+in cache_io.h. This is not a byte audit of every payload. Shader XZ compression is
+unrelated to bake compression. Reference checkouts are optional; ref/ may be absent.
+
+### Owner workspace and storage
+
+Reuse D:\OpenRemix and D:\garrys-mod-rtx-remixed-2, existing builds, and the playable
+E:\SteamLibrary\steamapps\common\GarrysModWithRTX2\bake-cache for game and benchmarks.
+Do not create another checkout, worktree, test installation or cache. These are
+owner-local paths, not portable build requirements. Inspect dirty files first;
+do not reset or commit unrelated experiments. Use targeted branches, never push main.
+
+Check free space before builds, bakes or captures. For the next investigation, budget
+256 MiB for new diagnostic output in one scratch directory, with at most six retained
+screenshots and no raw/full-frame dumps. Existing build/cache storage is separate
+and also needs a capacity check. Reduce scope rather than spilling to another drive.
+Keep one known-good deployment rollback; remove only confirmed disposable run output.
+Do not work around safety controls with deletion scripts.
+
+Verify installed hashes rather than equating HEAD with the playable build. Preserve
+settings and remove temporary launch/teleport overrides after testing. Use completed
+warm bakes, foreground uncontended GPU, matched settings and gmod_mcore_test 1 for live
+timing. Report total GPU median/p95 and distinguish live from standalone results.
+
+The rest of this handoff retains earlier architecture and qualification context.
+
 Start with AGENTS.md, the [fresh-clone setup](forward-plus-setup.md), the
 [lighting architecture](../architecture/forward-lighting.md) and the
 [roadmap](forward-plus-roadmap.md). Historical roadmap entries document prior
@@ -14,7 +68,8 @@ investigations. Confirm current behavior against the revisions under review.
 - Check out the matching native and adapter revisions from the review before
   building. The setup guide includes the paired draft checkout commands.
   Installed game binaries, caches and launchers are local to each
-  developer. Use an isolated test installation for live comparisons.
+  developer. Reuse the configured playable installation and shared cache for live
+  comparisons, preserving settings and one known-good rollback.
 
 Path tracing remains the configured backend default. Source 2 is the default
 preset within Forward+. The adapter follows the runtime-configured panel shortcut.
