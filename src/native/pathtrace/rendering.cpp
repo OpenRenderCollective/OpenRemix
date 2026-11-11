@@ -829,6 +829,7 @@ namespace remix {
           frame.rayPortals[index][3][3] += 2;
       }
       frame.rayPortalConfig[0] = std::min(options.rayPortalTeleports, 8u);
+      frame.rayPortalConfig[2] = std::min(options.rayPortalLightTeleports, 8u);
       const float exitOffset = std::max(options.rayPortalExitOffset, 0.f);
       std::memcpy(&frame.rayPortalConfig[1], &exitOffset, 4);
       std::copy(portals.planes.begin(), portals.planes.end(), frame.rayPortalPlanes);
