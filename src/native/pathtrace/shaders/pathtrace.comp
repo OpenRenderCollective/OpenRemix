@@ -715,7 +715,8 @@ Hit cameraHit(vec3 origin,vec3 direction) {
 // skipBlendedSecondaryRays). Camera and transparency rays keep every instance.
 bool portalTeleport(uint surface,vec3 p,inout vec3 origin,inout vec3 direction,inout uint portals,inout uint chain,uint limit);
 // Light through ray portals (rtx.native.pathtrace.rayPortalLightTeleports,
-// frame.rayPortalConfig.z): a bounce ray meeting an open portal's front goes
+// frame.rayPortalConfig.z): a bounce ray meeting an open portal (a standalone
+// one's front, a portal over an opaque surface anywhere: portalTeleport) goes
 // on from its partner, as a camera ray does, so what lies past the portal
 // lights what is in front of it (a window onto another place).
 Hit secondaryHit(vec3 origin,vec3 direction) {
@@ -925,7 +926,21 @@ bool portalTeleport(uint surface,vec3 p,inout vec3 origin,inout vec3 direction,i
   if(code==0u||portals>=min(limit,8u))return false;
   uint index=code-1u;
   vec4 front=frame.rayPortals[index*4u+3u];
-  if((uint(front.w)&1u)==0u||dot(direction,front.xyz)>=0)return false;
+  if((uint(front.w)&1u)==0u)return false;
+  // A portal over an opaque surface (state.w bit 26: a screen showing another
+  // place, its MaterialInfo chaining the portal extension): the surface is
+  // the opening, from wherever a ray meets it. The ray goes on from where the
+  // map takes the point, along the mapped direction, without the doorway's
+  // front test or exit plane (what the screen shows is the partner's view in
+  // every direction, as a game renders it from its camera there).
+  if((surfaces[surface].state.w&(1u<<26))!=0u) {
+    origin=portalPoint(index,p);
+    direction=normalize(portalVector(index,direction));
+    origin=offsetRay(origin,direction);
+    chain|=index<<(4u*portals);++portals;
+    return true;
+  }
+  if(dot(direction,front.xyz)>=0)return false;
   // The front is told by the ray's direction, not the hit's facing (the
   // host's portal mesh may be double-sided). A mesh standing off its plane
   // maps behind the partner's (in its wall): the ray starts where it crosses
@@ -1047,12 +1062,14 @@ vec3 diffuseDirection(vec3 n) {
 #include "brdf.glsl"
 #include "fireflies.glsl"
 #include "visibility.glsl"
-// The sun and sky through ray portals (frame.rayPortalConfig.w: some pair is open;
-// z: rayPortalLightTeleports): when the first surface toward the sun opens a
-// portal from its front, and the portal keeps directions (a move and a
-// scale, as a window onto a model of the place), the shadow ray goes on from
-// the partner (shadow(): the sun and sky rays of every vertex): what lights the far side lights through it. A portal that
-// turns directions would show the sun elsewhere; its own material blocks.
+// The sun and sky through ray portals (frame.rayPortalConfig.w: some pair is
+// open; z: rayPortalLightTeleports): when the first surface toward the sun or
+// the sky opens a portal the ray passes (portalTeleport), and the portal keeps
+// directions (a move and a scale, as a window onto a model of the place), the
+// shadow ray goes on from the partner: what lights the far side lights
+// through it. shadow() does this for the sun and sky rays of every vertex. A
+// portal that turns directions would show the sun elsewhere; its own
+// material blocks.
 bool sunThroughPortal(inout vec3 origin,vec3 direction) {
 #ifdef TEMPORAL
   uint saved=traceMask;traceMask=shadowMask();
