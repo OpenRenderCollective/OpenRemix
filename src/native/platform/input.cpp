@@ -23,6 +23,9 @@
 #include "platform/window.h"
 
 #include <algorithm>
+#if defined(_WIN32)
+#include <windows.h>
+#endif
 #if defined(__APPLE__)
 #include <pthread.h>
 #endif
@@ -104,6 +107,8 @@ namespace remix {
       return status;
     m_gameWantsText = enabled;
     syncTextInput(m_guiWantsText);
+    if (m_textInputPending)
+      return REMIXAPI_ERROR_CODE_SUCCESS;
     const bool active = SDL_TextInputActive(m_window);
     // An embedded window may keep the host's own text input on.
     return active == (m_gameWantsText || m_guiWantsText) || (m_embedded && active)
@@ -111,8 +116,34 @@ namespace remix {
                : REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
   }
 
+  bool RemixSdlWindow::onWindowThread() const {
+#if defined(_WIN32)
+    if (m_embedded && m_window) {
+      const auto hwnd = static_cast<HWND>(
+          SDL_GetPointerProperty(SDL_GetWindowProperties(m_window), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr));
+      return !hwnd || GetWindowThreadProcessId(hwnd, nullptr) == GetCurrentThreadId();
+    }
+#endif
+    return true;
+  }
+
   void RemixSdlWindow::syncTextInput(bool guiWantsText) {
     m_guiWantsText = guiWantsText;
+    const bool wanted = m_gameWantsText || m_guiWantsText;
+    if (!m_textInputPending && SDL_TextInputActive(m_window) == wanted) {
+      if (!wanted)
+        m_startedTextInput = false;
+      return;
+    }
+    if (!onWindowThread()) {
+      m_textInputPending = true;
+      return;
+    }
+    applyTextInput();
+  }
+
+  void RemixSdlWindow::applyTextInput() {
+    m_textInputPending = false;
     if (m_gameWantsText || m_guiWantsText) {
       if (!SDL_TextInputActive(m_window)) {
         SDL_StartTextInput(m_window);

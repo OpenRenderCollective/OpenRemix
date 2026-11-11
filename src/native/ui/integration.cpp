@@ -34,6 +34,12 @@ namespace remix {
     if (!ImGui_ImplSDL3_InitForVulkan(m_window.handle())) {
       return false;
     }
+    // The backend's IME update calls SDL's text input from ImGui::EndFrame, on
+    // whichever thread presents; in a host's window that may not be the
+    // window's thread, and SDL's IME calls wait on it (a deadlock). The window
+    // starts and stops text input for the panel itself (syncTextInput).
+    if (m_window.embedded())
+      ImGui::GetPlatformIO().Platform_SetImeDataFn = nullptr;
     const float scale = SDL_GetWindowDisplayScale(m_window.handle());
     ImGui::GetStyle().ScaleAllSizes(scale > 0 ? scale : 1.0f);
     ImGui::GetStyle().FontScaleDpi = scale > 0 ? scale : 1.0f;

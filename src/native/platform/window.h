@@ -66,6 +66,8 @@ namespace remix {
     remixapi_ErrorCode pollInputEvents(remixapi_InputEvent *events, uint32_t capacity, uint32_t &count);
     remixapi_ErrorCode getWindowMetrics(remixapi_WindowMetrics &metrics) const;
     remixapi_ErrorCode setTextInputEnabled(bool enabled);
+    // Text input follows the game's and the panel's wishes. Off the window's
+    // thread the change waits for the next event pump (applyTextInput).
     void syncTextInput(bool guiWantsText);
 
 #if REMIX_METAL
@@ -134,6 +136,13 @@ namespace remix {
     // keeps the calls apart.
     remixapi_ErrorCode checkPresentThread() const;
     void setSdlError(const char *operation) const;
+    // Whether the caller runs the window's message loop. SDL's text input and
+    // IME calls send messages to the window and wait for them; from another
+    // thread (a host rendering on its own thread, such as Garry's Mod's
+    // multicore renderer) they deadlock while the window's thread waits for
+    // the frame.
+    bool onWindowThread() const;
+    void applyTextInput();
     static SDL_Scancode toScancode(remixapi_Key key);
     static remixapi_Key fromScancode(SDL_Scancode scancode);
     // Whether the event belongs to the panel's shortcut (and is kept from ImGui
@@ -163,6 +172,8 @@ namespace remix {
     // Text input this window started: a host-owned (embedded) window's own
     // text input, such as a game console's, is the host's to stop.
     bool m_startedTextInput = false;
+    // A text input change made off the window's thread, not yet applied.
+    bool m_textInputPending = false;
     std::deque<remixapi_InputEvent> m_inputEvents;
     float m_relativeX = 0.0f;
     float m_relativeY = 0.0f;
