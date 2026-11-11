@@ -378,6 +378,11 @@ namespace remix {
     uint32_t wavefrontBounces = 1;
     // Its split bounces' sun and sky shadow rays in a kernel of their own.
     bool wavefrontShadowQueue = true;
+    // With the shadow queue: the split bounces' local light samples in a
+    // kernel of their own (pathtrace.comp wavefrontLocalQueue), over vertex
+    // records of 112 bytes a pixel; the shade kernels compile without the
+    // light sampler. The same image within noise.
+    bool wavefrontLocalQueue = true;
     // The denoised opaque pass as two launches (pathtrace.comp primaryRole):
     // the first resolves every pixel's primary surface and local light (and
     // shades whole the pixels whose surface needed a traced camera ray or the

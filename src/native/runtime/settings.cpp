@@ -484,6 +484,7 @@ namespace remix::config {
         TRACE(wavefrontIndirect, 0, 1);
         TRACE(wavefrontBounces, 1, 16);
         TRACE(wavefrontShadowQueue, 0, 1);
+        TRACE(wavefrontLocalQueue, 0, 1);
         TRACE(splitPrimary, 0, 1);
         TRACE(traversalDebug, 0, 2);
         TRACE(shadowMicromap2State, 0, 2);

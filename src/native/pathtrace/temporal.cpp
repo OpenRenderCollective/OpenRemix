@@ -100,6 +100,8 @@ namespace remix {
       requests.push_back({lightingStage(stages[i]), temporalLayout, &indirectPass.wavefront[i], true});
     // The bounces' dispatch arguments: one invocation, no lighting.
     requests.push_back({Stage::wavefrontArgs, temporalLayout, &indirectPass.wavefront[10], false, false, false, false});
+    // The local light queue's kernel (no cache query: one stage).
+    requests.push_back({Stage::wavefrontLightsTemporal, temporalLayout, &indirectPass.wavefront[11], true});
     return requests;
   }
 
@@ -119,7 +121,8 @@ namespace remix {
       // Sized to the extent and the shadow queue: a smaller need (the queue
       // turned off) gives the memory back (buffers are whole 4 KiB pages).
       const VkDeviceSize bytes =
-          pass.wavefrontBytes(pixels, options.wavefrontShadowQueue, std::clamp(options.skySamples, 1u, 16u));
+          pass.wavefrontBytes(pixels, options.wavefrontShadowQueue, std::clamp(options.skySamples, 1u, 16u),
+                              options.wavefrontLocalQueue);
       if (!pass.paths || pass.paths->size < bytes || pass.paths->size >= bytes + 4096) {
         auto next = buffer(bytes,
                            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
@@ -131,7 +134,9 @@ namespace remix {
       }
       frame.wavefrontPaths = pass.paths->address;
       frame.wavefrontStride = uint32_t(pixels);
-      frame.wavefrontFlags = options.wavefrontShadowQueue ? 1u : 0u;
+      // Bit 1: the local light queue's vertex records are allocated.
+      frame.wavefrontFlags = (options.wavefrontShadowQueue ? 1u : 0u) |
+                             (options.wavefrontShadowQueue && options.wavefrontLocalQueue ? 2u : 0u);
       pass.wavefrontActive = true;
     } catch (VkResult error) {
       if (error == VK_ERROR_DEVICE_LOST)

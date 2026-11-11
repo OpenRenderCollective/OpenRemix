@@ -1519,6 +1519,36 @@ namespace remix {
         kernelLayouts[i] = selectedLayout;
         wavefront = kernels[i] != VK_NULL_HANDLE;
       }
+      // The local light queue (rtx.native.pathtrace.wavefrontLocalQueue): the
+      // deferring shade kernels' queue variants and the local kernel, as a
+      // set; until all have compiled, the shade kernels sample themselves.
+      VkPipeline localKernel = VK_NULL_HANDLE;
+      uint32_t localFeatures = defaultFeatures;
+      VkPipelineLayout localLayout = VK_NULL_HANDLE;
+      if (wavefront && options.wavefrontShadowQueue && (frame.wavefrontFlags & 2u) && indirectPass.wavefront[11]) {
+        constexpr size_t shades[2] = {6, 9};
+        VkPipeline queued[2] = {};
+        uint32_t queuedFeatures[2] = {};
+        VkPipelineLayout queuedLayouts[2] = {};
+        bool ready = true;
+        for (size_t i = 0; i < 2; ++i) {
+          queued[i] = selectLightingPipeline(indirectPass.wavefront[shades[i]], false, false, 0, 0, true);
+          queuedFeatures[i] = selectedFeatures;
+          queuedLayouts[i] = selectedLayout;
+          ready = ready && queued[i] != VK_NULL_HANDLE;
+        }
+        const VkPipeline local = selectLightingPipeline(indirectPass.wavefront[11]);
+        if (ready && local) {
+          localKernel = local;
+          localFeatures = selectedFeatures;
+          localLayout = selectedLayout;
+          for (size_t i = 0; i < 2; ++i) {
+            kernels[shades[i]] = queued[i];
+            kernelFeatures[shades[i]] = queuedFeatures[i];
+            kernelLayouts[shades[i]] = queuedLayouts[i];
+          }
+        }
+      }
       if (wavefront) {
         constexpr auto computeWrite = VK_ACCESS_SHADER_WRITE_BIT;
         constexpr auto computeAccess = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
@@ -1566,6 +1596,16 @@ namespace remix {
                   computeAccess | VK_ACCESS_INDIRECT_COMMAND_READ_BIT);
           const uint32_t argument = std::min(bounce, IndirectPass::wavefrontMaxBounces - 1);
           const VkDeviceSize slot = header + (8 + 4 * argument) * 4, shadowSlot = header + (80 + 4 * argument) * 4;
+          if (bounce && localKernel) {
+            // The vertices' local light samples, into their shadow items.
+            {
+              gpu::GpuScope scope(command, "Trace indirect (wavefront local lights)", extent);
+              bindTrace(command, localKernel, localLayout, localFeatures);
+              vkCmdDispatchIndirect(command, paths, shadowSlot);
+            }
+            barrier(command, compute, computeWrite, compute | indirect,
+                    computeAccess | VK_ACCESS_INDIRECT_COMMAND_READ_BIT);
+          }
           if (bounce && options.wavefrontShadowQueue) {
             gpu::GpuScope scope(command, "Trace indirect (wavefront shadow)", extent);
             bindTrace(command, kernels[5], kernelLayouts[5], kernelFeatures[5]);

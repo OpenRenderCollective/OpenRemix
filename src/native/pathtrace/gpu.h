@@ -415,10 +415,15 @@ namespace remix {
       static constexpr uint32_t wavefrontPlanes = 13, wavefrontQueueHeader = 1024, wavefrontMaxBounces = 16;
       // start, trace, shade, finish, tail, shadow, shade leaving its shadow
       // rays, sky, the two shade kernels without the paint peel, arguments
-      static constexpr size_t wavefrontKernels = 11;
-      static VkDeviceSize wavefrontBytes(VkDeviceSize pixels, bool shadows, uint32_t skyRays) {
+      // ...; then the local light queue's kernel (wavefrontLocalQueue), whose
+      // vertex records (wavefrontLocalPlanes of 16 bytes a pixel) follow the
+      // shadow rays' region.
+      static constexpr size_t wavefrontKernels = 12;
+      static constexpr uint32_t wavefrontLocalPlanes = 7;
+      static VkDeviceSize wavefrontBytes(VkDeviceSize pixels, bool shadows, uint32_t skyRays, bool locals) {
         return pixels * wavefrontPlanes * 16 + wavefrontQueueHeader + (pixels * 3 * 4 + 15) / 16 * 16 +
-               pixels * std::max<VkDeviceSize>(shadows ? 48 : 0, 16 * skyRays);
+               pixels * std::max<VkDeviceSize>(shadows ? 48 : 0, 16 * skyRays) +
+               (shadows && locals ? pixels * wavefrontLocalPlanes * 16 : 0);
       }
       VkPipeline wavefront[wavefrontKernels] = {};
       std::unique_ptr<Buffer> paths;
@@ -464,6 +469,9 @@ namespace remix {
       // The split primary's two launches (pathtrace.comp primaryRole).
       variantPrimaryProducer = 1u << 18,
       variantPrimaryConsumer = 1u << 19,
+      // A deferring wavefront shade kernel that leaves its local light
+      // samples to the local kernel (pathtrace.comp wavefrontLocalQueue).
+      variantLocalQueue = 1u << 20,
     };
     // The options the lighting pipelines were last configured with
     // (beginFrame): the settings the scene variants are prewarmed for.
@@ -531,8 +539,10 @@ namespace remix {
     // selected pixels, 2 the others); null until that variant has compiled.
     // primaryRole: the split primary's producer (1) or consumer (2), also
     // null until compiled.
+    // localQueue: a wavefront shade kernel's local light queue variant, null
+    // until compiled.
     VkPipeline selectLightingPipeline(VkPipeline pipeline, bool combinedDirect = false, bool separateIndirect = false,
-                                      uint32_t sparse = 0, uint32_t primaryRole = 0);
+                                      uint32_t sparse = 0, uint32_t primaryRole = 0, bool localQueue = false);
     void forgetLightingPipeline(VkPipeline pipeline);
     VkShaderModule shaders[3] = {};
     VkQueryPool compaction = VK_NULL_HANDLE, timestamps = VK_NULL_HANDLE;

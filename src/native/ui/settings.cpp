@@ -1436,6 +1436,14 @@ namespace remix {
         if (ImGui::IsItemHovered())
           ImGui::SetTooltip("The split bounces' sun and sky shadow rays run in a kernel of their own.\n"
                             "rtx.native.pathtrace.wavefrontShadowQueue");
+        if (options.wavefrontShadowQueue) {
+          ui::Checkbox("Wavefront local light queue", &options.wavefrontLocalQueue);
+          if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("The split bounces' local light samples run in a kernel of their own, so the\n"
+                              "shade kernels compile without the light sampler (fewer registers). Vertex\n"
+                              "records of 112 bytes a pixel. Same image within noise.\n"
+                              "rtx.native.pathtrace.wavefrontLocalQueue");
+        }
         int bounces = int(options.wavefrontBounces);
         if (ui::SliderInt("Wavefront split bounces", &bounces, 1, 16))
           options.wavefrontBounces = uint32_t(bounces);

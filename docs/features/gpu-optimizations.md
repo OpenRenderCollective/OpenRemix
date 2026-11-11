@@ -149,6 +149,20 @@ On `ep2_outland_06a`'s forest (Garry's Mod, RTX 5080, 960x540 render, paint)
 the indirect pass took 3.30 ms as one kernel and 2.18 ms as wavefront
 kernels with the shadow queue (frame 8.28 to 7.33 ms).
 
+`rtx.native.pathtrace.wavefrontLocalQueue` (0/1, default 1, with the shadow
+queue) moves the split bounces' local light samples into a **local lights**
+kernel as well: a deferring shade kernel stores its vertex (112 bytes a
+pixel: the point, random state and throughput exact, the normals octahedral,
+the material as halves) and the kernel, run over the shadow queue's items
+before the shadow kernel, draws the sample, writes its shadow ray into the
+vertex's item and redoes the path's motion weight with the light. The shade
+kernels compile without the light sampler: the unpainted one takes 168
+registers instead of 229 to 235 in scenes without subsurface materials (230
+with them; the painted one's peak is the paint peel), the local kernel 96.
+Same image within noise. On `cp_brew` (as below) the unpainted shade kernel
+took 0.48 ms instead of 0.51 and the local kernel 0.06 ms. Until the queue's
+variants have compiled the shade kernels sample themselves.
+
 ## Split primary surface
 
 `rtx.native.pathtrace.splitPrimary` (0/1, default 1) runs the denoised opaque

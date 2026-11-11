@@ -15,7 +15,7 @@ namespace remix {
   // every stage. Variants are lazy, cached, and share the source pipeline's
   // fence/layout lifetime.
   VkPipeline PathTracer::Gpu::selectLightingPipeline(VkPipeline pipeline, bool combinedDirect, bool separateIndirect,
-                                                     uint32_t sparse, uint32_t primaryRole) {
+                                                     uint32_t sparse, uint32_t primaryRole, bool localQueue) {
     selectedLightingKey = UINT32_MAX;
     selectedFeatures = defaultFeatures;
     selectedLayout = layout;
@@ -47,9 +47,11 @@ namespace remix {
                          (earlyOut ? variantEarlyOut : 0u) | sparse << variantSparseShift |
                          (primaryRole == 1   ? variantPrimaryProducer
                           : primaryRole == 2 ? variantPrimaryConsumer
-                                             : 0u);
-    // A split primary launch has no stand-in: the caller keeps one launch.
-    const bool roleOnly = sparse || primaryRole || (separateIndirect && !source.baseSeparateIndirect);
+                                             : 0u) |
+                         (localQueue ? variantLocalQueue : 0u);
+    // A split primary launch or a queue variant has no stand-in: the caller
+    // keeps what it had.
+    const bool roleOnly = sparse || primaryRole || localQueue || (separateIndirect && !source.baseSeparateIndirect);
     selectedLightingKey = key;
     // A scene without paint or subsurface scattering takes the role's lean
     // variant once it has compiled, and the full one until then.
@@ -110,7 +112,8 @@ namespace remix {
                                 (key >> variantSparseShift) & 3u,
                                 !bit(variantNoPaint),
                                 !bit(variantNoSubsurface),
-                                bit(variantPrimaryProducer) ? 1u : bit(variantPrimaryConsumer) ? 2u : 0u};
+                                bit(variantPrimaryProducer) ? 1u : bit(variantPrimaryConsumer) ? 2u : 0u,
+                                bit(variantLocalQueue)};
     const VkSpecializationMapEntry entries[] = {{1, 0, sizeof(VkBool32)},
                                                 {4, sizeof(VkBool32), sizeof(VkBool32)},
                                                 {7, 2 * sizeof(VkBool32), sizeof(VkBool32)},
@@ -119,8 +122,9 @@ namespace remix {
                                                 {13, 5 * sizeof(VkBool32), sizeof(uint32_t)},
                                                 {14, 6 * sizeof(VkBool32), sizeof(VkBool32)},
                                                 {15, 7 * sizeof(VkBool32), sizeof(VkBool32)},
-                                                {16, 8 * sizeof(VkBool32), sizeof(uint32_t)}};
-    const VkSpecializationInfo specialization{9, entries, sizeof(enabled), enabled};
+                                                {16, 8 * sizeof(VkBool32), sizeof(uint32_t)},
+                                                {17, 9 * sizeof(VkBool32), sizeof(VkBool32)}};
+    const VkSpecializationInfo specialization{10, entries, sizeof(enabled), enabled};
     const VkComputePipelineCreateInfo create{.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
                                              .stage = {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
                                                        .stage = VK_SHADER_STAGE_COMPUTE_BIT,
