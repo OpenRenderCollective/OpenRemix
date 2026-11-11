@@ -113,7 +113,7 @@ vec3 decodeNormal(vec2 e) {
 struct Mirror { vec3 n; float d; vec3 reflectance; bool replaced; };
 Mirror loadMirror(ivec2 p) {
   Mirror m=Mirror(vec3(0,0,1),0,vec3(1),false);
-  if(temporal.translucency.z==0)return m;
+  if((temporal.translucency.z&1u)==0u)return m;
   uvec4 v=imageLoad(psrMirror,p);
   if(v.w==0u||(v.w>>16)==0xffffu)return m; // none, or a screen (pathtrace.comp loadScreen)
   m.n=decodeNormal(unpackSnorm2x16(v.x));m.d=uintBitsToFloat(v.y);
@@ -123,6 +123,16 @@ Mirror loadMirror(ivec2 p) {
 uvec4 packMirror(vec3 n,vec3 point,vec3 reflectance) {
   return uvec4(packSnorm2x16(encodeNormal(n)),floatBitsToUint(dot(n,point)),
                packHalf2x16(reflectance.rg),packHalf2x16(vec2(reflectance.b,1)));
+}
+// What a ray portal over an opaque surface shows takes the surface's albedo
+// (its texture and vertex colour), as through coloured glass: a screen record
+// (pathtrace.comp packScreen) holds it, stored as 1 - albedo in 8 bits each
+// (0: untinted). White elsewhere.
+vec3 screenTint(ivec2 p) {
+  if((temporal.translucency.z&2u)==0u)return vec3(1);
+  uvec4 v=imageLoad(psrMirror,p);
+  if((v.w>>16)!=0xffffu)return vec3(1);
+  return vec3(1)-vec3((v.x>>16)&255u,v.x>>24,v.w&255u)/255.;
 }
 // Reflections through the mirror plane: the virtual (mirrored) position and
 // direction of a surface seen in it.

@@ -1015,8 +1015,10 @@ namespace remix {
     temporalFrame.translucency[1] = denoiser && postReblur && !rrActive() && options.translucencyReuse &&
                                     options.bounces > 0 && options.indirectClamp == 0 && !debugView &&
                                     hasBlendedGeometry;
+    // Bit 0: mirrors replace their pixels; bit 1: the pass ran (its screen and
+    // portal records in psrMirror are this frame's).
     temporalFrame.translucency[2] =
-        denoiser && psrCompute && options.rasterPrimary && options.primarySurfaceReplacement;
+        denoiser && psrCompute && options.rasterPrimary ? (options.primarySurfaceReplacement ? 1u : 0u) | 2u : 0u;
     temporalFrame.local[0] = denoiser && postLocalDenoise;
     temporalFrame.local[1] = frame.localConfig[0];
     temporalFrame.local[2] = localResponsiveFrames;

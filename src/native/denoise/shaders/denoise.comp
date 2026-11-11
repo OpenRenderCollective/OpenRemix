@@ -265,6 +265,7 @@ void main() {
       Mirror mirror=loadMirror(p);
       if(mirror.replaced)color*=mirror.reflectance;
     }
+    color*=screenTint(p);
     if(pass.step==0) {
       imageStore(composed,p,vec4(safeRadiance(color),1));return;
     }

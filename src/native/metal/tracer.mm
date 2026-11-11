@@ -1215,8 +1215,11 @@ namespace remix::metal {
     temporalFrame.hitDistance[0] = 3.f / options.sceneScale;
     // Primary surface replacement (pathtrace/rendering.cpp): mirrors seen
     // through the rasterized primary surface, once its pipeline is ready.
+    // Bit 0: mirrors; bit 1: the pass ran (its screen and portal records).
     temporalFrame.translucency[2] = denoiser && psr && options.rasterPrimary && options.primarySurfaceReplacement &&
-                                    computePipelineAsync(device, psr.stage, psr.base);
+                                            computePipelineAsync(device, psr.stage, psr.base)
+                                        ? 3u
+                                        : 0u;
     // Surfaces that move on their own (pathtrace/rendering.cpp).
     temporalFrame.motion[0] = options.movingHistoryStart;
     temporalFrame.motion[1] = options.movingHistoryEnd;

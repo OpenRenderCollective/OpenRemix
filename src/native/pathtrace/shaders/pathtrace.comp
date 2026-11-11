@@ -746,7 +746,9 @@ vec3 portalVector(uint index,vec3 v) {
 // mirrors (w's high half 0xffff, a NaN no mirror packs): x the slot (0xff:
 // the main camera, through a portal) plus the portals passed << 8, y the
 // camera ray's distance to the screen or the first portal, z the portals'
-// indices, four bits each in the order passed (at most 8).
+// indices, four bits each in the order passed (at most 8). A ray portal over
+// an opaque surface tints what it shows by the surface's albedo: x bits 16-31
+// and w bits 0-7 hold 1 - albedo (inputs.glsl screenTint).
 // Written only with a raster primary (the pass runs then).
 struct Screen { bool shown; uint slot; float distance; uint portals; uint chain; };
 Screen loadScreen(ivec2 p) {
@@ -757,8 +759,9 @@ Screen loadScreen(ivec2 p) {
   s.shown=true;s.slot=v.x&0xffu;s.portals=(v.x>>8)&15u;s.distance=uintBitsToFloat(v.y);s.chain=v.z;
   return s;
 }
-uvec4 packScreen(uint slot,float distance,uint portals,uint chain) {
-  return uvec4(slot|portals<<8,floatBitsToUint(distance),chain,0xffff0000u);
+uvec4 packScreen(uint slot,float distance,uint portals,uint chain,vec3 tint) {
+  uvec3 t=uvec3(round(clamp(vec3(1)-tint,0,1)*255));
+  return uvec4(slot|portals<<8|t.r<<16|t.g<<24,floatBitsToUint(distance),chain,0xffff0000u|t.b);
 }
 // Where the pixel's surface is seen from: the screen's camera or the main
 // camera's `origin`, carried through the portals passed.
@@ -3030,6 +3033,9 @@ uvec4 replaceScreen(ivec2 pixel,vec3 origin,vec3 direction,float kind) {
   s.indices=s.traceIndices;
   uint code=(s.state.w>>12)&7u,slot=0xffu,portals=0u,chain=0u;
   vec3 eye=origin,seen=direction;
+  // A portal over an opaque surface: its albedo (the raster's, the surface
+  // that marked this pixel) tints what it shows.
+  vec3 tint=(s.state.w&(1u<<26))!=0u?imageLoad(primaryAlbedo,pixel).rgb:vec3(1);
   if(code!=0u&&frame.screenCameras[(code-1u)*4u].w!=0) {
     slot=code-1u;uint tri=x.primitive*3;
   vec3 w=vec3(1-x.bary.x-x.bary.y,x.bary);
@@ -3067,7 +3073,7 @@ uvec4 replaceScreen(ivec2 pixel,vec3 origin,vec3 direction,float kind) {
   const bool sheet=hit.t<1e30&&hit.blended&&slot==0xffu;
   if(!sheet)hit.color.a=1;
   storePrimary(pixel,hit,hit.t==1e30?0:sheet&&hit.tinted?3:hit.blended?2:1);
-  return packScreen(slot,x.t,portals,chain);
+  return packScreen(slot,x.t,portals,chain,slot==0xffu?tint:vec3(1));
 }
 void replaceMirror(ivec2 pixel) {
   vec3 origin,direction;
@@ -3079,7 +3085,7 @@ void replaceMirror(ivec2 pixel) {
   const bool painted=imageLoad(primaryNormal,pixel).w==4;
   Hit mirror=rasterPrimary(pixel,origin);
   uvec4 packed=uvec4(0);
-  if(temporal.translucency.z!=0&&mirror.t<1e30&&!mirror.blended&&!mirror.decal&&deltaSurface(mirror)) {
+  if((temporal.translucency.z&1u)!=0u&&mirror.t<1e30&&!mirror.blended&&!mirror.decal&&deltaSurface(mirror)) {
     vec3 reflected=reflect(-mirror.wo,mirror.n);
     if(dot(reflected,mirror.ng)>0) {
       // The mirror's reflection is a bounce: it shows reflection-only instances
@@ -3791,6 +3797,7 @@ void main() {
     }
     vec3 specular=opaque&&primary.pbr?rrSpecularAlbedo(filmF0(primary,materialF0(primary)),primary.rm.x,dot(primary.n,primary.wo)):vec3(0);
     if(mirror.replaced){diffuse*=mirror.reflectance;specular*=mirror.reflectance;}
+    diffuse*=screenTint(pixel);specular*=screenTint(pixel);
     imageStore(rrDiffuse,pixel,vec4(diffuse,0));
     imageStore(rrSpecular,pixel,vec4(specular,0));
     // The sky faces the camera: a zero normal is no direction to RR.
@@ -3844,6 +3851,8 @@ void main() {
   #ifdef TEMPORAL
   // Denoised lighting takes the mirror's reflectance in composition.
   if(mirror.replaced){emission*=mirror.reflectance;color*=mirror.reflectance;}
+  // So does a ray portal's albedo over an opaque surface (screenTint).
+  {vec3 tint=screenTint(pixel);emission*=tint;color*=tint;}
   #endif
   // Its w keeps the terminator lift and horizon for the split local pass
   // (packPreviousW; no history there, as before).

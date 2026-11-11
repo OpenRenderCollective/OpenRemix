@@ -1147,6 +1147,9 @@ namespace remix::trace {
                          // Bits 22-25: the ray portal index + 1 it opens (0: none;
                          // scene/portals.h).
                          uint32_t(material.rayPortal) << 22 |
+                         // Bit 26: a ray portal over an opaque surface (its MaterialInfo
+                         // chains the portal extension): what it shows takes its albedo.
+                         uint32_t(material.rayPortal != 0 && material.rayPortalOverOpaque) << 26 |
                          // remixapi_InstanceInfoCameraCullingEXT (bits 9-10): camera rays
                          // skip its back faces / its parts in clusters the camera cannot see.
                          uint32_t(surface.cameraCull & 3u) << 9;
