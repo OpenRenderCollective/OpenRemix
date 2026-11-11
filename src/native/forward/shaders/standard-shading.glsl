@@ -31,6 +31,7 @@ ShadingResult shadeStandardSurface(Surface surface, ShadingReceiver receiver) {
   }
   ReceiverLighting diffuse = sampleDiffuseLighting(receiver, n, lightingContext,
       surface.metallic < 1 && any(greaterThan(surface.color.rgb, vec3(0))));
+  diffuse.direct.specular = diffuse.direct.specular && surface.directSpecular;
 #if defined(OPENREMIX_SPECIALIZED_LOCAL_RESPONSE) && !defined(LIVE_GI)
   if (debugView >= ViewLocalLightWork) {
     // RGB records local candidates, nonzero responses, and moving-shadow

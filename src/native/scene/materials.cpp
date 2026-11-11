@@ -372,6 +372,12 @@ namespace remix {
         static_cast<const remixapi_MaterialInfoPbrEXT *>(extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_PBR_EXT));
     if (pbr && (!opaque || pbr->enabled > 1))
       throw invalid;
+    if (const auto *specular = static_cast<const remixapi_MaterialDirectSpecularEXT *>(
+            extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_DIRECT_SPECULAR_EXT))) {
+      if (!opaque || specular->enabled > 1)
+        throw invalid;
+      material->suppressDirectSpecular = !specular->enabled;
+    }
     if (const auto *film = static_cast<const remixapi_MaterialIridescenceEXT *>(
             extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_IRIDESCENCE_EXT))) {
       finite(&film->strength, 9);
@@ -543,7 +549,7 @@ namespace remix {
              (a.solidEnergy == b.solidEnergy || (a.solidEnergy && b.solidEnergy && *a.solidEnergy == *b.solidEnergy)) &&
              (a.blendModulation == b.blendModulation ||
               (a.blendModulation && b.blendModulation && *a.blendModulation == *b.blendModulation)) &&
-             a.pbr == b.pbr && std::equal(a.emission, a.emission + 3, b.emission) &&
+             a.pbr == b.pbr && a.suppressDirectSpecular == b.suppressDirectSpecular && std::equal(a.emission, a.emission + 3, b.emission) &&
              std::equal(a.tint, a.tint + 4, b.tint) && a.compare == b.compare && a.reference == b.reference &&
              a.drawAlpha == b.drawAlpha && a.translucent == b.translucent && a.transmission == b.transmission &&
              a.caustics == b.caustics && a.screenCamera == b.screenCamera && a.rayPortal == b.rayPortal &&

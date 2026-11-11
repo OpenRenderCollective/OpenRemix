@@ -7,6 +7,7 @@ Surface evaluateStandardSurface(Material material, vec4 color, vec4 albedo, vec2
                                 vec3 positionDx, vec3 positionDy, vec3 normal, vec3 geometric,
                                 vec3 viewDirection, bool useNormalMap) {
   Surface surface;
+  surface.directSpecular = (material.maps.x & 128u) == 0u;
   vec4 emissionTexel = (material.maps.x & 8u) != 0u
       ? decodeColorTexel(texture(emissionMap, texcoord), (material.maps.x & 64u) != 0u) : vec4(1);
   float reflected;

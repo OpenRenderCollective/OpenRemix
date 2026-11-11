@@ -39,6 +39,15 @@ typedef struct remixapi_MaterialInfoPbrEXT {
   remixapi_Bool enabled;
 } remixapi_MaterialInfoPbrEXT;
 
+// Optional MaterialInfo pNext. A material can omit analytic direct highlights
+// in Forward+ while retaining its normal maps and environment reflections.
+#define REMIXAPI_STRUCT_TYPE_MATERIAL_DIRECT_SPECULAR_EXT ((remixapi_StructType)0x7fff1077)
+typedef struct remixapi_MaterialDirectSpecularEXT {
+  remixapi_StructType sType;
+  const void *pNext;
+  remixapi_Bool enabled;
+} remixapi_MaterialDirectSpecularEXT;
+
 // Optional MaterialInfo pNext. Keep the visible emissive color/map while
 // suppressing generated area lights, e.g. when an explicit analytic light
 // already represents the source. Absent/zero preserves emissive lighting.

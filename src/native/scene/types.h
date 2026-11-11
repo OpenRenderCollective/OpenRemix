@@ -227,7 +227,7 @@ namespace remix {
       std::shared_ptr<Texture> emissionTexture;
       std::shared_ptr<Texture> roughnessTexture, metallicTexture, normalTexture;
       float roughness = 1, metallic = 0;
-      bool pbr = false;
+      bool pbr = false, suppressDirectSpecular = false;
       uint32_t normalEncoding = 0;
       // remixapi_MaterialPbrRemapEXT, per map (roughness, metallic).
       struct Remap {
