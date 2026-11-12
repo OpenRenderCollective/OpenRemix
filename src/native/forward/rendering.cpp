@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <optional>
+#include <string_view>
 
 namespace remix::forward {
   namespace {
@@ -250,11 +251,36 @@ namespace remix::forward {
       statistics.localShadowDraws[i].active = shadowSelection.active[i];
       statistics.localShadowDraws[i].lightId = shadowSelection.views[i].id;
     }
-    // Empty receiver lists and unclustered fallback do not read cluster headers.
-    if (statistics.clusterBuildLights != 0) {
+    const uint32_t visibilityBoundCount = prepareOpaqueVisibility();
+    const bool useVisibility = visibilityBoundCount != 0;
+    static const char *clusterAfterDepth = std::getenv("REMIX_DEBUG_CLUSTER_AFTER_DEPTH");
+    static const bool forceCoveredClusters = clusterAfterDepth && std::string_view(clusterAfterDepth) == "force";
+    static const bool fullListsAfterDepth = clusterAfterDepth && std::string_view(clusterAfterDepth) == "full";
+    // Live receivers can evaluate lights at positions outside the baked
+    // world's opaque depth coverage. Keep their normal clustered lists.
+    const auto hasLiveReceiver = [](const auto &commands) {
+      return std::any_of(commands.begin(), commands.end(), [](const Command &draw) {
+        return draw.cameraVisible && !draw.captured;
+      });
+    };
+    static const bool showUncoveredClusters = [] {
+      const char *view = std::getenv("REMIX_DEBUG_LOCAL_LIGHT_WORK_VIEW");
+      return view && std::string_view(view) == "uncovered-clusters";
+    }();
+    const bool liveReceivers = hasLiveReceiver(frame.commands) || hasLiveReceiver(frame.terrainCommands) ||
+        hasLiveReceiver(frame.waterCommands) || hasLiveReceiver(frame.viewModelCommands);
+    const bool deferClusters = useVisibility && clusterAfterDepth && (!liveReceivers || showUncoveredClusters || fullListsAfterDepth || forceCoveredClusters);
+    const bool useCoveredClusters = deferClusters && !fullListsAfterDepth;
+    const auto recordClusters = [&] {
+      // Empty receiver lists and unclustered fallback do not read cluster headers.
+      if (statistics.clusterBuildLights == 0) return;
       gpu::GpuScope clusterTime(command, "Forward+ light clustering");
-      vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, clusterPipeline);
-      vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &frame.scene, 0, nullptr);
+      const auto clusterLayout = useCoveredClusters ? coveredClusterLayout : layout;
+      const VkDescriptorSet sets[] = {frame.scene, frame.visibilitySet};
+      vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE,
+                        useCoveredClusters ? coveredClusterPipeline : clusterPipeline);
+      vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, clusterLayout, 0,
+                              useCoveredClusters ? 2u : 1u, sets, 0, nullptr);
       const uint32_t charts = (frame.data.clusterInfo[3] & clusterChartConeFlag) ? frame.data.occlusion[1] : 0;
       vkCmdDispatch(command, (std::max(frame.data.grid[3], charts) + 63) / 64, 1, 1);
       const VkBufferMemoryBarrier barrier{.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
@@ -267,7 +293,8 @@ namespace remix::forward {
                                           .size = VK_WHOLE_SIZE};
       vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
                            0, 0, nullptr, 1, &barrier, 0, nullptr);
-    }
+    };
+    if (!deferClusters) recordClusters();
     // Initialization and enable/source transitions clear every layer. Once
     // disabled, those neutral maps remain valid without repeating empty passes.
     const VkClearValue shadowClear{.depthStencil = {1, 0}};
@@ -316,7 +343,6 @@ namespace remix::forward {
       drawLocalCasters(command, lightSlot, face, staticCasters);
     }, movingDirty);
     localTime.close();
-    const uint32_t visibilityBoundCount = prepareOpaqueVisibility();
     fragmentStatistics->reset(command, extent, samples, baking->volume() ? baking->volume()->hash : 0);
     gpu::GpuScope worldTime(command, "Forward+ opaque world shading", extent);
     const VkClearValue clear[] = {{.color = {{0, 0, 0, 0}}},
@@ -336,7 +362,6 @@ namespace remix::forward {
       gpu::GpuScope depthTime(command, "Forward+ opaque depth prepass", extent);
       drawGeometry(command, false, true);
     }
-    const bool useVisibility = visibilityBoundCount != 0;
     static const bool reportVisibility = std::getenv("REMIX_DEBUG_FORWARD_DRAW_COUNTS") != nullptr;
     if (opaqueResumePass && reportVisibility) {
       static thread_local std::optional<bool> previous;
@@ -349,6 +374,7 @@ namespace remix::forward {
       vkCmdNextSubpass(command, VK_SUBPASS_CONTENTS_INLINE);
       vkCmdEndRenderPass(command);
       recordOpaqueVisibility(command, visibilityBoundCount);
+      if (deferClusters) recordClusters();
       auto resume = pass;
       resume.renderPass = opaqueResumePass;
       vkCmdBeginRenderPass(command, &resume, VK_SUBPASS_CONTENTS_INLINE);

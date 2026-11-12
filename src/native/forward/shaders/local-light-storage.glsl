@@ -40,6 +40,11 @@ uint receiverLightCount(uint base, bool aggregateReceiver, out bool linear) {
     linear = true;
     return frame.target.z;
   }
+  // Covered cluster builds mark unsampled cells for full receiver fallback.
+  if (clusters[base + 1u] == ~0u) {
+    linear = true;
+    return fallback ? frame.target.z : ClusterLightCount;
+  }
   uint count = clusters[base + uint(fallback)];
   if (!fallback && clusterUsesMembership()) count = uint(bitCount(count));
   linear = count > ClusterCapacity;

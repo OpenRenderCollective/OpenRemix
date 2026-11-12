@@ -6,6 +6,7 @@
 #include <cstring>
 #include <cstdlib>
 #include <algorithm>
+#include <string_view>
 
 namespace remix::forward {
   namespace {
@@ -45,12 +46,32 @@ namespace remix::forward {
       check(status);
       return result;
     };
-    const uint32_t count = uint32_t(samples);
-    const VkSpecializationMapEntry sampleEntry{0, 0, sizeof(count)};
-    const VkSpecializationInfo sampleInfo{1, &sampleEntry, sizeof(count), &count};
-    tileDepthPipeline = samples == VK_SAMPLE_COUNT_1_BIT
-        ? compute(opaqueTilesSingleShader, sizeof(opaqueTilesSingleShader))
-        : compute(opaqueTilesShader, sizeof(opaqueTilesShader), &sampleInfo);
+    const char *clusterMode = std::getenv("REMIX_DEBUG_CLUSTER_AFTER_DEPTH");
+    const bool collectCoveredDepth = clusterMode && std::string_view(clusterMode) != "full";
+    if (collectCoveredDepth) {
+      const VkDescriptorSetLayout clusterSets[] = {sceneLayout, visibilitySetLayout};
+      const VkPipelineLayoutCreateInfo clusterLayoutInfo{.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+          .setLayoutCount = 2, .pSetLayouts = clusterSets};
+      check(pipeline::createPipelineLayout(device, &clusterLayoutInfo, nullptr, &coveredClusterLayout));
+      const auto clusterShaderModule = shaderModule(device, clusterCoveredShader, sizeof(clusterCoveredShader));
+      const VkComputePipelineCreateInfo clusterInfo{.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+          .stage = {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                    .stage = VK_SHADER_STAGE_COMPUTE_BIT, .module = clusterShaderModule, .pName = "main"},
+          .layout = coveredClusterLayout};
+      const auto clusterResult = pipeline::createComputePipelines(device, VK_NULL_HANDLE, 1, &clusterInfo, nullptr,
+                                                                 &coveredClusterPipeline);
+      pipeline::destroyShaderModule(device, clusterShaderModule, nullptr);
+      check(clusterResult);
+    }
+    const uint32_t specialization[] = {uint32_t(samples), uint32_t(collectCoveredDepth)};
+    const VkSpecializationMapEntry entries[] = {
+        {0, 0, sizeof(uint32_t)}, {1, sizeof(uint32_t), sizeof(uint32_t)}};
+    const bool singleSample = samples == VK_SAMPLE_COUNT_1_BIT;
+    const VkSpecializationInfo tileInfo{singleSample ? 1u : 2u, entries + uint32_t(singleSample),
+                                        sizeof(specialization), specialization};
+    tileDepthPipeline = singleSample
+        ? compute(opaqueTilesSingleShader, sizeof(opaqueTilesSingleShader), &tileInfo)
+        : compute(opaqueTilesShader, sizeof(opaqueTilesShader), &tileInfo);
     visibilityPipeline = compute(opaqueCullShader, sizeof(opaqueCullShader));
     const VkDescriptorPoolSize sizes[] = {{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, gpuFrameCount},
                                          {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, gpuFrameCount * 3}};
@@ -80,7 +101,7 @@ namespace remix::forward {
       return 0;
     const size_t rangeCount = frame.visibleOpaqueRanges;
     const auto columns = groups(extent.width, tileSize), rows = groups(extent.height, tileSize);
-    const VkDeviceSize tilesBytes = VkDeviceSize(columns) * rows * sizeof(float);
+    const VkDeviceSize tilesBytes = VkDeviceSize(columns) * rows * sizeof(Vec4);
     const auto boundsBytes = sizeof(VisibilityBounds) * frame.visibleOpaqueBounds;
     const auto commandsBytes = sizeof(VkDrawIndexedIndirectCommand) * rangeCount;
     // Oversized submissions can still use ordinary depth and color draws.

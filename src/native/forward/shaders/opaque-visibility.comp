@@ -19,18 +19,25 @@ layout(set = 0, binding = 0) uniform sampler2DMS prepassDepth;
 layout(constant_id = 0) const int DepthSamples = 4;
 #endif
 layout(set = 0, binding = 1, std430) writeonly buffer TileDepth {
-  float tileDepth[];
+  vec4 tileDepth[];
 };
-shared float depthMaxima[64];
+// x preserves the occlusion bound, including clear and out-of-bounds pixels.
+// y and z describe covered samples only. An empty tile has y > z.
+layout(constant_id = 1) const bool CollectCoveredDepth = false;
+shared vec3 depthRanges[64];
 
-float farthestSample(uvec2 pixel) {
+void includeSample(inout vec3 range, float depth) {
+  range.x = max(range.x, depth);
+  if (CollectCoveredDepth && depth < 1)
+    range.yz = vec2(min(range.y, depth), max(range.z, depth));
+}
+
+void includePixel(inout vec3 range, uvec2 pixel) {
 #ifdef SINGLE_SAMPLE
-  return texelFetch(prepassDepth, ivec2(pixel), 0).r;
+  includeSample(range, texelFetch(prepassDepth, ivec2(pixel), 0).r);
 #else
-  float farthest = 0;
   for (int sampleIndex = 0; sampleIndex < DepthSamples; ++sampleIndex)
-    farthest = max(farthest, texelFetch(prepassDepth, ivec2(pixel), sampleIndex).r);
-  return farthest;
+    includeSample(range, texelFetch(prepassDepth, ivec2(pixel), sampleIndex).r);
 #endif
 }
 
@@ -38,31 +45,38 @@ void main() {
   uvec2 tileOrigin = gl_WorkGroupID.xy * TileSize;
   uint lane = gl_LocalInvocationIndex;
   uint tile = gl_WorkGroupID.y * gl_NumWorkGroups.x + gl_WorkGroupID.x;
-  // The original reduction includes every out-of-bounds pixel at depth 1.
-  // A partial tile therefore cannot reject geometry, regardless of its samples.
-  if (any(greaterThan(tileOrigin + TileSize, extent))) {
-    if (lane == 0u) tileDepth[tile] = 1;
+  if (!CollectCoveredDepth && any(greaterThan(tileOrigin + TileSize, extent))) {
+    if (lane == 0u) tileDepth[tile] = vec4(1, 1, 0, 0);
     return;
   }
   uvec2 origin = tileOrigin + gl_LocalInvocationID.xy;
-  float farthest = 0;
+  vec3 range = vec3(0, 1, 0);
   for (uint y = 0u; y < TileSize; y += GroupWidth)
-    for (uint x = 0u; x < TileSize; x += GroupWidth)
-      farthest = max(farthest, farthestSample(origin + uvec2(x, y)));
-  depthMaxima[lane] = farthest;
+    for (uint x = 0u; x < TileSize; x += GroupWidth) {
+      uvec2 pixel = origin + uvec2(x, y);
+      if (CollectCoveredDepth && any(greaterThanEqual(pixel, extent)))
+        range.x = 1;
+      else
+        includePixel(range, pixel);
+    }
+  depthRanges[lane] = range;
   barrier();
   for (uint stride = 32u; stride > 0u; stride >>= 1u) {
-    if (lane < stride)
-      depthMaxima[lane] = max(depthMaxima[lane], depthMaxima[lane + stride]);
+    if (lane < stride) {
+      vec3 left = depthRanges[lane], right = depthRanges[lane + stride];
+      depthRanges[lane].x = max(left.x, right.x);
+      if (CollectCoveredDepth)
+        depthRanges[lane].yz = vec2(min(left.y, right.y), max(left.z, right.z));
+    }
     barrier();
   }
   if (lane == 0u)
-    tileDepth[tile] = depthMaxima[0];
+    tileDepth[tile] = vec4(depthRanges[0], 0);
 }
 #else
 layout(local_size_x = 64) in;
 layout(set = 0, binding = 1, std430) readonly buffer TileDepth {
-  float tileDepth[];
+  vec4 tileDepth[];
 };
 struct DrawBounds {
   vec3 minimum;
@@ -111,7 +125,7 @@ bool canReject(DrawBounds box) {
   uint columns = (extent.x + TileSize - 1u) / TileSize;
   for (uint y = firstTile.y; y <= lastTile.y; ++y)
     for (uint x = firstTile.x; x <= lastTile.x; ++x)
-      if (nearest <= tileDepth[y * columns + x] + 1e-5)
+      if (nearest <= tileDepth[y * columns + x].x + 1e-5)
         return false;
   return true;
 }

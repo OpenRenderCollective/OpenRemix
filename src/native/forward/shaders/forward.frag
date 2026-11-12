@@ -84,6 +84,7 @@ const uint ViewLocalLightEarlyMisses = 9u;
 const uint ViewLocalLightLateMisses = 10u;
 const uint ViewLocalLightMembers = 11u;
 const uint ViewLocalDirectionalOwnership = 12u;
+const uint ViewUncoveredClusters = 13u;
 layout(constant_id = 1) const uint LightingView = ViewShaded;
 #ifndef WATER_SURFACE
 #include "shading-model.glsl"
