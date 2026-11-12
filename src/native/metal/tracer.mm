@@ -569,8 +569,10 @@ namespace remix::metal {
           // rays), decals under theirs (shadow rays pass them; reflection-only
           // paint too: closest() lays it only on reflection-only receivers),
           // reflection-only instances under theirs (bounce rays), blended
-          // layers under theirs (secondary rays may skip them).
+          // layers under theirs (secondary rays may skip them), camera-only
+          // instances under theirs (camera rays only).
           instance.mask = input.viewModel        ? remix::trace::viewModelInstanceMask
+                          : input.cameraOnly     ? remix::trace::cameraOnlyInstanceMask
                           : input.decal          ? remix::trace::decalInstanceMask
                           : input.reflectionOnly ? remix::trace::reflectionOnlyInstanceMask
                           : input.blended        ? remix::trace::blendedInstanceMask
@@ -1071,12 +1073,13 @@ namespace remix::metal {
                           std::clamp(options.skySamples, 1u, 16u) << 8 |
                           std::clamp(std::min(options.sheetSkySamples, options.skySamples), 1u, 16u) << 16;
     // Bits 0-7: the instance mask of shadow, light-visibility and bounce rays
-    // (view models never; blended layers unless skipBlendedSecondaryRays is
-    // off). Bit 8: a traced view model is in the frame (camera rays look for
-    // it first).
+    // (view models and camera-only instances never; blended layers unless
+    // skipBlendedSecondaryRays is off). Bit 8: a traced view model is in the
+    // frame (camera rays look for it first).
     frame.pathConfig[3] =
         (options.skipBlendedSecondaryRays ? 0xffu & ~uint32_t(remix::trace::blendedInstanceMask) : 0xffu) &
-        ~uint32_t(remix::trace::viewModelInstanceMask) & ~uint32_t(remix::trace::reflectionOnlyInstanceMask);
+        ~uint32_t(remix::trace::viewModelInstanceMask) & ~uint32_t(remix::trace::reflectionOnlyInstanceMask) &
+        ~uint32_t(remix::trace::cameraOnlyInstanceMask);
     if (prepared.viewModel)
       frame.pathConfig[3] |= 0x100u;
     if (!options.iridescence)
@@ -1212,8 +1215,11 @@ namespace remix::metal {
     temporalFrame.hitDistance[0] = 3.f / options.sceneScale;
     // Primary surface replacement (pathtrace/rendering.cpp): mirrors seen
     // through the rasterized primary surface, once its pipeline is ready.
+    // Bit 0: mirrors; bit 1: the pass ran (its screen and portal records).
     temporalFrame.translucency[2] = denoiser && psr && options.rasterPrimary && options.primarySurfaceReplacement &&
-                                    computePipelineAsync(device, psr.stage, psr.base);
+                                            computePipelineAsync(device, psr.stage, psr.base)
+                                        ? 3u
+                                        : 0u;
     // Surfaces that move on their own (pathtrace/rendering.cpp).
     temporalFrame.motion[0] = options.movingHistoryStart;
     temporalFrame.motion[1] = options.movingHistoryEnd;

@@ -113,6 +113,42 @@ namespace {
       0x0000000e, 0x0004003d, 0x00000007, 0x0000002d, 0x0000002c, 0x00050081, 0x00000007, 0x0000002e, 0x00000027,
       0x0000002d, 0x0003003e, 0x00000009, 0x0000002e, 0x000100fd, 0x00010038,
   };
+  // As DXVK's D3D11 compiler (dxbc) lays a pixel shader out: a uniform buffer
+  // past binding 63 (160), a texture (32) and its sampler state (16) apart.
+  //   layout(location = 0) in vec2 uv;
+  //   layout(set = 0, binding = 160) uniform Constants { vec4 scale; } constants;
+  //   layout(set = 0, binding = 32) uniform texture2D image;
+  //   layout(set = 0, binding = 16) uniform sampler state;
+  //   color = texture(sampler2D(image, state), uv) * constants.scale;
+  const uint32_t kSplitFragment[] = {
+      0x07230203, 0x00010000, 0x0008000b, 0x00000022, 0x00000000, 0x00020011, 0x00000001, 0x0006000b, 0x00000001,
+      0x4c534c47, 0x6474732e, 0x3035342e, 0x00000000, 0x0003000e, 0x00000000, 0x00000001, 0x0007000f, 0x00000004,
+      0x00000004, 0x6e69616d, 0x00000000, 0x00000009, 0x00000016, 0x00030010, 0x00000004, 0x00000007, 0x00030003,
+      0x00000002, 0x000001c2, 0x00040005, 0x00000004, 0x6e69616d, 0x00000000, 0x00040005, 0x00000009, 0x6f6c6f63,
+      0x00000072, 0x00040005, 0x0000000c, 0x67616d69, 0x00000065, 0x00040005, 0x00000010, 0x74617473, 0x00000065,
+      0x00030005, 0x00000016, 0x00007675, 0x00050005, 0x00000019, 0x736e6f43, 0x746e6174, 0x00000073, 0x00050006,
+      0x00000019, 0x00000000, 0x6c616373, 0x00000065, 0x00050005, 0x0000001b, 0x736e6f63, 0x746e6174, 0x00000073,
+      0x00040047, 0x00000009, 0x0000001e, 0x00000000, 0x00040047, 0x0000000c, 0x00000021, 0x00000020, 0x00040047,
+      0x0000000c, 0x00000022, 0x00000000, 0x00040047, 0x00000010, 0x00000021, 0x00000010, 0x00040047, 0x00000010,
+      0x00000022, 0x00000000, 0x00040047, 0x00000016, 0x0000001e, 0x00000000, 0x00030047, 0x00000019, 0x00000002,
+      0x00050048, 0x00000019, 0x00000000, 0x00000023, 0x00000000, 0x00040047, 0x0000001b, 0x00000021, 0x000000a0,
+      0x00040047, 0x0000001b, 0x00000022, 0x00000000, 0x00020013, 0x00000002, 0x00030021, 0x00000003, 0x00000002,
+      0x00030016, 0x00000006, 0x00000020, 0x00040017, 0x00000007, 0x00000006, 0x00000004, 0x00040020, 0x00000008,
+      0x00000003, 0x00000007, 0x0004003b, 0x00000008, 0x00000009, 0x00000003, 0x00090019, 0x0000000a, 0x00000006,
+      0x00000001, 0x00000000, 0x00000000, 0x00000000, 0x00000001, 0x00000000, 0x00040020, 0x0000000b, 0x00000000,
+      0x0000000a, 0x0004003b, 0x0000000b, 0x0000000c, 0x00000000, 0x0002001a, 0x0000000e, 0x00040020, 0x0000000f,
+      0x00000000, 0x0000000e, 0x0004003b, 0x0000000f, 0x00000010, 0x00000000, 0x0003001b, 0x00000012, 0x0000000a,
+      0x00040017, 0x00000014, 0x00000006, 0x00000002, 0x00040020, 0x00000015, 0x00000001, 0x00000014, 0x0004003b,
+      0x00000015, 0x00000016, 0x00000001, 0x0003001e, 0x00000019, 0x00000007, 0x00040020, 0x0000001a, 0x00000002,
+      0x00000019, 0x0004003b, 0x0000001a, 0x0000001b, 0x00000002, 0x00040015, 0x0000001c, 0x00000020, 0x00000001,
+      0x0004002b, 0x0000001c, 0x0000001d, 0x00000000, 0x00040020, 0x0000001e, 0x00000002, 0x00000007, 0x00050036,
+      0x00000002, 0x00000004, 0x00000000, 0x00000003, 0x000200f8, 0x00000005, 0x0004003d, 0x0000000a, 0x0000000d,
+      0x0000000c, 0x0004003d, 0x0000000e, 0x00000011, 0x00000010, 0x00050056, 0x00000012, 0x00000013, 0x0000000d,
+      0x00000011, 0x0004003d, 0x00000014, 0x00000017, 0x00000016, 0x00050057, 0x00000007, 0x00000018, 0x00000013,
+      0x00000017, 0x00050041, 0x0000001e, 0x0000001f, 0x0000001b, 0x0000001d, 0x0004003d, 0x00000007, 0x00000020,
+      0x0000001f, 0x00050085, 0x00000007, 0x00000021, 0x00000018, 0x00000020, 0x0003003e, 0x00000009, 0x00000021,
+      0x000100fd, 0x00010038,
+  };
 } // namespace
 
 int main(int argc, char **argv) {
@@ -356,6 +392,60 @@ int main(int argc, char **argv) {
   depthPasses[1].targetHeight = 240;
   require(submit(&list) == REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS, "Depth test on a host target refused");
   list.passes = passes;
+  // D3D11 bindings (SAMPLED_IMAGE, SAMPLER_STATE): the texture takes its
+  // entry's target (the frame), the sampler state its filtering; binding
+  // numbers up to 4095, unknown types refused.
+  {
+    const remixapi_HostShaderBindingEXT split[] = {{160, REMIXAPI_HOST_BINDING_UNIFORM_BUFFER_EXT},
+                                                   {32, REMIXAPI_HOST_BINDING_SAMPLED_IMAGE_EXT},
+                                                   {16, REMIXAPI_HOST_BINDING_SAMPLER_STATE_EXT}};
+    remixapi_HostShaderInfoEXT d3d11 = info;
+    d3d11.stage = REMIXAPI_HOST_SHADER_FRAGMENT_EXT;
+    d3d11.code = kSplitFragment;
+    d3d11.codeBytes = sizeof(kSplitFragment);
+    d3d11.bindings = split;
+    d3d11.bindingCount = 3;
+    d3d11.pushConstantBytes = 0;
+    remixapi_HostShaderHandleEXT separate = 0, refused = 1;
+    ok(registerShader(&d3d11, &separate));
+    const remixapi_HostShaderBindingEXT outOfRange[] = {{4096, REMIXAPI_HOST_BINDING_UNIFORM_BUFFER_EXT}},
+                                        unknown[] = {{1, REMIXAPI_HOST_BINDING_SAMPLER_STATE_EXT + 1}};
+    d3d11.bindings = outOfRange;
+    d3d11.bindingCount = 1;
+    require(registerShader(&d3d11, &refused) == REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS && !refused,
+            "Binding past 4095 refused");
+    d3d11.bindings = unknown;
+    refused = 1;
+    require(registerShader(&d3d11, &refused) == REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS && !refused,
+            "Unknown binding type refused");
+    const float scale[4] = {1, 1, 1, 1};
+    const remixapi_HostPassBufferEXT scaleBuffer = {160, scale, sizeof(scale)};
+    const remixapi_HostPassSamplerEXT entries[] = {{32, 0, 0, 1, 1}, {16, 0, 1, 1, 1}};
+    remixapi_HostPassEXT pass = {};
+    draw(pass, 0, 0, 0, nullptr, &scaleBuffer, nullptr, entries);
+    pass.fragmentShader = separate;
+    pass.samplerCount = 2;
+    pass.pushConstants = nullptr;
+    pass.pushConstantBytes = 0;
+    remixapi_HostPassListEXT single = {};
+    single.sType = REMIXAPI_STRUCT_TYPE_HOST_PASS_LIST_EXT;
+    single.passes = &pass;
+    single.passCount = 1;
+    const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+    bool drawn = false;
+    for (int frame = 0; frame < 2000 && !drawn; ++frame) {
+      ok(submit(&single));
+      ok(api.Present(nullptr));
+      ok(statistics(&stats));
+      require(stats.passes == 1 && stats.skippedSampler == 0 && stats.skippedBuffer == 0,
+              "D3D11 bindings found in the pass");
+      drawn = stats.draws == 1;
+      require(std::chrono::steady_clock::now() < until, "D3D11-style pipeline never compiled");
+      if (!drawn)
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ok(destroyShader(separate));
+  }
   // Nothing submitted: nothing runs. A destroyed shader's draws are refused.
   list.passCount = 0;
   ok(submit(&list));

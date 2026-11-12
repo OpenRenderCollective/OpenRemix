@@ -50,6 +50,8 @@ namespace remix::scene {
     uint8_t cutGroup = 0;
     // remixapi_InstanceInfoCameraCullingEXT flags (camera rays only).
     uint8_t cameraCull = 0;
+    // remixapi_InstanceInfoCameraOnlyEXT: no ray but the camera's meets it.
+    bool cameraOnly = false;
     // remixapi_InstanceInfoRasterOrderEXT (0: sorted by depth).
     uint32_t rasterOrder = 0;
     // remixapi_InstanceInfoSpriteEXT (0: none).

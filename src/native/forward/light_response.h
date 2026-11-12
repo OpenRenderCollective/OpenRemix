@@ -6,10 +6,11 @@
 
 namespace remix::forward {
   // Stored exactly as floats in LightData::corners[2].w, read by local-light-record.glsl.
-  enum class LightResponse { Analytic = 0, Aggregate = 1, BakedFallback = 2, SelectedAggregate = 3 };
+  enum class LightResponse { Analytic = 0, Aggregate = 1, BakedFallback = 2, SelectedAggregate = 3, BakedSurface = 4 };
 
   struct LightResponseInput {
     bool aggregate = false;
+    bool bakedSurface = false;
     bool attributed = false;
     bool selectedOnly = false;
     bool requireMixed = false;
@@ -38,6 +39,7 @@ namespace remix::forward {
   }
   inline RuntimeLightResponse lightResponse(const LightResponseInput &input) {
     if (!input.aggregate) return {};
+    if (input.bakedSurface) return {LightResponse::BakedSurface};
     if (!input.attributed) return {LightResponse::BakedFallback};
     if (!input.selectedOnly || input.requireMixed) return {LightResponse::Aggregate};
     const bool highlightSelected = input.independentHighlights &&

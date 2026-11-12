@@ -27,6 +27,10 @@ namespace remix {
     // c = (c / .18)^contrastAmount * .18 after exposure.
     bool contrast = false;
     float contrastAmount = 1.15f;
+    // Lens chromatic aberration (postfx::Options): the red and blue channels'
+    // displacement at the image's left and right edges, a fraction of its width.
+    bool chromaticAberration = false;
+    float chromaticAberrationAmount = .002f;
     uint32_t fsrQuality = 3;
     float fsrSharpness = 0.f;
     // XeSS's seven presets (upscale::xessRenderSize); 5: performance.
@@ -304,6 +308,10 @@ namespace remix {
     // portal's surface shows its own material. Camera rays only: the primary
     // surface replacement pass (raster primary with a denoiser) traces them.
     uint32_t rayPortalTeleports = 4;
+    // How many ray portals a bounce ray passes (0..8): light through them, so
+    // what lies past a portal lights what is in front of it. 0: bounce rays
+    // meet a portal as its material, as shadow and light rays always do.
+    uint32_t rayPortalLightTeleports = 2;
     // World units in front of the partner's opening where a teleported ray
     // starts: past the partner's own mesh (which may stand off its wall) so
     // its first hit is not the partner portal.

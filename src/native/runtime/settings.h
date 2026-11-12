@@ -97,8 +97,9 @@ namespace remix::config {
     // (any GPU, one generated frame), or DLSS where available and FSR
     // otherwise.
     upscale::FrameGenerationMode frameGenerationBackend = upscale::FrameGenerationMode::Fsr31;
-    // NVIDIA Reflex (VK_NV_low_latency2): the driver paces the host so that
-    // frames are not queued ahead of the GPU. Always on with frame generation.
+    // NVIDIA Reflex (VK_NV_low_latency2) or AMD Anti-Lag (VK_AMD_anti_lag):
+    // the driver paces the host so that frames are not queued ahead of the
+    // GPU. Always on with frame generation.
     bool lowLatency = true;
     // Generated frames per rendered frame: 1 (2x) to 3 (4x), as far as the
     // GPU's feature goes (DLSS 4 multi frame generation). FSR generates one.

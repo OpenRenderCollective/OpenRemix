@@ -118,13 +118,13 @@ namespace remix::forward {
     for (auto handle : {opaquePipeline, lightmapPipeline, indexedLightmapPipeline, indexedRoughDielectricPipeline, partialLightmapPipeline, unmappedLightmapPipeline,
                         depthPipeline, depthLightmapPipeline, depthBatchPipeline,
                         shadowPipeline, localShadowPipeline,
-                        clusterPipeline, compositePipeline, viewModelPipeline, viewModelEarlyPipeline,
+                        clusterPipeline, coveredClusterPipeline, compositePipeline, viewModelPipeline, viewModelEarlyPipeline,
                         giViewModelPipeline, giViewModelEarlyPipeline, giOpaquePipeline, giLightmapPipeline,
                         terrainPipeline, terrainLightmapPipeline, terrainPartialLightmapPipeline,
                         giTerrainPipeline, giTerrainLightmapPipeline})
       if (handle)
         pipeline::destroyPipeline(device, handle, nullptr);
-    for (auto handle : {layout, compositeLayout, giLayout})
+    for (auto handle : {layout, compositeLayout, giLayout, coveredClusterLayout})
       if (handle)
         pipeline::destroyPipelineLayout(device, handle, nullptr);
     for (auto handle : {sceneLayout, materialLayout, compositeSetLayout, giSceneLayout, postLayout})

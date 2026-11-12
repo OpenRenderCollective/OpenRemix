@@ -91,7 +91,7 @@ namespace remix {
         ImGui::TextDisabled("%s", "The headless editor always presents synchronously.");
       ImGui::BeginDisabled(!generation.lowLatencySupported || settings.frameGeneration);
       bool lowLatency = generation.lowLatencySupported && (settings.lowLatency || settings.frameGeneration);
-      if (ui::Checkbox("NVIDIA Reflex low latency", &lowLatency))
+      if (ui::Checkbox(generation.lowLatencyName, &lowLatency))
         settings.lowLatency = lowLatency;
       ImGui::EndDisabled();
       if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
@@ -1324,6 +1324,14 @@ namespace remix {
                           "colour = (colour / 0.18)^contrast * 0.18. Counters a flat, grey look.");
       if (options.contrast)
         ui::SliderFloat("Contrast", &options.contrastAmount, .5f, 2.f, "%.2f");
+    }
+    if (ui::Panel panel{"Chromatic aberration"}) {
+      ui::Checkbox("Lens chromatic aberration", &options.chromaticAberration);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Red and blue split from green toward the edges of the image, as through a lens:\n"
+                          "none at the centre, the amount at the left and right edges (a fraction of the width).");
+      if (options.chromaticAberration)
+        ui::SliderFloat("Amount at the edges", &options.chromaticAberrationAmount, 0.f, .02f, "%.4f");
     }
   }
 

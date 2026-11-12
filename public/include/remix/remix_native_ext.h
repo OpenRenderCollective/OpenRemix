@@ -39,6 +39,15 @@ typedef struct remixapi_MaterialInfoPbrEXT {
   remixapi_Bool enabled;
 } remixapi_MaterialInfoPbrEXT;
 
+// Optional MaterialInfo pNext. A material can omit analytic direct highlights
+// in Forward+ while retaining its normal maps and environment reflections.
+#define REMIXAPI_STRUCT_TYPE_MATERIAL_DIRECT_SPECULAR_EXT ((remixapi_StructType)0x7fff1077)
+typedef struct remixapi_MaterialDirectSpecularEXT {
+  remixapi_StructType sType;
+  const void *pNext;
+  remixapi_Bool enabled;
+} remixapi_MaterialDirectSpecularEXT;
+
 // Optional MaterialInfo pNext. Keep the visible emissive color/map while
 // suppressing generated area lights, e.g. when an explicit analytic light
 // already represents the source. Absent/zero preserves emissive lighting.
@@ -268,6 +277,19 @@ typedef struct remixapi_InstanceInfoCameraCullingEXT {
   const void *pNext;
   uint32_t flags; // REMIXAPI_INSTANCE_CAMERA_CULL_*_EXT
 } remixapi_InstanceInfoCameraCullingEXT;
+
+// Optional InstanceInfo pNext: only camera rays meet the instance (with the
+// rays a camera sends on through ray portals and screens); shadow, light,
+// bounce and reflection rays pass it, as they pass a ray portal's opening. A
+// backdrop drawn as geometry, such as a skybox mesh around a game's 3D-skybox
+// diorama, then shows without shutting the sun and sky out of what it
+// surrounds, or lighting it. Path-traced instances only: the raster backend
+// draws the instance as usual.
+#define REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_CAMERA_ONLY_EXT ((remixapi_StructType)0x7fff1077)
+typedef struct remixapi_InstanceInfoCameraOnlyEXT {
+  remixapi_StructType sType;
+  const void *pNext;
+} remixapi_InstanceInfoCameraOnlyEXT;
 
 // Optional TextureInfo pNext. With `generate` set and a single supplied level
 // (mipLevels = 1), the runtime completes the texture with a box-filtered mip
@@ -899,10 +921,19 @@ typedef uint64_t remixapi_HostTargetHandleEXT;
 
 #define REMIXAPI_HOST_SHADER_VERTEX_EXT 1u
 #define REMIXAPI_HOST_SHADER_FRAGMENT_EXT 2u
+// A shader's descriptor bindings (set 0). D3D9 shaders (DXVK's dxso) combine
+// each texture with its sampler state: SAMPLER. D3D11 shaders (DXVK's dxbc)
+// bind textures (shader resource views) and sampler states apart:
+// SAMPLED_IMAGE and SAMPLER_STATE. A pass's remixapi_HostPassSamplerEXT
+// entries serve all three by binding number: a SAMPLER binding takes the
+// entry's target and filtering, a SAMPLED_IMAGE binding its target only, a
+// SAMPLER_STATE binding its filtering only (linear, addressU, addressV).
 #define REMIXAPI_HOST_BINDING_UNIFORM_BUFFER_EXT 0u
 #define REMIXAPI_HOST_BINDING_SAMPLER_EXT 1u
+#define REMIXAPI_HOST_BINDING_SAMPLED_IMAGE_EXT 2u
+#define REMIXAPI_HOST_BINDING_SAMPLER_STATE_EXT 3u
 typedef struct remixapi_HostShaderBindingEXT {
-  uint32_t binding; // descriptor set 0
+  uint32_t binding; // descriptor set 0, 0..4095
   uint32_t type;    // REMIXAPI_HOST_BINDING_*
 } remixapi_HostShaderBindingEXT;
 

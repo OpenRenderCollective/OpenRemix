@@ -256,7 +256,9 @@ namespace remix::trace::detail {
     // the pair is open, plus 2 when it moved since the last frame: what is
     // seen through it restarts its history). rayPortalConfig: teleports per
     // camera ray (rtx.native.pathtrace.rayPortalTeleports), the exit offset
-    // (float bits, rtx.native.pathtrace.rayPortalExitOffset), reserved.
+    // (float bits, rtx.native.pathtrace.rayPortalExitOffset), teleports per
+    // bounce ray (rtx.native.pathtrace.rayPortalLightTeleports), 1 when some
+    // pair is open (the sun's shadow rays then look for portals).
     // rayPortalPlanes: each opening's plane (scene::RayPortals::planes).
     alignas(16) float rayPortals[scene::rayPortalSlots][4][4] = {};
     uint32_t rayPortalConfig[4] = {};
@@ -271,11 +273,16 @@ namespace remix::trace::detail {
     // results (pathtrace.comp PrimaryLocals; 0: the opaque pass in one launch).
     uint64_t primaryLocal = 0;
     uint32_t primaryLocalPadding[2] = {};
+    // rayPortals as the previous traced frame had them (zero for a pair that
+    // was closed then; this frame's after a history reset): what is seen
+    // through a pair that moved is reprojected through its previous map.
+    alignas(16) float previousRayPortals[scene::rayPortalSlots][4][4] = {};
   };
+  static_assert(offsetof(Frame, previousRayPortals) == 2944 && sizeof(Frame) == 3456);
   static_assert(offsetof(Frame, sheetMaterials) == 2320 && offsetof(Frame, woundVertices) == 2328 &&
                 offsetof(Frame, subsurfaceUnits) == 2336 && offsetof(Frame, rayPortalPadding) == 2344 &&
                 offsetof(Frame, rayPortals) == 2352 && offsetof(Frame, rayPortalPlanes) == 2880 &&
-                offsetof(Frame, wavefrontPaths) == 2912 && offsetof(Frame, primaryLocal) == 2928 && sizeof(Frame) == 2944 &&
+                offsetof(Frame, wavefrontPaths) == 2912 && offsetof(Frame, primaryLocal) == 2928 &&
                 offsetof(Frame, screenCameras) == 1808 && offsetof(Frame, srgbTextures) == 1280 &&
                 offsetof(Frame, pathDebug) == 1792 && offsetof(Frame, localProbeRead) == 1168 &&
                 offsetof(Frame, localProbeParams) == 1184 && offsetof(Frame, volumeLightScales) == 1200 &&

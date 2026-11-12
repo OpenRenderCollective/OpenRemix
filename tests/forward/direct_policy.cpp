@@ -95,6 +95,13 @@ int main() try {
   require(!hinted.lights[0].triangle && hintedPolicy.lights[0] == bake::DirectMode::Baked &&
               hintedPolicy.lights[1] == bake::DirectMode::BakedMixed,
           "Generic policy hints classify sphere emission without inferring host-specific identities");
+  hinted.lights[0].focus = 1;
+  const auto surfacePolicy = bake::staticAggregatePolicy(hinted, bake::DirectMode::BakedMixed, true);
+  require(surfacePolicy.lights[0] == bake::DirectMode::BakedSurface &&
+              bake::retainsVisibility(surfacePolicy.lights[0]) &&
+              !bake::retainsChartVisibility(surfacePolicy.lights[0]) &&
+              bake::applyDirectPolicy(hinted, surfacePolicy, packed) && packed[0].shaping[2] == 2,
+          "Shaped surface emission keeps chart diffuse and separate probe visibility");
   require(bake::staticAggregatePolicy(hinted, bake::DirectMode::Baked).lights[1] ==
               bake::DirectMode::BakedMixed,
           "Required mixed lighting survives a broad fully baked preference");

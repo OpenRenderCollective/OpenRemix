@@ -829,11 +829,21 @@ namespace remix {
           frame.rayPortals[index][3][3] += 2;
       }
       frame.rayPortalConfig[0] = std::min(options.rayPortalTeleports, 8u);
+      frame.rayPortalConfig[2] = std::min(options.rayPortalLightTeleports, 8u);
+      // Some pair open: the sun's rays look for portals (sunThroughPortal).
+      frame.rayPortalConfig[3] = 0;
+      for (uint32_t index = 0; index < scene::rayPortalSlots; ++index)
+        frame.rayPortalConfig[3] |= portals.slots[index][15] != 0 ? 1u : 0u;
       const float exitOffset = std::max(options.rayPortalExitOffset, 0.f);
       std::memcpy(&frame.rayPortalConfig[1], &exitOffset, 4);
       std::copy(portals.planes.begin(), portals.planes.end(), frame.rayPortalPlanes);
       trace::g_rayPortalState = {portals.surfaces, portals.pairs, portals.duplicates, frame.rayPortalConfig[0],
                                  denoiser && psrCompute && options.rasterPrimary};
+      // The maps of the previous traced frame, for reprojecting what is seen
+      // through a pair that moved (after a reset, this frame's: no motion).
+      const auto &previous = history.reset() ? portals : lastRayPortals;
+      for (uint32_t index = 0; index < scene::rayPortalSlots; ++index)
+        std::copy_n(previous.slots[index].data(), 16, &frame.previousRayPortals[index][0][0]);
       lastRayPortals = portals;
       append(frame.rayPortals, sizeof(frame.rayPortals));
       append(frame.rayPortalConfig, sizeof(frame.rayPortalConfig));
@@ -884,11 +894,12 @@ namespace remix {
                           std::clamp(options.skySamples, 1u, 16u) << 8 |
                           std::clamp(std::min(options.sheetSkySamples, options.skySamples), 1u, 16u) << 16;
     // Bits 0-7: the instance mask of shadow, light-visibility and bounce rays
-    // (view models never; blended layers unless skipBlendedSecondaryRays is
-    // off). Bit 8: a traced view model is in the frame (camera rays look for
-    // it first; see cameraHit). Bit 9: thin films are off (scene.glsl filmed).
+    // (view models, reflection-only bodies and ray portal openings never;
+    // blended layers unless skipBlendedSecondaryRays is off). Bit 8: a traced view model is in the frame (camera rays
+    // look for it first; see cameraHit). Bit 9: thin films are off (scene.glsl filmed).
     frame.pathConfig[3] = (options.skipBlendedSecondaryRays ? 0xffu & ~uint32_t(trace::blendedInstanceMask) : 0xffu) &
-                          ~uint32_t(trace::viewModelInstanceMask) & ~uint32_t(trace::reflectionOnlyInstanceMask);
+                          ~uint32_t(trace::viewModelInstanceMask) & ~uint32_t(trace::reflectionOnlyInstanceMask) &
+                          ~uint32_t(trace::cameraOnlyInstanceMask);
     if (prepared.viewModel)
       frame.pathConfig[3] |= 0x100u;
     if (!options.iridescence)
@@ -1004,8 +1015,10 @@ namespace remix {
     temporalFrame.translucency[1] = denoiser && postReblur && !rrActive() && options.translucencyReuse &&
                                     options.bounces > 0 && options.indirectClamp == 0 && !debugView &&
                                     hasBlendedGeometry;
+    // Bit 0: mirrors replace their pixels; bit 1: the pass ran (its screen and
+    // portal records in psrMirror are this frame's).
     temporalFrame.translucency[2] =
-        denoiser && psrCompute && options.rasterPrimary && options.primarySurfaceReplacement;
+        denoiser && psrCompute && options.rasterPrimary ? (options.primarySurfaceReplacement ? 1u : 0u) | 2u : 0u;
     temporalFrame.local[0] = denoiser && postLocalDenoise;
     temporalFrame.local[1] = frame.localConfig[0];
     temporalFrame.local[2] = localResponsiveFrames;

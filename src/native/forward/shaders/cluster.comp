@@ -184,6 +184,42 @@ void includeTileRay(vec2 ndc, vec2 depth, inout vec3 minimum, inout vec3 maximum
   maximum = max(maximum, max(first, last));
 }
 
+#ifdef COVERED_CLUSTERS
+layout(set = 1, binding = 1, std430) readonly buffer CoveredTileDepth {
+  vec4 coveredTileDepth[];
+};
+shared uint coveredLanes;
+bool clusterHasOpaqueDepth(uvec3 cell) {
+  if (cell.z == 0u || cell.z + 1u == frame.grid.z)
+    return true;
+  // Oblique projections can make reconstructed depth depend on tile position.
+  if (any(notEqual(vec4(frame.inverseProjection[0].zw, frame.inverseProjection[1].zw), vec4(0))))
+    return true;
+  uvec2 low = (cell.xy * frame.target.xy / frame.grid.xy) / 32u;
+  uvec2 high = min(((cell.xy + 1u) * frame.target.xy + frame.grid.xy - 1u) / frame.grid.xy,
+                   frame.target.xy - 1u) / 32u;
+  uint columns = (frame.target.x + 31u) / 32u;
+  float lower = sliceDepth(cell.z), upper = sliceDepth(cell.z + 1u);
+  float padding = max(upper * .001, .0001);
+  for (uint y = low.y; y <= high.y; ++y)
+    for (uint x = low.x; x <= high.x; ++x) {
+      vec2 covered = coveredTileDepth[y * columns + x].yz;
+      if (covered.x > covered.y) continue;
+      vec2 nearView = (frame.inverseProjection * vec4(0, 0, covered.x, 1)).zw;
+      vec2 farView = (frame.inverseProjection * vec4(0, 0, covered.y, 1)).zw;
+      // An interval crossing w = 0 is unbounded in view space.
+      if (nearView.y == 0 || farView.y == 0 || (nearView.y < 0) != (farView.y < 0))
+        return true;
+      vec2 depth = vec2(nearView.x / nearView.y, farView.x / farView.y) * frame.depth.w;
+      if (any(isnan(depth)) || any(isinf(depth)) || any(lessThan(depth, vec2(0)))) return true;
+      float a = depth.x, b = depth.y;
+      if (!(max(a, b) < lower - padding || min(a, b) > upper + padding))
+        return true;
+    }
+  return false;
+}
+#endif
+
 void main() {
   bool chartCones = clusterChartConesEnabled();
   if (chartCones && gl_GlobalInvocationID.x < frame.occlusion.y)
@@ -206,6 +242,22 @@ void main() {
   }
   uvec3 cell = uvec3(index % frame.grid.x, (index / frame.grid.x) % frame.grid.y,
                      index / (frame.grid.x * frame.grid.y));
+#ifdef COVERED_CLUSTERS
+  if (gl_LocalInvocationIndex == 0u) coveredLanes = 0u;
+  barrier();
+  if (validCell && clusterHasOpaqueDepth(cell))
+    atomicOr(coveredLanes, 1u);
+  barrier();
+  // Keep the full lists for every cell in a group that can reach an opaque
+  // receiver. This keeps adjacent cells available without a second build.
+  if (coveredLanes == 0u) {
+    if (validCell) {
+      clusters[base] = 0u;
+      clusters[base + 1u] = ~0u;
+    }
+    return;
+  }
+#endif
   vec2 low = vec2(cell.xy) / vec2(frame.grid.xy) * 2 - 1;
   vec2 high = vec2(cell.xy + 1u) / vec2(frame.grid.xy) * 2 - 1;
   vec3 minimum = vec3(1e30), maximum = vec3(-1e30);
@@ -262,7 +314,12 @@ void main() {
   } else {
     for (uint batch = 0u; batch < lightCount; batch += 64u) {
       uint size = min(64u, lightCount - batch);
-      if (lane < size) lightBounds[lane] = lights[batch + lane].clusterBounds;
+      vec4 bound;
+      if (lane < size) {
+        bound = lights[batch + lane].clusterBounds;
+        lightBounds[lane] = bound;
+      }
+      if (shareCandidates && lane < 4u) candidateMask[lane] = 0u;
       if (clusterConeMasksEnabled() && lane < size && batch + lane < ClusterLightCount) {
         Light light = lights[batch + lane];
         coneBounds[lane] = aggregateConeBounds(light, coneIntervals, movingCones, chartCones, coneMinimum[lane], coneMaximum[lane]);
@@ -272,15 +329,10 @@ void main() {
       }
       barrier();
       if (shareCandidates) {
-        // The union of these cells rejects a light for the whole group.
-        // Four lanes each encode an ordered block of 16 candidate lights.
-        if (lane < 4u) {
-          uint begin = lane * 16u, mask = 0u;
-          for (uint j = begin; j < min(begin + 16u, size); ++j)
-            if (intersects(lightBounds[j], groupMinimum, groupMaximum))
-              mask |= 1u << (j - begin);
-          candidateMask[lane] = mask;
-        }
+        // Test one light per lane against the union of all cells. The bit
+        // position preserves index order for the receiver's prefix lookup.
+        if (lane < size && intersects(bound, groupMinimum, groupMaximum))
+          atomicOr(candidateMask[lane / 16u], 1u << (lane % 16u));
         barrier();
       }
       if (validCell) {

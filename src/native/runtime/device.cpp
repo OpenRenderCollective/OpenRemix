@@ -394,6 +394,54 @@ namespace remix {
                        [](auto p) { return std::strcmp(p, VK_NV_LOW_LATENCY_2_EXTENSION_NAME) == 0; }))
         extensions.push_back(VK_NV_LOW_LATENCY_2_EXTENSION_NAME);
     }
+    // AMD Anti-Lag (VK_AMD_anti_lag): the same low latency setting as Reflex,
+    // on AMD drivers. Needs only its feature; no swapchain or semaphore state.
+    VkPhysicalDeviceAntiLagFeaturesAMD antiLag = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ANTI_LAG_FEATURES_AMD};
+    m_antiLagSupported = false;
+    if (!m_headless && !m_lowLatencySupported && m_instanceApiVersion >= VK_API_VERSION_1_1 &&
+        supportsDeviceExtension(selection.physicalDevice, VK_AMD_ANTI_LAG_EXTENSION_NAME)) {
+      VkPhysicalDeviceFeatures2 available = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, .pNext = &antiLag};
+      vkGetPhysicalDeviceFeatures2(selection.physicalDevice, &available);
+      if (antiLag.antiLag) {
+        m_antiLagSupported = true;
+        extensions.push_back(VK_AMD_ANTI_LAG_EXTENSION_NAME);
+        antiLag.pNext = features.pNext;
+        features.pNext = &antiLag;
+      }
+    }
+    // Frame latency statistics: GPU timestamps on the host's clock
+    // (latency::FrameStamps) need calibrated timestamps with the host domain
+    // the statistics use. KHR or the EXT it was promoted from.
+    const char *calibratedExtension = nullptr;
+    {
+#if defined(_WIN32)
+      constexpr VkTimeDomainKHR hostDomain = VK_TIME_DOMAIN_QUERY_PERFORMANCE_COUNTER_KHR;
+#else
+      constexpr VkTimeDomainKHR hostDomain = VK_TIME_DOMAIN_CLOCK_MONOTONIC_KHR;
+#endif
+      const char *name = supportsDeviceExtension(selection.physicalDevice, VK_KHR_CALIBRATED_TIMESTAMPS_EXTENSION_NAME)
+                             ? VK_KHR_CALIBRATED_TIMESTAMPS_EXTENSION_NAME
+                         : supportsDeviceExtension(selection.physicalDevice, VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME)
+                             ? VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME
+                             : nullptr;
+      const bool khr = name && std::strcmp(name, VK_KHR_CALIBRATED_TIMESTAMPS_EXTENSION_NAME) == 0;
+      const auto domainsOf = reinterpret_cast<PFN_vkGetPhysicalDeviceCalibrateableTimeDomainsKHR>(
+          !name ? nullptr
+          : khr ? vkGetInstanceProcAddr(m_instance, "vkGetPhysicalDeviceCalibrateableTimeDomainsKHR")
+                : vkGetInstanceProcAddr(m_instance, "vkGetPhysicalDeviceCalibrateableTimeDomainsEXT"));
+      uint32_t count = 0;
+      if (domainsOf && domainsOf(selection.physicalDevice, &count, nullptr) == VK_SUCCESS && count) {
+        std::vector<VkTimeDomainKHR> domains(count);
+        if (domainsOf(selection.physicalDevice, &count, domains.data()) == VK_SUCCESS &&
+            std::find(domains.begin(), domains.end(), VK_TIME_DOMAIN_DEVICE_KHR) != domains.end() &&
+            std::find(domains.begin(), domains.end(), hostDomain) != domains.end())
+          calibratedExtension = name;
+      }
+      if (calibratedExtension && std::none_of(extensions.begin(), extensions.end(), [&](auto p) {
+            return std::strcmp(p, calibratedExtension) == 0;
+          }))
+        extensions.push_back(calibratedExtension);
+    }
     // Present metering (frame generation): the driver spaces a frame's
     // generated and rendered images itself (presentImages).
     VkPhysicalDevicePresentMeteringFeaturesNV metering = {.sType = presentMeteringFeaturesType};
@@ -471,6 +519,9 @@ namespace remix {
       m_latencySleep = reinterpret_cast<PFN_vkLatencySleepNV>(vkGetDeviceProcAddr(m_device, "vkLatencySleepNV"));
       m_setLatencyMarker =
           reinterpret_cast<PFN_vkSetLatencyMarkerNV>(vkGetDeviceProcAddr(m_device, "vkSetLatencyMarkerNV"));
+      // The driver's own per-frame report, for the Latency panel (optional).
+      m_getLatencyTimings =
+          reinterpret_cast<PFN_vkGetLatencyTimingsNV>(vkGetDeviceProcAddr(m_device, "vkGetLatencyTimingsNV"));
       const VkSemaphoreTypeCreateInfo timeline{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
                                                .semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE,
                                                .initialValue = 0};
@@ -479,7 +530,24 @@ namespace remix {
       m_lowLatencySupported = m_setLatencySleepMode && m_latencySleep && m_setLatencyMarker &&
                               vkCreateSemaphore(m_device, &semaphore, nullptr, &m_latencySemaphore) == VK_SUCCESS;
     }
+    m_antiLagActive = false;
+    m_antiLagUpdate =
+        m_antiLagSupported
+            ? reinterpret_cast<PFN_vkAntiLagUpdateAMD>(vkGetDeviceProcAddr(m_device, "vkAntiLagUpdateAMD"))
+            : nullptr;
+    m_antiLagSupported = m_antiLagUpdate != nullptr;
     m_gpuTimers.initialize(m_physicalDevice, m_device, m_queueFamily);
+    m_frameStamps.initialize(
+        m_physicalDevice, m_device, m_queueFamily,
+        !calibratedExtension ? nullptr
+        : std::strcmp(calibratedExtension, VK_KHR_CALIBRATED_TIMESTAMPS_EXTENSION_NAME) == 0
+            ? reinterpret_cast<PFN_vkGetCalibratedTimestampsKHR>(
+                  vkGetDeviceProcAddr(m_device, "vkGetCalibratedTimestampsKHR"))
+            : reinterpret_cast<PFN_vkGetCalibratedTimestampsKHR>(
+                  vkGetDeviceProcAddr(m_device, "vkGetCalibratedTimestampsEXT")));
+    m_latencyRecorder.reset();
+    // Frames count once their GPU times are in, where there will be any.
+    m_latencyRecorder.expectGpu(m_frameStamps.supported() && !m_headless);
     m_pipelines = std::make_unique<pipeline::Service>(m_device, m_properties, pipelineFeedback, pipelineStatistics);
     m_hostPasses.initialize(m_physicalDevice, m_device);
     // Ray queries are enabled with tracing.

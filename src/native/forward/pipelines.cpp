@@ -134,7 +134,8 @@ namespace remix::forward {
         std::strcmp(localLightWorkView, "early") == 0 ? 9u :
         std::strcmp(localLightWorkView, "late") == 0 ? 10u :
         std::strcmp(localLightWorkView, "members") == 0 ? 11u :
-        std::strcmp(localLightWorkView, "ownership") == 0 ? 12u : 8u;
+        std::strcmp(localLightWorkView, "ownership") == 0 ? 12u :
+        std::strcmp(localLightWorkView, "uncovered-clusters") == 0 ? 13u : 8u;
     const bool directionalOwnershipMask = mixed::bakedLightMasksEnabled() ||
         std::getenv("REMIX_DEBUG_DIRECTIONAL_OWNERSHIP_MASK") != nullptr;
     auto graphics = [&](VkShaderModule vs, VkShaderModule fs, VkRenderPass pass, Pass mode = Pass::Opaque,

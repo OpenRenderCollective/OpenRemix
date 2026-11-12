@@ -81,6 +81,15 @@ namespace remix::forward::bake {
         result.declined.push_back({style, StyledDirectDecline::SurfaceCoverage, missing->second});
         continue;
       }
+      // A coarse probe can lie outside a spotlight even when the shaded
+      // point is inside its beam. Keep the per-light response so probe-lit
+      // receivers evaluate the cone at the actual shading point.
+      if (std::any_of(source.lights.begin(), source.lights.end(), [style](const auto &light) {
+            return light.style == style && light.coneCos > -1.f;
+          })) {
+        result.declined.push_back({style, StyledDirectDecline::DirectionalEmitter});
+        continue;
+      }
       bool covered = completeProbes;
       uint32_t missingProbeLight = UINT32_MAX;
       std::vector<uint32_t> lights;

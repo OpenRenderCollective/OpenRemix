@@ -227,7 +227,7 @@ namespace remix {
       std::shared_ptr<Texture> emissionTexture;
       std::shared_ptr<Texture> roughnessTexture, metallicTexture, normalTexture;
       float roughness = 1, metallic = 0;
-      bool pbr = false;
+      bool pbr = false, suppressDirectSpecular = false;
       uint32_t normalEncoding = 0;
       // remixapi_MaterialPbrRemapEXT, per map (roughness, metallic).
       struct Remap {
@@ -316,6 +316,10 @@ namespace remix {
       // remixapi_MaterialInfoPortalEXT: the ray portal index + 1 its surface
       // opens (0: none; scene/portals.h).
       uint8_t rayPortal = 0;
+      // The portal extends an opaque material (its look where it does not
+      // open): a draw of a standalone portal of the index, when there is one,
+      // gives the portal its frame instead (scene/portals.h).
+      bool rayPortalOverOpaque = false;
       // Wrap modes in RTX Remix's MDL encoding: 0 clamp, 1 repeat, 2 mirrored
       // repeat, 3 clip.
       uint8_t filter = 0, wrapU = 1, wrapV = 1;
@@ -490,6 +494,9 @@ namespace remix {
       // remixapi_InstanceInfoCameraCullingEXT flags: what camera rays skip of
       // a traced instance (1 back faces, 2 clusters the camera cannot see).
       uint8_t cameraCull = 0;
+      // remixapi_InstanceInfoCameraOnlyEXT: only camera rays (and theirs past
+      // portals and screens) meet it, as a ray portal's opening.
+      bool cameraOnly = false;
       // remixapi_InstanceInfoWoundCutEXT (null: none): cut away for every ray
       // and raster pass, evaluated at the mesh's own (bind pose) positions.
       std::shared_ptr<const WoundCut> wound;

@@ -10,6 +10,9 @@ struct Light {
 };
 
 // The response modes mirror LightResponse in light_response.h.
-bool localLightUsesBakedDiffuse(Light light) { return light.corners[2].w > .5; }
+bool localLightUsesBakedSurface(Light light) { return light.corners[2].w == 4; }
+bool localLightUsesBakedDiffuse(Light light) {
+  return light.corners[2].w > .5 && !localLightUsesBakedSurface(light);
+}
 bool localLightHasSelectedHighlight(Light light) { return light.corners[2].w == 3; }
 #endif

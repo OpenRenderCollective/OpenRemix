@@ -989,7 +989,7 @@ int main() {
                   config::SetResult::Success && settings.forward.bakedHighlightFade == 1.5f,
           "Highlight budget and duration persist independently of shadow settings");
   require(config::Settings{}.forward.bakedLighting && config::Settings{}.forward.baking.styledIndirect &&
-              config::Settings{}.forward.baking.styleStorageMiB == 256 &&
+              config::Settings{}.forward.baking.styleStorageMiB == 512 &&
               config::set(settings, "rtx.native.forward.bakedLighting", "1") ==
                   config::SetResult::Success && settings.forward.bakedLighting &&
               config::set(settings, "rtx.native.forward.bakedLighting", "0") ==

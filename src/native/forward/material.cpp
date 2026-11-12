@@ -48,11 +48,18 @@ namespace remix::forward {
         result[c * 4 + r] = inverse[r * 4 + c];
     return result;
   }
+  Matrix drawNormalMatrix(const Matrix &model) {
+    try {
+      return normalMatrix(model);
+    } catch (remixapi_ErrorCode) {
+      return Matrix{};
+    }
+  }
   DrawData materialData(const scene::Draw &draw, double seconds) {
     const auto &m = *draw.material;
     DrawData data;
     data.model = draw.model;
-    data.normal = normalMatrix(draw.model);
+    data.normal = drawNormalMatrix(draw.model);
     std::copy_n(m.tint, 4, data.tint.begin());
     uint32_t animationFrame = 0;
     data.uv = scene::surfaceTexcoord(draw, seconds, animationFrame);
@@ -78,7 +85,8 @@ namespace remix::forward {
     const auto encoded = [](const std::shared_ptr<scene::Texture> &texture) {
       return texture && texture->pixels.srgb && texture->pixels.hdrMips.empty();
     };
-    data.maps[0] |= uint32_t(encoded(m.texture)) << 5 | uint32_t(encoded(m.emissionTexture)) << 6;
+    data.maps[0] |= uint32_t(encoded(m.texture)) << 5 | uint32_t(encoded(m.emissionTexture)) << 6 |
+                    uint32_t(!m.pbr || m.suppressDirectSpecular) << 7;
     data.maps[1] = m.normalEncoding;
     for (uint32_t i = 0; i < 2; ++i) {
       const auto &r = m.remap[i];

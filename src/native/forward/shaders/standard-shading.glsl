@@ -31,7 +31,14 @@ ShadingResult shadeStandardSurface(Surface surface, ShadingReceiver receiver) {
   }
   ReceiverLighting diffuse = sampleDiffuseLighting(receiver, n, lightingContext,
       surface.metallic < 1 && any(greaterThan(surface.color.rgb, vec3(0))));
+  diffuse.direct.specular = diffuse.direct.specular && surface.directSpecular;
 #if defined(OPENREMIX_SPECIALIZED_LOCAL_RESPONSE) && !defined(LIVE_GI)
+  if (debugView == ViewUncoveredClusters) {
+    const uint cell = clusterIndex(receiver.screenPosition, receiver.depth);
+    const bool omitted = frame.target.z != 0u && clusters[cell * ClusterStride + 1u] == ~0u;
+    shaded.color = vec4(omitted ? vec3(1, 0, 1) : vec3(0), receiver.opacity);
+    return shaded;
+  }
   if (debugView >= ViewLocalLightWork) {
     // RGB records local candidates, nonzero responses, and moving-shadow
     // candidates on baked receivers. Blue 240–255 marks a charted fragment.

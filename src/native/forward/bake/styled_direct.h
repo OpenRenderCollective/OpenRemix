@@ -4,7 +4,7 @@
 #include "forward/mixed/directional_links.h"
 
 namespace remix::forward::bake {
-  enum class StyledDirectDecline { SurfaceCoverage, ProbeCoverage, Storage };
+  enum class StyledDirectDecline { SurfaceCoverage, ProbeCoverage, Storage, DirectionalEmitter };
   struct DeclinedStyle {
     uint32_t style;
     StyledDirectDecline reason;

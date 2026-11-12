@@ -58,8 +58,57 @@ namespace remix {
                          : m_presentMode == VK_PRESENT_MODE_MAILBOX_KHR ? "mailbox"
                          : m_presentMode == VK_PRESENT_MODE_FIFO_KHR    ? "FIFO (vsync)"
                                                                         : "other present mode";
-    result.lowLatencySupported = m_lowLatencySupported;
-    result.lowLatencyUnavailable = "Needs an NVIDIA GPU and driver with VK_NV_low_latency2, and the path tracer.";
+    result.lowLatencySupported = lowLatencySupported();
+    if (m_antiLagSupported)
+      result.lowLatencyName = "AMD Anti-Lag";
+    result.lowLatencyUnavailable = "Needs an NVIDIA GPU and driver with VK_NV_low_latency2 and the path tracer, "
+                                   "or an AMD GPU and driver with VK_AMD_anti_lag.";
+    return result;
+  }
+
+  ui::LatencyStatus RemixNativeRuntime::uiLatency() const {
+    ui::LatencyStatus result;
+    result.mode = m_antiLagSupported ? "AMD Anti-Lag" : m_lowLatencySupported ? "NVIDIA Reflex" : "";
+    result.active = latencyActive();
+    if (!m_initialized || m_headless) {
+      result.unavailable = m_headless ? "The headless editor presents no frames of its own." : "No device yet.";
+      return result;
+    }
+    result.available = true;
+    if (!m_frameStamps.supported())
+      result.gpuMissing = "GPU times need VK_KHR_calibrated_timestamps (or EXT) with the host's clock, and "
+                          "timestamps on the graphics queue.";
+    result.summary = m_latencyRecorder.summary();
+    // Reflex's own report of its newest complete frame. Like a marker, the
+    // call would wait for a sleep in progress: skipped while one runs.
+    if (m_lowLatencyActive && m_getLatencyTimings && m_swapchain &&
+        !m_latencySleeper.sleeping.load(std::memory_order_relaxed)) {
+      VkGetLatencyMarkerInfoNV info{.sType = VK_STRUCTURE_TYPE_GET_LATENCY_MARKER_INFO_NV};
+      m_getLatencyTimings(m_device, m_swapchain, &info);
+      std::vector<VkLatencyTimingsFrameReportNV> reports(
+          info.timingCount, VkLatencyTimingsFrameReportNV{.sType = VK_STRUCTURE_TYPE_LATENCY_TIMINGS_FRAME_REPORT_NV});
+      if (!reports.empty()) {
+        info.pTimings = reports.data();
+        m_getLatencyTimings(m_device, m_swapchain, &info);
+        const VkLatencyTimingsFrameReportNV *newest = nullptr;
+        for (uint32_t i = 0; i < info.timingCount && i < reports.size(); ++i)
+          if (reports[i].gpuRenderEndTimeUs && (!newest || reports[i].presentID > newest->presentID))
+            newest = &reports[i];
+        if (newest) {
+          auto span = [](uint64_t from, uint64_t to) { return from && to >= from ? double(to - from) / 1000 : 0.0; };
+          auto &d = result.driver;
+          d.available = true;
+          d.frame = newest->presentID;
+          d.gameToRender = span(newest->simStartTimeUs, newest->gpuRenderEndTimeUs);
+          d.simulation = span(newest->simStartTimeUs, newest->simEndTimeUs);
+          d.submit = span(newest->renderSubmitStartTimeUs, newest->renderSubmitEndTimeUs);
+          d.present = span(newest->presentStartTimeUs, newest->presentEndTimeUs);
+          d.driver = span(newest->driverStartTimeUs, newest->driverEndTimeUs);
+          d.osQueue = span(newest->osRenderQueueStartTimeUs, newest->osRenderQueueEndTimeUs);
+          d.gpu = span(newest->gpuRenderStartTimeUs, newest->gpuRenderEndTimeUs);
+        }
+      }
+    }
     return result;
   }
 

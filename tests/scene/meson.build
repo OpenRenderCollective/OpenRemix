@@ -35,6 +35,9 @@ test('PBR material validation and texture lifetime', pbr_test)
 optics_test = executable('remix-optics-test', 'optics.cpp',
   include_directories : test_includes)
 test('Measured optical media, world units and boundary reflectance', optics_test)
+portals_test = executable('remix-ray-portals-test', 'portals.cpp',
+  include_directories : test_includes, link_with : scene_library)
+test('Ray portal frames from standalone portal draws', portals_test)
 materials_ext_test = executable('remix-material-extensions-test', 'materials_ext.cpp',
   include_directories : test_includes, link_with : scene_library)
 test('Instance material and dynamic textures', materials_ext_test)

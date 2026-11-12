@@ -328,6 +328,8 @@ namespace remix::config {
         TRACE(bloomRadius, 0, 1);
         TRACE(contrast, 0, 1);
         TRACE(contrastAmount, .5, 2);
+        TRACE(chromaticAberration, 0, 1);
+        TRACE(chromaticAberrationAmount, 0, .02);
         TRACE(localLights, 0, 1);
         TRACE(torchLights, 0, 1);
         TRACE(emissiveLights, 0, 1);
@@ -465,6 +467,7 @@ namespace remix::config {
         TRACE(sharcGlossySurfaces, 0, 1);
         TRACE(sharcFootprintTest, 0, 1);
         TRACE(rayPortalTeleports, 0, 8);
+        TRACE(rayPortalLightTeleports, 0, 8);
         TRACE(rayPortalExitOffset, 0, 100);
         TRACE(sky, 0, 1);
         TRACE(forceRebuild, 0, 1);

@@ -26,6 +26,8 @@
 #include "forward/renderer.h"
 #include "particles/renderer.h"
 #include "platform/gpu_frames.h"
+#include "platform/frame_latency.h"
+#include "platform/frame_stamps.h"
 #include "platform/gpu_timers.h"
 #include "platform/present_queue.h"
 #include "platform/render_thread.h"
@@ -89,7 +91,8 @@ namespace remix {
     }
     const std::string &postProcessingFailure() const { return m_postFailure; }
     remixapi_ErrorCode present(const remixapi_PresentInfo *info);
-    bool lowLatencySupported() const { return m_lowLatencySupported; }
+    // NVIDIA Reflex or AMD Anti-Lag (a device has at most one).
+    bool lowLatencySupported() const { return m_lowLatencySupported || m_antiLagSupported; }
     // The device builds opacity micromaps (rtx.native.pathtrace.opacityMicromaps).
     bool opacityMicromapsSupported() const { return m_opacityMicromaps; }
     remixapi_ErrorCode requestScreenshot(const char *path);
@@ -192,7 +195,7 @@ namespace remix {
     // Low latency: asked for by the setting, and in effect (the path tracing
     // backend or frame generation).
     bool latencyRequested() const { return m_lowLatencyRequested; }
-    bool latencyActive() const { return m_lowLatencyActive; }
+    bool latencyActive() const { return m_lowLatencyActive || m_antiLagActive; }
     // The raster renderer's last prepare() (read while the render thread may
     // be writing it: diagnostics only).
     RasterRenderer::Profile rasterProfile() const { return renderer().completedProfile(); }
@@ -214,6 +217,8 @@ namespace remix {
     WaitedFrame waitedFrame() const { return m_waitedFrame; }
     // How long the last Present's low latency sleep held the host.
     double latencySleepMilliseconds() const { return m_latencySleepMilliseconds; }
+    // Frame latency statistics (timings.txt; the Latency panel uses uiLatency).
+    latency::Summary latencySummary() const { return m_latencyRecorder.summary(); }
     // The caller's side of the last asynchronous Present (inactive otherwise).
     AsyncPresentStatistics asyncCallerStatistics() const { return m_previousAsyncCaller; }
     remixapi_ErrorCode configureSetting(const char *key, const char *value);
@@ -339,6 +344,7 @@ namespace remix {
     ui::ReconstructionStatus uiReconstruction() const;
     ui::ReconstructionChoices uiReconstructionChoices() const;
     ui::FrameGenerationStatus uiFrameGeneration() const;
+    ui::LatencyStatus uiLatency() const;
     ui::SkyStatus uiSky() const;
     ui::PostStatus uiPost() const;
     ui::HdrStatus uiHdr() const;
@@ -399,10 +405,18 @@ namespace remix {
     // from fresher input. applyLatencyMode: render thread idle.
     remixapi_ErrorCode presentUnpaced(const remixapi_PresentInfo *info);
     void applyLatencyMode();
+    // Ends the host's frame: the low latency hold (Anti-Lag's input stage or
+    // reflexSleep), then the next frame's number and start.
     void latencySleep();
+    void reflexSleep();
     // Whether the driver's low latency mode should be on now.
     bool latencyWanted() const;
     void latencyMarker(VkLatencyMarkerNV marker, uint64_t frame);
+    // AMD Anti-Lag (VK_AMD_anti_lag), the same setting on AMD drivers: the
+    // INPUT stage where the host's frame begins (latencySleep; the driver may
+    // block there), the PRESENT stage as that frame's rendered image goes to
+    // presentation (presentImages), both with the frame's index.
+    void antiLagUpdate(VkAntiLagStageAMD stage, uint64_t frame);
     // "openremix_framegen.log" beside the runtime library, written once frame
     // generation has been asked for: the device, each swapchain, every change
     // of status and, every few seconds, the counters. What a user sends when
@@ -663,9 +677,13 @@ namespace remix {
     static constexpr auto presentMeteringFeaturesType = VkStructureType(1000613001);
     bool m_presentMeteringSupported = false;
     std::atomic<uint32_t> m_meteredFrames{0}, m_meteringRefused{0};
+    // AMD Anti-Lag: active is written by applyLatencyMode (render thread idle).
+    bool m_antiLagSupported = false, m_antiLagActive = false;
+    PFN_vkAntiLagUpdateAMD m_antiLagUpdate = nullptr;
     PFN_vkSetLatencySleepModeNV m_setLatencySleepMode = nullptr;
     PFN_vkLatencySleepNV m_latencySleep = nullptr;
     PFN_vkSetLatencyMarkerNV m_setLatencyMarker = nullptr;
+    PFN_vkGetLatencyTimingsNV m_getLatencyTimings = nullptr; // Reflex's own report (uiLatency)
     VkSemaphore m_latencySemaphore = VK_NULL_HANDLE; // timeline: the driver signals the end of a sleep
     uint64_t m_latencyValue = 0;
     double m_latencySleepMilliseconds = 0;
@@ -762,6 +780,11 @@ namespace remix {
     // GPU pass timers: render-owned recorder; the setting is copied at Present
     // setup (applySettings) for the render thread.
     gpu::GpuTimers m_gpuTimers;
+    // Frame latency statistics (Diagnostics' Latency panel, timings.txt): host
+    // times at the low latency markers' points (latencyMarker, latencySleep)
+    // and the GPU's start and end of each frame (m_frameStamps, recordFrame).
+    latency::Recorder m_latencyRecorder;
+    latency::FrameStamps m_frameStamps;
     bool m_gpuTimersEnabled = false;
     uint64_t m_recordedFrames = 0;
     // Presentation may still consume a semaphore after the submission fence

@@ -66,6 +66,7 @@ namespace remix::forward::bake {
         case StyledDirectDecline::SurfaceCoverage: reason = "incomplete surface coverage"; break;
         case StyledDirectDecline::ProbeCoverage: reason = "incomplete probe coverage"; break;
         case StyledDirectDecline::Storage: reason = "storage budget"; break;
+        case StyledDirectDecline::DirectionalEmitter: reason = "spotlight needs per-receiver cone evaluation"; break;
         }
         std::fprintf(stderr, "Forward grouped direct style %u declined: %s; retaining per-light fallback\n",
                      declined.style, reason);

@@ -32,6 +32,18 @@ namespace {
       require(r.draws().back().decal, "Decal category was lost during scene submission");
       r.finishFrame();
     }
+    {
+      remixapi_InstanceInfoCameraOnlyEXT cameraOnly{};
+      cameraOnly.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_CAMERA_ONLY_EXT;
+      auto backdrop = draw;
+      backdrop.pNext = &cameraOnly;
+      r.drawInstance(backdrop);
+      require(r.draws().back().cameraOnly, "Camera-only extension reaches the scene draw");
+      r.finishFrame();
+      r.drawInstance(draw);
+      require(!r.draws().back().cameraOnly, "Instances without the extension are met by every ray");
+      r.finishFrame();
+    }
     r.drawInstance(draw);
 
     r.destroyMesh(mesh);
