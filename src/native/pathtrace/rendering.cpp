@@ -834,6 +834,11 @@ namespace remix {
       std::copy(portals.planes.begin(), portals.planes.end(), frame.rayPortalPlanes);
       trace::g_rayPortalState = {portals.surfaces, portals.pairs, portals.duplicates, frame.rayPortalConfig[0],
                                  denoiser && psrCompute && options.rasterPrimary};
+      // The maps of the previous traced frame, for reprojecting what is seen
+      // through a pair that moved (after a reset, this frame's: no motion).
+      const auto &previous = history.reset() ? portals : lastRayPortals;
+      for (uint32_t index = 0; index < scene::rayPortalSlots; ++index)
+        std::copy_n(previous.slots[index].data(), 16, &frame.previousRayPortals[index][0][0]);
       lastRayPortals = portals;
       append(frame.rayPortals, sizeof(frame.rayPortals));
       append(frame.rayPortalConfig, sizeof(frame.rayPortalConfig));

@@ -768,6 +768,25 @@ vec3 portalVirtualVector(Screen s,vec3 v) {
   for(uint i=s.portals;i>0u;--i)v=portalVector(((s.chain>>(4u*(i-1u)))&15u)^1u,v);
   return v;
 }
+// A point seen through portals as the previous frame's maps placed it: where
+// its virtual image was then (a pair that moved carries what it shows along).
+vec3 portalPreviousVirtualPoint(Screen s,vec3 p) {
+  for(uint i=s.portals;i>0u;--i) {
+    uint index=(((s.chain>>(4u*(i-1u)))&15u)^1u)*4u;
+    p=vec3(dot(frame.previousRayPortals[index],vec4(p,1)),dot(frame.previousRayPortals[index+1u],vec4(p,1)),
+           dot(frame.previousRayPortals[index+2u],vec4(p,1)));
+  }
+  return p;
+}
+// Every pair passed was open in the previous frame: its map then is known.
+bool portalsKnown(Screen s) {
+  bool known=true;
+  for(uint i=0u;i<s.portals;++i) {
+    uint index=(s.chain>>(4u*i))&15u;
+    known=known&&frame.previousRayPortals[index*4u+3u].w>0&&frame.previousRayPortals[(index^1u)*4u+3u].w>0;
+  }
+  return known;
+}
 // The image changed under the pixel: the screen's camera or a pair passed moved.
 bool screenMoved(Screen s) {
   bool moved=s.slot!=0xffu&&frame.screenCameras[s.slot*4u].w>=2;
@@ -3651,17 +3670,21 @@ void main() {
   // A surface on a screen: its guides are the screen's point (the image moves
   // with the screen), its normal the surface's. One seen through portals from
   // the main camera: its virtual image's, as in a mirror (walking past a
-  // portal, what is behind it moves with its depth, not the portal's). When
-  // the screen's camera or a portal pair passed moved, the image changed
-  // under it: no motion, its history restarts.
+  // portal, what is behind it moves with its depth, not the portal's); its
+  // previous position through the maps the pairs had then, so a pair that
+  // moves (one end following a camera) carries what it shows along rather
+  // than restarting its history every frame. When the screen's camera moved,
+  // or a pair passed has just opened, the image changed under it: no motion,
+  // its history restarts.
   Screen screen=loadScreen(pixel);
   bool screenChanged=false;
   if(portalView(screen)) {
     if(opaque) {
-      guidePosition=portalVirtualPoint(screen,primary.p);guidePrevious=portalVirtualPoint(screen,primary.previousPosition);
+      guidePosition=portalVirtualPoint(screen,primary.p);
+      guidePrevious=portalPreviousVirtualPoint(screen,primary.previousPosition);
       N=normalize(portalVirtualVector(screen,N));z=abs((temporal.view*vec4(guidePosition,1)).z);
     }
-    screenChanged=screenMoved(screen);
+    screenChanged=!portalsKnown(screen);
   } else if(screen.shown) {
     guidePosition=guidePrevious=origin+direction*screen.distance;
     z=abs((temporal.view*vec4(guidePosition,1)).z);
