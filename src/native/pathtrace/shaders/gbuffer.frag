@@ -12,7 +12,7 @@ layout(push_constant) uniform Draw {
   uint stableDepth;
   vec4 reverseDepth;
 } draw;
-layout(location=0) in vec3 position;
+layout(location=0) in vec3 interpolatedPosition;
 layout(location=1) flat in vec3 normal;
 layout(location=2) in vec2 uv;
 layout(location=3) in vec4 color;
@@ -42,11 +42,25 @@ layout(location=5) out vec4 outPbr;
 // The fragment's reverse depth as the world camera maps it (gl_FragCoord.z,
 // except for a view model, whose depth test runs on its own scale; nearer than
 // the near plane is clamped to it).
+vec3 position;
 float worldDepth() {
   if((draw.stableDepth&2u)==0u)return gl_FragCoord.z;
   return clamp(dot(draw.reverseDepth,vec4(position,1))/(frame.camera*vec4(position,1)).w,0,1);
 }
 void main() {
+  // The interpolated position, put back on its triangle's plane (through
+  // its first corner). The rasterizer's interpolation leaves it off the plane
+  // by an error that grows with the distance from the origin and with how
+  // nearly edge-on the triangle is seen: past the shadow rays' offset
+  // (offsetRay), where the surface then shadowed itself (gm_area51_rc1: black
+  // slivers along a wall seen at a grazing angle), and to either side of a
+  // plane at a whole coordinate from one triangle to the next. A camera
+  // ray's hit is rebuilt from the corners (pathtrace.comp) and lies on it.
+  position=interpolatedPosition;
+  {
+    float area=dot(normal,normal);
+    if(area>0)position-=normal*(dot(position-corner0,normal)/area);
+  }
   Surface s=surfaces[draw.surfaceIndex];
   // A CUT instance is not seen where its mask group covers. The G-buffer is
   // sampled at the jittered position; stable depth at the output pixel.
