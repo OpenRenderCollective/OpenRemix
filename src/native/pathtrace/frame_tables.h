@@ -1156,11 +1156,23 @@ namespace remix::trace {
                          // Bit 26: a ray portal over an opaque surface (its MaterialInfo
                          // chains the portal extension): what it shows takes its albedo.
                          uint32_t(material.rayPortal != 0 && material.rayPortalOverOpaque) << 26 |
+                         // Bit 29: what it shows takes view effects (gradient[1..3]).
+                         uint32_t(material.viewEffects) << 29 |
                          // remixapi_InstanceInfoCameraCullingEXT (bits 9-10): camera rays
                          // skip its back faces / its parts in clusters the camera cannot see.
                          uint32_t(surface.cameraCull & 3u) << 9 |
                          // remixapi_InstanceInfoBackdropEXT role (bits 27-28).
                          uint32_t(draw.backdrop & 3u) << 27;
+
+        // remixapi_MaterialInfoViewEffectsEXT (state.w bit 29): half2(tint r, g),
+        // half2(tint b, saturation), half2(contrast, chromatic aberration in
+        // pixels of a 1920-wide output).
+        if (material.viewEffects) {
+          const auto &view = material.view;
+          value.gradient[1] = detail::halfBits(view.tint[0]) | detail::halfBits(view.tint[1]) << 16;
+          value.gradient[2] = detail::halfBits(view.tint[2]) | detail::halfBits(view.saturation) << 16;
+          value.gradient[3] = detail::halfBits(view.contrast) | detail::halfBits(view.chromaticAberration * 1920) << 16;
+        }
         if (draw.classification == 0) {
           write(staticCursor, value.tint, sizeof(value.tint));
           write(staticCursor, value.factor, sizeof(value.factor));

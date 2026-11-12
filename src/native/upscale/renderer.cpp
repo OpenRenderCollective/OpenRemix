@@ -479,15 +479,17 @@ namespace remix::upscale {
       ++g.stats.resets;
     g.initialized = true;
   }
-  void Renderer::configureComposite(VkRenderPass pass, VkImageView stableDepth, VkRenderPass tonemapPass) {
+  void Renderer::configureComposite(VkRenderPass pass, VkImageView stableDepth, VkRenderPass tonemapPass,
+                                    VkImageView viewEffects) {
     auto &g = *m_gpu;
     VkDescriptorSetLayoutBinding bindings[] = {
         {0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
-        {1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr}};
+        {1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
+        {2, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr}};
     VkDescriptorSetLayoutCreateInfo si{
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, .bindingCount = 2, .pBindings = bindings};
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, .bindingCount = 3, .pBindings = bindings};
     check(pipeline::createDescriptorSetLayout(g.device, &si, nullptr, &g.compositeSetLayout));
-    VkDescriptorPoolSize size{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 2};
+    VkDescriptorPoolSize size{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 3};
     VkDescriptorPoolCreateInfo pool{
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, .maxSets = 1, .poolSizeCount = 1, .pPoolSizes = &size};
     check(vkCreateDescriptorPool(g.device, &pool, nullptr, &g.compositePool));
@@ -497,16 +499,17 @@ namespace remix::upscale {
                                    .pSetLayouts = &g.compositeSetLayout};
     check(vkAllocateDescriptorSets(g.device, &ai, &g.compositeSet));
     VkDescriptorImageInfo images[] = {{VK_NULL_HANDLE, g.output->view, VK_IMAGE_LAYOUT_GENERAL},
-                                      {VK_NULL_HANDLE, stableDepth, VK_IMAGE_LAYOUT_GENERAL}};
-    VkWriteDescriptorSet writes[2]{};
-    for (unsigned i = 0; i < 2; ++i)
+                                      {VK_NULL_HANDLE, stableDepth, VK_IMAGE_LAYOUT_GENERAL},
+                                      {VK_NULL_HANDLE, viewEffects, VK_IMAGE_LAYOUT_GENERAL}};
+    VkWriteDescriptorSet writes[3]{};
+    for (unsigned i = 0; i < 3; ++i)
       writes[i] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                    .dstSet = g.compositeSet,
                    .dstBinding = i,
                    .descriptorCount = 1,
                    .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
                    .pImageInfo = &images[i]};
-    vkUpdateDescriptorSets(g.device, 2, writes, 0, nullptr);
+    vkUpdateDescriptorSets(g.device, 3, writes, 0, nullptr);
     g.postSetLayout = postfx::compositeLayout(g.device);
     const VkDescriptorSetLayout sets[] = {g.compositeSetLayout, g.postSetLayout};
     VkPushConstantRange push{VK_SHADER_STAGE_FRAGMENT_BIT, 0, 16};
@@ -583,7 +586,8 @@ namespace remix::upscale {
     for (auto module : modules)
       pipeline::destroyShaderModule(g.device, module, nullptr);
   }
-  void Renderer::composite(VkCommandBuffer command, const scene::DisplayOutput &display, VkDescriptorSet post) {
+  void Renderer::composite(VkCommandBuffer command, const scene::DisplayOutput &display, VkDescriptorSet post,
+                           bool viewEffects) {
     const auto &g = *m_gpu;
     VkViewport viewport{0, 0, float(g.display.width), float(g.display.height), 0, 1};
     VkRect2D scissor{{0, 0}, g.display};
@@ -596,7 +600,8 @@ namespace remix::upscale {
     struct {
       uint32_t display;
       float peakNits, paperWhiteNits;
-    } settings{uint32_t(display.hdr10), display.peakNits, display.paperWhiteNits};
+      uint32_t viewEffects;
+    } settings{uint32_t(display.hdr10), display.peakNits, display.paperWhiteNits, uint32_t(viewEffects)};
     vkCmdPushConstants(command, g.compositeLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(settings), &settings);
     vkCmdDraw(command, 3, 1, 0, 0);
   }

@@ -661,6 +661,13 @@ namespace remix {
     size_t primaryCount() const { return tables.primaryCount(); }
     const PrimaryDraw &primaryDraw(size_t i) const { return tables.primary(i); }
     std::unique_ptr<Image> primary[7];
+    // Render resolution, written by the primary surface replacement pass: the
+    // effects of the view a screen or portal shows at each pixel (chromatic
+    // aberration in pixels of a 1920-wide output, saturation, contrast; w 1),
+    // 0 elsewhere. The final composite applies them
+    // (remixapi_MaterialInfoViewEffectsEXT).
+    std::unique_ptr<Image> viewEffects;
+    bool viewEffectsValid = false;
     VkRenderPass primaryPass[2] = {};
     VkFramebuffer primaryFramebuffer[2] = {};
     // 0, 1: the G-buffer's and the stable depth's; 2: the G-buffer's for

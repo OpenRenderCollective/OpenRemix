@@ -26,9 +26,10 @@ namespace remix::metal {
     constexpr MTLTextureUsage storage = MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite;
     // Tracing set bindings (pathtrace/renderer.cpp initialize): 0/1 TLASes,
     // 2 surface table, 3 frame, 4 world, 5 transmission, 6 textures, 7 sky,
-    // 8-14 primary images, 15 the material guide.
+    // 8-14 primary images, 15 the material guide, 16 the view effects.
     constexpr uint32_t bindingTable = 2, bindingFrame = 3, bindingWorld = 4, bindingTransmission = 5,
-                       bindingTextures = 6, bindingSky = 7, bindingPrimary = 8, bindingGuide = 15;
+                       bindingTextures = 6, bindingSky = 7, bindingPrimary = 8, bindingGuide = 15,
+                       bindingViewEffects = 16;
     // The lighting kernels' specialization constants by constant_id
     // (pathtrace.comp; pathtrace/local_lights.cpp requestLightingVariant):
     // bools at their id (guiding capable 1, split lighting 4, ray profile 7,
@@ -403,6 +404,7 @@ namespace remix::metal {
     for (unsigned i = 0; i < 7; ++i)
       primary[i] = texture2d(device, primaryFormats[i], i == 4 ? configuration.displayWidth : width,
                              i == 4 ? configuration.displayHeight : height, MTLTextureUsageRenderTarget | storage);
+    viewEffects = texture2d(device, MTLPixelFormatRGBA16Float, width, height, storage);
     history.clear();
     stats.accumulationCount = 0;
   }
@@ -1772,6 +1774,7 @@ namespace remix::metal {
     for (uint32_t i = 0; i < 7; ++i)
       set.texture(bindingPrimary + i, primary[i]);
     set.texture(bindingGuide, post->guide());
+    set.texture(bindingViewEffects, viewEffects);
     if (pass.set1 && denoiser) {
       pass.set1.begin(frameIndex);
       denoiser->bindInputs(pass.set1);

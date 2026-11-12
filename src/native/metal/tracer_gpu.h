@@ -387,6 +387,10 @@ namespace remix::metal {
     void recordSharc(id<MTLCommandBuffer> command);
     void finishSharc(id<MTLCommandBuffer> command);
     id<MTLTexture> world = nil, transmission = nil, sky = nil, primary[7] = {};
+    // The primary surface replacement pass's view effects (pathtrace/gpu.h
+    // viewEffects; set 0 binding 16). Written; this backend's composite does
+    // not apply them yet.
+    id<MTLTexture> viewEffects = nil;
     // Automatic exposure and bloom; the composite reads their results.
     std::unique_ptr<post::Renderer> post;
     uint32_t width = 0, height = 0;

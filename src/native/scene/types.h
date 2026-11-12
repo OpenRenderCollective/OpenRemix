@@ -320,6 +320,12 @@ namespace remix {
       // open): a draw of a standalone portal of the index, when there is one,
       // gives the portal its frame instead (scene/portals.h).
       bool rayPortalOverOpaque = false;
+      // remixapi_MaterialInfoViewEffectsEXT (viewEffects: given).
+      struct ViewEffects {
+        float tint[3] = {1, 1, 1};
+        float saturation = 1, contrast = 0, chromaticAberration = 0;
+      } view;
+      bool viewEffects = false;
       // Wrap modes in RTX Remix's MDL encoding: 0 clamp, 1 repeat, 2 mirrored
       // repeat, 3 clip.
       uint8_t filter = 0, wrapU = 1, wrapV = 1;

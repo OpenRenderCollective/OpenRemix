@@ -66,6 +66,11 @@ layout(set=0,binding=12,r32f) readonly uniform image2D primaryDepth;
 layout(set=0,binding=13,rgba16f) PRIMARY_ACCESS uniform image2D primaryEmission;
 layout(set=0,binding=14,rgba16f) PRIMARY_ACCESS uniform image2D primaryPbr;
 layout(set=0,binding=15,rgba16f) uniform image2D meterMaterial;
+// What the final composite applies where a screen or portal shows another
+// view (remixapi_MaterialInfoViewEffectsEXT): x its chromatic aberration in
+// pixels of a 1920-wide output, y saturation, z contrast, w 1 (0 elsewhere).
+// Written by the primary surface replacement pass.
+layout(set=0,binding=16,rgba16f) uniform image2D viewEffects;
 
 // Per-dispatch switches, pushed with the pipeline (Gpu::bindTrace). They were
 // specialization constants: as variants each cost a 20-45 s compile, while
@@ -3075,6 +3080,14 @@ uvec4 replaceScreen(ivec2 pixel,vec3 origin,vec3 direction,float kind) {
   // A portal over an opaque surface: its albedo (the raster's, the surface
   // that marked this pixel) tints what it shows.
   vec3 tint=(s.state.w&(1u<<26))!=0u?imageLoad(primaryAlbedo,pixel).rgb:vec3(1);
+  // remixapi_MaterialInfoViewEffectsEXT (state.w bit 29, gradient.yzw): its
+  // tint joins the record's; the rest the final composite applies.
+  vec4 effects=vec4(0);
+  if((s.state.w&(1u<<29))!=0u) {
+    vec2 rg=unpackHalf2x16(s.gradient.y),bs=unpackHalf2x16(s.gradient.z),ca=unpackHalf2x16(s.gradient.w);
+    tint*=vec3(rg,bs.x);
+    effects=vec4(ca.y,bs.y,ca.x,1);
+  }
   if(code!=0u&&frame.screenCameras[(code-1u)*4u].w!=0) {
     slot=code-1u;uint tri=x.primitive*3;
   vec3 w=vec3(1-x.bary.x-x.bary.y,x.bary);
@@ -3112,9 +3125,11 @@ uvec4 replaceScreen(ivec2 pixel,vec3 origin,vec3 direction,float kind) {
   const bool sheet=hit.t<1e30&&hit.blended&&slot==0xffu;
   if(!sheet)hit.color.a=1;
   storePrimary(pixel,hit,hit.t==1e30?0:sheet&&hit.tinted?3:hit.blended?2:1);
-  return packScreen(slot,x.t,portals,chain,slot==0xffu?tint:vec3(1));
+  imageStore(viewEffects,pixel,effects);
+  return packScreen(slot,x.t,portals,chain,tint);
 }
 void replaceMirror(ivec2 pixel) {
+  imageStore(viewEffects,pixel,vec4(0));
   vec3 origin,direction;
   ray((vec2(pixel)+.5+frame.jitter.xy)/vec2(frame.target.xy)*2-1,frame.inverseCameraRelative,frame.eye.xyz,origin,direction);
   if(imageLoad(primaryNormal,pixel).w>=32) {

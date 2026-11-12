@@ -1017,6 +1017,7 @@ namespace remix {
                                     hasBlendedGeometry;
     // Bit 0: mirrors replace their pixels; bit 1: the pass ran (its screen and
     // portal records in psrMirror are this frame's).
+    viewEffectsValid = denoiser && psrCompute && options.rasterPrimary;
     temporalFrame.translucency[2] =
         denoiser && psrCompute && options.rasterPrimary ? (options.primarySurfaceReplacement ? 1u : 0u) | 2u : 0u;
     temporalFrame.local[0] = denoiser && postLocalDenoise;
@@ -1324,10 +1325,11 @@ namespace remix {
         {VK_NULL_HANDLE, primary[5]->view, VK_IMAGE_LAYOUT_GENERAL},
         {VK_NULL_HANDLE, primary[6]->view, VK_IMAGE_LAYOUT_GENERAL},
         {VK_NULL_HANDLE, postProcessing->materialGuide() ? postProcessing->materialGuide() : primary[6]->view,
-         VK_IMAGE_LAYOUT_GENERAL}};
+         VK_IMAGE_LAYOUT_GENERAL},
+        {VK_NULL_HANDLE, viewEffects->view, VK_IMAGE_LAYOUT_GENERAL}};
     VkWriteDescriptorSetAccelerationStructureKHR structures[2] = {};
-    VkWriteDescriptorSet writes[16] = {};
-    for (unsigned i = 0; i < 16; ++i) {
+    VkWriteDescriptorSet writes[17] = {};
+    for (unsigned i = 0; i < 17; ++i) {
       writes[i] = {
           .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = i, .descriptorCount = 1};
       if (i < 2) {
@@ -1347,7 +1349,7 @@ namespace remix {
           writes[i].descriptorCount = PathTracer::textureLimit;
       }
     }
-    vkUpdateDescriptorSets(device, 16, writes, 0, nullptr);
+    vkUpdateDescriptorSets(device, 17, writes, 0, nullptr);
     if (!imagesInitialized) {
       VkImageMemoryBarrier barriers[2] = {};
       for (unsigned i = 0; i < 2; ++i)
@@ -2344,7 +2346,7 @@ namespace remix {
         vkCmdBeginRenderPass(command, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
 
         if (g.upscaler && !g.debugView) {
-          g.upscaler->composite(command, g.display, g.postProcessing->bindings());
+          g.upscaler->composite(command, g.display, g.postProcessing->bindings(), g.viewEffectsValid);
         } else {
           VkViewport viewport = {0, 0, float(g.displayExtent.width), float(g.displayExtent.height), 0, 1};
           VkRect2D scissor = {{0, 0}, g.displayExtent};
@@ -2443,7 +2445,7 @@ namespace remix {
       return;
     }
     if (g.upscaler && !g.debugView) {
-      g.upscaler->composite(command, g.display, g.postProcessing->bindings());
+      g.upscaler->composite(command, g.display, g.postProcessing->bindings(), g.viewEffectsValid);
       return;
     }
     VkViewport viewport = {0, 0, float(g.displayExtent.width), float(g.displayExtent.height), 0, 1};
