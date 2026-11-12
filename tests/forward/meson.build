@@ -104,6 +104,7 @@ forward_receiver_report_test = executable('remix-forward-receiver-report-test', 
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Surface and probe receiver comparison preserves coordinates and indirect units', forward_receiver_report_test)
 forward_probes_test = executable('remix-forward-probes-test', 'probes.cpp', 'capture_work.cpp', 'probe_image_data.cpp', 'probe_composition.cpp',
+  '../../src/native/forward/probes/receivers.cpp', '../../src/native/forward/material.cpp',
   '../../src/native/forward/probes/composition.cpp', '../../src/native/forward/probes/coverage_baseline.cpp', '../../src/native/forward/probes/coverage_context.cpp', '../../src/native/forward/probes/coverage_image_plan.cpp',
   '../../src/native/forward/probes/image_data.cpp',
   '../../src/native/forward/probes/normalization.cpp',
@@ -114,6 +115,7 @@ forward_probes_test = executable('remix-forward-probes-test', 'probes.cpp', 'cap
   include_directories : test_includes, link_with : scene_library, dependencies : vulkan_dep, cpp_args : test_cpp_args)
 test('Reflection probe parallax, filtering and packed data', forward_probes_test)
 forward_projection_test = executable('remix-forward-projection-test', 'evaluation.cpp',
+  '../../src/native/forward/probes/receivers.cpp', '../../src/native/forward/material.cpp',
   '../../src/native/forward/probes/refinement.cpp',
   '../../src/native/forward/probes/data.cpp', '../../src/native/forward/probes/placement.cpp', '../../src/native/forward/probes/placement_grid.cpp',
   '../../src/native/forward/probes/selection.cpp', '../../src/native/forward/probes/evaluation.cpp',
@@ -132,6 +134,7 @@ probe_receivers_test = executable('remix-probe-receivers-test', 'probe_receivers
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Reflection receiver sampling preserves physical area and bounded work', probe_receivers_test)
 forward_regions_test = executable('remix-forward-regions-test', 'regions.cpp',
+  '../../src/native/forward/probes/receivers.cpp', '../../src/native/forward/material.cpp',
   '../../src/native/forward/probes/refinement.cpp',
   '../../src/native/forward/probes/receiver_fits.cpp', '../../src/native/forward/probes/receiver_fit_pairs.cpp', '../../src/native/forward/probes/evaluation.cpp',
   '../../src/native/forward/probes/regions.cpp', '../../src/native/forward/probes/sites.cpp', '../../src/native/forward/lighting.cpp',
