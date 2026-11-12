@@ -118,7 +118,7 @@ needs, and the bounce kernels launch only for the paths still going:
 - **sky**: the sky rays' shadow rays (and sky-guide training) over the paths
   that have them.
 - per split bounce (`rtx.native.pathtrace.wavefrontBounces`, 1-16, default
-  1): **arguments** (one invocation: the indirect dispatch over the bounce's
+  2): **arguments** (one invocation: the indirect dispatch over the bounce's
   list of live paths), **trace** (the bounce ray's receiver query, and
   whether paint lies before the receiver) and **shade** (that bounce,
   appending the paths that go on to the next list): the paths with paint in
@@ -174,6 +174,13 @@ peel's queries or the paint's material: with the local light queue it takes
 168 registers instead of 243 to 247 (224 to 230 without that queue); the peel
 kernel takes 168. Same image within noise. On `cp_brew` the painted shade
 kernel took 0.11 ms instead of 0.13 and the peel kernel 0.08 ms.
+
+`wavefrontBounces` defaults to 2 because the tail kernel (the remaining
+bounces in one kernel, 255 registers) is slow for what it does: on `cp_brew`
+it took 0.39 ms for everything after the first bounce, where the split
+kernels take about 0.1 ms for the second bounce and leave the tail 0.015 ms.
+Past the second bounce almost no paths are left (Russian roulette), so more
+split bounces add dispatches without work.
 
 ## Split primary surface
 

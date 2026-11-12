@@ -375,7 +375,9 @@ namespace remix {
     bool wavefrontIndirect = true;
     // Its bounces traced and shaded in kernels of their own; the bounces
     // after them run in one kernel over the paths still going.
-    uint32_t wavefrontBounces = 1;
+    // Two: past the second bounce few paths are left, and the tail kernel (255
+    // registers) costs more than the split kernels on the second.
+    uint32_t wavefrontBounces = 2;
     // Its split bounces' sun and sky shadow rays in a kernel of their own.
     bool wavefrontShadowQueue = true;
     // With the shadow queue: the split bounces' local light samples in a
