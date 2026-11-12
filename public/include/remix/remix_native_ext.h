@@ -908,10 +908,19 @@ typedef uint64_t remixapi_HostTargetHandleEXT;
 
 #define REMIXAPI_HOST_SHADER_VERTEX_EXT 1u
 #define REMIXAPI_HOST_SHADER_FRAGMENT_EXT 2u
+// A shader's descriptor bindings (set 0). D3D9 shaders (DXVK's dxso) combine
+// each texture with its sampler state: SAMPLER. D3D11 shaders (DXVK's dxbc)
+// bind textures (shader resource views) and sampler states apart:
+// SAMPLED_IMAGE and SAMPLER_STATE. A pass's remixapi_HostPassSamplerEXT
+// entries serve all three by binding number: a SAMPLER binding takes the
+// entry's target and filtering, a SAMPLED_IMAGE binding its target only, a
+// SAMPLER_STATE binding its filtering only (linear, addressU, addressV).
 #define REMIXAPI_HOST_BINDING_UNIFORM_BUFFER_EXT 0u
 #define REMIXAPI_HOST_BINDING_SAMPLER_EXT 1u
+#define REMIXAPI_HOST_BINDING_SAMPLED_IMAGE_EXT 2u
+#define REMIXAPI_HOST_BINDING_SAMPLER_STATE_EXT 3u
 typedef struct remixapi_HostShaderBindingEXT {
-  uint32_t binding; // descriptor set 0
+  uint32_t binding; // descriptor set 0, 0..4095
   uint32_t type;    // REMIXAPI_HOST_BINDING_*
 } remixapi_HostShaderBindingEXT;
 
