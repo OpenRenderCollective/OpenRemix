@@ -829,6 +829,11 @@ namespace remix {
           frame.rayPortals[index][3][3] += 2;
       }
       frame.rayPortalConfig[0] = std::min(options.rayPortalTeleports, 8u);
+      frame.rayPortalConfig[2] = std::min(options.rayPortalLightTeleports, 8u);
+      // Some pair open: the sun's rays look for portals (sunThroughPortal).
+      frame.rayPortalConfig[3] = 0;
+      for (uint32_t index = 0; index < scene::rayPortalSlots; ++index)
+        frame.rayPortalConfig[3] |= portals.slots[index][15] != 0 ? 1u : 0u;
       const float exitOffset = std::max(options.rayPortalExitOffset, 0.f);
       std::memcpy(&frame.rayPortalConfig[1], &exitOffset, 4);
       std::copy(portals.planes.begin(), portals.planes.end(), frame.rayPortalPlanes);

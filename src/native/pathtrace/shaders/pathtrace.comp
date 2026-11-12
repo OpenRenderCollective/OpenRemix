@@ -713,8 +713,18 @@ Hit cameraHit(vec3 origin,vec3 direction) {
 }
 // Bounce rays may ignore blended layers (frame.pathConfig.w; see
 // skipBlendedSecondaryRays). Camera and transparency rays keep every instance.
+bool portalTeleport(uint surface,vec3 p,inout vec3 origin,inout vec3 direction,inout uint portals,inout uint chain,uint limit);
+// Light through ray portals (rtx.native.pathtrace.rayPortalLightTeleports,
+// frame.rayPortalConfig.z): a bounce ray meeting an open portal's front goes
+// on from its partner, as a camera ray does, so what lies past the portal
+// lights what is in front of it (a window onto another place).
 Hit secondaryHit(vec3 origin,vec3 direction) {
-  traceMask=bounceMask();Hit hit=closest(origin,direction,1e30,false);traceMask=cameraMask;return hit;
+  traceMask=bounceMask();Hit hit=closest(origin,direction,1e30,false);
+  uint portals=0u,chain=0u;
+  while(hit.t<1e30&&hit.surface>=0&&
+        portalTeleport(uint(hit.surface),hit.p,origin,direction,portals,chain,frame.rayPortalConfig.z))
+    hit=closest(origin,direction,1e30,false);
+  traceMask=cameraMask;return hit;
 }
 #ifdef TEMPORAL
 // Ray portals (remixapi_MaterialInfoPortalEXT; Surface.state.w bits 22-25:
@@ -883,6 +893,39 @@ vec3 offsetRay(vec3 p,vec3 n) {
   vec3 least=p+n*(units*max(max(abs(p.x),abs(p.y)),abs(p.z))*(1.0/8388608.0));
   return mix(shifted,least,greaterThan(abs(least-p),abs(shifted-p)));
 }
+// Continues a ray meeting `surface` at p from the partner of the ray portal
+// the surface opens (remixapi_MaterialInfoPortalEXT); false where the ray ends
+// there: no portal, its back, its pair not open, or `limit` portals passed.
+// (TEMPORAL only, where the portal maps are; other variants pass none.)
+#ifdef TEMPORAL
+bool portalTeleport(uint surface,vec3 p,inout vec3 origin,inout vec3 direction,inout uint portals,inout uint chain,uint limit) {
+  uint code=(surfaces[surface].state.w>>22)&15u;
+  if(code==0u||portals>=min(limit,8u))return false;
+  uint index=code-1u;
+  vec4 front=frame.rayPortals[index*4u+3u];
+  if((uint(front.w)&1u)==0u||dot(direction,front.xyz)>=0)return false;
+  // The front is told by the ray's direction, not the hit's facing (the
+  // host's portal mesh may be double-sided). A mesh standing off its plane
+  // maps behind the partner's (in its wall): the ray starts where it crosses
+  // the exit offset in front of the partner's plane, past the partner's own
+  // mesh (its first hit is never the partner portal), along the same line;
+  // a grazing ray is pushed out along the partner's normal instead.
+  uint partner=index^1u;
+  vec3 n=frame.rayPortals[partner*4u+3u].xyz;
+  origin=portalPoint(index,p);
+  direction=normalize(portalVector(index,direction));
+  float exitOffset=uintBitsToFloat(frame.rayPortalConfig.y);
+  float ahead=exitOffset-(dot(n,origin)-frame.rayPortalPlanes[partner>>2u][partner&3u]),along=dot(direction,n);
+  origin+=along>.05?direction*(ahead/along):n*ahead;
+  origin=offsetRay(origin,n);
+  chain|=index<<(4u*portals);++portals;
+  return true;
+}
+#else
+bool portalTeleport(uint surface,vec3 p,inout vec3 origin,inout vec3 direction,inout uint portals,inout uint chain,uint limit) {
+  return false;
+}
+#endif
 // A translucent body's refractive index and measurement distance at a sheet
 // (zero: none). A sheet from the raster G-buffer carries no material record:
 // its ray is traced again for it.
@@ -982,7 +1025,34 @@ vec3 diffuseDirection(vec3 n) {
 #include "brdf.glsl"
 #include "fireflies.glsl"
 #include "visibility.glsl"
+// The sun and sky through ray portals (frame.rayPortalConfig.w: some pair is open;
+// z: rayPortalLightTeleports): when the first surface toward the sun opens a
+// portal from its front, and the portal keeps directions (a move and a
+// scale, as a window onto a model of the place), the shadow ray goes on from
+// the partner (shadow(): the sun and sky rays of every vertex): what lights the far side lights through it. A portal that
+// turns directions would show the sun elsewhere; its own material blocks.
+bool sunThroughPortal(inout vec3 origin,vec3 direction) {
+#ifdef TEMPORAL
+  uint saved=traceMask;traceMask=shadowMask();
+  Intersection x=nearest(origin,direction,1e30,0);
+  traceMask=saved;
+  if(x.surface==~0u)return false;
+  uint code=(surfaces[x.surface].state.w>>22)&15u;
+  if(code==0u||dot(normalize(portalVector(code-1u,direction)),direction)<.9999)return false;
+  vec3 d=direction;uint portals=0u,chain=0u;
+  return portalTeleport(x.surface,origin+direction*x.t,origin,d,portals,chain,1u);
+#else
+  return false;
+#endif
+}
+// Moves origin past the portals the ray toward the sun or sky meets first.
+void throughPortals(inout vec3 origin,vec3 direction) {
+  if(frame.rayPortalConfig.w!=0u)
+    for(uint i=0u;i<min(frame.rayPortalConfig.z,8u);++i)
+      if(!sunThroughPortal(origin,direction))break;
+}
 vec3 shadow(vec3 origin,vec3 direction) {
+  throughPortals(origin,direction);
   vec3 transmission=vec3(1);
   for (uint layer=0;layer<32;++layer) {
     VisibilityHit hit=shadowEarlyOut?earlyVisibilityHit(origin,direction,1e30,8u):visibilityHit(origin,direction,true);
@@ -1050,6 +1120,7 @@ vec3 sunVisibility(Hit receiver,ivec2 pixel,out float blockerDistance) {
   // product of at most 31 sheets. Early-out layers keep that result.
   if(shadowEarlyOut)return transmission*shadow(origin,direction);
 #endif
+  throughPortals(origin,direction);
   for(uint layer=0;layer<32;++layer) {
     VisibilityHit hit=visibilityHit(origin,direction,false);
     if(hit.t==1e30)return transmission;
@@ -2536,8 +2607,19 @@ bool wavefrontTrace(uint id,uint index) {
   const bool paint=enableDecals&&(mask&decalInstanceMask)!=0u;
   traceMask=paint?mask&~decalInstanceMask:mask;
   Intersection x=nearest(origin,direction,1e30,0);
+  // Light through ray portals (secondaryHit): the ray goes on from the
+  // partner, its record's origin and direction moved there for the shade
+  // kernel (which shades the receiver along them).
+  uint portals=0u,chain=0u;
+  while(x.surface!=~0u&&
+        portalTeleport(x.surface,origin+direction*x.t,origin,direction,portals,chain,frame.rayPortalConfig.z))
+    x=nearest(origin,direction,1e30,0);
+  if(portals!=0u) {
+    wavefrontStore(0u,index,uvec4(floatBitsToUint(origin),a.w&~32u));
+    wavefrontStore(1u,index,uvec4(floatBitsToUint(direction),wavefrontLoad(1u,index).w));
+  }
   bool painted=false;
-  if(paint) {
+  if(paint&&portals==0u) {
     // The leaving normal as the shade kernel loads it (loadPath).
     vec3 leaving=(a.w&32u)!=0u?decodeGeometricNormal(unpackSnorm2x16(wavefrontLoad(4u,index).w)):vec3(0);
     const float attach=frame.visibilityProbe.y;
@@ -2907,27 +2989,7 @@ void storePrimary(ivec2 pixel,Hit hit,float kind) {
 // Continues a ray meeting `surface` at p from the partner of the portal the
 // surface opens; false where the ray ends there.
 bool teleport(uint surface,vec3 p,inout vec3 origin,inout vec3 direction,inout uint portals,inout uint chain) {
-  uint code=(surfaces[surface].state.w>>22)&15u;
-  if(code==0u||portals>=min(frame.rayPortalConfig.x,8u))return false;
-  uint index=code-1u;
-  vec4 front=frame.rayPortals[index*4u+3u];
-  if((uint(front.w)&1u)==0u||dot(direction,front.xyz)>=0)return false;
-  // The front is told by the ray's direction, not the hit's facing (the
-  // host's portal mesh may be double-sided). A mesh standing off its plane
-  // maps behind the partner's (in its wall): the ray starts where it crosses
-  // the exit offset in front of the partner's plane, past the partner's own
-  // mesh (its first hit is never the partner portal), along the same line;
-  // a grazing ray is pushed out along the partner's normal instead.
-  uint partner=index^1u;
-  vec3 n=frame.rayPortals[partner*4u+3u].xyz;
-  origin=portalPoint(index,p);
-  direction=normalize(portalVector(index,direction));
-  float exitOffset=uintBitsToFloat(frame.rayPortalConfig.y);
-  float ahead=exitOffset-(dot(n,origin)-frame.rayPortalPlanes[partner>>2u][partner&3u]),along=dot(direction,n);
-  origin+=along>.05?direction*(ahead/along):n*ahead;
-  origin=offsetRay(origin,n);
-  chain|=index<<(4u*portals);++portals;
-  return true;
+  return portalTeleport(surface,p,origin,direction,portals,chain,frame.rayPortalConfig.x);
 }
 uvec4 replaceScreen(ivec2 pixel,vec3 origin,vec3 direction,float kind) {
   // A view model's screen (a tool's display): view models first, as cameraHit.
