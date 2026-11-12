@@ -175,6 +175,13 @@ peel's queries or the paint's material: with the local light queue it takes
 kernel takes 168. Same image within noise. On `cp_brew` the painted shade
 kernel took 0.11 ms instead of 0.13 and the peel kernel 0.08 ms.
 
+A deferred local light sample's light guide observation (`trainLightGuide`)
+is made by the shadow kernel, once the sample's visibility is known (a record
+of 16 bytes a pixel). Made when the sample is drawn, it counted every such
+sample as blocked, and the primary pass, which reads the same cells, guided
+towards lights it took for occluded: on `gm_brmovie_complete` (11,000 local
+lights, 2560x1440) its local lighting took 8 to 10 ms instead of 4.
+
 `wavefrontBounces` defaults to 2 because the tail kernel (the remaining
 bounces in one kernel, 255 registers) is slow for what it does: on `cp_brew`
 it took 0.39 ms for everything after the first bounce, where the split

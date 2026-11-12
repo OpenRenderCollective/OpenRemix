@@ -223,6 +223,11 @@ vec3 localVisibility(vec3 origin,vec3 endpoint) {
 // visibility ray waits for the shadow kernel, which adds the estimate where
 // the endpoint is visible. One sample at a bounce vertex.
 vec3 wavefrontLocalEndpoint=vec3(0),wavefrontLocalEstimate=vec3(0);
+// Its light guide observation (trainLightGuide's key, leaf with bit 20:
+// guided, and physical light), for the shadow kernel to make once it knows
+// the visibility: made here, with none, it would teach the cell that its
+// lights are blocked. A key of 0: none.
+uint wavefrontTrainKey=0u,wavefrontTrainLeaf=0u;vec3 wavefrontTrainPhysical=vec3(0);
 #endif
 // A light sample's visibility from the surface (the bounce vertices' and
 // unguided samples' call sites).
@@ -401,8 +406,13 @@ vec3 smallLocalLighting(LightNodes nodes,LightEmitters emitters,Hit hit,uint sta
     clampLighting(hit,contribution,specularContribution,threshold);
     result+=contribution;specular+=specularContribution;
     if(angular)localDirection(selected.endpoint-hit.p,contribution);
-    if(enableLocalGuiding&&guideKey!=0&&(hash(state^0xd1b54a35u)&63u)==0)
+    if(enableLocalGuiding&&guideKey!=0&&(hash(state^0xd1b54a35u)&63u)==0) {
+#ifdef WAVEFRONT_DEFER_SHADOWS
+      wavefrontTrainKey=guideKey;wavefrontTrainLeaf=selectedIndex|(guided?1u<<20:0u);wavefrontTrainPhysical=selected.physical;
+#else
       trainLightGuide(guideKey,selectedIndex,guided,visibility,selected.physical,false);
+#endif
+    }
     float weight=localLuminance(estimate);lightDistance+=selected.distance*weight;distanceWeight+=weight;
   }
   lightDistance=distanceWeight>0?lightDistance/distanceWeight:0;
@@ -750,8 +760,13 @@ vec3 localLighting(Hit hit,uint state,uint samples,out float lightDistance,bool 
     clampLighting(hit,contribution,specularContribution,threshold);
     result+=contribution;specular+=specularContribution;
     if(useGuiding)localDirection(endpoint-hit.p,contribution);
-    if(enableLocalGuiding&&useGuiding&&guideKey!=0&&(hash(state^0xd1b54a35u)&63u)==0)
+    if(enableLocalGuiding&&useGuiding&&guideKey!=0&&(hash(state^0xd1b54a35u)&63u)==0) {
+#ifdef WAVEFRONT_DEFER_SHADOWS
+      wavefrontTrainKey=guideKey;wavefrontTrainLeaf=index|(guided?1u<<20:0u);wavefrontTrainPhysical=physical;
+#else
       trainLightGuide(guideKey,index,guided,visibility,physical,false);
+#endif
+    }
     float weight=localLuminance(estimate);
     lightDistance+=distance*weight;distanceWeight+=weight;
   }

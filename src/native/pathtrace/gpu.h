@@ -428,7 +428,9 @@ namespace remix {
         return pixels * wavefrontPlanes * 16 + wavefrontQueueHeader + (pixels * 3 * 4 + 15) / 16 * 16 +
                pixels * std::max<VkDeviceSize>(shadows || peels ? 48 : 0, 16 * skyRays) +
                (shadows && locals ? pixels * wavefrontLocalPlanes * 16 : 0) +
-               (peels ? pixels * wavefrontPeelPlanes * 16 : 0);
+               (peels ? pixels * wavefrontPeelPlanes * 16 : 0) +
+               // The deferred local samples' light guide observations (one plane).
+               (shadows ? pixels * 16 : 0);
       }
       VkPipeline wavefront[wavefrontKernels] = {};
       std::unique_ptr<Buffer> paths;

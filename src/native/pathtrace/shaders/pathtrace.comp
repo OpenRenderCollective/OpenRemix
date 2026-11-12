@@ -1091,7 +1091,7 @@ vec3 direct(Hit hit,bool primary,out vec3 specular,out float distance) {
   distance=0;
   vec3 local=vec3(0);specular=vec3(0);
 #ifdef WAVEFRONT_DEFER_SHADOWS
-  wavefrontShadowOrigin=shadowOrigin(hit);wavefrontLocalEstimate=vec3(0);wavefrontLocal=vec3(0);
+  wavefrontShadowOrigin=shadowOrigin(hit);wavefrontLocalEstimate=vec3(0);wavefrontLocal=vec3(0);wavefrontTrainKey=0u;
 #endif
   // PBR transparent sheets (water) may skip local-light sampling at their own
   // surface (rtx.native.pathtrace.sheetLocalLights=0); their traced paths still
@@ -2231,6 +2231,28 @@ WavefrontShadows wavefrontShadows() {
   return WavefrontShadows(frame.wavefrontPaths+uint64_t(wavefrontPlaneCount)*frame.wavefrontStride*16u+
                           wavefrontHeaderWords*4u+((uint64_t(frame.wavefrontStride)*wavefrontLists*4u+15u)&~uint64_t(15u)));
 }
+// The deferred local samples' light guide observations (light_bvh.glsl
+// wavefrontTrainKey): one plane after the shadow rays' region and the local
+// light and paint peel queues' records (frame.wavefrontFlags bits 1, 2), by
+// path: the key, the leaf (bit 20: guided), the physical light as halves. A
+// shadow item's last word's bit 30: its path has one.
+WavefrontShadows wavefrontTrains() {
+  uint skyRays=max(1u,(frame.pathConfig.z>>8)&31u);
+  return WavefrontShadows(frame.wavefrontPaths+uint64_t(wavefrontPlaneCount)*frame.wavefrontStride*16u+
+                          wavefrontHeaderWords*4u+((uint64_t(frame.wavefrontStride)*wavefrontLists*4u+15u)&~uint64_t(15u))+
+                          uint64_t(max(3u,skyRays)+((frame.wavefrontFlags&2u)!=0u?7u:0u)+((frame.wavefrontFlags&4u)!=0u?3u:0u))*
+                          frame.wavefrontStride*16u);
+}
+#ifdef WAVEFRONT_DEFER_SHADOWS
+// The observation of the sample just drawn, for path `index`: the bit for
+// its shadow item's last word.
+uint wavefrontTrainStore(uint index,bool lit) {
+  if(!lit||wavefrontTrainKey==0u)return 0u;
+  vec3 physical=min(wavefrontTrainPhysical,vec3(65000));
+  wavefrontTrains().v[index]=uvec4(wavefrontTrainKey,wavefrontTrainLeaf,packHalves(physical.r,physical.g),packHalves(physical.b,0));
+  return 1u<<30;
+}
+#endif
 // A place in the list counted by header word `counter` for each invocation
 // that adds: one atomic for the subgroup, so the list keeps a subgroup's
 // neighbouring pixels together.
@@ -2299,8 +2321,15 @@ void wavefrontShadow() {
   }
   uvec4 c=items.v[2u*frame.wavefrontStride+id];
   vec3 local=vec3(unpackHalf2x16(c.z),unpackHalf2x16(c.w).x);
-  if(any(greaterThan(local,vec3(0))))
-    light+=local*localVisibility(origin,origin+decodeGeometricNormal(unpackSnorm2x16(c.x))*uintBitsToFloat(c.y));
+  if(any(greaterThan(local,vec3(0)))) {
+    vec3 visibility=localVisibility(origin,origin+decodeGeometricNormal(unpackSnorm2x16(c.x))*uintBitsToFloat(c.y));
+    light+=local*visibility;
+    // The sample's light guide observation, now that its visibility is known.
+    if((c.w&(1u<<30))!=0u) {
+      uvec4 t=wavefrontTrains().v[index];
+      trainLightGuide(t.x,t.y&0xfffffu,(t.y&(1u<<20))!=0u,visibility,vec3(unpackHalf2x16(t.z),unpackHalf2x16(t.w).x),false);
+    }
+  }
   if(any(greaterThan(light,vec3(0)))) {
     uvec4 result=wavefrontLoad(3u,index);
     wavefrontStore(3u,index,wavefrontPack(uintBitsToFloat(result.xyz)+light,result.w));
@@ -2400,7 +2429,7 @@ void wavefrontLocalKernel() {
   float length_=length(delta);
   bool lit=any(greaterThan(local,vec3(0)))&&length_>0;
   items.v[2u*stride+id]=uvec4(lit?packSnorm2x16(encodeGeometricNormal(delta/length_)):0u,floatBitsToUint(length_),
-                              lit?packHalves(local.r,local.g):0u,lit?packHalves(local.b,0):0u);
+                              lit?packHalves(local.r,local.g):0u,(lit?packHalves(local.b,0):0u)|wavefrontTrainStore(index,lit));
   // The motion weight with the local light (pathSteps).
   const vec3 luma=vec3(.2126,.7152,.0722);
   vec2 before=unpackHalf2x16(r5.w);
@@ -2687,7 +2716,8 @@ void wavefrontShadowEnqueue(uint index,bool add) {
   // (The last word's bit 31: the local sample waits for the local kernel, which writes the ray.)
   items.v[2u*frame.wavefrontStride+at]=wavefrontLocalPending?uvec4(0u,0u,0u,0x80000000u):
     uvec4(local?packSnorm2x16(encodeGeometricNormal(delta/distance)):0u,
-    floatBitsToUint(distance),local?packHalves(wavefrontLocal.r,wavefrontLocal.g):0u,local?packHalves(wavefrontLocal.b,0):0u);
+    floatBitsToUint(distance),local?packHalves(wavefrontLocal.r,wavefrontLocal.g):0u,
+    (local?packHalves(wavefrontLocal.b,0):0u)|wavefrontTrainStore(index,local));
 }
 #endif
 #endif
