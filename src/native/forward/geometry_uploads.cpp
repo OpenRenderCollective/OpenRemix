@@ -91,7 +91,7 @@ Renderer::Gpu::geometry(const scene::Draw &draw) {
       poseNormals.clear();
       poseNormals.reserve(draw.bones->size());
       for (const auto &bone : *draw.bones)
-        poseNormals.push_back(normalMatrix(bone));
+        poseNormals.push_back(drawNormalMatrix(bone));
       normalPoseSource = draw.bones.get();
     }
     for (size_t i = 0; i < vertices.size(); ++i) {

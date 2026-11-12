@@ -132,6 +132,10 @@ int main(int argc, char **argv) try {
     refused = error == REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
   }
   require(refused, "Singular transforms retain their existing rejection");
+  require(remix::forward::drawNormalMatrix(singular) == Matrix{},
+          "A collapsed draw or bone transform gets a zero normal matrix instead of failing the frame");
+  require(remix::forward::drawNormalMatrix(scaled) == reference(scaled),
+          "Draw normal matrices match normalMatrix for invertible transforms");
   std::puts(
       "Normal matrices: translations, large coordinates, rotations, shear, scale and singular fallback pass");
   if (argc == 2 && std::strcmp(argv[1], "--benchmark") == 0) {

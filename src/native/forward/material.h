@@ -9,5 +9,9 @@ namespace remix::forward {
     return draw.ignoreAlpha ? 7u : draw.alphaOverride ? draw.compare : draw.material->compare;
   }
   Matrix normalMatrix(const Matrix &model);
+  // normalMatrix for a frame's draws and bones: a collapsed (singular) transform, such as
+  // a bone scaled to zero to hide a limb, maps its geometry to nothing and has no normal
+  // transform; it gets a zero matrix instead of failing the frame.
+  Matrix drawNormalMatrix(const Matrix &model);
   DrawData materialData(const scene::Draw &draw, double seconds = 0);
 } // namespace remix::forward
