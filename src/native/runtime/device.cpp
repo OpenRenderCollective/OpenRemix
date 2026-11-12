@@ -394,6 +394,21 @@ namespace remix {
                        [](auto p) { return std::strcmp(p, VK_NV_LOW_LATENCY_2_EXTENSION_NAME) == 0; }))
         extensions.push_back(VK_NV_LOW_LATENCY_2_EXTENSION_NAME);
     }
+    // AMD Anti-Lag (VK_AMD_anti_lag): the same low latency setting as Reflex,
+    // on AMD drivers. Needs only its feature; no swapchain or semaphore state.
+    VkPhysicalDeviceAntiLagFeaturesAMD antiLag = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ANTI_LAG_FEATURES_AMD};
+    m_antiLagSupported = false;
+    if (!m_headless && !m_lowLatencySupported && m_instanceApiVersion >= VK_API_VERSION_1_1 &&
+        supportsDeviceExtension(selection.physicalDevice, VK_AMD_ANTI_LAG_EXTENSION_NAME)) {
+      VkPhysicalDeviceFeatures2 available = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, .pNext = &antiLag};
+      vkGetPhysicalDeviceFeatures2(selection.physicalDevice, &available);
+      if (antiLag.antiLag) {
+        m_antiLagSupported = true;
+        extensions.push_back(VK_AMD_ANTI_LAG_EXTENSION_NAME);
+        antiLag.pNext = features.pNext;
+        features.pNext = &antiLag;
+      }
+    }
     // Present metering (frame generation): the driver spaces a frame's
     // generated and rendered images itself (presentImages).
     VkPhysicalDevicePresentMeteringFeaturesNV metering = {.sType = presentMeteringFeaturesType};
@@ -479,6 +494,12 @@ namespace remix {
       m_lowLatencySupported = m_setLatencySleepMode && m_latencySleep && m_setLatencyMarker &&
                               vkCreateSemaphore(m_device, &semaphore, nullptr, &m_latencySemaphore) == VK_SUCCESS;
     }
+    m_antiLagActive = false;
+    m_antiLagUpdate =
+        m_antiLagSupported
+            ? reinterpret_cast<PFN_vkAntiLagUpdateAMD>(vkGetDeviceProcAddr(m_device, "vkAntiLagUpdateAMD"))
+            : nullptr;
+    m_antiLagSupported = m_antiLagUpdate != nullptr;
     m_gpuTimers.initialize(m_physicalDevice, m_device, m_queueFamily);
     m_pipelines = std::make_unique<pipeline::Service>(m_device, m_properties, pipelineFeedback, pipelineStatistics);
     m_hostPasses.initialize(m_physicalDevice, m_device);

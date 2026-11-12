@@ -58,8 +58,11 @@ namespace remix {
                          : m_presentMode == VK_PRESENT_MODE_MAILBOX_KHR ? "mailbox"
                          : m_presentMode == VK_PRESENT_MODE_FIFO_KHR    ? "FIFO (vsync)"
                                                                         : "other present mode";
-    result.lowLatencySupported = m_lowLatencySupported;
-    result.lowLatencyUnavailable = "Needs an NVIDIA GPU and driver with VK_NV_low_latency2, and the path tracer.";
+    result.lowLatencySupported = lowLatencySupported();
+    if (m_antiLagSupported)
+      result.lowLatencyName = "AMD Anti-Lag";
+    result.lowLatencyUnavailable = "Needs an NVIDIA GPU and driver with VK_NV_low_latency2 and the path tracer, "
+                                   "or an AMD GPU and driver with VK_AMD_anti_lag.";
     return result;
   }
 

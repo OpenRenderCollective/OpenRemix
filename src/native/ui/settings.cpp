@@ -91,7 +91,7 @@ namespace remix {
         ImGui::TextDisabled("%s", "The headless editor always presents synchronously.");
       ImGui::BeginDisabled(!generation.lowLatencySupported || settings.frameGeneration);
       bool lowLatency = generation.lowLatencySupported && (settings.lowLatency || settings.frameGeneration);
-      if (ui::Checkbox("NVIDIA Reflex low latency", &lowLatency))
+      if (ui::Checkbox(generation.lowLatencyName, &lowLatency))
         settings.lowLatency = lowLatency;
       ImGui::EndDisabled();
       if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))

@@ -49,7 +49,8 @@ namespace remix::ui {
     size_t presentImages = 0;    // swapchain images / drawables
     const char *presentMode = "";
     bool lowLatencySupported = false;
-    const char *lowLatencyUnavailable = ""; // why low latency is unavailable
+    const char *lowLatencyName = "NVIDIA Reflex low latency"; // or AMD Anti-Lag
+    const char *lowLatencyUnavailable = "";                   // why low latency is unavailable
   };
 
   // The reconstruction features the backend offers, as the Rendering tab

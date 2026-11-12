@@ -298,6 +298,8 @@ namespace remix {
         vkDestroySemaphore(m_device, m_latencySemaphore, nullptr);
       m_latencySemaphore = VK_NULL_HANDLE;
       m_lowLatencySupported = m_lowLatencyActive = false;
+      m_antiLagSupported = m_antiLagActive = false;
+      m_antiLagUpdate = nullptr;
       m_gpuTimers.shutdown();
       MemoryRelease::drain();
       upscale::xess::unregisterDevice(m_device);

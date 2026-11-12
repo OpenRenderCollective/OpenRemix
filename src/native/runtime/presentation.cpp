@@ -185,7 +185,7 @@ namespace remix {
               ", swapchain made for " + std::to_string(m_presenterFrameGeneration) + ", generating " +
               std::to_string(m_generateCount) + ", ready " + std::to_string(int(m_frameGenerationReady)) + ", failed " +
               std::to_string(int(m_frameGenerationFailed)) + ", async present " + std::to_string(int(m_asyncActive)) +
-              ", low latency " + std::to_string(int(m_lowLatencyActive));
+              ", low latency " + std::to_string(int(latencyActive()));
     if (status != m_loggedFrameGenerationStatus) {
       m_loggedFrameGenerationStatus = status;
       std::string detail;
@@ -265,6 +265,14 @@ namespace remix {
   }
 
   void RemixNativeRuntime::applyLatencyMode() {
+    // Anti-Lag's mode goes with each update; turning it off needs one call.
+    if (m_antiLagSupported && latencyWanted() != m_antiLagActive) {
+      m_antiLagActive = latencyWanted();
+      if (!m_antiLagActive) {
+        const VkAntiLagDataAMD off = {.sType = VK_STRUCTURE_TYPE_ANTI_LAG_DATA_AMD, .mode = VK_ANTI_LAG_MODE_OFF_AMD};
+        m_antiLagUpdate(m_device, &off);
+      }
+    }
     if (!m_lowLatencySupported || !m_swapchain)
       return;
     const VkLatencySleepModeInfoNV mode = {.sType = VK_STRUCTURE_TYPE_LATENCY_SLEEP_MODE_INFO_NV,
@@ -288,6 +296,20 @@ namespace remix {
     const VkSetLatencyMarkerInfoNV info = {
         .sType = VK_STRUCTURE_TYPE_SET_LATENCY_MARKER_INFO_NV, .presentID = frame, .marker = marker};
     m_setLatencyMarker(m_device, m_swapchain, &info);
+  }
+
+  void RemixNativeRuntime::antiLagUpdate(VkAntiLagStageAMD stage, uint64_t frame) {
+    // Frame 0 had no INPUT stage (the mode came on with it).
+    if (!m_antiLagActive || !frame)
+      return;
+    const VkAntiLagPresentationInfoAMD presentation = {
+        .sType = VK_STRUCTURE_TYPE_ANTI_LAG_PRESENTATION_INFO_AMD, .stage = stage, .frameIndex = frame};
+    // maxFPS 0: no cap of the driver's own.
+    const VkAntiLagDataAMD data = {.sType = VK_STRUCTURE_TYPE_ANTI_LAG_DATA_AMD,
+                                   .mode = VK_ANTI_LAG_MODE_ON_AMD,
+                                   .maxFPS = 0,
+                                   .pPresentationInfo = &presentation};
+    m_antiLagUpdate(m_device, &data);
   }
 
   void RemixNativeRuntime::LatencySleeper::run(std::function<void()> work, double milliseconds) {
@@ -337,6 +359,12 @@ namespace remix {
 
   void RemixNativeRuntime::latencySleep() {
     m_latencySleepMilliseconds = 0;
+    if (m_antiLagActive) {
+      // The host's next frame begins here; the driver holds it as it needs.
+      ScopedMilliseconds sleepTime{m_latencySleepMilliseconds};
+      antiLagUpdate(VK_ANTI_LAG_STAGE_INPUT_AMD, ++m_latencyFrame);
+      return;
+    }
     if (!m_lowLatencyActive || !m_swapchain)
       return;
     ScopedMilliseconds sleepTime{m_latencySleepMilliseconds};
@@ -395,7 +423,7 @@ namespace remix {
     // only once it is complete, so it always presents synchronously.
     const bool async = m_profiles.current().asyncPresent && !m_headless;
     if (!async && !m_asyncActive) {
-      if (latencyWanted() != m_lowLatencyActive)
+      if (latencyWanted() != latencyActive())
         applyLatencyMode();
       m_latencyRenderFrame = m_latencyFrame;
       return presentFrame(info);
@@ -427,7 +455,7 @@ namespace remix {
                      m_framePerformance.allocationMilliseconds,
                      m_framePerformance.bufferAllocations,
                      m_framePerformance.memoryAllocations};
-    if (latencyWanted() != m_lowLatencyActive)
+    if (latencyWanted() != latencyActive())
       applyLatencyMode();
     m_latencyRenderFrame = m_latencyFrame;
     if (async != m_asyncActive) {
@@ -1289,6 +1317,7 @@ namespace remix {
       m_presenter.wait(generated.count ? 1 : 0);
     takeDeferredResult();
     m_logWait.add(std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - now).count());
+    antiLagUpdate(VK_ANTI_LAG_STAGE_PRESENT_AMD, m_latencyRenderFrame);
     if (!generated.count)
       return presentOne(realIndex);
     // The generated frames show the moments between the previous rendered

@@ -164,7 +164,8 @@ namespace remix {
     // Tracing settings activate in prepareSettings only after preflight
     // succeeds.
     m_vsync = settings.vsync;
-    m_lowLatencyRequested = m_lowLatencySupported && !m_headless && (settings.lowLatency || settings.frameGeneration);
+    m_lowLatencyRequested = (m_lowLatencySupported || m_antiLagSupported) && !m_headless &&
+                            (settings.lowLatency || settings.frameGeneration);
     m_frameGenerationRequested = settings.frameGeneration && !m_headless
                                      ? std::clamp(settings.frameGenerationFrames, 1u, FrameGeneration::maxGenerated)
                                      : 0;
