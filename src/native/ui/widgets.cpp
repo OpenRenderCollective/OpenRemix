@@ -94,9 +94,13 @@ namespace remix::ui {
     }
 
     // A float rounded to the precision its format shows, as ImGui's drags and sliders do.
+    // ImParseFormatTrimDecorations writes the buffer only for a format with
+    // trailing text ("%.1f ms"); otherwise ("%.2f") it returns the format itself.
     double roundToFormat(double value, const char *format) {
-      char trimmed[64], text[64];
-      ImParseFormatTrimDecorations(format, trimmed, sizeof(trimmed));
+      char buffer[64], text[64];
+      const char *trimmed = ImParseFormatTrimDecorations(format, buffer, sizeof(buffer));
+      if (!*trimmed)
+        return value; // no conversion in the format
       std::snprintf(text, sizeof(text), trimmed, value);
       return std::strtod(text, nullptr);
     }
