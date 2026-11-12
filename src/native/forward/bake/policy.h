@@ -6,12 +6,15 @@ namespace remix::forward::bake {
   // BakedMixed owns diffuse in the aggregate while retaining attributed data
   // for specular visibility and moving-caster corrections. Baked needs neither.
   // Append new values: these bytes are part of the private bake cache format.
-  enum class DirectMode : uint8_t { Mixed, Baked, Dynamic, BakedMixed };
+  enum class DirectMode : uint8_t { Mixed, Baked, Dynamic, BakedMixed, BakedSurface };
   constexpr bool aggregatesDiffuse(DirectMode mode) {
-    return mode == DirectMode::Baked || mode == DirectMode::BakedMixed;
+    return mode == DirectMode::Baked || mode == DirectMode::BakedMixed || mode == DirectMode::BakedSurface;
+  }
+  constexpr bool retainsChartVisibility(DirectMode mode) {
+    return mode == DirectMode::Mixed || mode == DirectMode::BakedMixed;
   }
   constexpr bool retainsVisibility(DirectMode mode) {
-    return mode == DirectMode::Mixed || mode == DirectMode::BakedMixed;
+    return retainsChartVisibility(mode) || mode == DirectMode::BakedSurface;
   }
   struct DirectPolicy {
     // Captured light indices are stable across transport and runtime bindings.

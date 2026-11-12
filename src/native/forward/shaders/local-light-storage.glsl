@@ -22,6 +22,8 @@ bool clusterChartConesEnabled() { return (frame.clusterInfo.w & 2048u) != 0u; }
 #define ClusterStride (ClusterCapacity + ClusterHeaderWords)
 #define MixedLightPrefix (frame.clusterInfo.y & 0x7fffffffu)
 #define ClusterLightCount (MixedLightPrefix == 0u ? frame.target.z : MixedLightPrefix - 1u)
+// Matches clusterChartPrefixShift in lighting.h.
+uint chartLightPrefix() { return frame.clusterInfo.w >> 12u; }
 #define ClusterBakedTail ((frame.clusterInfo.y & 0x80000000u) != 0u)
 
 // The high bit of the chart table control selects runtime membership in the first

@@ -234,7 +234,7 @@ namespace remix::forward {
     // copies these records before returning; no submitted frame retains them.
     // Reuse capacity rather than reallocating/copying the draw table every frame.
     std::vector<DrawData> drawScratch;
-    std::vector<LightData> lightScratch, bakedLightScratch;
+    std::vector<LightData> lightScratch, probeLightScratch, bakedLightScratch;
     std::vector<scene::SphereLight> sourceLightScratch;
     std::vector<LightRange> lightRangeScratch;
     std::vector<depth_batch::Source> depthSourceScratch;

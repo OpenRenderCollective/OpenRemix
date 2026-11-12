@@ -21,6 +21,9 @@ namespace remix::forward {
   constexpr uint32_t clusterConePlaneFlag = 1u << 9;
   constexpr uint32_t clusterMovingConeFlag = 1u << 10;
   constexpr uint32_t clusterChartConeFlag = 1u << 11;
+  // The remaining high bits carry the charted receiver's prefix length
+  // plus one. Zero disables the ordered-list shortcut.
+  constexpr uint32_t clusterChartPrefixShift = 12;
   constexpr uint32_t clusteredBakedTail = 0x80000000u;
   constexpr uint32_t sunShadowLayers = cascadeCount * 2; // frozen geometry, then moving casters
   // Bounded adaptive lists avoid evaluating every uploaded light when a

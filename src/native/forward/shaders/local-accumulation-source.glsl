@@ -4,8 +4,11 @@ void accumulateStandardLocalLighting(inout vec3 color, Surface surface, ShadingR
                                      DirectLightingPolicy policy, uint debugView) {
   vec3 n = surface.normal, v = receiver.viewDirection;
   LocalLightingContext localLighting = prepareLocalLighting(receiver, n, surface.metallic < 1, policy.attribution);
-  uint lightCount = receiverLocalLightCount(localLighting);
-  if (lightCount == 0u) return;
+  LocalLightList list = localLighting.lights;
+  uint lightCount = list.count;
+  uint chartPrefix = localLighting.aggregate && receiver.baked.coordinate.w >= .5 ? chartLightPrefix() : 0u;
+  if (lightCount == 0u || chartPrefix == 1u) return;
+  uint chartLimit = chartPrefix != 0u ? chartPrefix - 1u : ClusterLightCount;
   uint wideVisibilityRow = 0u;
   uint packedHighlights = NoChartLightList;
   bool shadedTraversal = debugView == ViewShaded || debugView >= ViewLocalLightWork;
@@ -19,7 +22,18 @@ void accumulateStandardLocalLighting(inout vec3 color, Surface surface, ShadingR
   bool usesPrefix = localLighting.aggregate || MixedLightPrefix == 0u;
   bool useChartMask = membership && usesPrefix;
   uint remaining = useChartMask
-      ? chartClusterMembership(localLighting.lights, hasChartList ? packedHighlights : ~0u) : 0u;
+      ? chartClusterMembership(list, hasChartList ? packedHighlights : ~0u) : 0u;
+  // An overflow caused by probe-only lights can still leave every chart
+  // candidate in the stored list. The last sorted index proves coverage.
+  if (chartPrefix != 0u && list.linear && !useChartMask && ClusterCapacity != 0u &&
+      clusters[list.base + ClusterHeaderWords + ClusterCapacity - 1u] >= chartLimit - 1u) {
+    list.linear = false;
+    lightCount = ClusterCapacity;
+  }
+  // On an actual overflow, walk the exact baked visibility bits directly.
+  // Unclassified lights have set bits, and uncovered receivers keep their list.
+  bool useWideChartMask = wideVisibilityRow != 0u && list.linear && usesPrefix;
+  uint wideWord = 0u, wideBits = 0u;
 #if !defined(VIEWMODEL_PASS) && !defined(WATER_SURFACE) && !defined(LIVE_GI)
   if (useChartMask && clusterConeMasksEnabled() && localLighting.aggregate && indexedSurfaceDirect() &&
       receiver.baked.coordinate.w >= .5 && !localLighting.lights.linear) {
@@ -36,10 +50,18 @@ void accumulateStandardLocalLighting(inout vec3 color, Surface surface, ShadingR
     if (useChartMask) {
       index = uint(findLSB(remaining));
       remaining &= remaining - 1u;
+    } else if (useWideChartMask) {
+      while (wideBits == 0u && wideWord * 32u < chartLimit)
+        wideBits = clusters[wideVisibilityRow + wideWord++];
+      if (wideBits == 0u) break;
+      index = (wideWord - 1u) * 32u + uint(findLSB(wideBits));
+      if (index >= chartLimit) break;
+      wideBits &= wideBits - 1u;
     } else {
-      index = localLightIndex(localLighting.lights, i);
+      index = localLightIndex(list, i);
     }
-    if (ChartHighlightLists && chartRejectsLocalLight(wideVisibilityRow, index)) continue;
+    if (chartPrefix != 0u && index >= chartPrefix - 1u) break;
+    if (ChartHighlightLists && !useWideChartMask && chartRejectsLocalLight(wideVisibilityRow, index)) continue;
     if (ChartHighlightLists && !membership && hasChartList) {
       Light light = lights[index];
       if (localLightHasSelectedHighlight(light) && light.corners[0].w == 0 && light.responseWeights.x > 0 &&

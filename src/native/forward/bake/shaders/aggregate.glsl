@@ -13,7 +13,8 @@ void accumulateBakedDiffuse(inout RayResult value, inout vec3 surfaceIrradiance,
   // Finite emitters that straddle the tangent plane retain their visible part.
   uint index = selectLight(origin, vec3(0), random(seed), pdf);
   RayLight light = rayLights[index];
-  if (light.shaping.z < .5)
+  // Probe receivers evaluate shaped emitters directly to preserve near-field gradients.
+  if (light.shaping.z < .5 || (light.shaping.z > 1.5 && dot(normal, normal) <= 1e-10))
     return;
   vec3 direction;
   float distance, weight;

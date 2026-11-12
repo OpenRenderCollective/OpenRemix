@@ -9,6 +9,7 @@ struct Surface {
   vec3 normal;
   float roughness;
   float metallic;
+  bool directSpecular;
 };
 
 // Safe evaluated-material defaults, independent of pass resources. The caller
@@ -20,6 +21,7 @@ Surface initSurface(vec3 normal) {
   surface.normal = normal;
   surface.roughness = 1;
   surface.metallic = 0;
+  surface.directSpecular = true;
   return surface;
 }
 Surface initSurface() { return initSurface(vec3(0, 0, 1)); }

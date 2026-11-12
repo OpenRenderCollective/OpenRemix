@@ -30,7 +30,7 @@ namespace remix::forward::bake {
     for (size_t i = 0; i < policy.lights.size(); ++i) {
       const auto mode = policy.lights[i];
       if ((mode != DirectMode::Mixed && mode != DirectMode::Baked && mode != DirectMode::Dynamic &&
-           mode != DirectMode::BakedMixed) ||
+           mode != DirectMode::BakedMixed && mode != DirectMode::BakedSurface) ||
           (source.lights[i].dynamic != (mode == DirectMode::Dynamic)))
         throw std::invalid_argument("Direct lighting policy changes moving-light membership");
       const bool baked = aggregatesDiffuse(mode);
@@ -64,6 +64,9 @@ namespace remix::forward::bake {
       const auto &light = source.lights[index];
       if (light.bakeHint == REMIXAPI_LIGHT_BAKING_REQUIRE_MIXED_EXT)
         policy.lights[index] = DirectMode::BakedMixed;
+      else if (bakeGeometryLights && !light.triangle && light.focus > 0 &&
+               light.bakeHint == REMIXAPI_LIGHT_BAKING_PREFER_BAKED_EXT)
+        policy.lights[index] = DirectMode::BakedSurface;
       else if (bakeGeometryLights &&
                (light.triangle || light.bakeHint == REMIXAPI_LIGHT_BAKING_PREFER_BAKED_EXT))
         policy.lights[index] = DirectMode::Baked;
@@ -78,7 +81,8 @@ namespace remix::forward::bake {
     if (lights.size() != source.lights.size())
       throw std::invalid_argument("Direct lighting policy does not match packed lights");
     for (size_t i = 0; i < policy.lights.size(); ++i)
-      lights[i].shaping[2] = aggregatesDiffuse(policy.lights[i]) ? 1.f : 0.f;
+      lights[i].shaping[2] = policy.lights[i] == DirectMode::BakedSurface ? 2.f :
+                            aggregatesDiffuse(policy.lights[i]) ? 1.f : 0.f;
     return aggregate;
   }
 } // namespace remix::forward::bake

@@ -112,7 +112,9 @@ namespace remix::forward::mixed {
     for (uint32_t i = 0; i < result.lights.source->lights.size(); ++i) {
       const auto &light = result.lights.source->lights[i];
       const bool aggregate = result.lights.bakedDiffuse(i);
-      radii.push_back(result.lights.retainsVisibility(i) ? influenceRadius(light, cutoff) : 0);
+      const bool chartVisibility = directLighting.lights.empty() ? !light.dynamic :
+          bake::retainsChartVisibility(directLighting.lights[i]);
+      radii.push_back(chartVisibility ? influenceRadius(light, cutoff) : 0);
       if (aggregate) {
         selected[i] = true;
         result.lights.identities.emplace(light.id, i);
