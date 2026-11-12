@@ -10,6 +10,19 @@ namespace remix {
   namespace {
     constexpr uint32_t kMaxBindings = 4, kMaxAttributes = 16, kMaxBuffers = 8, kMaxSamplers = 21;
 #if !defined(REMIX_METAL)
+    // A host shader binding's descriptor type (REMIXAPI_HOST_BINDING_*).
+    VkDescriptorType descriptorType(uint32_t type) {
+      switch (type) {
+      case REMIXAPI_HOST_BINDING_UNIFORM_BUFFER_EXT:
+        return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+      case REMIXAPI_HOST_BINDING_SAMPLED_IMAGE_EXT:
+        return VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+      case REMIXAPI_HOST_BINDING_SAMPLER_STATE_EXT:
+        return VK_DESCRIPTOR_TYPE_SAMPLER;
+      default:
+        return VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+      }
+    }
     void check(VkResult result) {
       if (result != VK_SUCCESS)
         throw result;
@@ -91,10 +104,13 @@ namespace remix {
     out = 0;
     if (!ready() || !info.code || info.codeBytes < 20 || info.codeBytes % 4 || info.codeBytes > (64u << 20) ||
         (info.stage != REMIXAPI_HOST_SHADER_VERTEX_EXT && info.stage != REMIXAPI_HOST_SHADER_FRAGMENT_EXT) ||
-        (info.bindingCount && !info.bindings) || info.bindingCount > 64 || info.pushConstantBytes > 128)
+        (info.bindingCount && !info.bindings) || info.bindingCount > 128 || info.pushConstantBytes > 128)
       return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
+    // Binding numbers as the host's compiler gives them: DXVK's D3D11 layout
+    // numbers a stage's slots past the others' (a vertex shader's constant
+    // buffers from 160).
     for (uint32_t i = 0; i < info.bindingCount; ++i)
-      if (info.bindings[i].type > REMIXAPI_HOST_BINDING_SAMPLER_EXT || info.bindings[i].binding > 63)
+      if (info.bindings[i].type > REMIXAPI_HOST_BINDING_SAMPLER_STATE_EXT || info.bindings[i].binding > 4095)
         return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
     Shader shader;
     shader.vertex = info.stage == REMIXAPI_HOST_SHADER_VERTEX_EXT;
@@ -547,10 +563,8 @@ namespace remix {
         types[b.binding] = b.type;
     std::vector<VkDescriptorSetLayoutBinding> bindings;
     for (const auto &[binding, type] : types) {
-      bindings.push_back({binding,
-                          type == REMIXAPI_HOST_BINDING_UNIFORM_BUFFER_EXT ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER
-                                                                           : VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                          1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, nullptr});
+      bindings.push_back(
+          {binding, descriptorType(type), 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, nullptr});
       layout.bindings.push_back({binding, type});
     }
     const VkDescriptorSetLayoutCreateInfo set{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
@@ -786,10 +800,12 @@ namespace remix {
     }
     if (!slot.pool) {
       const VkDescriptorPoolSize sizes[] = {{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 2048},
-                                            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2048}};
+                                            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2048},
+                                            {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 2048},
+                                            {VK_DESCRIPTOR_TYPE_SAMPLER, 2048}};
       const VkDescriptorPoolCreateInfo pool{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
                                             .maxSets = 1024,
-                                            .poolSizeCount = 2,
+                                            .poolSizeCount = 4,
                                             .pPoolSizes = sizes};
       check(vkCreateDescriptorPool(m_device, &pool, nullptr, &slot.pool));
     }
@@ -964,36 +980,43 @@ namespace remix {
             incomplete = &m_stats.skippedSampler;
             break;
           }
-          VkImageView sampled = frame.sampled;
-          if (found->target == REMIXAPI_HOST_TARGET_VIEW_DEPTH_EXT) {
-            // The runtime's own image, when the frame has it.
-            if (!viewDepth) {
-              complete = false;
-              incomplete = &m_stats.skippedViewDepth;
-              break;
+          // A D3D11 sampler state (SAMPLER_STATE) names no image; a D3D11
+          // texture (SAMPLED_IMAGE) no filtering; a D3D9 sampler (SAMPLER) both.
+          const bool image = binding.type != REMIXAPI_HOST_BINDING_SAMPLER_STATE_EXT;
+          const bool filtering = binding.type != REMIXAPI_HOST_BINDING_SAMPLED_IMAGE_EXT;
+          VkImageView sampled = VK_NULL_HANDLE;
+          if (image) {
+            sampled = frame.sampled;
+            if (found->target == REMIXAPI_HOST_TARGET_VIEW_DEPTH_EXT) {
+              // The runtime's own image, when the frame has it.
+              if (!viewDepth) {
+                complete = false;
+                incomplete = &m_stats.skippedViewDepth;
+                break;
+              }
+              sampled = viewDepth;
+            } else if (found->target) {
+              auto it = m_targets.find(found->target);
+              if (it == m_targets.end() || !it->second.initialized) {
+                complete = false;
+                incomplete = &m_stats.skippedTarget;
+                break;
+              }
+              sampled = it->second.sampled;
+              it->second.lastFrame = m_frame;
+            } else if (!i.target) {
+              // Sampling the frame while drawing it: through a copy of it.
+              auto &scratch = target(~0ull, frameFormat, extent, 0);
+              if (!scratch.initialized) {
+                barrier(command, scratch.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, 0, all, everything,
+                        everything);
+                scratch.initialized = true;
+              }
+              const int32_t whole[4] = {};
+              blit(command, frame.image, extent, whole, scratch.image, extent, whole, false);
+              between();
+              sampled = scratch.sampled;
             }
-            sampled = viewDepth;
-          } else if (found->target) {
-            auto it = m_targets.find(found->target);
-            if (it == m_targets.end() || !it->second.initialized) {
-              complete = false;
-              incomplete = &m_stats.skippedTarget;
-              break;
-            }
-            sampled = it->second.sampled;
-            it->second.lastFrame = m_frame;
-          } else if (!i.target) {
-            // Sampling the frame while drawing it: through a copy of it.
-            auto &scratch = target(~0ull, frameFormat, extent, 0);
-            if (!scratch.initialized) {
-              barrier(command, scratch.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, 0, all, everything,
-                      everything);
-              scratch.initialized = true;
-            }
-            const int32_t whole[4] = {};
-            blit(command, frame.image, extent, whole, scratch.image, extent, whole, false);
-            between();
-            sampled = scratch.sampled;
           }
           const VkSamplerAddressMode modes[] = {VK_SAMPLER_ADDRESS_MODE_REPEAT, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
                                                 VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT};
@@ -1007,9 +1030,10 @@ namespace remix {
                                                 .maxLod = VK_LOD_CLAMP_NONE,
                                                 .borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK};
           VkSampler sampler = VK_NULL_HANDLE;
-          check(pipeline::createSampler(m_device, &samplerInfo, nullptr, &sampler));
-          imageInfos.push_back({sampler, sampled, VK_IMAGE_LAYOUT_GENERAL});
-          write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+          if (filtering)
+            check(pipeline::createSampler(m_device, &samplerInfo, nullptr, &sampler));
+          imageInfos.push_back({sampler, sampled, image ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_UNDEFINED});
+          write.descriptorType = descriptorType(binding.type);
           write.pImageInfo = &imageInfos.back();
         }
         writes.push_back(write);
