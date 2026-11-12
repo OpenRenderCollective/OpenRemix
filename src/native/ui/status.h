@@ -5,6 +5,7 @@
 // reconstruction, frame generation) through these queries, which each runtime answers (runtime/ui_status.cpp,
 // metal/ui.mm).
 #include "pathtrace/path_inspection.h"
+#include "platform/frame_latency.h"
 #include "ui/sky.h"
 #include "upscale/options.h"
 #include <imgui.h>
@@ -51,6 +52,24 @@ namespace remix::ui {
     bool lowLatencySupported = false;
     const char *lowLatencyName = "NVIDIA Reflex low latency"; // or AMD Anti-Lag
     const char *lowLatencyUnavailable = "";                   // why low latency is unavailable
+  };
+
+  // Frame latency (Diagnostics' Latency panel): the last frames' timestamps
+  // from their start (input) to the GPU finishing them (platform/frame_latency.h),
+  // and with NVIDIA Reflex on, the driver's own report of its newest frame.
+  struct LatencyStatus {
+    bool available = false;
+    std::string unavailable; // why there are no statistics
+    std::string gpuMissing;  // why the frames have no GPU times (empty: they have)
+    const char *mode = "";   // "AMD Anti-Lag", "NVIDIA Reflex" or "" (neither on this device)
+    bool active = false;     // the mode is holding the host now
+    latency::Summary summary;
+    struct DriverReport {
+      bool available = false;
+      uint64_t frame = 0;
+      // Milliseconds: simulation start to GPU render end, and the report's regions.
+      double gameToRender = 0, simulation = 0, submit = 0, present = 0, driver = 0, osQueue = 0, gpu = 0;
+    } driver;
   };
 
   // The reconstruction features the backend offers, as the Rendering tab

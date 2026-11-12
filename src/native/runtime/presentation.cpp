@@ -285,6 +285,19 @@ namespace remix {
   }
 
   void RemixNativeRuntime::latencyMarker(VkLatencyMarkerNV marker, uint64_t frame) {
+    // The latency statistics take every marker's point, with or without Reflex.
+    static constexpr struct {
+      VkLatencyMarkerNV marker;
+      latency::Point point;
+    } points[] = {{VK_LATENCY_MARKER_SIMULATION_START_NV, latency::FrameStart},
+                  {VK_LATENCY_MARKER_SIMULATION_END_NV, latency::PresentCall},
+                  {VK_LATENCY_MARKER_RENDERSUBMIT_START_NV, latency::SubmitStart},
+                  {VK_LATENCY_MARKER_RENDERSUBMIT_END_NV, latency::SubmitEnd},
+                  {VK_LATENCY_MARKER_PRESENT_START_NV, latency::PresentStart},
+                  {VK_LATENCY_MARKER_PRESENT_END_NV, latency::PresentEnd}};
+    for (const auto &p : points)
+      if (p.marker == marker)
+        m_latencyRecorder.mark(frame, p.point, latency::hostNanoseconds());
     if (!m_lowLatencyActive || !m_swapchain)
       return;
     // The driver serializes a marker behind a sleep in progress: while one
@@ -358,16 +371,23 @@ namespace remix {
   }
 
   void RemixNativeRuntime::latencySleep() {
+    const uint64_t next = m_latencyFrame + 1;
+    m_latencyRecorder.mark(next, latency::SleepStart, latency::hostNanoseconds());
     m_latencySleepMilliseconds = 0;
-    if (m_antiLagActive) {
-      // The host's next frame begins here; the driver holds it as it needs.
+    {
       ScopedMilliseconds sleepTime{m_latencySleepMilliseconds};
-      antiLagUpdate(VK_ANTI_LAG_STAGE_INPUT_AMD, ++m_latencyFrame);
-      return;
+      if (m_antiLagActive)
+        antiLagUpdate(VK_ANTI_LAG_STAGE_INPUT_AMD, next); // the driver holds the host as it needs
+      else if (m_lowLatencyActive && m_swapchain)
+        reflexSleep();
     }
-    if (!m_lowLatencyActive || !m_swapchain)
-      return;
-    ScopedMilliseconds sleepTime{m_latencySleepMilliseconds};
+    // The host's next frame begins here (numbered with or without a low
+    // latency mode: the statistics count every frame).
+    m_latencyFrame = next;
+    latencyMarker(VK_LATENCY_MARKER_SIMULATION_START_NV, m_latencyFrame);
+  }
+
+  void RemixNativeRuntime::reflexSleep() {
     // The driver now and then holds the host for several frames' time after
     // a long frame (80-90 ms seen, at 21 ms a frame): a second long frame for
     // every first. A sleep is worth at most about a frame, so that is the
@@ -398,9 +418,6 @@ namespace remix {
           }
         },
         bound);
-    // The host's next frame begins here.
-    ++m_latencyFrame;
-    latencyMarker(VK_LATENCY_MARKER_SIMULATION_START_NV, m_latencyFrame);
   }
 
   // Present, then the driver's pacing of the host (NVIDIA Reflex).
@@ -1460,10 +1477,16 @@ namespace remix {
     m_gpuTimers.beginFrame(buffer, m_frameIndex, m_gpuTimersEnabled, ++m_recordedFrames,
                            m_pathTracer && !m_loading ? m_pathTracer->renderExtent() : m_swapchainExtent,
                            m_swapchainExtent);
+    // Latency statistics: the GPU's start and end of the frame.
+    m_frameStamps.begin(buffer, m_frameIndex, m_latencyRenderFrame, m_latencyRecorder);
     struct AbandonTimers {
       gpu::GpuTimers &timers;
-      ~AbandonTimers() { timers.abandon(); } // no-op after endFrame
-    } abandonTimers{m_gpuTimers};
+      latency::FrameStamps &stamps;
+      ~AbandonTimers() { // no-op after endFrame / end
+        timers.abandon();
+        stamps.abandon();
+      }
+    } abandonTimers{m_gpuTimers, m_frameStamps};
     if (m_headless)
       sharedBarrier(buffer, true);
     // GPU-only targets, histories and acceleration structures stay ordered on
@@ -1791,6 +1814,7 @@ namespace remix {
     if (m_headless)
       sharedBarrier(buffer, false);
     m_gpuTimers.endFrame(buffer);
+    m_frameStamps.end(buffer);
     result = vkEndCommandBuffer(buffer);
     return result == VK_SUCCESS ? REMIXAPI_ERROR_CODE_SUCCESS : fail(result);
   }

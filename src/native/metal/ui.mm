@@ -352,6 +352,12 @@ fragment half4 uiFragment(VertexOut in [[stage_in]], texture2d<half, access::sam
     return result;
   }
 
+  ui::LatencyStatus RemixNativeRuntime::uiLatency() const {
+    ui::LatencyStatus result;
+    result.unavailable = "Frame latency statistics are not available with the Metal backend.";
+    return result;
+  }
+
   ui::PostStatus RemixNativeRuntime::uiPost() const {
     ui::PostStatus result;
     if (m_pathTracer && m_backend) {
