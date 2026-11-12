@@ -715,7 +715,8 @@ Hit cameraHit(vec3 origin,vec3 direction) {
 // skipBlendedSecondaryRays). Camera and transparency rays keep every instance.
 bool portalTeleport(uint surface,vec3 p,inout vec3 origin,inout vec3 direction,inout uint portals,inout uint chain,uint limit);
 // Light through ray portals (rtx.native.pathtrace.rayPortalLightTeleports,
-// frame.rayPortalConfig.z): a bounce ray meeting an open portal's front goes
+// frame.rayPortalConfig.z): a bounce ray meeting an open portal (a standalone
+// one's front, a portal over an opaque surface anywhere: portalTeleport) goes
 // on from its partner, as a camera ray does, so what lies past the portal
 // lights what is in front of it (a window onto another place).
 Hit secondaryHit(vec3 origin,vec3 direction) {
@@ -746,7 +747,9 @@ vec3 portalVector(uint index,vec3 v) {
 // mirrors (w's high half 0xffff, a NaN no mirror packs): x the slot (0xff:
 // the main camera, through a portal) plus the portals passed << 8, y the
 // camera ray's distance to the screen or the first portal, z the portals'
-// indices, four bits each in the order passed (at most 8).
+// indices, four bits each in the order passed (at most 8). A ray portal over
+// an opaque surface tints what it shows by the surface's albedo: x bits 16-31
+// and w bits 0-7 hold 1 - albedo (inputs.glsl screenTint).
 // Written only with a raster primary (the pass runs then).
 struct Screen { bool shown; uint slot; float distance; uint portals; uint chain; };
 Screen loadScreen(ivec2 p) {
@@ -757,8 +760,9 @@ Screen loadScreen(ivec2 p) {
   s.shown=true;s.slot=v.x&0xffu;s.portals=(v.x>>8)&15u;s.distance=uintBitsToFloat(v.y);s.chain=v.z;
   return s;
 }
-uvec4 packScreen(uint slot,float distance,uint portals,uint chain) {
-  return uvec4(slot|portals<<8,floatBitsToUint(distance),chain,0xffff0000u);
+uvec4 packScreen(uint slot,float distance,uint portals,uint chain,vec3 tint) {
+  uvec3 t=uvec3(round(clamp(vec3(1)-tint,0,1)*255));
+  return uvec4(slot|portals<<8|t.r<<16|t.g<<24,floatBitsToUint(distance),chain,0xffff0000u|t.b);
 }
 // Where the pixel's surface is seen from: the screen's camera or the main
 // camera's `origin`, carried through the portals passed.
@@ -922,7 +926,21 @@ bool portalTeleport(uint surface,vec3 p,inout vec3 origin,inout vec3 direction,i
   if(code==0u||portals>=min(limit,8u))return false;
   uint index=code-1u;
   vec4 front=frame.rayPortals[index*4u+3u];
-  if((uint(front.w)&1u)==0u||dot(direction,front.xyz)>=0)return false;
+  if((uint(front.w)&1u)==0u)return false;
+  // A portal over an opaque surface (state.w bit 26: a screen showing another
+  // place, its MaterialInfo chaining the portal extension): the surface is
+  // the opening, from wherever a ray meets it. The ray goes on from where the
+  // map takes the point, along the mapped direction, without the doorway's
+  // front test or exit plane (what the screen shows is the partner's view in
+  // every direction, as a game renders it from its camera there).
+  if((surfaces[surface].state.w&(1u<<26))!=0u) {
+    origin=portalPoint(index,p);
+    direction=normalize(portalVector(index,direction));
+    origin=offsetRay(origin,direction);
+    chain|=index<<(4u*portals);++portals;
+    return true;
+  }
+  if(dot(direction,front.xyz)>=0)return false;
   // The front is told by the ray's direction, not the hit's facing (the
   // host's portal mesh may be double-sided). A mesh standing off its plane
   // maps behind the partner's (in its wall): the ray starts where it crosses
@@ -1044,12 +1062,14 @@ vec3 diffuseDirection(vec3 n) {
 #include "brdf.glsl"
 #include "fireflies.glsl"
 #include "visibility.glsl"
-// The sun and sky through ray portals (frame.rayPortalConfig.w: some pair is open;
-// z: rayPortalLightTeleports): when the first surface toward the sun opens a
-// portal from its front, and the portal keeps directions (a move and a
-// scale, as a window onto a model of the place), the shadow ray goes on from
-// the partner (shadow(): the sun and sky rays of every vertex): what lights the far side lights through it. A portal that
-// turns directions would show the sun elsewhere; its own material blocks.
+// The sun and sky through ray portals (frame.rayPortalConfig.w: some pair is
+// open; z: rayPortalLightTeleports): when the first surface toward the sun or
+// the sky opens a portal the ray passes (portalTeleport), and the portal keeps
+// directions (a move and a scale, as a window onto a model of the place), the
+// shadow ray goes on from the partner: what lights the far side lights
+// through it. shadow() does this for the sun and sky rays of every vertex. A
+// portal that turns directions would show the sun elsewhere; its own
+// material blocks.
 bool sunThroughPortal(inout vec3 origin,vec3 direction) {
 #ifdef TEMPORAL
   uint saved=traceMask;traceMask=shadowMask();
@@ -3015,12 +3035,24 @@ uvec4 replaceScreen(ivec2 pixel,vec3 origin,vec3 direction,float kind) {
   kind-=32;if(kind>=16)kind-=16;
   traceMask=kind>=8?viewModelInstanceMask:cameraMask;
   Intersection x=nearest(origin,direction,1e30,0);
+  // Glass or water over a portal's opening (a pool's surface) is passed: up to
+  // four blended, transmissive or tinted surfaces that are neither a screen nor
+  // a portal, as the rays past a portal pass glass. Nothing opening behind
+  // them, the pixel stays the raster's.
+  for(uint layer=0u;layer<4u&&x.surface!=~0u;++layer) {
+    uint w=surfaces[x.surface].state.w;
+    if((w&0x3c07000u)!=0u||(w&(2u|8u|32u))==0u)break;
+    x=nearest(origin,direction,1e30,x.t+max(1e-4,x.t*1e-5));
+  }
   traceMask=cameraMask;
   if(x.surface==~0u)return uvec4(0);
   Surface s=surfaces[x.surface];
   s.indices=s.traceIndices;
   uint code=(s.state.w>>12)&7u,slot=0xffu,portals=0u,chain=0u;
   vec3 eye=origin,seen=direction;
+  // A portal over an opaque surface: its albedo (the raster's, the surface
+  // that marked this pixel) tints what it shows.
+  vec3 tint=(s.state.w&(1u<<26))!=0u?imageLoad(primaryAlbedo,pixel).rgb:vec3(1);
   if(code!=0u&&frame.screenCameras[(code-1u)*4u].w!=0) {
     slot=code-1u;uint tri=x.primitive*3;
   vec3 w=vec3(1-x.bary.x-x.bary.y,x.bary);
@@ -3058,7 +3090,7 @@ uvec4 replaceScreen(ivec2 pixel,vec3 origin,vec3 direction,float kind) {
   const bool sheet=hit.t<1e30&&hit.blended&&slot==0xffu;
   if(!sheet)hit.color.a=1;
   storePrimary(pixel,hit,hit.t==1e30?0:sheet&&hit.tinted?3:hit.blended?2:1);
-  return packScreen(slot,x.t,portals,chain);
+  return packScreen(slot,x.t,portals,chain,slot==0xffu?tint:vec3(1));
 }
 void replaceMirror(ivec2 pixel) {
   vec3 origin,direction;
@@ -3070,7 +3102,7 @@ void replaceMirror(ivec2 pixel) {
   const bool painted=imageLoad(primaryNormal,pixel).w==4;
   Hit mirror=rasterPrimary(pixel,origin);
   uvec4 packed=uvec4(0);
-  if(temporal.translucency.z!=0&&mirror.t<1e30&&!mirror.blended&&!mirror.decal&&deltaSurface(mirror)) {
+  if((temporal.translucency.z&1u)!=0u&&mirror.t<1e30&&!mirror.blended&&!mirror.decal&&deltaSurface(mirror)) {
     vec3 reflected=reflect(-mirror.wo,mirror.n);
     if(dot(reflected,mirror.ng)>0) {
       // The mirror's reflection is a bounce: it shows reflection-only instances
@@ -3782,6 +3814,7 @@ void main() {
     }
     vec3 specular=opaque&&primary.pbr?rrSpecularAlbedo(filmF0(primary,materialF0(primary)),primary.rm.x,dot(primary.n,primary.wo)):vec3(0);
     if(mirror.replaced){diffuse*=mirror.reflectance;specular*=mirror.reflectance;}
+    diffuse*=screenTint(pixel);specular*=screenTint(pixel);
     imageStore(rrDiffuse,pixel,vec4(diffuse,0));
     imageStore(rrSpecular,pixel,vec4(specular,0));
     // The sky faces the camera: a zero normal is no direction to RR.
@@ -3835,6 +3868,8 @@ void main() {
   #ifdef TEMPORAL
   // Denoised lighting takes the mirror's reflectance in composition.
   if(mirror.replaced){emission*=mirror.reflectance;color*=mirror.reflectance;}
+  // So does a ray portal's albedo over an opaque surface (screenTint).
+  {vec3 tint=screenTint(pixel);emission*=tint;color*=tint;}
   #endif
   // Its w keeps the terminator lift and horizon for the split local pass
   // (packPreviousW; no history there, as before).

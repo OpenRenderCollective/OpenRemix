@@ -33,7 +33,10 @@ namespace remix::scene {
 
   // Collects the frame's portals from its draws (traced world draws only: a
   // view model or a reflection-only body does not open a portal). In double,
-  // since the map composes two transforms and an inverse.
+  // since the map composes two transforms and an inverse. An index's frame is
+  // its first draw's, a standalone portal's before one extending an opaque
+  // material: many surfaces of a look of their own (screens, windows) can open
+  // one portal placed by a dedicated draw.
   inline RayPortals rayPortals(const std::vector<Draw> &draws) {
     RayPortals out;
     std::array<const Draw *, rayPortalSlots> placed = {};
@@ -42,10 +45,13 @@ namespace remix::scene {
         continue;
       ++out.surfaces;
       auto &slot = placed[draw.material->rayPortal - 1u];
-      if (slot)
-        ++out.duplicates;
-      else
+      if (!slot)
         slot = &draw;
+      else {
+        ++out.duplicates;
+        if (slot->material->rayPortalOverOpaque && !draw.material->rayPortalOverOpaque)
+          slot = &draw;
+      }
     }
     // Affine 3 x 4 matrices (row-major) from the column-major Matrix.
     using Affine = std::array<std::array<double, 4>, 3>;

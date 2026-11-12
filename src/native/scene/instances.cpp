@@ -555,6 +555,7 @@ namespace remix {
         draw.maskOutside = d.maskOutside;
         draw.cutGroup = d.cutGroup;
         draw.cameraCull = d.cameraCull;
+        draw.cameraOnly = d.cameraOnly;
         draw.wound = wound;
         draw.rasterOrder = d.rasterOrder;
         draw.texcoord = d.texcoord;
@@ -805,6 +806,8 @@ namespace remix::scene {
         d.cameraCull =
             uint8_t(culling->flags & (d.doubleSided ? known : uint32_t(REMIXAPI_INSTANCE_CAMERA_CULL_VISIBILITY_EXT)));
     }
+    if (extension(info.pNext, REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_CAMERA_ONLY_EXT))
+      d.cameraOnly = true;
     if (const auto *order = static_cast<const remixapi_InstanceInfoRasterOrderEXT *>(
             extension(info.pNext, REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_RASTER_ORDER_EXT))) {
       // Raster-only overlays that are not masked: a traced instance has no

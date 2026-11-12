@@ -894,11 +894,12 @@ namespace remix {
                           std::clamp(options.skySamples, 1u, 16u) << 8 |
                           std::clamp(std::min(options.sheetSkySamples, options.skySamples), 1u, 16u) << 16;
     // Bits 0-7: the instance mask of shadow, light-visibility and bounce rays
-    // (view models never; blended layers unless skipBlendedSecondaryRays is
-    // off). Bit 8: a traced view model is in the frame (camera rays look for
-    // it first; see cameraHit). Bit 9: thin films are off (scene.glsl filmed).
+    // (view models, reflection-only bodies and ray portal openings never;
+    // blended layers unless skipBlendedSecondaryRays is off). Bit 8: a traced view model is in the frame (camera rays
+    // look for it first; see cameraHit). Bit 9: thin films are off (scene.glsl filmed).
     frame.pathConfig[3] = (options.skipBlendedSecondaryRays ? 0xffu & ~uint32_t(trace::blendedInstanceMask) : 0xffu) &
-                          ~uint32_t(trace::viewModelInstanceMask) & ~uint32_t(trace::reflectionOnlyInstanceMask);
+                          ~uint32_t(trace::viewModelInstanceMask) & ~uint32_t(trace::reflectionOnlyInstanceMask) &
+                          ~uint32_t(trace::cameraOnlyInstanceMask);
     if (prepared.viewModel)
       frame.pathConfig[3] |= 0x100u;
     if (!options.iridescence)
@@ -1014,8 +1015,10 @@ namespace remix {
     temporalFrame.translucency[1] = denoiser && postReblur && !rrActive() && options.translucencyReuse &&
                                     options.bounces > 0 && options.indirectClamp == 0 && !debugView &&
                                     hasBlendedGeometry;
+    // Bit 0: mirrors replace their pixels; bit 1: the pass ran (its screen and
+    // portal records in psrMirror are this frame's).
     temporalFrame.translucency[2] =
-        denoiser && psrCompute && options.rasterPrimary && options.primarySurfaceReplacement;
+        denoiser && psrCompute && options.rasterPrimary ? (options.primarySurfaceReplacement ? 1u : 0u) | 2u : 0u;
     temporalFrame.local[0] = denoiser && postLocalDenoise;
     temporalFrame.local[1] = frame.localConfig[0];
     temporalFrame.local[2] = localResponsiveFrames;
