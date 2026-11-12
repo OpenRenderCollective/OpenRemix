@@ -328,6 +328,8 @@ namespace remix::config {
         TRACE(bloomRadius, 0, 1);
         TRACE(contrast, 0, 1);
         TRACE(contrastAmount, .5, 2);
+        TRACE(chromaticAberration, 0, 1);
+        TRACE(chromaticAberrationAmount, 0, .02);
         TRACE(localLights, 0, 1);
         TRACE(torchLights, 0, 1);
         TRACE(emissiveLights, 0, 1);

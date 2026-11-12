@@ -1325,6 +1325,14 @@ namespace remix {
       if (options.contrast)
         ui::SliderFloat("Contrast", &options.contrastAmount, .5f, 2.f, "%.2f");
     }
+    if (ui::Panel panel{"Chromatic aberration"}) {
+      ui::Checkbox("Lens chromatic aberration", &options.chromaticAberration);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Red and blue split from green toward the edges of the image, as through a lens:\n"
+                          "none at the centre, the amount at the left and right edges (a fraction of the width).");
+      if (options.chromaticAberration)
+        ui::SliderFloat("Amount at the edges", &options.chromaticAberrationAmount, 0.f, .02f, "%.4f");
+    }
   }
 
   // Memory and GPU cost: the same image either way.
