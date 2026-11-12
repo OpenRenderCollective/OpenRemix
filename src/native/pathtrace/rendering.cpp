@@ -1547,7 +1547,7 @@ namespace remix {
         VkPipelineLayout queuedLayouts[2] = {};
         bool ready = true;
         for (size_t i = 0; i < 2; ++i) {
-          queued[i] = selectLightingPipeline(indirectPass.wavefront[shades[i]], false, false, 0, 0, true);
+          queued[i] = selectLightingPipeline(indirectPass.wavefront[shades[i]], false, false, 0, 0, 1);
           queuedFeatures[i] = selectedFeatures;
           queuedLayouts[i] = selectedLayout;
           ready = ready && queued[i] != VK_NULL_HANDLE;
@@ -1562,6 +1562,29 @@ namespace remix {
             kernelFeatures[shades[i]] = queuedFeatures[i];
             kernelLayouts[shades[i]] = queuedLayouts[i];
           }
+        }
+      }
+      // The paint peel queue (rtx.native.pathtrace.wavefrontPeelQueue): the
+      // painted shade kernel's queue variant (with the local light queue's
+      // when that runs) and the peel kernel; until both have compiled, the
+      // painted shade kernel peels.
+      VkPipeline peelKernel = VK_NULL_HANDLE;
+      uint32_t peelFeatures = defaultFeatures;
+      VkPipelineLayout peelLayout = VK_NULL_HANDLE;
+      if (wavefront && options.wavefrontPeelQueue && (frame.wavefrontFlags & 4u) && indirectPass.wavefront[12]) {
+        const size_t painted = options.wavefrontShadowQueue ? 6 : 2;
+        const VkPipeline shade =
+            selectLightingPipeline(indirectPass.wavefront[painted], false, false, 0, 0, (localKernel ? 1u : 0u) | 2u);
+        const uint32_t shadeFeatures = selectedFeatures;
+        const VkPipelineLayout shadeLayout = selectedLayout;
+        const VkPipeline peel = selectLightingPipeline(indirectPass.wavefront[12]);
+        if (shade && peel) {
+          peelKernel = peel;
+          peelFeatures = selectedFeatures;
+          peelLayout = selectedLayout;
+          kernels[painted] = shade;
+          kernelFeatures[painted] = shadeFeatures;
+          kernelLayouts[painted] = shadeLayout;
         }
       }
       if (wavefront) {
@@ -1655,6 +1678,16 @@ namespace remix {
           // different paths.
           barrier(command, compute, computeWrite, compute | indirect,
                   computeAccess | VK_ACCESS_INDIRECT_COMMAND_READ_BIT);
+          if (peelKernel) {
+            // The painted paths' paint, for the painted shade kernel.
+            {
+              gpu::GpuScope scope(command, "Trace indirect (wavefront paint peel)", extent);
+              bindTrace(command, peelKernel, peelLayout, peelFeatures);
+              vkCmdDispatchIndirect(command, paths, header + 152 * 4);
+            }
+            barrier(command, compute, computeWrite, compute | indirect,
+                    computeAccess | VK_ACCESS_INDIRECT_COMMAND_READ_BIT);
+          }
           {
             gpu::GpuScope scope(command, "Trace indirect (wavefront shade unpainted)", extent);
             const size_t shade = options.wavefrontShadowQueue ? 9 : 8;

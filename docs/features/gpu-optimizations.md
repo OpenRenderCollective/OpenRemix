@@ -163,6 +163,18 @@ Same image within noise. On `cp_brew` (as below) the unpainted shade kernel
 took 0.48 ms instead of 0.51 and the local kernel 0.06 ms. Until the queue's
 variants have compiled the shade kernels sample themselves.
 
+`rtx.native.pathtrace.wavefrontPeelQueue` (0/1, default 1) gives the painted
+shade kernel's paint peel a kernel of its own, run over the painted list
+between the trace and shade kernels: it runs the peel (`closest()`) for each
+painted path and stores what it leaves the receiver (48 bytes a pixel, as
+halves): nothing, the sums to compose on it, or, where the first layer shows
+as an ordinary surface, that layer in the receiver's place. The painted shade
+kernel composes from the record after its receiver is built, without the
+peel's queries or the paint's material: with the local light queue it takes
+168 registers instead of 243 to 247 (224 to 230 without that queue); the peel
+kernel takes 168. Same image within noise. On `cp_brew` the painted shade
+kernel took 0.11 ms instead of 0.13 and the peel kernel 0.08 ms.
+
 ## Split primary surface
 
 `rtx.native.pathtrace.splitPrimary` (0/1, default 1) runs the denoised opaque

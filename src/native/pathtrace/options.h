@@ -383,6 +383,11 @@ namespace remix {
     // records of 112 bytes a pixel; the shade kernels compile without the
     // light sampler. The same image within noise.
     bool wavefrontLocalQueue = true;
+    // The painted shade kernel's paint peeled by a kernel of its own
+    // (pathtrace.comp wavefrontPeelQueue), over records of 48 bytes a pixel:
+    // the painted shade kernel compiles without the peel's queries and the
+    // paint's material. The same image within noise.
+    bool wavefrontPeelQueue = true;
     // The denoised opaque pass as two launches (pathtrace.comp primaryRole):
     // the first resolves every pixel's primary surface and local light (and
     // shades whole the pixels whose surface needed a traced camera ray or the

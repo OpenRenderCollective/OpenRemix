@@ -1444,6 +1444,12 @@ namespace remix {
                               "records of 112 bytes a pixel. Same image within noise.\n"
                               "rtx.native.pathtrace.wavefrontLocalQueue");
         }
+        ui::Checkbox("Wavefront paint peel queue", &options.wavefrontPeelQueue);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("Paint (decals) before a bounce's receiver is peeled by a kernel of its own, so\n"
+                            "the painted shade kernel compiles without the peel (fewer registers). Records\n"
+                            "of 48 bytes a pixel. Same image within noise.\n"
+                            "rtx.native.pathtrace.wavefrontPeelQueue");
         int bounces = int(options.wavefrontBounces);
         if (ui::SliderInt("Wavefront split bounces", &bounces, 1, 16))
           options.wavefrontBounces = uint32_t(bounces);
