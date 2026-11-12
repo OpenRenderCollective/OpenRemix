@@ -27,6 +27,10 @@ namespace remix {
     // c = (c / .18)^contrastAmount * .18 after exposure.
     bool contrast = false;
     float contrastAmount = 1.15f;
+    // Lens chromatic aberration (postfx::Options): the red and blue channels'
+    // displacement at the image's left and right edges, a fraction of its width.
+    bool chromaticAberration = false;
+    float chromaticAberrationAmount = .002f;
     uint32_t fsrQuality = 3;
     float fsrSharpness = 0.f;
     // XeSS's seven presets (upscale::xessRenderSize); 5: performance.

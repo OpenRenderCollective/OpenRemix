@@ -343,7 +343,7 @@ namespace remix::postfx {
         f.down.push_back(g.allocate(f, g.computeSetLayout));
       for (size_t i = 0; i < g.up.size(); ++i)
         f.up.push_back(g.allocate(f, g.computeSetLayout));
-      f.uniform = buffer(physical, device, 16, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, true);
+      f.uniform = buffer(physical, device, 32, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, true);
       f.readback = buffer(physical, device, 16, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true);
       f.emptyBackground = buffer(physical, device, 160, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, true);
       std::memset(f.emptyBackground->mapped, 0, 160);
@@ -573,13 +573,19 @@ namespace remix::postfx {
       g.bloomValid = true;
       ++g.stats.bloomFrames;
     }
-    const float values[] = {bypass ? 1.f : options.exposure, bloom ? options.bloomIntensity : 0.f,
+    // values; lens: x the chromatic aberration (composite.glsl).
+    const float values[] = {bypass ? 1.f : options.exposure,
+                            bloom ? options.bloomIntensity : 0.f,
                             float(!bypass && options.autoExposure),
-                            !bypass && options.contrast ? options.contrastAmount : 0.f};
+                            !bypass && options.contrast ? options.contrastAmount : 0.f,
+                            !bypass && options.chromaticAberration ? options.chromaticAberrationAmount : 0.f,
+                            0.f,
+                            0.f,
+                            0.f};
     std::memcpy(f.uniform->mapped, values, sizeof(values));
     const auto bloomView = bloom ? (g.up.empty() ? g.down[0]->view : g.up[0]->view) : g.dummy->view;
     VkDescriptorImageInfo im{g.edge, bloomView, VK_IMAGE_LAYOUT_GENERAL};
-    VkDescriptorBufferInfo buffers[] = {{s.exposure->handle, 0, 16}, {f.uniform->handle, 0, 16}};
+    VkDescriptorBufferInfo buffers[] = {{s.exposure->handle, 0, 16}, {f.uniform->handle, 0, 32}};
     VkWriteDescriptorSet writes[3]{};
     for (uint32_t i = 0; i < 3; ++i) {
       writes[i] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,

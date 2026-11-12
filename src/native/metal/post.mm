@@ -102,7 +102,7 @@ namespace remix::metal::post {
     const postfx::Exposure unity;
     g.exposure = buffer(device, &unity, sizeof(unity));
     for (unsigned i = 0; i < gpuFrameCount; ++i) {
-      g.settings[i] = buffer(device, nullptr, 16);
+      g.settings[i] = buffer(device, nullptr, 32); // PostSettings: values, lens (postfx composite.glsl)
       g.readback[i] = buffer(device, nullptr, 16);
     }
     g.edge = sampler(device, 1, 3, 3);
@@ -214,9 +214,15 @@ namespace remix::metal::post {
       g.bloomValid = true;
       ++g.stats.bloomFrames;
     }
-    const float values[] = {bypass ? 1.f : options.exposure, bloom ? options.bloomIntensity : 0.f,
+    // values; lens: x the chromatic aberration (postfx composite.glsl).
+    const float values[] = {bypass ? 1.f : options.exposure,
+                            bloom ? options.bloomIntensity : 0.f,
                             float(!bypass && options.autoExposure),
-                            !bypass && options.contrast ? options.contrastAmount : 0.f};
+                            !bypass && options.contrast ? options.contrastAmount : 0.f,
+                            !bypass && options.chromaticAberration ? options.chromaticAberrationAmount : 0.f,
+                            0.f,
+                            0.f,
+                            0.f};
     std::memcpy(g.settings[g.slot].contents, values, sizeof(values));
     // The exposure the frame used, for statistics once it completes.
     id<MTLBlitCommandEncoder> blit = blitEncoder(command, @"Exposure readback");
