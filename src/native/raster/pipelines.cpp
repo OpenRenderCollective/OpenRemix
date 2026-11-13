@@ -231,14 +231,38 @@ namespace remix {
         .depthWriteEnable = depth && (draw.depthWriteOverride ? draw.depthWrite : (!draw.blend.enabled || draw.ui)),
         .depthCompareOp = VkCompareOp(draw.depthCompare)};
     const auto &b = draw.blend;
-    const VkPipelineColorBlendAttachmentState blend = {.blendEnable = b.enabled,
-                                                       .srcColorBlendFactor = VkBlendFactor(b.src),
-                                                       .dstColorBlendFactor = VkBlendFactor(b.dst),
-                                                       .colorBlendOp = VkBlendOp(b.op),
-                                                       .srcAlphaBlendFactor = VkBlendFactor(b.srcAlpha),
-                                                       .dstAlphaBlendFactor = VkBlendFactor(b.dstAlpha),
-                                                       .alphaBlendOp = VkBlendOp(b.alphaOp),
-                                                       .colorWriteMask = b.mask};
+    VkPipelineColorBlendAttachmentState blend = {.blendEnable = b.enabled,
+                                                 .srcColorBlendFactor = VkBlendFactor(b.src),
+                                                 .dstColorBlendFactor = VkBlendFactor(b.dst),
+                                                 .colorBlendOp = VkBlendOp(b.op),
+                                                 .srcAlphaBlendFactor = VkBlendFactor(b.srcAlpha),
+                                                 .dstAlphaBlendFactor = VkBlendFactor(b.dstAlpha),
+                                                 .alphaBlendOp = VkBlendOp(b.alphaOp),
+                                                 .colorWriteMask = b.mask};
+    if (sky && (b.mask & 7u)) { // (a draw that writes no colour covers nothing)
+      // The path tracer's sky layer keeps in alpha what its draws leave of
+      // what is behind them, negated (cleared to -1 where a dome shows
+      // through: pathtrace.comp lays the layer over the dome by it): a draw
+      // scales it by the share of the target its blend keeps, whatever alpha
+      // the draw itself writes or masks. An opaque draw leaves none (0), a
+      // blended layer one minus its alpha, an additive one all. (The game's
+      // own alpha writes left a translucent layer's pixels at -1 or below
+      // -.5, and the dome took its place: cs_militia's skybox panorama.)
+      const VkBlendFactor kept = !b.enabled || b.dst == VK_BLEND_FACTOR_ZERO ? VK_BLEND_FACTOR_ZERO
+                                 : b.dst == VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA || b.dst == VK_BLEND_FACTOR_SRC_ALPHA
+                                     ? VkBlendFactor(b.dst)
+                                     : VK_BLEND_FACTOR_ONE;
+      if (!b.enabled) {
+        blend.blendEnable = VK_TRUE;
+        blend.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+        blend.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO;
+        blend.colorBlendOp = VK_BLEND_OP_ADD;
+      }
+      blend.srcAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+      blend.dstAlphaBlendFactor = kept;
+      blend.alphaBlendOp = VK_BLEND_OP_ADD;
+      blend.colorWriteMask |= VK_COLOR_COMPONENT_A_BIT;
+    }
     const VkPipelineColorBlendStateCreateInfo blending = {.sType =
                                                               VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
         .attachmentCount = 1,

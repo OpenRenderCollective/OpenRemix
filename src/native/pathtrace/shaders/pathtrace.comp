@@ -3746,8 +3746,14 @@ void main() {
   vec3 color=opaque?emission+sparseScale*(primaryDirect+materialFactor(primary)*(indirect+local)):imageLoad(rawSky,pixel).rgb;
   pathDebugRecord(0,primary.p,primary.t,vec4(primary.n,primary.pbr?primary.rm.x:-1),
                   vec4(primary.color.rgb,dot(emission,vec3(.2126,.7152,.0722))),vec4(color,0));
-  // A dome shows where the sky layer drew nothing (alpha -1, see the sky raster clear).
-  if(!opaque&&frame.skyRadiance.w!=0&&imageLoad(rawSky,pixel).a<-.5)color=environmentRadiance(direction);
+  // A dome shows behind the sky layer: the layer's alpha is minus the share
+  // of the dome its draws left (the sky raster clears it to -1 and each draw
+  // scales it: raster/pipelines.cpp), and its colour was laid over the
+  // clear's, which the dome takes the place of.
+  if(!opaque&&frame.skyRadiance.w!=0) {
+    float left=-imageLoad(rawSky,pixel).a;
+    if(left>0)color+=(environmentRadiance(direction)-vec3(.025,.035,.055))*min(left,1.);
+  }
   if(primary.blended)color=vec3(0);
 #ifndef TEMPORAL
   // Raw diagnostics, before display transfer: distance / 16, or the combined
