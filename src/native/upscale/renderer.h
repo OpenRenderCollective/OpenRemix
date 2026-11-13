@@ -67,10 +67,14 @@ namespace remix::upscale {
     void initialize(VkPhysicalDevice physical, VkDevice device, uint32_t queueFamily, VkExtent2D render,
                     VkExtent2D display, Backend backend = Backend::Fsr31, std::shared_ptr<Ngx> ngx = {},
                     uint32_t quality = 1, uint32_t rrPreset = 0);
-    void configureComposite(VkRenderPass pass, VkImageView stableDepth, VkRenderPass tonemapPass = VK_NULL_HANDLE);
+    // viewEffects: the path tracer's per-pixel view effects (render resolution,
+    // RGBA16F; PathTracer::Gpu::viewEffects), read when composite is told they are valid.
+    void configureComposite(VkRenderPass pass, VkImageView stableDepth, VkRenderPass tonemapPass,
+                            VkImageView viewEffects);
     void selectFrame(uint32_t slot);
     // display: displayColor's (pathtrace/shaders/display.glsl).
-    void composite(VkCommandBuffer command, const scene::DisplayOutput &display, VkDescriptorSet post);
+    void composite(VkCommandBuffer command, const scene::DisplayOutput &display, VkDescriptorSet post,
+                   bool viewEffects = false);
     Input output() const;
     FrameGenerationInputs frameGenerationInputs() const;
     Input preparedDepth() const;

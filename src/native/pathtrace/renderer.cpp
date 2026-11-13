@@ -593,8 +593,8 @@ namespace remix {
       g.micromapLevelLimit = std::min(micromap.maxOpacity4StateSubdivisionLevel, scene::OpacityMicromap::maxLevel);
     }
 #undef LOAD
-    VkDescriptorSetLayoutBinding bindings[16] = {};
-    for (unsigned i = 0; i < 16; ++i) {
+    VkDescriptorSetLayoutBinding bindings[17] = {};
+    for (unsigned i = 0; i < 17; ++i) {
       bindings[i] = {.binding = i,
                      .descriptorCount = i == 6 ? textureLimit : 1u,
                      .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT |
@@ -608,12 +608,12 @@ namespace remix {
                                             : VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     }
     VkDescriptorSetLayoutCreateInfo setLayout = {
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, .bindingCount = 16, .pBindings = bindings};
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, .bindingCount = 17, .pBindings = bindings};
     check(pipeline::createDescriptorSetLayout(device, &setLayout, nullptr, &g.setLayout));
     VkDescriptorPoolSize poolSizes[] = {{VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 2},
                                         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1},
                                         {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1},
-                                        {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 11},
+                                        {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 12},
                                         {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, textureLimit}};
     for (auto &size : poolSizes)
       size.descriptorCount *= gpuFrameCount;
@@ -743,7 +743,7 @@ namespace remix {
     if (g.upscaler) {
       std::string failure;
       try {
-        g.upscaler->configureComposite(pass, g.primary[4]->view, g.tonemapPass);
+        g.upscaler->configureComposite(pass, g.primary[4]->view, g.tonemapPass, g.viewEffects->view);
       } catch (VkResult result) {
         if (preparing)
           throw;
