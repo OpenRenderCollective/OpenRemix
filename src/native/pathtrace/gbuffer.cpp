@@ -177,7 +177,10 @@ namespace remix {
                                               .renderPass = primaryPass[pass]};
         check(pipeline::createGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipeline, nullptr, &primaryPipeline[pass]));
         if (!pass) {
-          // Backdrop portals: the same pipeline with their fragment shader.
+          // Backdrop portals: the same pipeline with their fragment shader,
+          // writing depth only.
+          for (auto &attachment : blend)
+            attachment.colorWriteMask = 0;
           const trace::ShaderCode portal = trace::shader(trace::Stage::portalFrag);
           VkShaderModuleCreateInfo info{
               .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, .codeSize = portal.bytes, .pCode = portal.code};
@@ -253,14 +256,13 @@ namespace remix {
       // their space, ordered among themselves by their own depth (see
       // gbuffer.vert), and seen nearer than the world camera's near plane.
       // Backdrops (remixapi_InstanceInfoBackdropEXT) in the G-buffer, as a game
-      // draws its world over a 3D skybox: the world (phase 0) in all the depth
-      // range but a sliver at the far end; then the portals (phase 1), whose
-      // fragments, where nearer than the world, make the pixel the background
-      // again at the far depth; then the backdrop (phase 2) in the sliver,
-      // which only those pixels and the empty ones admit, ordered among itself.
-      // (The sliver has the precision of the whole range: reverse depth is
-      // stored in floating point.) The stable depth pass draws neither portals
-      // nor the backdrop behind them.
+      // draws its world over a 3D skybox: first the backdrop (phase 2) in a
+      // sliver at the far end of the depth range, ordered among itself; then
+      // the portals' depth (phase 1) in the rest of the range, which the world
+      // shares; then the world (phase 0), over the backdrop wherever it is not
+      // behind a portal. (The sliver has the precision of the whole range:
+      // reverse depth is stored in floating point.) The stable depth pass
+      // draws neither portals nor the backdrop behind them.
       constexpr float backdropDepth = 1.0f / 1048576;
       bool backdrops = false;
       for (size_t i = 0, all = primaryCount(); i < all && !backdrops; ++i)
@@ -369,7 +371,7 @@ namespace remix {
           check(vkEndCommandBuffer(viewModelBuffer));
         }
         if (backdrops && !pass) {
-          // The portals, then the backdrop, after every range of the world.
+          // The backdrop, then the portals, before every range of the world.
           VkCommandBuffer &backdropBuffer = recording.backdrop;
           if (!backdropBuffer) {
             const VkCommandBufferAllocateInfo allocate{.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
@@ -387,20 +389,20 @@ namespace remix {
                                                        VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT,
                                               .pInheritanceInfo = &inheritance};
           check(vkBeginCommandBuffer(backdropBuffer, &info));
-          record(backdropBuffer, 0, count, false, 1);
           record(backdropBuffer, 0, count, false, 2);
+          record(backdropBuffer, 0, count, false, 1);
           check(vkEndCommandBuffer(backdropBuffer));
-          secondaries.push_back(backdropBuffer);
+          secondaries.insert(secondaries.begin(), backdropBuffer);
         }
         if (viewModels)
           secondaries.push_back(viewModelBuffer);
         vkCmdExecuteCommands(command, uint32_t(secondaries.size()), secondaries.data());
       } else {
-        record(command, 0, count);
         if (backdrops && !pass) {
-          record(command, 0, count, false, 1);
           record(command, 0, count, false, 2);
+          record(command, 0, count, false, 1);
         }
+        record(command, 0, count);
         if (viewModels)
           record(command, 0, count, true);
       }

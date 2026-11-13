@@ -29,11 +29,6 @@ layout(location=13) flat in vec3 cornerNormal1;
 layout(location=14) flat in vec3 cornerNormal2;
 layout(location=15) in vec4 woundW;
 layout(location=16) in vec3 woundH;
-#ifdef BACKDROP_PORTAL
-// The portal's fragment leaves the far depth where it is the nearest surface
-// (reverse depth: less than its own).
-layout(depth_less) out float gl_FragDepth;
-#endif
 #ifdef STABLE_DEPTH
 layout(location=0) out float outDepth;
 #else
@@ -69,9 +64,8 @@ void main() {
   }
   Surface s=surfaces[draw.surfaceIndex];
   // remixapi_InstanceInfoBackdropEXT (state.w bits 27-28): recordPrimary
-  // draws the world, then the portals (BACKDROP_PORTAL), then the backdrop
-  // where a portal is the nearest surface. A portal and the backdrop behind
-  // portals have no stable depth.
+  // draws the backdrop, then the portals' depth (BACKDROP_PORTAL), then the
+  // world. A portal and the backdrop behind portals have no stable depth.
   uint backdrop=(s.state.w>>27)&3u;
 #if defined(STABLE_DEPTH)
   if(backdrop>=2u)discard;
@@ -94,13 +88,10 @@ void main() {
   vec4 nearPoint=frame.inverseCamera*vec4(projected.xy/projected.w,0,1);
   vec3 direction=position-nearPoint.xyz/nearPoint.w;
 #ifdef BACKDROP_PORTAL
-  // Its front only, as camera rays cross it (pathtrace.comp queryScene):
-  // where it is the nearest surface the pixel is the background again (what
-  // the world drew behind it is not seen) and the depth is the far plane's,
-  // for the backdrop drawn after it.
+  // Its front only, as camera rays cross it (pathtrace.comp queryScene): its
+  // depth alone (the pipeline writes no colour), over the backdrop drawn
+  // before it and in front of what the world then draws behind it.
   if(dot(normal,direction)<=0)discard;
-  outPosition=vec4(0);outNormal=vec4(0);outAlbedo=vec4(0);outPrevious=vec4(0);outEmission=vec4(0);outPbr=vec4(0);
-  gl_FragDepth=0;
   return;
 #endif
   if((s.state.w&4)==0&&dot(normal,direction)<=0)discard;
