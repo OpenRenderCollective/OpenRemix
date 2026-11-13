@@ -1065,6 +1065,11 @@ namespace remix {
                               "Each light's own volumetric radiance scale applies as well.");
           ui::SliderFloat("Emissive surfaces", &options.volumetricEmissiveScale, 0.f, 4.f, "%.2f");
           ui::SliderFloat("Sky", &options.volumetricSkyScale, 0.f, 4.f, "%.2f");
+          ui::Checkbox("Reflected light", &options.volumetricIndirect);
+          if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("The medium and lit particles also take the light the surfaces around them\n"
+                              "reflect (one more ray per cell sample).\n"
+                              "rtx.native.pathtrace.volumetricIndirect");
         }
         if (ui::Panel detail{"Detail"}) {
           ui::SliderFloat("Cell size (m)", &options.volumetricCellSize, .05f, 2.f, "%.2f");

@@ -50,6 +50,12 @@ coarser grid's value).
    with one neighbouring cell the sample point sees: where the sky enters
    through an opening most directions miss it, and a short average of it left
    single cells glowing.
+   With `volumetricIndirect` (default 1; **Reflected light**) a sample also
+   takes the light the surfaces around reflect: one more ray in a uniform
+   direction, and at the surface it meets the surface's colour times the
+   cells' own light half a cell off it. Reading the cells there instead of
+   lighting the surface puts every bounce in them over the frames, for one
+   ray a sample.
 2. **March**: when the transparency passes compose the frame, each camera ray
    takes `volumetricSteps` (12) jittered samples of the grids up to the first
    surface that is not a blended sheet, and the medium's light and
@@ -92,3 +98,13 @@ changes sooner and flickers more.
 - The medium is seen by camera rays only, in front of everything: reflections
   and what lies behind glass show none of their own.
 - Off with accumulation and debug views.
+
+## Lit sprite overlays
+
+A host's blended raster-only sprites marked `REMIXAPI_SPRITE_LIT_EXT`
+(`remix_native_ext.h`: smoke, dust) take their light from the same cells: the
+mean radiance incident where the sprite is, looked up per vertex, times the
+sprite's colour, exposed and tone mapped as the traced frame. While such
+sprites are drawn and no medium is marched the cells are kept for them alone:
+32 a side in four levels from cells of half a metre, a sixteenth of them relit
+each frame, whatever the quality settings above say.

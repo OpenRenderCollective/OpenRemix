@@ -207,6 +207,11 @@ namespace remix {
     // volumetricRadianceScale: the sun, lights (sphere, rect, disk, cylinder),
     // emissive surfaces, the sky.
     float volumetricSunScale = 1, volumetricLightScale = 1, volumetricEmissiveScale = 1, volumetricSkyScale = 1;
+    // The cells also take the light the surfaces around them reflect: one
+    // more ray a sample, to a surface whose own light is read from the cells
+    // (every bounce, over the frames). 0: the sun, the sky and the local
+    // lights alone.
+    bool volumetricIndirect = true;
     // The scattered light is held in volumetricLevels nested grids of
     // volumetricCells^3 cells around the camera, the first of
     // volumetricCellSize meters and each next one twice as coarse. A cell is

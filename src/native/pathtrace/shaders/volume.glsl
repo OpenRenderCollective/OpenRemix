@@ -287,6 +287,26 @@ void volumeUpdate(uint index) {
     if(any(greaterThan(radiance,vec3(0))))sky+=.5*radiance*shadow(p,direction);
   }
   light+=volumeLocal(p,size,state);
+  // The light the surfaces around reflect (volumeConfig.x bit 2): one uniform
+  // direction (its density cancels the phase, as the environment's). What
+  // the surface it meets sends back is its colour times the mean radiance
+  // incident there, read from the cells half a cell off it: the cells' own
+  // light, so every bounce is in it after some frames, for the one ray. (A
+  // diffuse surface under light from every side sends its colour times that
+  // mean; its emission is the local lights' above, the sky's a ray's that
+  // meets nothing.)
+  if((frame.volumeConfig.x&4u)!=0u) {
+    float z=1-2*lightRandom(state),angle=6.28318530718*lightRandom(state),r=sqrt(max(0,1-z*z));
+    vec3 direction=vec3(r*cos(angle),r*sin(angle),z);
+    // (A cell's footprint: the surface's colour from a coarse mip.)
+    coneWidth=.5*size;coneSpread=.5;
+    Hit hit=secondaryHit(p,direction);
+    coneSpread=-1;
+    if(hit.t<1e30&&!hit.blended) {
+      vec3 normal=dot(hit.ng,direction)>0?-hit.ng:hit.ng;
+      light+=clamp(hit.color.rgb,0,1)*volumeLookup(hit.p+normal*(.5*size));
+    }
+  }
   if(any(isnan(light))||any(isinf(light)))light=vec3(0);
   if(any(isnan(sky))||any(isinf(sky)))sky=vec3(0);
   float history=float(max(frame.volumeFrame.y,1u));

@@ -99,7 +99,8 @@ namespace remix {
     trace::g_volumeState.active = true;
     frame.volumeGrid = v.cells->address;
     // Bit 0: a medium is marched; bit 1: the cells are lit for overlays alone.
-    frame.volumeConfig[0] = marched ? 1 : 2;
+    // Bit 2: the cells take reflected light (volumetricIndirect).
+    frame.volumeConfig[0] = (marched ? 1 : 2) | (options.volumetricIndirect ? 4 : 0);
     overlay.volumeCells = v.cells->handle;
     std::copy_n(frame.eye, 3, overlay.volumeEye);
     overlay.volumeCellUnits = cellUnits;
