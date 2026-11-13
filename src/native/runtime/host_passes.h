@@ -142,6 +142,9 @@ namespace remix {
     // The frame's pass and framebuffer with that depth attached.
     void attachDepth(Target &frame, const Target &depth);
     void destroyTarget(Target &target);
+    // A target replaced (resized, reformatted) while frames in flight may
+    // still sample or write it: destroyed once they have finished.
+    void retireTarget(Target &target);
     const Layout &layout(const Shader &vertex, const Shader &fragment);
     VkPipeline pipeline(const Pass &pass, const Shader &vertex, const Shader &fragment, const Layout &layout,
                         VkRenderPass renderPass, bool depthOnly);
@@ -160,6 +163,7 @@ namespace remix {
     std::map<std::pair<remixapi_HostShaderHandleEXT, remixapi_HostShaderHandleEXT>, Layout> m_layouts;
     std::map<std::string, VkPipeline> m_pipelines;
     Slot m_slots[gpuFrameCount];
+    std::vector<std::pair<uint64_t, Target>> m_retired; // the frame each was replaced in
 #endif
     bool ready() const; // initialized, until destroy()
     uint64_t m_nextShader = 1;
