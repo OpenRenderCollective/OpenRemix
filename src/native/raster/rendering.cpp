@@ -343,10 +343,13 @@ namespace remix {
       // The captured depth is the world camera's.
       const uint32_t spriteFlags = !sprite
                                        ? 0u
-                                       : draw.spriteFlags & (draw.camera == REMIXAPI_CAMERA_TYPE_WORLD
-                                                                 ? 0x1ffu
-                                                                 : 0x1ffu & ~uint32_t(REMIXAPI_SPRITE_SOFT_DEPTH_EXT));
+                                       : draw.spriteFlags &
+                                             (draw.camera == REMIXAPI_CAMERA_TYPE_WORLD
+                                                  ? 0x3ffu
+                                                  : 0x3ffu & ~uint32_t(REMIXAPI_SPRITE_SOFT_DEPTH_EXT |
+                                                                       REMIXAPI_SPRITE_LIT_EXT));
       g.sprite.soft += (spriteFlags & REMIXAPI_SPRITE_SOFT_DEPTH_EXT) != 0;
+      g.sprite.commands += sprite;
       out.firstIndex = draw.firstIndex;
       out.count = draw.indexCount ? draw.indexCount : uint32_t(draw.surface->indices.size());
       out.baseVertex = draw.vertexOffset;
@@ -661,6 +664,7 @@ namespace remix {
         }
     }
     g.finishInfected();
+    g.finishSprite();
     m_profile.stagingAllocateMilliseconds = g.stagingAllocateMs;
     m_profile.stagingWriteMilliseconds = g.stagingWriteMs;
     m_profile.stagingBuffers = g.stagingBuffers;
@@ -741,6 +745,10 @@ namespace remix {
       if (layout != bound.layout || setCount != bound.setCount || sets[0] != bound.sets[0] ||
           (setCount == 2 && sets[1] != bound.sets[1])) {
         vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, setCount, sets, 0, nullptr);
+        // A sprite overlay's lighting (set 2).
+        if (draw.sprite && g.sprite.lightSet)
+          vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 2, 1, &g.sprite.lightSet, 0,
+                                  nullptr);
         bound.layout = layout;
         bound.setCount = setCount;
         bound.sets[0] = sets[0];

@@ -113,6 +113,9 @@ REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetFeatureAvailability(remixa
   }
 }
 
+// REMIXAPI_SPRITE_LIT_EXT is implemented (its presence is the answer).
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_SpriteLitSupportedEXT(void) { return REMIXAPI_ERROR_CODE_SUCCESS; }
+
 // remixapi_InstanceInfoBackdropEXT is implemented (its presence is the answer).
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_InstanceBackdropSupportedEXT(void) {
   return REMIXAPI_ERROR_CODE_SUCCESS;

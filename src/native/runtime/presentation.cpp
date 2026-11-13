@@ -1664,6 +1664,25 @@ namespace remix {
           pass.renderPass = m_resumePass;
           vkCmdBeginRenderPass(buffer, &pass, VK_SUBPASS_CONTENTS_INLINE);
         }
+        // LIT sprite overlays take their light from the path tracer's cells,
+        // shown as the composite shows the scene (as simulateParticles').
+        if (m_pathTracer && raster.cameraValid()) {
+          const auto lighting = m_pathTracer->overlayLighting();
+          SpriteLighting sprites;
+          sprites.worldFromClip = scene::inverse(raster.camera(REMIXAPI_CAMERA_TYPE_WORLD));
+          sprites.cells = lighting.volumeCells;
+          std::copy_n(lighting.volumeEye, 3, sprites.eye);
+          sprites.cellUnits = lighting.volumeCellUnits;
+          sprites.cellsPerSide = lighting.volumeCellsPerSide;
+          sprites.levels = lighting.volumeLevels;
+          const auto display = displayOutput();
+          sprites.hdr10 = display.hdr10 ? 1u : 0u;
+          sprites.peakNits = display.peakNits;
+          sprites.paperWhiteNits = display.paperWhiteNits;
+          sprites.exposure =
+              m_traceOptions.exposure * (m_traceOptions.autoExposure ? postProcessingStatistics().exposure : 1.f);
+          raster.setSpriteLighting(sprites);
+        }
         gpu::GpuScope overlay(buffer, "Raster overlay (HUD, effects)", m_swapchainExtent);
         raster.record(buffer, false, true, nullptr, {}, 0, sceneLayers, masks ? 1 : 0);
       } else if (!m_loading && m_forward) {

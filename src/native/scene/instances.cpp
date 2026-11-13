@@ -565,8 +565,8 @@ namespace remix {
         std::copy_n(d.spriteSoft, 3, draw.spriteSoft);
         // Frames and sequences come from the mesh's sprite vertices.
         if (surface->sprite.empty())
-          draw.spriteFlags &=
-              REMIXAPI_SPRITE_SOFT_DEPTH_EXT | REMIXAPI_SPRITE_MODULATE_EXT | REMIXAPI_SPRITE_MODULATE_FADE_EXT;
+          draw.spriteFlags &= REMIXAPI_SPRITE_SOFT_DEPTH_EXT | REMIXAPI_SPRITE_MODULATE_EXT |
+                              REMIXAPI_SPRITE_MODULATE_FADE_EXT | REMIXAPI_SPRITE_LIT_EXT;
         draw.model = models[i];
         draw.bones = d.bones;
         if (d.hasRasterState) {
@@ -834,7 +834,7 @@ namespace remix::scene {
     }
     if (const auto *sprite = static_cast<const remixapi_InstanceInfoSpriteEXT *>(
             extension(info.pNext, REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_SPRITE_EXT))) {
-      constexpr uint32_t known = 0x1ff;
+      constexpr uint32_t known = 0x3ff;
       const bool soft = (sprite->flags & REMIXAPI_SPRITE_SOFT_DEPTH_EXT) != 0;
       if ((sprite->flags & ~known) || !std::isfinite(sprite->softDistance) || !std::isfinite(sprite->softFadeStart) ||
           !std::isfinite(sprite->softFadeEnd) || (soft && !(sprite->softDistance > 0)))

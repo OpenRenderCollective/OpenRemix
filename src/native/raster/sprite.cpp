@@ -35,8 +35,18 @@ namespace remix {
     if (s.layout)
       pipeline::destroyPipelineLayout(device, s.layout, nullptr);
     s.layout = VK_NULL_HANDLE;
+    for (auto &pool : s.lightPools) {
+      if (pool)
+        vkDestroyDescriptorPool(device, pool, nullptr);
+      pool = VK_NULL_HANDLE;
+    }
+    s.lightSet = VK_NULL_HANDLE;
+    if (s.lightLayout)
+      pipeline::destroyDescriptorSetLayout(device, s.lightLayout, nullptr);
+    s.lightLayout = VK_NULL_HANDLE;
     s.failed = s.captured = false;
     s.soft = 0;
+    s.commands = 0;
   }
 
   bool RasterRenderer::Gpu::prepareSprite() {
@@ -45,12 +55,21 @@ namespace remix {
       return false;
     if (s.layout && s.vertex && s.fragment)
       return true;
+    if (!s.lightLayout) {
+      const VkDescriptorSetLayoutBinding bindings[] = {
+          {0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
+          {1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, nullptr}};
+      const VkDescriptorSetLayoutCreateInfo info = {
+          .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, .bindingCount = 2, .pBindings = bindings};
+      check(pipeline::createDescriptorSetLayout(device, &info, nullptr, &s.lightLayout));
+    }
     if (!s.layout) {
-      // Set 0 and the push constants as the raster layout; set 1: the depth.
-      const VkDescriptorSetLayout sets[] = {setLayout, setLayout};
+      // Set 0 and the push constants as the raster layout; set 1: the depth;
+      // set 2: the lighting (finishSprite).
+      const VkDescriptorSetLayout sets[] = {setLayout, setLayout, s.lightLayout};
       const VkPushConstantRange push = {VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(Push)};
       const VkPipelineLayoutCreateInfo info = {.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-                                               .setLayoutCount = 2,
+                                               .setLayoutCount = 3,
                                                .pSetLayouts = sets,
                                                .pushConstantRangeCount = 1,
                                                .pPushConstantRanges = &push};
@@ -66,6 +85,91 @@ namespace remix {
     module(s.vertex, spriteVertShader, sizeof(spriteVertShader));
     module(s.fragment, spriteFragShader, sizeof(spriteFragShader));
     return true;
+  }
+
+  // The frame's lighting set for its sprite commands, unlit: the frame's
+  // lighting comes after the commands are built (setSpriteLighting, once the
+  // path tracer has prepared its cells) and is written into the same set.
+  void RasterRenderer::Gpu::finishSprite() {
+    auto &s = sprite;
+    s.lightSet = VK_NULL_HANDLE;
+    if (!s.commands || !s.lightLayout)
+      return;
+    s.commands = 0;
+    // This slot's last frame has completed (prepare runs after its fence).
+    auto &pool = s.lightPools[frameIndex];
+    if (!pool) {
+      const VkDescriptorPoolSize sizes[] = {{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1},
+                                            {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1}};
+      const VkDescriptorPoolCreateInfo info = {.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+                                               .maxSets = 1,
+                                               .poolSizeCount = 2,
+                                               .pPoolSizes = sizes};
+      check(vkCreateDescriptorPool(device, &info, nullptr, &pool));
+    } else
+      check(vkResetDescriptorPool(device, pool, 0));
+    const VkDescriptorSetAllocateInfo allocation = {.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+                                                    .descriptorPool = pool,
+                                                    .descriptorSetCount = 1,
+                                                    .pSetLayouts = &s.lightLayout};
+    check(vkAllocateDescriptorSets(device, &allocation, &s.lightSet));
+    writeSpriteLighting({});
+  }
+
+  // The block, and the cells it names (the block again while it names none:
+  // the shader reads them only when the block says so).
+  void RasterRenderer::Gpu::writeSpriteLighting(const SpriteLighting &l) {
+    auto &s = sprite;
+    if (!s.lightSet)
+      return;
+    struct Block {
+      float worldFromClip[16];
+      float eye[4];       // the cells' eye; w: a cell of the first level (world units)
+      uint32_t config[4]; // lit, cells a side, levels, display bits (1: HDR10)
+      float display[4];   // exposure, peak nits, paper white nits
+    } block = {};
+    const bool lit = l.cells != VK_NULL_HANDLE && l.cellsPerSide && l.levels;
+    std::copy_n(l.worldFromClip.data(), 16, block.worldFromClip);
+    std::copy_n(l.eye, 3, block.eye);
+    block.eye[3] = l.cellUnits;
+    block.config[0] = lit;
+    block.config[1] = l.cellsPerSide;
+    block.config[2] = l.levels;
+    block.config[3] = l.hdr10;
+    block.display[0] = l.exposure;
+    block.display[1] = l.peakNits;
+    block.display[2] = l.paperWhiteNits;
+    auto parameters =
+        buffer(&block, sizeof(block), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    const VkDescriptorBufferInfo uniform = {parameters->buffer, parameters->offset, sizeof(block)};
+    const VkDescriptorBufferInfo cells =
+        lit ? VkDescriptorBufferInfo{l.cells, 0, VK_WHOLE_SIZE} : uniform;
+    const VkWriteDescriptorSet writes[] = {{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                                            .dstSet = s.lightSet,
+                                            .dstBinding = 0,
+                                            .descriptorCount = 1,
+                                            .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                                            .pBufferInfo = &uniform},
+                                           {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                                            .dstSet = s.lightSet,
+                                            .dstBinding = 1,
+                                            .descriptorCount = 1,
+                                            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                                            .pBufferInfo = &cells}};
+    vkUpdateDescriptorSets(device, 2, writes, 0, nullptr);
+    uploads.push_back(std::move(parameters));
+  }
+
+  bool RasterRenderer::litOverlays() const {
+    for (const auto &draw : draws())
+      if ((draw.spriteFlags & REMIXAPI_SPRITE_LIT_EXT) && draw.blend.enabled)
+        return true;
+    return false;
+  }
+
+  void RasterRenderer::setSpriteLighting(const SpriteLighting &lighting) {
+    if (m_gpu)
+      m_gpu->writeSpriteLighting(lighting);
   }
 
   bool RasterRenderer::wantsSceneDepth() const { return m_gpu && (m_gpu->sprite.soft != 0 || m_gpu->sprite.requested); }

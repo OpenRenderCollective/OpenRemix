@@ -96,7 +96,7 @@ vec3 volumeLookup(vec3 p) {
 // grow quadratically (the near medium counts most) and are jittered.
 void volumeMarch(vec3 origin,vec3 direction,float far,out vec3 inscatter,out float transmittance) {
   inscatter=vec3(0);transmittance=1;
-  if(frame.volumeConfig.x==0u||frame.volumeGrid==0)return;
+  if((frame.volumeConfig.x&1u)==0u||frame.volumeGrid==0)return;
   uint steps=max(frame.volumeFrame.z,1u);
   float reach=min(far,frame.volumeParams.y),jitter=random(),near=0;
   for(uint i=0;i<steps;++i) {

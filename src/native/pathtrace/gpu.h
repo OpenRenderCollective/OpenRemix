@@ -862,7 +862,9 @@ namespace remix {
       VkDeviceSize bytes = 0; // requested size of `cells`
       const char *inactiveReason = "not requested";
     } volume;
-    void configureVolume(VkCommandBuffer command, Frame &frame, const TraceOptions &options);
+    // litOverlays: the frame draws LIT sprite overlays, which the cells light
+    // whether or not a medium is marched.
+    void configureVolume(VkCommandBuffer command, Frame &frame, const TraceOptions &options, bool litOverlays);
     void recordVolume(VkCommandBuffer command);
     void recordSparse(VkCommandBuffer command, VkExtent2D extent);
     // Per-frame radiance cache from sparse paths (orca.cpp, orca.glsl).

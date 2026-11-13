@@ -1264,7 +1264,7 @@ namespace remix {
       frame.sheetResults = sheetResults->address;
     }
     configureSparse(command, frame, options, extent);
-    configureVolume(command, frame, options);
+    configureVolume(command, frame, options, resources.litOverlays());
     beginRayProfile(command, frame);
     beginPathInspector(command, frame);
     frame.config[2] = uint32_t(sequence++);

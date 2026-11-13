@@ -8,22 +8,34 @@ namespace remix {
   // medium scatters, in nested world-space grids around the camera. One buffer
   // holds every level's cells; an update pass relights a share of them each
   // frame and the transparency passes march camera rays through them.
-  void PathTracer::Gpu::configureVolume(VkCommandBuffer command, Frame &frame, const TraceOptions &options) {
+  void PathTracer::Gpu::configureVolume(VkCommandBuffer command, Frame &frame, const TraceOptions &options,
+                                        bool litOverlays) {
     auto &v = volume;
+    overlay.volumeCells = VK_NULL_HANDLE;
     frame.volumeGrid = 0;
     std::fill_n(frame.volumeConfig, 4, 0u);
     std::fill_n(frame.volumeFrame, 4, 0u);
     v.active = false;
     const auto medium = trace::volumeMedium(options, trace::gameFog());
-    v.inactiveReason = !options.volumetrics ? "not requested"
-                       : !medium.active     ? "the game sets no fog and the override is off"
+    // Without a medium the cells are still lit while sprite overlays take
+    // their light from them (REMIXAPI_SPRITE_LIT_EXT): nothing marches them.
+    const bool marched = options.volumetrics && medium.active;
+    v.inactiveReason = !marched && !litOverlays
+                           ? (!options.volumetrics ? "not requested" : "the game sets no fog and the override is off")
                        : options.accumulate ? "accumulation is on"
                        : frame.splitLocal[3] || frame.sun[3] != 0 || options.sharcDebug || options.debugView
                            ? "a debug view is on"
                        : v.pipelineFailed ? "its pass failed to compile"
                                           : nullptr;
-    const uint32_t cells = trace::volumeCells(options), levels = trace::volumeLevels(options);
-    const float cellMeters = std::clamp(options.volumetricCellSize, .02f, 16.f);
+    // For overlays alone the cells are few, large and seldom relit (a sixth
+    // of a megabyte, some thousands of samples a frame): a puff of smoke
+    // needs the light of the place it is in, not the medium's detail.
+    const bool overlaysOnly = !marched;
+    const uint32_t cells = overlaysOnly ? 32u : trace::volumeCells(options),
+                   levels = overlaysOnly ? 4u : trace::volumeLevels(options);
+    const float cellMeters = std::clamp(overlaysOnly ? std::max(options.volumetricCellSize, .5f)
+                                                     : options.volumetricCellSize,
+                                        .02f, 16.f);
     const float reachMeters = std::max(options.volumetricMaxDistance, cellMeters);
     trace::g_volumeState = {options.volumetrics,
                             false,
@@ -86,12 +98,18 @@ namespace remix {
     v.active = true;
     trace::g_volumeState.active = true;
     frame.volumeGrid = v.cells->address;
-    frame.volumeConfig[0] = 1;
+    // Bit 0: a medium is marched; bit 1: the cells are lit for overlays alone.
+    frame.volumeConfig[0] = marched ? 1 : 2;
+    overlay.volumeCells = v.cells->handle;
+    std::copy_n(frame.eye, 3, overlay.volumeEye);
+    overlay.volumeCellUnits = cellUnits;
+    overlay.volumeCellsPerSide = cells;
+    overlay.volumeLevels = levels;
     frame.volumeConfig[1] = cells;
     frame.volumeConfig[2] = levels;
-    frame.volumeConfig[3] = std::clamp(options.volumetricUpdateInterval, 1u, 64u);
+    frame.volumeConfig[3] = overlaysOnly ? 16u : std::clamp(options.volumetricUpdateInterval, 1u, 64u);
     frame.volumeFrame[0] = v.counter++;
-    frame.volumeFrame[1] = std::clamp(options.volumetricHistory, 1u, 256u);
+    frame.volumeFrame[1] = overlaysOnly ? 8u : std::clamp(options.volumetricHistory, 1u, 256u);
     frame.volumeFrame[2] = std::clamp(options.volumetricSteps, 1u, 64u);
     frame.volumeFrame[3] = reset;
     frame.volumeParams[0] = cellUnits;
@@ -130,7 +148,9 @@ namespace remix {
     bindTrace(command, v.update, layout, defaultFeatures);
     const uint32_t count = v.cellsPerSide * v.cellsPerSide * v.cellsPerSide * v.levels;
     vkCmdDispatch(command, (count + 1 + 63) / 64, 1, 1);
+    // (The vertex stage: LIT sprite overlays read the cells.)
     barrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
-            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
+            VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
   }
 } // namespace remix

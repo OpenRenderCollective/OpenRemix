@@ -4082,7 +4082,7 @@ void main() {
   // The sky is not at its geometry: the raster depth of a sky box's faces
   // drew the box into the medium, edges, corners and all.
   float far=1e30;
-  if(frame.volumeConfig.x!=0u||frame.cameraMedium.w>0) {
+  if((frame.volumeConfig.x&1u)!=0u||frame.cameraMedium.w>0) {
     float kind=frame.target.w!=0?imageLoad(primaryNormal,pixel).w:-1;
     if(kind>=32)kind-=32; // a screen camera's surface
     if(kind>=16)kind-=16; // a thin film
@@ -4093,7 +4093,7 @@ void main() {
       far=length(surface.xyz/surface.w-origin);
     }
   }
-  if(frame.volumeConfig.x!=0u) {
+  if((frame.volumeConfig.x&1u)!=0u) {
     volumeMarch(origin,direction,far,fogLight,fogTransmittance);
     transparent=fogLight+fogTransmittance*transparent;tint*=fogTransmittance;
   }

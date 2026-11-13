@@ -5,6 +5,18 @@
 #include <functional>
 
 namespace remix {
+  // What lights the frame's LIT sprite overlays (REMIXAPI_SPRITE_LIT_EXT): the
+  // path tracer's volumetric cells (PathTracer::OverlayLighting) and how the
+  // traced frame is shown. cells null: nothing is lit.
+  struct SpriteLighting {
+    scene::Matrix worldFromClip = scene::identity(); // the world camera's, inverted
+    VkBuffer cells = VK_NULL_HANDLE;
+    float eye[3] = {};
+    float cellUnits = 0;
+    uint32_t cellsPerSide = 0, levels = 0;
+    uint32_t hdr10 = 0;
+    float exposure = 1, peakNits = 0, paperWhiteNits = 0;
+  };
   class RasterRenderer : public NativeResources {
   public:
     RasterRenderer();
@@ -138,6 +150,11 @@ namespace remix {
     // attachment layout before and after) and re-enters a pass that loads
     // colour and depth. Without the capture those draws are hard-edged.
     bool wantsSceneDepth() const;
+    // LIT sprite overlays (REMIXAPI_SPRITE_LIT_EXT): whether the frame's
+    // draws hold any, and what lights them (before record(); a frame that
+    // sets none draws them as given).
+    bool litOverlays() const;
+    void setSpriteLighting(const SpriteLighting &lighting);
     void captureSceneDepth(VkCommandBuffer command);
     // Particles (particles/renderer.h) sample the same copy: after prepare(),
     // requestSceneDepth makes wantsSceneDepth true for the frame; once

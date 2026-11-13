@@ -452,7 +452,18 @@ namespace remix {
       uint32_t soft = 0;      // this frame's commands with SOFT_DEPTH
       bool requested = false; // particles sample the copy this frame
       bool captured = false;  // this frame's depth is in the copy
+      // LIT sprites: set 2, the frame's lighting block (SpriteLighting's
+      // values) and the path tracer's volumetric cells (the block itself
+      // while there are none). A set per frame slot, made by finishSprite.
+      VkDescriptorSetLayout lightLayout = VK_NULL_HANDLE;
+      VkDescriptorPool lightPools[gpuFrameCount] = {};
+      VkDescriptorSet lightSet = VK_NULL_HANDLE; // this frame's
+      uint32_t commands = 0;                     // this frame's sprite commands
     } sprite;
+    // After the frame's commands are built: the sprites' lighting set, and
+    // what is written into it (unlit, then the frame's: setSpriteLighting).
+    void finishSprite();
+    void writeSpriteLighting(const SpriteLighting &lighting);
     // The layout and shader modules; false when they cannot be created.
     bool prepareSprite();
     void destroySprite();

@@ -590,6 +590,19 @@ typedef struct remixapi_MeshInfoSpriteVerticesEXT {
 //                        brighten by more than k.
 //   MODULATE_FADE        with MODULATE: src = mix(1 / k, src, alpha), the
 //                        sprite fading to no effect with its alpha.
+//   LIT                  the colour (after everything above but MODULATE,
+//                        which it does not apply to) is taken for what the
+//                        sprite scatters of the light where it is: times the
+//                        mean radiance incident there from every direction
+//                        (the sun, the sky and the local lights, each
+//                        shadowed; the path tracer's volumetric cells, kept
+//                        for the sprites while no medium uses them), exposed
+//                        and tone mapped as the traced frame is. A sprite
+//                        that is a puff of smoke or dust is then as dark or
+//                        bright as the scene around it. Per vertex. Without
+//                        effect (the colour as given) while the scene is not
+//                        path traced or the cells are not ready, and on SKY
+//                        and VIEW_MODEL instances.
 // softDistance must be positive with SOFT_DEPTH. The frame and sequence flags
 // need a mesh with sprite vertices and are ignored without.
 #define REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_SPRITE_EXT ((remixapi_StructType)0x7fff1015)
@@ -603,6 +616,7 @@ typedef struct remixapi_MeshInfoSpriteVerticesEXT {
 #define REMIXAPI_SPRITE_SOFT_DEPTH_EXT 0x40u
 #define REMIXAPI_SPRITE_MODULATE_EXT 0x80u
 #define REMIXAPI_SPRITE_MODULATE_FADE_EXT 0x100u
+#define REMIXAPI_SPRITE_LIT_EXT 0x200u
 typedef struct remixapi_InstanceInfoSpriteEXT {
   remixapi_StructType sType;
   const void *pNext;
@@ -1342,6 +1356,10 @@ typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_GetTracingStatisticsEXT)(
     remixapi_TracingStatisticsEXT *statistics);
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL
 remixapi_GetBackendCapabilitiesEXT(remixapi_BackendCapabilitiesEXT *capabilities);
+// REMIXAPI_SPRITE_LIT_EXT is implemented (a runtime without it refuses the
+// flag as an invalid argument): returns SUCCESS.
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_SpriteLitSupportedEXT)(void);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_SpriteLitSupportedEXT(void);
 // remixapi_InstanceInfoBackdropEXT is implemented: returns SUCCESS.
 typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_InstanceBackdropSupportedEXT)(void);
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_InstanceBackdropSupportedEXT(void);

@@ -108,7 +108,7 @@ layout(set=0,binding=3,std140) uniform Frame {
   uvec4 sparseConfig; // sparse rendering active, threshold levels passed of 256, reserved
   uint64_t volumeGrid; // volumetrics (volume.glsl): the cells of every level
   float animationTime, upAxis; // seconds (wrapped), for scrolling maps; the world's up axis (0 x, 1 y, 2 z)
-  uvec4 volumeConfig; // active, cells per side, levels, update interval (frames)
+  uvec4 volumeConfig; // bit 0 a medium is marched, bit 1 the cells are lit for overlays alone; cells per side, levels, update interval (frames)
   uvec4 volumeFrame; // update counter, history samples, march steps, reset
   vec4 volumeParams; // smallest cell (world units), march distance, scattered light scale, base height
   vec4 volumeMedium; // scattering albedo; extinction per world unit

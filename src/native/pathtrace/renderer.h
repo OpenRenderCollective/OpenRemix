@@ -126,6 +126,13 @@ namespace remix {
       uint32_t cloudShadowSlices = 0;
       uint32_t upAxis = 2;
       VkAccelerationStructureKHR scene = VK_NULL_HANDLE;
+      // The volumetric cells (volume.glsl), for LIT sprite overlays: the
+      // buffer (null: none this frame), the grids' eye, a first-level cell
+      // in world units, cells a side and levels.
+      VkBuffer volumeCells = VK_NULL_HANDLE;
+      float volumeEye[3] = {};
+      float volumeCellUnits = 0;
+      uint32_t volumeCellsPerSide = 0, volumeLevels = 0;
     };
     OverlayLighting overlayLighting() const;
     upscale::Statistics upscalingStatistics() const;

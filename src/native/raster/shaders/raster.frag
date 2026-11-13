@@ -19,6 +19,16 @@ layout(location=5) flat in vec2 depthScale;
 // The frame's opaque depth (RasterRenderer::captureSceneDepth), or any
 // texture while SOFT_DEPTH is off.
 layout(set=1,binding=0) uniform sampler2D sceneDepth;
+// LIT: the mean radiance incident at the sprite (raster.vert; x below zero:
+// not lit) and how the traced frame is shown.
+layout(location=6) in vec3 spriteLight;
+layout(set=2,binding=0) uniform SpriteLighting {
+  mat4 worldFromClip;
+  vec4 eye;
+  uvec4 config; // w: display bits (1: HDR10)
+  vec4 display; // exposure, peak nits, paper white nits
+} lighting;
+#include "../../pathtrace/shaders/display.glsl"
 #endif
 #ifdef INFECTED
 #include "infected.glsl"
@@ -75,7 +85,7 @@ void main() {
   vec4 texel = albedoTexel(uv);
 #endif
 #ifdef SPRITE
-  uint sprite = (draw.state.w >> 5) & 0x1ffu;
+  uint sprite = (draw.state.w >> 5) & 0x3ffu;
   if ((sprite & 7u) != 0u) {
     vec4 second = albedoTexel(frame1.xy);
     float w = frame1.z;
@@ -108,6 +118,12 @@ void main() {
   vec4 a = combineColor((s & 3) | ((s >> 10) & 4), arg((s >> 2) & 3, texel, vertex), arg((s >> 4) & 3, texel, vertex));
   vec4 b = combine(((s >> 6) & 3) | ((s >> 11) & 4), arg((s >> 8) & 3, texel, vertex), arg((s >> 10) & 3, texel, vertex));
   result = vec4(a.rgb, b.a) * draw.tint;
+  if ((sprite & 0x200u) != 0u && spriteLight.x >= 0.0) {
+    // What it scatters of the light around it, shown as the composite shows
+    // the scene (its exposure and tone mapping); the encoding below follows.
+    result.rgb = linearColor(displayColor(result.rgb * spriteLight * lighting.display.x, lighting.config.w & 1u,
+                                          lighting.display.y, lighting.display.z));
+  }
   if ((sprite & 0x40u) != 0u) {
     float scene = depthScale.y / (texelFetch(sceneDepth, ivec2(gl_FragCoord.xy), 0).r - depthScale.x);
     float soft = abs(scene - 1.0 / gl_FragCoord.w) * draw.factor.x;
