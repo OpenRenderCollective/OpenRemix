@@ -258,6 +258,13 @@ uint pixelCut=0u,cameraCut=0u;
 // and unseen clusters of the surfaces that ask (cameraCulled); every other
 // ray meets them whole.
 bool cameraRay=false;
+// remixapi_InstanceInfoBackdropEXT (a surface's role: state.w bits 27-28).
+// backdropPortal: the nearest portal front a query has passed since cameraHit
+// reset it (a portal is never a hit). backdropQuery: set for the query of a
+// camera ray that crossed a portal before any surface of the world, which
+// meets backdrop (roles 1 and 2) and nothing else; any other query passes the
+// backdrop behind portals (role 2).
+float backdropPortal=1e30;bool backdropQuery=false;
 // A pixel whose raster primary is a sheet seen on a screen or through ray
 // portals (primarySurface): its line of sight past the sheet is the screen
 // camera's or the teleported one, so its camera rays (cameraHit) see what the
@@ -369,11 +376,18 @@ void queryScene(accelerationStructureEXT scene, vec3 origin, vec3 direction, ino
   profileRay(0);
   uvGradX=uvGradY=vec2(0); // candidates test coverage at the finest mip
   float wound=0,woundT=-1;
-  rayQueryInitializeEXT(query, scene, traceFlags()|((cameraCut!=0u||cameraRay)&&(frame.target.z&8u)==0u?gl_RayFlagsNoOpaqueEXT:gl_RayFlagsNoneEXT), traceMask, origin, cameraRay?minimum:max(minimum,contactGap(x.t)), direction, x.t);
+  rayQueryInitializeEXT(query, scene, traceFlags()|((cameraCut!=0u||cameraRay||backdropQuery)&&(frame.target.z&8u)==0u?gl_RayFlagsNoOpaqueEXT:gl_RayFlagsNoneEXT), traceMask, origin, cameraRay?minimum:max(minimum,contactGap(x.t)), direction, x.t);
   while (rayQueryProceedEXT(query)) {
     if (rayQueryGetIntersectionTypeEXT(query,false)!=gl_RayQueryCandidateIntersectionTriangleEXT) continue;
     profileRay(1);
     Surface s=surfaces[rayQueryGetIntersectionInstanceCustomIndexEXT(query,false)+rayQueryGetIntersectionGeometryIndexEXT(query,false)];
+    uint backdrop=(s.state.w>>27)&3u;
+    if(backdrop==3u) {
+      if(!backdropQuery&&rayQueryGetIntersectionFrontFaceEXT(query,false))
+        backdropPortal=min(backdropPortal,rayQueryGetIntersectionTEXT(query,false));
+      continue;
+    }
+    if(backdropQuery?backdrop==0u:backdrop==2u)continue;
     if(cameraCut!=0u&&cutSurface(s.state.w,cameraCut))continue;
     if(cameraRay&&cameraCulled(s.state.w,rayQueryGetIntersectionFrontFaceEXT(query,false),origin,direction,rayQueryGetIntersectionTEXT(query,false)))continue;
     s.indices=s.traceIndices;
@@ -700,15 +714,23 @@ Hit closest(vec3 origin,vec3 direction) { return closest(origin,direction,1e30,t
 // A view model (pathConfig.w bit 8) is in front of everything along the
 // camera's lines of sight: met first on its own, whatever the scene has
 // nearer (it reaches into walls); the path it starts sees view models.
+// A backdrop portal (remixapi_InstanceInfoBackdropEXT) crossed before the
+// scene's surface, or with none: the line is traced once more for the
+// backdrop alone (a third pass), and what it finds, or the sky, is the hit.
 // (One closest() in a loop: it is inlined wherever cameraHit is.)
 Hit cameraHit(vec3 origin,vec3 direction) {
   cameraCut=pixelCut;cameraRay=frame.cameraCull.x!=0u&&!screenSheets;passOriginPaint=false;
-  Hit hit;
-  for(uint pass=(frame.pathConfig.w&0x100u)!=0u&&!screenSheets?0u:1u;pass<2u;++pass) {
+  Hit hit;backdropPortal=1e30;
+  for(uint pass=(frame.pathConfig.w&0x100u)!=0u&&!screenSheets?0u:1u;pass<3u;++pass) {
+    if(pass==2u) {
+      if(screenSheets||!(backdropPortal<hit.t))break;
+      backdropQuery=true;
+    }
     traceMask=pass==0u?viewModelInstanceMask:screenSheets?cameraMask|reflectionOnlyInstanceMask:cameraMask;
     hit=closest(origin,direction);
     if(pass==0u&&hit.t<1e30){viewModelPath=true;break;}
   }
+  backdropQuery=false;
   traceMask=cameraMask;cameraCut=0u;cameraRay=false;passOriginPaint=true;return hit;
 }
 // Bounce rays may ignore blended layers (frame.pathConfig.w; see

@@ -113,6 +113,11 @@ REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetFeatureAvailability(remixa
   }
 }
 
+// remixapi_InstanceInfoBackdropEXT is implemented (its presence is the answer).
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_InstanceBackdropSupportedEXT(void) {
+  return REMIXAPI_ERROR_CODE_SUCCESS;
+}
+
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetBackendCapabilitiesEXT(remixapi_BackendCapabilitiesEXT *out) {
   if (!out || out->structSize != sizeof(*out))
     return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;

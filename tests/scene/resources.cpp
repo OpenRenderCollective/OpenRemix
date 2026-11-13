@@ -44,6 +44,41 @@ namespace {
       require(!r.draws().back().cameraOnly, "Instances without the extension are met by every ray");
       r.finishFrame();
     }
+    {
+      // remixapi_InstanceInfoBackdropEXT: the role reaches the draw; a portal
+      // and the backdrop behind one are the camera's only and not rasterized.
+      remixapi_InstanceInfoBackdropEXT role{};
+      role.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_BACKDROP_EXT;
+      auto backdrop = draw;
+      backdrop.pNext = &role;
+      role.role = REMIXAPI_INSTANCE_BACKDROP_GEOMETRY_EXT;
+      r.drawInstance(backdrop);
+      require(r.draws().back().backdrop == 1 && !r.draws().back().cameraOnly && r.draws().back().rasterVisible,
+              "Backdrop geometry is a scene instance like any other");
+      r.finishFrame();
+      for (uint32_t hidden : {REMIXAPI_INSTANCE_BACKDROP_BEHIND_EXT, REMIXAPI_INSTANCE_BACKDROP_PORTAL_EXT}) {
+        role.role = hidden;
+        r.drawInstance(backdrop);
+        require(r.draws().back().backdrop == hidden && r.draws().back().cameraOnly &&
+                    !r.draws().back().rasterVisible,
+                "A backdrop portal and the backdrop behind it are camera-only and not rasterized");
+        r.finishFrame();
+      }
+      for (uint32_t invalid : {0u, 4u}) {
+        role.role = invalid;
+        bool refused = false;
+        try {
+          r.drawInstance(backdrop);
+        } catch (...) {
+          refused = true;
+        }
+        require(refused, "An unknown backdrop role is an invalid argument");
+        r.finishFrame();
+      }
+      r.drawInstance(draw);
+      require(r.draws().back().backdrop == 0, "Instances without the extension have no backdrop role");
+      r.finishFrame();
+    }
     r.drawInstance(draw);
 
     r.destroyMesh(mesh);

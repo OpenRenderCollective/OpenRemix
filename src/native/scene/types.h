@@ -497,6 +497,9 @@ namespace remix {
       // remixapi_InstanceInfoCameraOnlyEXT: only camera rays (and theirs past
       // portals and screens) meet it, as a ray portal's opening.
       bool cameraOnly = false;
+      // remixapi_InstanceInfoBackdropEXT role (0: none; 1 backdrop geometry, 2
+      // backdrop met only by camera rays past a portal, 3 a portal).
+      uint8_t backdrop = 0;
       // remixapi_InstanceInfoWoundCutEXT (null: none): cut away for every ray
       // and raster pass, evaluated at the mesh's own (bind pose) positions.
       std::shared_ptr<const WoundCut> wound;

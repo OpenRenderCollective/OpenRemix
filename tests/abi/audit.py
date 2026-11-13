@@ -42,7 +42,7 @@ if notice.exists():
     for line in notice.read_text(encoding='utf-8').splitlines():
         assert line.strip() in notices, 'ThirdPartyLicenses.txt lacks NUMOS NOTICE line: ' + line
 required_exports = (root / 'tests/abi/exports.txt').read_text().splitlines()
-required_exports += ['remixapi_GetReconstructionDiagnosticsEXT', 'remixapi_GetBackendCapabilitiesEXT', 'remixapi_GetTracingStatisticsEXT', 'remixapi_GetFramePerformanceEXT', 'remixapi_GetFrameBreakdownEXT', 'remixapi_GetGpuPassTimingsEXT',
+required_exports += ['remixapi_GetReconstructionDiagnosticsEXT', 'remixapi_InstanceBackdropSupportedEXT', 'remixapi_GetBackendCapabilitiesEXT', 'remixapi_GetTracingStatisticsEXT', 'remixapi_GetFramePerformanceEXT', 'remixapi_GetFrameBreakdownEXT', 'remixapi_GetGpuPassTimingsEXT',
              'remixapi_GetLocalLightGuidingStatisticsEXT', 'remixapi_GetLocalLightStatisticsEXT',
              'remixapi_GetLocalLightSetStatisticsEXT', 'remixapi_GetCameraCullingStatisticsEXT',
              'remixapi_GetShadowStatisticsEXT', 'remixapi_GetSharcStatisticsEXT',

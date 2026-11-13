@@ -556,6 +556,7 @@ namespace remix {
         draw.cutGroup = d.cutGroup;
         draw.cameraCull = d.cameraCull;
         draw.cameraOnly = d.cameraOnly;
+        draw.backdrop = d.backdrop;
         draw.wound = wound;
         draw.rasterOrder = d.rasterOrder;
         draw.texcoord = d.texcoord;
@@ -808,6 +809,22 @@ namespace remix::scene {
     }
     if (extension(info.pNext, REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_CAMERA_ONLY_EXT))
       d.cameraOnly = true;
+    if (const auto *backdrop = static_cast<const remixapi_InstanceInfoBackdropEXT *>(
+            extension(info.pNext, REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_BACKDROP_EXT))) {
+      if (backdrop->role < REMIXAPI_INSTANCE_BACKDROP_GEOMETRY_EXT ||
+          backdrop->role > REMIXAPI_INSTANCE_BACKDROP_PORTAL_EXT)
+        throw invalid;
+      // A scene instance like any other; sources and masked overlays are not
+      // in the scene. A portal or a backdrop behind one is the camera's only,
+      // and no raster pass draws it.
+      if (!d.halo && !d.maskSource && !d.maskGroup) {
+        d.backdrop = uint8_t(backdrop->role);
+        if (d.backdrop >= REMIXAPI_INSTANCE_BACKDROP_BEHIND_EXT) {
+          d.cameraOnly = true;
+          d.rasterVisible = false;
+        }
+      }
+    }
     if (const auto *order = static_cast<const remixapi_InstanceInfoRasterOrderEXT *>(
             extension(info.pNext, REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_RASTER_ORDER_EXT))) {
       // Raster-only overlays that are not masked: a traced instance has no

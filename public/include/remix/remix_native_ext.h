@@ -291,6 +291,42 @@ typedef struct remixapi_InstanceInfoCameraOnlyEXT {
   const void *pNext;
 } remixapi_InstanceInfoCameraOnlyEXT;
 
+// Optional InstanceInfo pNext: a backdrop the camera sees behind the world, as
+// a game draws a 3D skybox first and its world over it, whatever lies where
+// once the skybox is placed around the world at the world's scale. Three
+// roles:
+//   PORTAL    An opening onto the backdrop (a sky brush's face): no ray meets
+//             it. A camera ray that crosses its front face (the face a
+//             doubleSided = 0 instance shows) before any surface of the world
+//             shows the nearest GEOMETRY or BEHIND surface along its whole
+//             line instead, in front of the opening or past it, or the sky
+//             where there is none: what lies past the opening that is not
+//             backdrop (the rest of the world, which the game's sky brush
+//             hides) is not seen.
+//   GEOMETRY  Backdrop that is in the scene like any instance (it lies where
+//             the world is not): every ray meets it.
+//   BEHIND    Backdrop that lies inside the world's own space (the skybox's
+//             ground crossing a room): met by camera rays that crossed a
+//             PORTAL only, as above; no other ray meets it (it casts no
+//             shadow and lights nothing).
+// Camera rays are those of remixapi_InstanceInfoCameraCullingEXT. The line of
+// sight past a mirror, through a screen or a ray portal, and bounce, shadow
+// and light rays take no part: they meet GEOMETRY only. Path-traced
+// instances; the raster and Forward+ backends draw GEOMETRY as usual and
+// leave PORTAL and BEHIND instances out. An unknown role is an invalid
+// argument. A runtime without the extension would draw PORTAL and BEHIND
+// instances as geometry: a host sends them only where the runtime exports
+// remixapi_InstanceBackdropSupportedEXT (which returns SUCCESS).
+#define REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_BACKDROP_EXT ((remixapi_StructType)0x7fff1078)
+#define REMIXAPI_INSTANCE_BACKDROP_GEOMETRY_EXT 1u
+#define REMIXAPI_INSTANCE_BACKDROP_BEHIND_EXT 2u
+#define REMIXAPI_INSTANCE_BACKDROP_PORTAL_EXT 3u
+typedef struct remixapi_InstanceInfoBackdropEXT {
+  remixapi_StructType sType;
+  const void *pNext;
+  uint32_t role; // REMIXAPI_INSTANCE_BACKDROP_*_EXT
+} remixapi_InstanceInfoBackdropEXT;
+
 // Optional TextureInfo pNext. With `generate` set and a single supplied level
 // (mipLevels = 1), the runtime completes the texture with a box-filtered mip
 // chain (sRGB colors averaged in linear space). For hosts that capture only a
@@ -1306,6 +1342,9 @@ typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_GetTracingStatisticsEXT)(
     remixapi_TracingStatisticsEXT *statistics);
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL
 remixapi_GetBackendCapabilitiesEXT(remixapi_BackendCapabilitiesEXT *capabilities);
+// remixapi_InstanceInfoBackdropEXT is implemented: returns SUCCESS.
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_InstanceBackdropSupportedEXT)(void);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_InstanceBackdropSupportedEXT(void);
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL
 remixapi_GetPreparationStatisticsEXT(remixapi_PreparationStatisticsEXT *statistics);
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetTracingStatisticsEXT(remixapi_TracingStatisticsEXT *statistics);

@@ -17,6 +17,10 @@ namespace remix {
       primaryFramebuffer[i] = VK_NULL_HANDLE;
       primaryPass[i] = VK_NULL_HANDLE;
     }
+    if (primaryPipeline[2]) {
+      pipeline::destroyPipeline(device, primaryPipeline[2], nullptr);
+      primaryPipeline[2] = VK_NULL_HANDLE;
+    }
     if (primaryLayout)
       pipeline::destroyPipelineLayout(device, primaryLayout, nullptr);
     primaryLayout = VK_NULL_HANDLE;
@@ -172,6 +176,19 @@ namespace remix {
                                               .layout = primaryLayout,
                                               .renderPass = primaryPass[pass]};
         check(pipeline::createGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipeline, nullptr, &primaryPipeline[pass]));
+        if (!pass) {
+          // Backdrop portals: the same pipeline with their fragment shader.
+          const trace::ShaderCode portal = trace::shader(trace::Stage::portalFrag);
+          VkShaderModuleCreateInfo info{
+              .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, .codeSize = portal.bytes, .pCode = portal.code};
+          VkShaderModule module = VK_NULL_HANDLE;
+          check(pipeline::createShaderModule(device, &info, nullptr, &module));
+          stages[1].module = module;
+          const auto result =
+              pipeline::createGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipeline, nullptr, &primaryPipeline[2]);
+          pipeline::destroyShaderModule(device, module, nullptr);
+          check(result);
+        }
       } catch (...) {
         for (auto module : modules)
           if (module)
@@ -235,10 +252,28 @@ namespace remix {
       // on a cleared depth buffer: in front of the scene whatever reaches into
       // their space, ordered among themselves by their own depth (see
       // gbuffer.vert), and seen nearer than the world camera's near plane.
-      auto record = [&](VkCommandBuffer target, size_t first, size_t last, bool viewModels = false) {
-        vkCmdSetViewport(target, 0, 1, &viewport);
+      // Backdrops (remixapi_InstanceInfoBackdropEXT) in the G-buffer, as a game
+      // draws its world over a 3D skybox: the world (phase 0) in all the depth
+      // range but a sliver at the far end; then the portals (phase 1), whose
+      // fragments, where nearer than the world, make the pixel the background
+      // again at the far depth; then the backdrop (phase 2) in the sliver,
+      // which only those pixels and the empty ones admit, ordered among itself.
+      // (The sliver has the precision of the whole range: reverse depth is
+      // stored in floating point.) The stable depth pass draws neither portals
+      // nor the backdrop behind them.
+      constexpr float backdropDepth = 1.0f / 1048576;
+      bool backdrops = false;
+      for (size_t i = 0, all = primaryCount(); i < all && !backdrops; ++i)
+        backdrops = primaryDraw(i).backdrop != 0;
+      auto record = [&](VkCommandBuffer target, size_t first, size_t last, bool viewModels = false, unsigned phase = 0) {
+        VkViewport ranged = viewport;
+        if (backdrops && !pass && !viewModels) {
+          ranged.minDepth = phase == 2 ? 0 : backdropDepth;
+          ranged.maxDepth = phase == 2 ? backdropDepth * 0.999f : 1;
+        }
+        vkCmdSetViewport(target, 0, 1, &ranged);
         vkCmdSetScissor(target, 0, 1, &scissor);
-        vkCmdBindPipeline(target, VK_PIPELINE_BIND_POINT_GRAPHICS, primaryPipeline[pass]);
+        vkCmdBindPipeline(target, VK_PIPELINE_BIND_POINT_GRAPHICS, primaryPipeline[phase == 1 ? 2 : pass]);
         vkCmdBindDescriptorSets(target, VK_PIPELINE_BIND_POINT_GRAPHICS, primaryLayout, 0, 1, &set, 0, nullptr);
         if (viewModels) {
           const VkClearAttachment depth{
@@ -250,10 +285,15 @@ namespace remix {
           const auto &draw = primaryDraw(i);
           if ((pass && draw.blended) || draw.viewModel != viewModels || draw.reflectionOnly)
             continue;
+          if (pass ? draw.backdrop >= 2
+                   : backdrops && !viewModels &&
+                         (phase == 0 ? draw.backdrop != 0 : phase == 1 ? draw.backdrop != 3 : draw.backdrop != 1 && draw.backdrop != 2))
+            continue;
+          // (Bit 2: the depth range is a part of the whole; see gbuffer.frag worldDepth.)
           PrimaryPush push{draw.model,
                            {pass ? 0.f : temporalFrame.jitter[0], pass ? 0.f : temporalFrame.jitter[1]},
                            draw.surfaceIndex,
-                           pass | uint32_t(draw.viewModel) << 1,
+                           pass | uint32_t(draw.viewModel) << 1 | (backdrops && !pass && !viewModels ? 4u : 0u),
                            primaryReverseDepth};
           vkCmdPushConstants(target, primaryLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                              sizeof(push), &push);
@@ -327,11 +367,40 @@ namespace remix {
           check(vkBeginCommandBuffer(viewModelBuffer, &info));
           record(viewModelBuffer, 0, count, true);
           check(vkEndCommandBuffer(viewModelBuffer));
-          secondaries.push_back(viewModelBuffer);
         }
+        if (backdrops && !pass) {
+          // The portals, then the backdrop, after every range of the world.
+          VkCommandBuffer &backdropBuffer = recording.backdrop;
+          if (!backdropBuffer) {
+            const VkCommandBufferAllocateInfo allocate{.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+                                                       .commandPool = recording.pools[0],
+                                                       .level = VK_COMMAND_BUFFER_LEVEL_SECONDARY,
+                                                       .commandBufferCount = 1};
+            check(vkAllocateCommandBuffers(device, &allocate, &backdropBuffer));
+          }
+          const VkCommandBufferInheritanceInfo inheritance{.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO,
+                                                           .renderPass = primaryPass[pass],
+                                                           .subpass = 0,
+                                                           .framebuffer = primaryFramebuffer[pass]};
+          const VkCommandBufferBeginInfo info{.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+                                              .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT |
+                                                       VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT,
+                                              .pInheritanceInfo = &inheritance};
+          check(vkBeginCommandBuffer(backdropBuffer, &info));
+          record(backdropBuffer, 0, count, false, 1);
+          record(backdropBuffer, 0, count, false, 2);
+          check(vkEndCommandBuffer(backdropBuffer));
+          secondaries.push_back(backdropBuffer);
+        }
+        if (viewModels)
+          secondaries.push_back(viewModelBuffer);
         vkCmdExecuteCommands(command, uint32_t(secondaries.size()), secondaries.data());
       } else {
         record(command, 0, count);
+        if (backdrops && !pass) {
+          record(command, 0, count, false, 1);
+          record(command, 0, count, false, 2);
+        }
         if (viewModels)
           record(command, 0, count, true);
       }

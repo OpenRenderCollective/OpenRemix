@@ -13,7 +13,7 @@ namespace remix::forward::ray {
         return true;
       const bool coverage = bake::sourceOverCoverage(draw.blend);
       const bool boundary = draw.material->bakeSmoothBoundary && (!draw.blend.enabled || coverage);
-      return draw.traced() && draw.blend.mask == 15 && (coverage || boundary || bake::modulatingDecal(draw)) &&
+      return draw.traced() && draw.backdrop < 2 && draw.blend.mask == 15 && (coverage || boundary || bake::modulatingDecal(draw)) &&
              (!draw.material->transmission || draw.material->bakeSmoothBoundary) && !draw.cutGroup &&
              !draw.wireframe && draw.depth && !draw.viewModel && !draw.spriteFlags &&
              (draw.material->normalEncoding != 5 || draw.material->bakeSmoothBoundary) &&

@@ -343,6 +343,7 @@ namespace remix::trace {
     bool blended = false;
     bool viewModel = false;      // drawn after the scene, in front of it (recordPrimary)
     bool reflectionOnly = false; // not in the G-buffer (Draw::reflectionOnly)
+    uint8_t backdrop = 0;        // remixapi_InstanceInfoBackdropEXT role (recordPrimary)
   };
   // Per-material surface fields; the texture slots are frame indices.
   struct MaterialSlots {
@@ -1060,11 +1061,16 @@ namespace remix::trace {
         const auto &material = *surface.draw.material;
         return surface.draw.cameraOnly || (material.rayPortal && !material.rayPortalOverOpaque);
       });
+      // A backdrop portal or a backdrop behind one (remixapi_InstanceInfoBackdropEXT):
+      // every candidate is tested, the portal never a hit and the backdrop one
+      // only for a camera ray past a portal (pathtrace.comp queryScene).
+      const bool backdropTested = std::any_of(instance.begin(), instance.end(),
+                                              [](const auto &surface) { return surface.draw.backdrop >= 2; });
       input.decal =
           std::all_of(instance.begin(), instance.end(), [](const auto &surface) { return surface.draw.decal; });
       // A wound cut is tested at every candidate: never opaque in traversal.
       const bool wounded = recordOut && draw.wound;
-      input.noOpaque = wounded;
+      input.noOpaque = wounded || backdropTested;
       write(sceneCursor, model.data(), sizeof(model));
       write(sceneCursor, &view.fingerprint, sizeof(view.fingerprint));
       write(sceneCursor, &draw.instanceId, sizeof(draw.instanceId));
@@ -1152,7 +1158,9 @@ namespace remix::trace {
                          uint32_t(material.rayPortal != 0 && material.rayPortalOverOpaque) << 26 |
                          // remixapi_InstanceInfoCameraCullingEXT (bits 9-10): camera rays
                          // skip its back faces / its parts in clusters the camera cannot see.
-                         uint32_t(surface.cameraCull & 3u) << 9;
+                         uint32_t(surface.cameraCull & 3u) << 9 |
+                         // remixapi_InstanceInfoBackdropEXT role (bits 27-28).
+                         uint32_t(draw.backdrop & 3u) << 27;
         if (draw.classification == 0) {
           write(staticCursor, value.tint, sizeof(value.tint));
           write(staticCursor, value.factor, sizeof(value.factor));
@@ -1161,7 +1169,7 @@ namespace remix::trace {
           write(staticCursor, &entry.sheet, sizeof(entry.sheet));
         }
         *primaryOut++ = {model,     uint32_t(next), uint32_t(surface.surface->indices.size()),
-                         b.enabled, draw.viewModel, draw.reflectionOnly};
+                         b.enabled, draw.viewModel, draw.reflectionOnly, draw.backdrop};
         do {
           const auto &group = geometry.groups.at(groupIndex++);
           value.triangleMap = group.triangleMap ? geometry.input->address + group.triangleMap : 0;

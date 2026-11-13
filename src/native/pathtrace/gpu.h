@@ -663,7 +663,9 @@ namespace remix {
     std::unique_ptr<Image> primary[7];
     VkRenderPass primaryPass[2] = {};
     VkFramebuffer primaryFramebuffer[2] = {};
-    VkPipeline primaryPipeline[2] = {};
+    // 0, 1: the G-buffer's and the stable depth's; 2: the G-buffer's for
+    // backdrop portals (remixapi_InstanceInfoBackdropEXT).
+    VkPipeline primaryPipeline[3] = {};
     VkPipelineLayout primaryLayout{};
     bool primaryInitialized = false;
     void createPrimary(VkFormat depthFormat, VkImageView depthView);
@@ -675,6 +677,7 @@ namespace remix {
       std::vector<VkCommandPool> pools;
       std::vector<VkCommandBuffer> buffers; // two per pool: primary passes 0 and 1
       VkCommandBuffer viewModel[2] = {};    // the view model's draws (from the first pool)
+      VkCommandBuffer backdrop = {};        // the G-buffer's portals and backdrop (from the first pool)
       bool reset = false;                   // pools reset for this frame
     } primaryRecording;
     void destroyPrimaryRecording(PrimaryRecording &recording);

@@ -58,7 +58,7 @@ namespace remix::forward {
   float sliceDepth(uint32_t slice, const DepthRange &range);
   inline bool acceptsOpaque(const scene::Draw &d) {
     // Share ownership of a draw with the compatibility renderer explicitly.
-    return d.traced() && !d.blend.enabled && !d.material->translucent && !d.material->transmission &&
+    return d.traced() && d.backdrop < 2 && !d.blend.enabled && !d.material->translucent && !d.material->transmission &&
            !d.decal && !d.cutGroup && !d.wireframe && d.depth && (!d.depthWriteOverride || d.depthWrite) &&
            !d.spriteFlags && d.material->normalEncoding != 5 && d.blend.mask == 15 &&
            (d.depthCompare == 1 || d.depthCompare == 3);

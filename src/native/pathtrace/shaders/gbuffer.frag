@@ -29,6 +29,11 @@ layout(location=13) flat in vec3 cornerNormal1;
 layout(location=14) flat in vec3 cornerNormal2;
 layout(location=15) in vec4 woundW;
 layout(location=16) in vec3 woundH;
+#ifdef BACKDROP_PORTAL
+// The portal's fragment leaves the far depth where it is the nearest surface
+// (reverse depth: less than its own).
+layout(depth_less) out float gl_FragDepth;
+#endif
 #ifdef STABLE_DEPTH
 layout(location=0) out float outDepth;
 #else
@@ -44,7 +49,8 @@ layout(location=5) out vec4 outPbr;
 // the near plane is clamped to it).
 vec3 position;
 float worldDepth() {
-  if((draw.stableDepth&2u)==0u)return gl_FragCoord.z;
+  // (Bit 2: the pass draws into a part of the depth range: recordPrimary.)
+  if((draw.stableDepth&6u)==0u)return gl_FragCoord.z;
   return clamp(dot(draw.reverseDepth,vec4(position,1))/(frame.camera*vec4(position,1)).w,0,1);
 }
 void main() {
@@ -62,6 +68,16 @@ void main() {
     if(area>0)position-=normal*(dot(position-corner0,normal)/area);
   }
   Surface s=surfaces[draw.surfaceIndex];
+  // remixapi_InstanceInfoBackdropEXT (state.w bits 27-28): recordPrimary
+  // draws the world, then the portals (BACKDROP_PORTAL), then the backdrop
+  // where a portal is the nearest surface. A portal and the backdrop behind
+  // portals have no stable depth.
+  uint backdrop=(s.state.w>>27)&3u;
+#if defined(STABLE_DEPTH)
+  if(backdrop>=2u)discard;
+#elif !defined(BACKDROP_PORTAL)
+  if(backdrop==3u)discard;
+#endif
   // A CUT instance is not seen where its mask group covers. The G-buffer is
   // sampled at the jittered position; stable depth at the output pixel.
   if(frame.cutConfig.x!=0u&&(s.state.w&0x3f0000u)!=0u) {
@@ -77,6 +93,16 @@ void main() {
   vec4 projected=frame.camera*vec4(position,1);
   vec4 nearPoint=frame.inverseCamera*vec4(projected.xy/projected.w,0,1);
   vec3 direction=position-nearPoint.xyz/nearPoint.w;
+#ifdef BACKDROP_PORTAL
+  // Its front only, as camera rays cross it (pathtrace.comp queryScene):
+  // where it is the nearest surface the pixel is the background again (what
+  // the world drew behind it is not seen) and the depth is the far plane's,
+  // for the backdrop drawn after it.
+  if(dot(normal,direction)<=0)discard;
+  outPosition=vec4(0);outNormal=vec4(0);outAlbedo=vec4(0);outPrevious=vec4(0);outEmission=vec4(0);outPbr=vec4(0);
+  gl_FragDepth=0;
+  return;
+#endif
   if((s.state.w&4)==0&&dot(normal,direction)<=0)discard;
   // A wound cut (remixapi_InstanceInfoWoundCutEXT): a half missing at any
   // vertex interpolates above zero there.
