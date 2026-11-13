@@ -124,7 +124,7 @@ float volumeEmitterScale(LightEmitter light) {
 vec3 volumeCandidate(LightEmitter light,vec3 p,float size,inout uint state,out vec3 endpoint) {
   endpoint=p;
   vec3 toCentre=light.positionRadius.xyz-p;
-  float falloff=localFalloff(dot(toCentre,toCentre));
+  float falloff=emitterFalloff(light,dot(toCentre,toCentre));
   if(falloff==0)return vec3(0);
   float floor2=.25*size*size,fraction;
   if(light.radiance.w!=0) {

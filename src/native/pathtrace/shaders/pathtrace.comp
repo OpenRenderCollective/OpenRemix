@@ -2914,7 +2914,7 @@ float movedLightEstimate(LightEmitter light,Hit hit) {
   float radius=light.positionRadius.w,sinMax2=min(1,radius*radius/distance2);
   float oneMinusCos=sinMax2/(1+sqrt(max(0,1-sinMax2)));
   return localLuminance(light.radiance.rgb)*emitterShaping(light,-direction)*2*oneMinusCos
-      *max(0,dot(hit.n,direction))*localFalloff(distance2)*frame.localScale.x;
+      *max(0,dot(hit.n,direction))*emitterFalloff(light,distance2)*frame.localScale.x;
 }
 // A surface moving on its own (a door swinging) changes the light it
 // receives; its reprojected history describes it at its old place and NRD

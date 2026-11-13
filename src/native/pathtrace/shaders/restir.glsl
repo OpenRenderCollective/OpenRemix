@@ -55,7 +55,7 @@ vec3 restirContribution(Hit hit,LightEmitter light,vec2 uv,out vec3 specular,out
   float cosS=dot(hit.n,w);
   float cosX=dot(p.n,-w);if(p.twoSided)cosX=abs(cosX);
   if(cosS<=0||cosX<=0)return vec3(0);
-  float attenuation=localFalloff(dot(light.positionRadius.xyz-hit.p,light.positionRadius.xyz-hit.p));
+  float attenuation=emitterFalloff(light,dot(light.positionRadius.xyz-hit.p,light.positionRadius.xyz-hit.p));
   vec3 scale=emitterRadiance(light,-w)*(cosS*cosX*attenuation/(3.14159265359*d2))*frame.localScale.x;
   vec3 physical=materialResponse(hit,w,specular);
   if(light.radiance.w!=0&&pathEmissiveSpecular(hit)){physical-=specular;specular=vec3(0);} // a triangle: paths find it
@@ -75,7 +75,7 @@ bool restirReaches(vec3 p,vec3 n,LightEmitter light,vec2 uv) {
   vec3 w=d*inversesqrt(d2);
   float cosX=dot(q.n,-w);if(q.twoSided)cosX=abs(cosX);
   return dot(n,w)>0&&cosX>0&&emitterShaping(light,-w)>0&&
-         localFalloff(dot(light.positionRadius.xyz-p,light.positionRadius.xyz-p))>0;
+         emitterFalloff(light,dot(light.positionRadius.xyz-p,light.positionRadius.xyz-p))>0;
 }
 float restirTarget(Hit hit,LightEmitter light,vec2 uv) {
   vec3 specular,endpoint;float distance;

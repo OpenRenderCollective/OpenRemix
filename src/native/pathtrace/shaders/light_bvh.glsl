@@ -30,6 +30,17 @@ float localFalloff(float distance2) {
   float t=clamp((distance2*frame.localScale.w-.5625)*(16.0/7.0),0,1);
   return reach<=0?1:(1-t)*(1-t)*(1+2*t);
 }
+// A sphere light's own range (remixapi_LightInfoRangeEXT, corners[1].x; 0:
+// none): (1 - (d/range)^4)^2, zero at and beyond it.
+float rangeWindow(LightEmitter light,float distance2) {
+  float range=light.radiance.w==0?light.corners[1].x:0;
+  if(range<=0)return 1;
+  float x=distance2/(range*range);
+  float w=clamp(1-x*x,0,1);
+  return w*w;
+}
+// The frame's falloff (localFalloff) and the emitter's range together.
+float emitterFalloff(LightEmitter light,float distance2) { return localFalloff(distance2)*rangeWindow(light,distance2); }
 float lightWeight(LightNode node,vec3 p,vec3 n) {
   vec3 halfSize=.5*(node.maximum.xyz-node.minimumPower.xyz);
   vec3 delta=.5*(node.maximum.xyz+node.minimumPower.xyz)-p;
@@ -322,7 +333,7 @@ LocalCandidate localCandidate(LightEmitter light,Hit hit,inout uint state,bool a
   LocalCandidate result;result.physical=result.specular=vec3(0);result.endpoint=hit.p;result.distance=0;
   vec3 delta=light.positionRadius.xyz-hit.p;
   float distance2=dot(delta,delta),radius=light.positionRadius.w;
-  float attenuation=localFalloff(distance2);
+  float attenuation=emitterFalloff(light,distance2);
   if(attenuation==0)return result;
   bool inside=distance2<=radius*radius;
   vec3 axis=distance2>1e-20?delta*inversesqrt(distance2):hit.n;
@@ -727,7 +738,7 @@ vec3 localLighting(Hit hit,uint state,uint samples,out float lightDistance,bool 
     } else {
       vec3 delta=light.positionRadius.xyz-hit.p;
       float distance2=dot(delta,delta),radius=light.positionRadius.w;
-      float attenuation=localFalloff(distance2);
+      float attenuation=emitterFalloff(light,distance2);
       if(attenuation==0)continue;
       bool inside=distance2<=radius*radius;
       vec3 axis=distance2>1e-20?delta*inversesqrt(distance2):hit.n;
