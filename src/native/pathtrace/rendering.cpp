@@ -2363,7 +2363,7 @@ namespace remix {
                    uint32_t(g.falseColorView),
                    g.displayExtent.width,
                    g.displayExtent.height,
-                   uint32_t(g.display.hdr10),
+                   g.display.mode(),
                    g.display.peakNits,
                    g.display.paperWhiteNits};
             static_assert(sizeof(push) <= featuresOffset);
@@ -2463,7 +2463,7 @@ namespace remix {
              uint32_t(g.falseColorView),
              g.displayExtent.width,
              g.displayExtent.height,
-             uint32_t(g.display.hdr10),
+             g.display.mode(),
              g.display.peakNits,
              g.display.paperWhiteNits};
       static_assert(sizeof(push) <= featuresOffset);

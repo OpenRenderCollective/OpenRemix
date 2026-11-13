@@ -82,11 +82,16 @@ namespace remix {
   }
 
   scene::DisplayOutput RemixNativeRuntime::displayOutput() const {
-    if (!m_gpu || !m_gpu->hdr.active)
-      return {};
     const auto &settings = frameSettings();
+    scene::DisplayOutput display;
+    display.prism = settings.trace.prism;
+    if (!m_gpu || !m_gpu->hdr.active)
+      return display;
     const auto nits = HdrNits{settings.hdrPeakNits, settings.hdrPaperWhiteNits, settings.hdrUiNits}.clamped();
-    return {true, nits.peak, nits.paperWhite};
+    display.hdr10 = true;
+    display.peakNits = nits.peak;
+    display.paperWhiteNits = nits.paperWhite;
+    return display;
   }
 
   void RemixNativeRuntime::scaleHdrUi(void *renderEncoder, bool before) {

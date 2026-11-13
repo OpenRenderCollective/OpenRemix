@@ -316,6 +316,7 @@ namespace remix::config {
         TRACE(blueNoiseShadows, 0, 1);
         TRACE(blueNoiseLocalLights, 0, 1);
         TRACE(blueNoiseSky, 0, 1);
+        TRACE(prism, 0, 1);
         TRACE(autoExposure, 0, 1);
         TRACE(exposure, .05, 8);
         TRACE(autoExposureTarget, .02, .6);

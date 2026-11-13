@@ -39,7 +39,8 @@ vec3 tonemap(vec3 color) {
   color = postColor(color, gl_FragCoord.xy / sky.target.xy);
   // Share the path tracer's tone curve and HDR working-space encoding.
   if (display.hdr10 != 0u)
-    return displayColor(color, displayHdr10, display.peakNits, display.paperWhiteNits);
+    return displayColor(color, displayHdr10 | (display.prism != 0u ? 0u : displayNoPrism), display.peakNits,
+                        display.paperWhiteNits);
   if (display.prism != 0u) color = prismToneMap(color, 1.0);
   if (display.gamma22 != 0u && (display.encodeOutput != 0u || display.hardwareSrgb != 0u)) {
     color = gammaEncodeSafe(color, 2.2);

@@ -381,8 +381,9 @@ int main(int argc, char **argv) {
     auto config = [&](const char *key, const char *value) {
       ok(api.SetConfigVariable((std::string("rtx.native.pathtrace.") + key).c_str(), value));
     };
-    require(api.SetConfigVariable("rtx.native.pathtrace.prism", "0") == REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS,
-            "The Prism tone curve can be turned off");
+    // Prism is optional (clipped output when off); the checks below use it.
+    ok(api.SetConfigVariable("rtx.native.pathtrace.prism", "0"));
+    ok(api.SetConfigVariable("rtx.native.pathtrace.prism", "1"));
     require(api.SetConfigVariable("rtx.native.pathtrace.gamma22", "0") == REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS,
             "The gamma 2.2 output encode can be turned off");
     config("sharc", "0");

@@ -19,6 +19,7 @@ namespace remix {
     bool dlssRayReconstructionPresetOverride = false;
     uint32_t dlssRayReconstructionPreset = 5;
     uint32_t dlssQuality = 3;
+    bool prism = true; // prism tonemapping (scene/display.h), else clipped
     bool autoExposure = true, bloom = true;
     float exposure = .98f, autoExposureTarget = .2f, autoExposureSpeed = 2;
     float autoExposureCentre = .75f, autoExposureMinEv = -16.3f, autoExposureMaxEv = 3.1f;
