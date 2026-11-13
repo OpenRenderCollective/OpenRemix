@@ -1094,9 +1094,11 @@ vec3 diffuseDirection(vec3 n) {
 // the sky opens a portal the ray passes (portalTeleport), and the portal keeps
 // directions (a move and a scale, as a window onto a model of the place), the
 // shadow ray goes on from the partner: what lights the far side lights
-// through it. shadow() does this for the sun and sky rays of every vertex. A
-// portal that turns directions would show the sun elsewhere; its own
-// material blocks.
+// through it. shadow() and sunVisibility() do this for the sun and sky rays of
+// every vertex, once their own test finds the ray blocked: a ray that reaches
+// the sky met no portal over an opaque surface (those block), so only blocked
+// rays pay for the nearest-surface query. A portal that turns directions would
+// show the sun elsewhere; its own material blocks.
 bool sunThroughPortal(inout vec3 origin,vec3 direction) {
 #ifdef TEMPORAL
   uint saved=traceMask;traceMask=shadowMask();
@@ -1111,19 +1113,22 @@ bool sunThroughPortal(inout vec3 origin,vec3 direction) {
   return false;
 #endif
 }
-// Moves origin past the portals the ray toward the sun or sky meets first.
-void throughPortals(inout vec3 origin,vec3 direction) {
-  if(frame.rayPortalConfig.w!=0u)
-    for(uint i=0u;i<min(frame.rayPortalConfig.z,8u);++i)
-      if(!sunThroughPortal(origin,direction))break;
-}
+// The portals a blocked ray toward the sun or sky may still pass.
+uint sunPortalsLeft() { return frame.rayPortalConfig.w!=0u?min(frame.rayPortalConfig.z,8u):0u; }
 vec3 shadow(vec3 origin,vec3 direction) {
-  throughPortals(origin,direction);
-  vec3 transmission=vec3(1);
-  for (uint layer=0;layer<32;++layer) {
+  // One query site for the layers of every leg (each inlined copy is a set of
+  // queries): a blocked leg whose first surface opens a portal starts over
+  // from its partner.
+  vec3 start=origin,transmission=vec3(1);
+  uint portalsLeft=sunPortalsLeft();
+  for (uint layer=0;layer<32+8;++layer) {
     VisibilityHit hit=shadowEarlyOut?earlyVisibilityHit(origin,direction,1e30,8u):visibilityHit(origin,direction,true);
-    if (hit.blocked) return vec3(0);
-    if (hit.t==1e30) return transmission;
+    if (hit.t==1e30&&!hit.blocked) return transmission;
+    if (hit.blocked) {
+      if (portalsLeft==0u||!sunThroughPortal(start,direction)) return vec3(0);
+      --portalsLeft;origin=start;transmission=vec3(1);
+      continue;
+    }
     transmission*=hit.transmission;
     origin=offsetRay(hit.p,-hit.n);
   }
@@ -1186,12 +1191,19 @@ vec3 sunVisibility(Hit receiver,ivec2 pixel,out float blockerDistance) {
   // product of at most 31 sheets. Early-out layers keep that result.
   if(shadowEarlyOut)return transmission*shadow(origin,direction);
 #endif
-  throughPortals(origin,direction);
-  for(uint layer=0;layer<32;++layer) {
+  // As shadow(): a blocked leg whose first surface opens a portal starts over
+  // from its partner (the blocker distances are the last leg's).
+  vec3 start=origin,cloud=transmission;
+  uint portalsLeft=sunPortalsLeft();
+  for(uint layer=0;layer<32+8;++layer) {
     VisibilityHit hit=visibilityHit(origin,direction,false);
     if(hit.t==1e30)return transmission;
     distance+=hit.t;
-    if(hit.blocked){blockerDistance=min(distance,65000);return vec3(0);}
+    if(hit.blocked) {
+      if(portalsLeft==0u||!sunThroughPortal(start,direction)){blockerDistance=min(distance,65000);return vec3(0);}
+      --portalsLeft;origin=start;transmission=cloud;distance=0;blockerDistance=65504;
+      continue;
+    }
     vec3 tint=hit.transmission;
     if(any(lessThan(tint,vec3(.999))))blockerDistance=min(blockerDistance,min(distance,65000));
     transmission*=tint;
