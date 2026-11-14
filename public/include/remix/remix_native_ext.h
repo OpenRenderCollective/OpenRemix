@@ -95,7 +95,10 @@ typedef struct remixapi_MaterialDirectSpecularEXT {
 // only tints its colour, and its normal is kept. Of stacked paint, the nearest
 // with a finish gives it. Where triangles of one such instance overlap, they
 // tint once, by the darkest of them per channel (one film, not stacked coats:
-// stains batched into one mesh). Without effect on other materials.
+// stains batched into one mesh). With remixapi_MaterialIridescenceEXT, the
+// paint's film (its strength, index and thickness, flow included) coats the
+// receiver's reflection too, as oil on a floor; structural applies to the
+// paint's own colour only. Without effect on other materials.
 #define REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_PAINT_FINISH_EXT ((remixapi_StructType)0x7fff1079)
 typedef struct remixapi_MaterialInfoPaintFinishEXT {
   remixapi_StructType sType;
