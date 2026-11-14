@@ -34,14 +34,15 @@ vec3 prismToneMap(vec3 color, float peak){
 
 const uint displaySdr = 0u;
 const uint displayHdr10 = 1u;
+// Or'd into `display`: clipped at the peak rather than prism tonemapped
+// (rtx.native.pathtrace.prism off).
+const uint displayNoPrism = 4u;
 
 vec3 displayColor(vec3 color, uint display, float peakNits, float paperWhiteNits){
-  if (display == displaySdr){
-    color = prismToneMap(color, 1.0);
-  }
-  if (display == displayHdr10){
-    color = prismToneMap(color, peakNits / paperWhiteNits);
-  }
+  bool prism = (display & displayNoPrism) == 0u;
+  display &= ~displayNoPrism;
+  const float peak = display == displayHdr10 ? peakNits / paperWhiteNits : 1.0;
+  color = prism ? prismToneMap(color, peak) : clamp(color, vec3(0), vec3(peak));
 
   return gammaEncodeSafe(color, 2.2);
 }

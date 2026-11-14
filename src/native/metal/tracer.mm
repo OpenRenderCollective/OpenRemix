@@ -2016,7 +2016,7 @@ namespace remix::metal {
              uint32_t(g.falseColorView),
              g.configuration.displayWidth,
              g.configuration.displayHeight,
-             uint32_t(display.hdr10),
+             display.mode(),
              display.peakNits,
              display.paperWhiteNits};
       [encoder setRenderPipelineState:g.composite[i]];

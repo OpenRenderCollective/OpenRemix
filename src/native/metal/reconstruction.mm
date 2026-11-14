@@ -329,7 +329,7 @@ kernel void extractRoughness(texture2d<float, access::read> normalRoughness [[te
     const struct {
       uint32_t display;
       float peakNits, paperWhiteNits;
-    } settings{uint32_t(display.hdr10), display.peakNits, display.paperWhiteNits};
+    } settings{display.mode(), display.peakNits, display.paperWhiteNits};
     [encoder setFragmentBytes:&settings length:sizeof(settings) atIndex:library(Stage::reconstructFrag).push];
     [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
   }

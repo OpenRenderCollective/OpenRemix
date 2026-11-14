@@ -54,9 +54,9 @@ void main() {
   // Saturation and contrast: on the displayed SDR colour, as a game's screen
   // shader sees its camera's image; on the exposed linear colour for HDR.
   const bool effected=effects.w>0&&(effects.y!=1||effects.z!=0);
-  if(effected&&settings.display!=0u)color=viewColor(color,effects);
+  if(effected&&(settings.display&1u)!=0u)color=viewColor(color,effects);
   color=displayColor(color,settings.display,settings.peakNits,settings.paperWhiteNits);
-  if(effected&&settings.display==0u)color=viewColor(clamp(color,0,1),effects);
+  if(effected&&(settings.display&1u)==0u)color=viewColor(clamp(color,0,1),effects);
   result=vec4(color,1);
   gl_FragDepth=imageLoad(stableDepth,pixel).r;
 }

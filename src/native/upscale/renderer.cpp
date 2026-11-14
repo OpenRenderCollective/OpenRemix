@@ -601,7 +601,7 @@ namespace remix::upscale {
       uint32_t display;
       float peakNits, paperWhiteNits;
       uint32_t viewEffects;
-    } settings{uint32_t(display.hdr10), display.peakNits, display.paperWhiteNits, uint32_t(viewEffects)};
+    } settings{display.mode(), display.peakNits, display.paperWhiteNits, uint32_t(viewEffects)};
     vkCmdPushConstants(command, g.compositeLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(settings), &settings);
     vkCmdDraw(command, 3, 1, 0, 0);
   }

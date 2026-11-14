@@ -67,7 +67,7 @@ namespace remix {
     inputs.upAxis = m_traceOptions.volumetricUpAxis < 3 ? m_traceOptions.volumetricUpAxis : m_particleUpAxis;
     // Shown as the composite shows the scene (displayColor).
     const auto display = displayOutput();
-    inputs.display[0] = display.hdr10 ? 1u : 0u;
+    inputs.display[0] = display.mode();
     std::memcpy(&inputs.display[1], &display.peakNits, sizeof(float));
     std::memcpy(&inputs.display[2], &display.paperWhiteNits, sizeof(float));
     if (m_pathTracer && m_backend != 0) {
