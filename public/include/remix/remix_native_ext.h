@@ -28,6 +28,20 @@ typedef struct remixapi_LightInfoForwardCutoffEXT {
   float distance;
 } remixapi_LightInfoForwardCutoffEXT;
 
+// Optional sphere light pNext: the distance from its centre beyond which it
+// lights nothing in the path tracer, in scene units (a game light's range, as
+// rasterizers give their lights). Its light fades out smoothly towards it, by
+// (1 - (d / range)^4)^2: 88% kept at half the range, 12% at 90%, none at it.
+// Zero leaves its reach unbounded. Forward+ keeps its own
+// (remixapi_LightInfoForwardCutoffEXT). A negative or non-finite range is an
+// invalid argument.
+#define REMIXAPI_STRUCT_TYPE_LIGHT_INFO_RANGE_EXT ((remixapi_StructType)0x7fff107B)
+typedef struct remixapi_LightInfoRangeEXT {
+  remixapi_StructType sType;
+  const void* pNext;
+  float range;
+} remixapi_LightInfoRangeEXT;
+
 // Optional pNext on opaque MaterialInfo. Nonzero roughness/metalness constants
 // or a roughness/metalness/normal map automatically select EON + GGX. Completely
 // zero-initialized legacy parameters retain Lambert shading. This override also

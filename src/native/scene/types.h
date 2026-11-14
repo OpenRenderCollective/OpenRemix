@@ -435,6 +435,7 @@ namespace remix {
       uint64_t group = 0;
       uint32_t rank = 0;
       float forwardCutoff = 0; // explicit Forward+ cutoff, in scene units
+      float range = 0;         // remixapi_LightInfoRangeEXT: path-traced reach, in scene units (0: unbounded)
       bool operator==(const SphereLight &) const = default;
     };
     struct DomeLight {

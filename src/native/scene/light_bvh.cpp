@@ -73,6 +73,7 @@ namespace remix::scene {
       // for a profile; in shaping, the leaf's shares overwrote both slots,
       // which then lit every light with the first profile and cookie.)
       if (!light.triangle) {
+        e.corners[1][0] = light.range; // remixapi_LightInfoRangeEXT (light_bvh.glsl rangeWindow)
         e.corners[2][0] = float(light.ies);
         e.corners[2][1] = float(light.cookie);
         if (light.cookie) {
@@ -89,7 +90,7 @@ namespace remix::scene {
     Key keyOf(const SphereLight &light) { return {light.triangle, light.group, light.rank, light.id}; }
     bool sameGeometry(const SphereLight &a, const SphereLight &b) {
       bool same = a.coneCos == b.coneCos && a.softness == b.softness && a.focus == b.focus && a.ies == b.ies &&
-                  a.cookie == b.cookie && a.cookieTan == b.cookieTan &&
+                  a.cookie == b.cookie && a.cookieTan == b.cookieTan && a.range == b.range &&
                   std::equal(a.cookieUp, a.cookieUp + 3, b.cookieUp) &&
                   std::equal(a.direction, a.direction + 3, b.direction) && a.radius == b.radius &&
                   std::equal(a.position, a.position + 3, b.position);
