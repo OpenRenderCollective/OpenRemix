@@ -48,6 +48,20 @@ typedef struct remixapi_MaterialDirectSpecularEXT {
   remixapi_Bool enabled;
 } remixapi_MaterialDirectSpecularEXT;
 
+// Optional pNext on an opaque MaterialInfo drawn as multiplicative paint (an
+// instance in a decal category whose remixapi_InstanceInfoBlendEXT blends
+// DST_COLOR * ZERO or ZERO * SRC_COLOR): where the paint covers its receiver,
+// the receiver takes the paint's roughness and metalness (its constants and
+// maps) in place of its own, as under a wet film (blood, oil); the paint still
+// only tints its colour, and its normal is kept. Of stacked paint, the nearest
+// with a finish gives it. Without effect on other materials.
+#define REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_PAINT_FINISH_EXT ((remixapi_StructType)0x7fff1079)
+typedef struct remixapi_MaterialInfoPaintFinishEXT {
+  remixapi_StructType sType;
+  const void *pNext;
+  remixapi_Bool enabled;
+} remixapi_MaterialInfoPaintFinishEXT;
+
 // Optional MaterialInfo pNext. Keep the visible emissive color/map while
 // suppressing generated area lights, e.g. when an explicit analytic light
 // already represents the source. Absent/zero preserves emissive lighting.

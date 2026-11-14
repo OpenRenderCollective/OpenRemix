@@ -374,6 +374,9 @@ Intersection wavefrontReceiver;
 uint peelFlags=0u;
 vec3 peelColor=vec3(0),peelNormal=vec3(0),peelEmission=vec3(0),peelSelf=vec3(0),peelThrough=vec3(1);
 vec2 peelParameters=vec2(0);float peelRemaining=1;
+// The finish multiplicative paint gives the receiver (squared roughness,
+// metalness), x negative: none.
+vec2 peelFinish=vec2(-1,0);
 Intersection peelFirst;
 #endif
 void queryScene(accelerationStructureEXT scene, vec3 origin, vec3 direction, inout Intersection x,float minimum) {
@@ -581,8 +584,11 @@ Hit closest(vec3 origin,vec3 direction,float maximum,bool motion) {
   vec2 parameters=vec2(0);
   // `through` carries color into the layers below: alpha paint covers them,
   // multiplicative paint (D3D DESTCOLOR*SRCCOLOR, mod2x) tints them and keeps
-  // the receiver's normal and roughness.
-  float remaining=1;vec3 through=vec3(1);
+  // the receiver's normal and roughness, or with a finish
+  // (remixapi_MaterialInfoPaintFinishEXT, state.w bit 30) gives the receiver
+  // its own roughness and metalness: the nearest such layer's (`finish`, x
+  // the squared roughness, negative: none).
+  float remaining=1;vec3 through=vec3(1);vec2 finish=vec2(-1,0);
   float lastDecal=0,minimum=0,end=maximum;
   const float attach=frame.visibilityProbe.y;
   const uint mask=traceMask;
@@ -636,6 +642,7 @@ Hit closest(vec3 origin,vec3 direction,float maximum,bool motion) {
     if(hit.decalMode!=0u) {
       // mod2x is authored gamma-encoded (128 is neutral): scale so (128/255)^2.2 maps to one.
       through*=hit.color.rgb*(hit.decalMode==2u?4.5554:1.);
+      if(finish.x<0&&(surfaces[x.surface].state.w&(1u<<30))!=0u)finish=vec2(hit.rm.x*hit.rm.x,hit.rm.y);
     } else {
       float weight=remaining*hit.color.a;
       color+=through*hit.color.a*hit.color.rgb;normal+=weight*hit.n;emission+=through*hit.color.a*hit.emission;
@@ -700,7 +707,7 @@ Hit closest(vec3 origin,vec3 direction,float maximum,bool motion) {
   }
 #if WAVEFRONT_PASS==10
   peelFlags=1u;peelColor=color;peelNormal=normal;peelEmission=emission;peelSelf=self;peelThrough=through;
-  peelParameters=parameters;peelRemaining=remaining;
+  peelParameters=parameters;peelRemaining=remaining;peelFinish=finish;
   return hit;
 #endif
   hit.color.rgb=min(color+through*hit.color.rgb,vec3(1));
@@ -708,8 +715,10 @@ Hit closest(vec3 origin,vec3 direction,float maximum,bool motion) {
   hit.self=min(self+through*hit.self,vec3(1)-hit.color.rgb);
   normal+=remaining*hit.n;
   hit.n=dot(normal,normal)>1e-12?shadingNormal(normal,hit.ng,hit.wo):hit.n;
-  parameters+=remaining*vec2(hit.rm.x*hit.rm.x,hit.rm.y);
+  parameters+=remaining*(finish.x>=0?finish:vec2(hit.rm.x*hit.rm.x,hit.rm.y));
   hit.rm=vec2(sqrt(max(parameters.x,0)),parameters.y);
+  // A finish is a reflection even on a receiver without PBR (Lambert).
+  if(finish.x>=0)hit.pbr=true;
   return hit;
 }
 Hit closest(vec3 origin,vec3 direction) { return closest(origin,direction,1e30,true); }
@@ -2797,7 +2806,8 @@ void wavefrontPeel(uint id,uint index) {
   if(peelFlags==0u)return;
   records.v[stride+index]=uvec4(packHalves(peelEmission.r,peelEmission.g),packHalves(peelEmission.b,peelSelf.r),
                                 packHalves(peelSelf.g,peelSelf.b),packHalves(peelNormal.x,peelNormal.y));
-  records.v[2u*stride+index]=uvec4(packHalves(peelNormal.z,peelThrough.r),packHalves(peelThrough.g,peelThrough.b),0u,0u);
+  records.v[2u*stride+index]=uvec4(packHalves(peelNormal.z,peelThrough.r),packHalves(peelThrough.g,peelThrough.b),
+                                   packHalves(peelFinish.x,peelFinish.y),0u);
   if((peelFlags&2u)!=0u) {
     // As wavefrontTrace stores a receiver.
     const uint r=wavefrontReceiverPlanes;
@@ -2821,7 +2831,7 @@ Hit wavefrontPeeled(Hit hit) {
   uvec4 b=records.v[stride+index],c=records.v[2u*stride+index];
   vec2 a1=unpackHalf2x16(a.y),a2=unpackHalf2x16(a.z),a3=unpackHalf2x16(a.w);
   vec2 b0=unpackHalf2x16(b.x),b1=unpackHalf2x16(b.y),b2=unpackHalf2x16(b.z),b3=unpackHalf2x16(b.w);
-  vec2 c0=unpackHalf2x16(c.x),c1=unpackHalf2x16(c.y);
+  vec2 c0=unpackHalf2x16(c.x),c1=unpackHalf2x16(c.y),finish=unpackHalf2x16(c.z);
   vec3 through=vec3(c0.y,c1);
   if((a.x&2u)!=0u) {
     // The first layer, shaded as the receiver: an ordinary surface, or a tint.
@@ -2839,8 +2849,10 @@ Hit wavefrontPeeled(Hit hit) {
   hit.self=min(self+through*hit.self,vec3(1)-hit.color.rgb);
   normal+=remaining*hit.n;
   hit.n=dot(normal,normal)>1e-12?shadingNormal(normal,hit.ng,hit.wo):hit.n;
-  parameters+=remaining*vec2(hit.rm.x*hit.rm.x,hit.rm.y);
+  parameters+=remaining*(finish.x>=0?finish:vec2(hit.rm.x*hit.rm.x,hit.rm.y));
   hit.rm=vec2(sqrt(max(parameters.x,0)),parameters.y);
+  // A finish is a reflection even on a receiver without PBR (Lambert).
+  if(finish.x>=0)hit.pbr=true;
   return hit;
 }
 #endif

@@ -310,6 +310,9 @@ namespace remix {
       bool drawAlpha = false, translucent = false, transmission = false;
       // Light through it draws caustics: translucent, with a normal map.
       bool caustics = false;
+      // remixapi_MaterialInfoPaintFinishEXT: as multiplicative paint, its
+      // roughness and metalness replace its receiver's where it covers.
+      bool paintFinish = false;
       // remixapi_MaterialInfoScreenCameraEXT: the screen camera slot + 1 it
       // shows (0: none).
       uint8_t screenCamera = 0;

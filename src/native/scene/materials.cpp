@@ -393,6 +393,12 @@ namespace remix {
         throw invalid;
       material->suppressDirectSpecular = !specular->enabled;
     }
+    if (const auto *finish = static_cast<const remixapi_MaterialInfoPaintFinishEXT *>(
+            extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_PAINT_FINISH_EXT))) {
+      if (!opaque || finish->enabled > 1)
+        throw invalid;
+      material->paintFinish = finish->enabled != 0;
+    }
     if (const auto *film = static_cast<const remixapi_MaterialIridescenceEXT *>(
             extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_IRIDESCENCE_EXT))) {
       finite(&film->strength, 9);
@@ -567,7 +573,7 @@ namespace remix {
              a.pbr == b.pbr && a.suppressDirectSpecular == b.suppressDirectSpecular && std::equal(a.emission, a.emission + 3, b.emission) &&
              std::equal(a.tint, a.tint + 4, b.tint) && a.compare == b.compare && a.reference == b.reference &&
              a.drawAlpha == b.drawAlpha && a.translucent == b.translucent && a.transmission == b.transmission &&
-             a.caustics == b.caustics && a.screenCamera == b.screenCamera && a.rayPortal == b.rayPortal &&
+             a.caustics == b.caustics && a.paintFinish == b.paintFinish && a.screenCamera == b.screenCamera && a.rayPortal == b.rayPortal &&
              a.filter == b.filter && a.wrapU == b.wrapU && a.wrapV == b.wrapV && a.rows == b.rows &&
              a.columns == b.columns && a.fps == b.fps;
     };

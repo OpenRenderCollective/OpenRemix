@@ -629,6 +629,36 @@ namespace {
 
   // A thin film: the opaque info's legacy thickness fields, then
   // remixapi_MaterialIridescenceEXT, validated and part of the material's identity.
+  // remixapi_MaterialInfoPaintFinishEXT: an opaque material's flag, 0 or 1.
+  void paintFinish() {
+    remix::NativeResources r;
+    remixapi_MaterialInfoOpaqueEXT opaque{};
+    opaque.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
+    opaque.albedoConstant = {1, 0, 0};
+    opaque.opacityConstant = 1;
+    opaque.alphaTestType = 7;
+    opaque.roughnessConstant = .15f;
+    remixapi_MaterialInfo info{};
+    info.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
+    info.pNext = &opaque;
+    info.hash = 0x7a0;
+    remixapi_MaterialHandle handle;
+    r.createMaterial(info, handle);
+    require(!drawn(r, quad(r, 0x7a1, handle))->paintFinish, "No paint finish by default");
+    remixapi_MaterialInfoPaintFinishEXT finish{REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_PAINT_FINISH_EXT, &opaque, 1};
+    info.pNext = &finish;
+    r.createMaterial(info, handle);
+    require(drawn(r, quad(r, 0x7a2, handle))->paintFinish, "Paint finish");
+    finish.enabled = 0;
+    r.createMaterial(info, handle);
+    require(!drawn(r, quad(r, 0x7a3, handle))->paintFinish, "Paint finish off");
+    finish.enabled = 2;
+    rejected([&] { r.createMaterial(info, handle); });
+    finish.enabled = 1;
+    finish.pNext = nullptr; // no opaque material
+    rejected([&] { r.createMaterial(info, handle); });
+  }
+
   void iridescence() {
     remix::NativeResources r;
     remixapi_MaterialInfoOpaqueEXT opaque{};
@@ -1238,6 +1268,7 @@ int main() {
   scopedMipUpdate();
   pbrRemap();
   iridescence();
+  paintFinish();
   partialMod();
   gradientMap();
   woundCut();
