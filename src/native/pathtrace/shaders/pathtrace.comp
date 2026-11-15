@@ -1035,6 +1035,7 @@ Hit primarySurface(ivec2 pixel,inout vec3 origin,inout vec3 direction,bool sheet
   front=vec3(0);layers=0;
   bool raster=frame.target.w!=0,bent=false,body=false,trace=!raster,first=true,record=false;
   vec3 traceOrigin=origin,traceDirection=direction;
+  uint portals=0u,chain=0u;
   Hit hit;
   if(raster) {
     hit=rasterSurface(pixel,origin,true);
@@ -1062,6 +1063,15 @@ Hit primarySurface(ivec2 pixel,inout vec3 origin,inout vec3 direction,bool sheet
       if(record&&traced.t==1e30)hit.film.x=0;
       else hit=traced;
       record=false;
+      // Behind sheets (a sphere around the camera in front of a portal), a
+      // ray portal's opening goes on from its partner, as replaceScreen
+      // carries the camera ray that meets it first; sheets past a portal are
+      // passed, as the composition's layer walk does not follow it.
+      if(layers!=0u&&hit.t<1e30&&!hit.blended&&hit.surface>=0&&
+         portalTeleport(uint(hit.surface),hit.p,traceOrigin,traceDirection,portals,chain,frame.rayPortalConfig.x)) {
+        origin=traceOrigin;direction=traceDirection;trace=true;continue;
+      }
+      if(portals!=0u&&hit.t<1e30&&hit.blended){traceOrigin=offsetRay(hit.p,-hit.ng);trace=true;continue;}
     }
     if(first){first=false;if(diagnose&&frame.splitLocal.w!=0)front=debugGeometry(hit,pixel);}
     if(!sheets||layers>=32u||!hit.blended)break;
