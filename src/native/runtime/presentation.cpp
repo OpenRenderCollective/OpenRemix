@@ -1640,8 +1640,10 @@ namespace remix {
         gpu::GpuScope hostTime(buffer, "Host passes", m_swapchainExtent);
         // The scene's depth stays in the target's depth attachment.
         vkCmdEndRenderPass(buffer);
-        m_hostPasses.record(buffer, m_frameIndex, target, targetFormat, m_swapchainExtent, layout,
-                            m_pathTracer ? m_pathTracer->viewDepth() : VK_NULL_HANDLE);
+        HostPasses::ViewImages view;
+        if (m_pathTracer)
+          view = {m_pathTracer->viewDepth(), m_pathTracer->viewOpaqueDepth(), m_pathTracer->viewTransmittance()};
+        m_hostPasses.record(buffer, m_frameIndex, target, targetFormat, m_swapchainExtent, layout, view);
         pass.renderPass = m_resumePass;
         vkCmdBeginRenderPass(buffer, &pass, VK_SUBPASS_CONTENTS_INLINE);
       };

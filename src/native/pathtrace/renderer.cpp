@@ -133,6 +133,12 @@ namespace remix {
   VkImageView PathTracer::viewDepth() const {
     return m_gpu->denoiser ? m_gpu->denoiser->image(denoise::Depth).view : VK_NULL_HANDLE;
   }
+  VkImageView PathTracer::viewOpaqueDepth() const {
+    return m_gpu->denoiser ? m_gpu->denoiser->image(denoise::OpaqueDepth).view : VK_NULL_HANDLE;
+  }
+  VkImageView PathTracer::viewTransmittance() const {
+    return m_gpu->denoiser ? m_gpu->denoiser->image(denoise::SheetTransmittance).view : VK_NULL_HANDLE;
+  }
   PathTracer::OverlayLighting PathTracer::overlayLighting() const {
     auto out = m_gpu->overlay;
     const auto &accel = m_gpu->tlas[m_gpu->topCombined ? 2 : 0].accel;

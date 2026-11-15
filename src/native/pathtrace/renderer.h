@@ -108,6 +108,11 @@ namespace remix {
     // float, GENERAL layout, render resolution): what host passes sample as
     // REMIXAPI_HOST_TARGET_VIEW_DEPTH_EXT. None without a denoiser.
     VkImageView viewDepth() const;
+    // The same of the frame's first surfaces that are not sheets, and the
+    // transmittance of the sheets in front of them before fog (RGBA16 float):
+    // REMIXAPI_HOST_TARGET_VIEW_OPAQUE_DEPTH_EXT and _VIEW_TRANSMITTANCE_EXT.
+    VkImageView viewOpaqueDepth() const;
+    VkImageView viewTransmittance() const;
     // What lit the frame last prepared, for effects drawn over it (particles):
     // the sun (propagation direction, radiance), the sky (radiance; w above
     // zero with an environment, which `environment` samples through

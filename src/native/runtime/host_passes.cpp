@@ -230,7 +230,9 @@ namespace remix {
             return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
         for (const auto &s : pass.samplers)
           if (s.addressU > 2 || s.addressV > 2 ||
-              (s.target >= REMIXAPI_HOST_TARGET_RESERVED_EXT && s.target != REMIXAPI_HOST_TARGET_VIEW_DEPTH_EXT))
+              (s.target >= REMIXAPI_HOST_TARGET_RESERVED_EXT && s.target != REMIXAPI_HOST_TARGET_VIEW_DEPTH_EXT &&
+               s.target != REMIXAPI_HOST_TARGET_VIEW_OPAQUE_DEPTH_EXT &&
+               s.target != REMIXAPI_HOST_TARGET_VIEW_TRANSMITTANCE_EXT))
             return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
         // One copy of every byte, in a known order (see record).
         pass.data.reserve(bytes);
@@ -766,7 +768,7 @@ namespace remix {
   }
 
   void HostPasses::record(VkCommandBuffer command, uint32_t slotIndex, VkImage image, VkFormat format,
-                          VkExtent2D extent, VkImageLayout imageLayout, VkImageView viewDepth) {
+                          VkExtent2D extent, VkImageLayout imageLayout, const ViewImages &view) {
     std::vector<Pass> passes;
     std::vector<Upload> uploads;
     {
@@ -995,14 +997,18 @@ namespace remix {
           VkImageView sampled = VK_NULL_HANDLE;
           if (image) {
             sampled = frame.sampled;
-            if (found->target == REMIXAPI_HOST_TARGET_VIEW_DEPTH_EXT) {
-              // The runtime's own image, when the frame has it.
-              if (!viewDepth) {
+            if (found->target >= REMIXAPI_HOST_TARGET_RESERVED_EXT) {
+              // The runtime's own images, when the frame has them.
+              const VkImageView own = found->target == REMIXAPI_HOST_TARGET_VIEW_DEPTH_EXT ? view.depth
+                                      : found->target == REMIXAPI_HOST_TARGET_VIEW_OPAQUE_DEPTH_EXT
+                                          ? view.opaqueDepth
+                                          : view.transmittance;
+              if (!own) {
                 complete = false;
                 incomplete = &m_stats.skippedViewDepth;
                 break;
               }
-              sampled = viewDepth;
+              sampled = own;
             } else if (found->target) {
               auto it = m_targets.find(found->target);
               if (it == m_targets.end() || !it->second.initialized) {

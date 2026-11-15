@@ -50,16 +50,19 @@ namespace remix {
     }
     bool asked() const { return m_asked; }
     // Executes the submitted passes between the frame's render passes: the
-    // swapchain `image` is in `layout` before and after. `viewDepth`: the
-    // frame's REMIXAPI_HOST_TARGET_VIEW_DEPTH_EXT image (GENERAL layout), or
-    // none (passes sampling it are skipped).
+    // swapchain `image` is in `layout` before and after. `view`: the frame's
+    // REMIXAPI_HOST_TARGET_VIEW_*_EXT images (GENERAL layout); passes sampling
+    // one it lacks are skipped.
 #if defined(REMIX_METAL)
     // Metal: `command` an id<MTLCommandBuffer>, `frame` the frame's texture
     // (an id<MTLTexture>, read and written), `viewDepth` an id<MTLTexture> or null.
     void record(void *command, uint32_t slot, void *frame, void *viewDepth);
 #else
+    struct ViewImages {
+      VkImageView depth = VK_NULL_HANDLE, opaqueDepth = VK_NULL_HANDLE, transmittance = VK_NULL_HANDLE;
+    };
     void record(VkCommandBuffer command, uint32_t slot, VkImage image, VkFormat format, VkExtent2D extent,
-                VkImageLayout imageLayout, VkImageView viewDepth);
+                VkImageLayout imageLayout, const ViewImages &view);
 #endif
     remixapi_HostPassStatisticsEXT statistics() const;
 

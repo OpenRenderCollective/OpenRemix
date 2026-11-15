@@ -1007,6 +1007,19 @@ typedef uint64_t remixapi_HostTargetHandleEXT;
 // fill: a draw targeting it writes depth only (gl_FragDepth), a clear sets it
 // to clearColor[0]. Draws on the frame test and write it as their `depth` says.
 #define REMIXAPI_HOST_TARGET_FRAME_DEPTH_EXT ((remixapi_HostTargetHandleEXT)0xffffffff00000002ull)
+// What the frame's sheets (glass, water, blended surfaces) let through, for a
+// pass that changes what lies behind them: RGBA16 float at the tracer's render
+// resolution, rgb the transmittance of the sheets in front of each pixel's
+// first surface that is not a sheet (the frame there is the sheets' own light
+// plus rgb times what is behind them, before fog and a camera's medium; 1
+// where there are none). With REMIXAPI_HOST_TARGET_VIEW_OPAQUE_DEPTH_EXT, a
+// host that draws over a surface behind glass replaces what the glass shows of
+// it: frame + rgb x (new - old). Skipped as VIEW_DEPTH is.
+#define REMIXAPI_HOST_TARGET_VIEW_TRANSMITTANCE_EXT ((remixapi_HostTargetHandleEXT)0xffffffff00000003ull)
+// VIEW_DEPTH's, of each pixel's first surface that is not a sheet (the
+// farther of that surface and what it shows through a ray portal or mirror).
+// VIEW_DEPTH is the front sheet's where one covers the pixel by half or more.
+#define REMIXAPI_HOST_TARGET_VIEW_OPAQUE_DEPTH_EXT ((remixapi_HostTargetHandleEXT)0xffffffff00000004ull)
 #define REMIXAPI_HOST_DEPTH_WRITE_EXT 0x100u
 
 #define REMIXAPI_HOST_SHADER_VERTEX_EXT 1u
