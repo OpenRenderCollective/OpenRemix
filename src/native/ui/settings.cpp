@@ -992,6 +992,16 @@ namespace remix {
         ImGui::SetTooltip("Fog and haze lit by the sun, the sky and every local light. Uses the game's fog\n"
                           "unless the override below is on.");
       if (options.volumetrics) {
+        ui::Checkbox("Raster fog", &options.volumetricRaster);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("The fog as the game draws it: each pixel blended towards the fog colour by its depth.\n"
+                            "Unlit and nearly free; the sky stays clear.");
+        if (options.volumetricRaster) {
+          ui::SliderFloat("Fog brightness", &options.volumetricRasterBrightness, 0.f, 16.f, "%.2f",
+                          ImGuiSliderFlags_Logarithmic);
+          if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("The fog colour's radiance: the game's colour is meant for the screen.");
+        }
         ui::Checkbox("Override the game's fog", &options.volumetricOverride);
         if (options.volumetricOverride) {
           ui::SliderFloat("Sight distance (m)", &options.volumetricDistance, 1.f, 2000.f, "%.0f",
@@ -999,6 +1009,21 @@ namespace remix {
           if (ImGui::IsItemHovered())
             ImGui::SetTooltip("How far one sees through the medium: 5%% of the light is left at this distance.");
           ui::ColorEdit3("Scattering color", options.volumetricColor);
+        }
+      }
+      if (options.volumetrics && options.volumetricRaster) {
+        const auto volume = trace::g_volumeState;
+        if (volume.active)
+          ImGui::TextWrapped("Raster fog: on (%s), full at %.1f m", volume.source, volume.visibilityMeters);
+        else
+          ImGui::TextWrapped("Raster fog: off (%s)", volume.reason);
+      } else if (options.volumetrics) {
+        if (!options.volumetricOverride) {
+          ui::SliderFloat("Game fog density", &options.volumetricFogDensityScale, .001f, 4.f, "%.3f",
+                          ImGuiSliderFlags_Logarithmic);
+          if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Scales the game's exponential fog density: one tuned for raster fog reads far\n"
+                              "thicker as a lit medium.");
         }
         ui::SliderFloat("Scattered light", &options.volumetricScattering, 0.f, 8.f, "%.2f");
         ui::SliderFloat("Height falloff (m)", &options.volumetricHeightFalloff, 0.f, 500.f, "%.1f");

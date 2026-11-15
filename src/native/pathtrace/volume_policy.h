@@ -50,10 +50,11 @@ namespace remix::trace {
       // exp: the density is the extinction. exp2 (exp(-(density d)^2)) and
       // linear (clear to `end`) have no exponential equal: the one that
       // leaves as much at the distance where they leave volumeVisibility.
-      if (fog.mode == 1 && fog.density > 0)
-        medium.extinction = fog.density;
-      else if (fog.mode == 2 && fog.density > 0)
-        medium.extinction = fog.density * std::sqrt(reach);
+      const float density = fog.density * std::max(options.volumetricFogDensityScale, 0.f);
+      if (fog.mode == 1 && density > 0)
+        medium.extinction = density;
+      else if (fog.mode == 2 && density > 0)
+        medium.extinction = density * std::sqrt(reach);
       else if (fog.mode == 3 && fog.end > 0)
         medium.extinction = reach / fog.end;
       else
@@ -100,6 +101,60 @@ namespace remix::trace {
     const char *reason = "", *source = "none";
     uint32_t cells = 0, levels = 0;
     float visibilityMeters = 0, reachMeters = 0;
+    bool raster = false; // TraceOptions::volumetricRaster
   };
   inline VolumeState g_volumeState;
+
+  // Raster fog (TraceOptions::volumetricRaster): the frame's volume fields
+  // without grids. volumeConfig x 0 (no traced medium), y 1; volumeMedium
+  // the linear fog colour times volumetricRasterBrightness; volumeParams:
+  // start (world units), 1 / (end - start), density per world unit, mode
+  // (D3D: 1 exp, 2 exp2, 3 linear). The game's linear fog comes as D3D's:
+  // `scale` 1 / (end - start). The override is exponential fog that leaves
+  // 5% at volumetricDistance. Fills `state`; false: no fog this frame.
+  inline bool rasterFog(const TraceOptions &options, const GameFog &fog, uint32_t config[4], float params[4],
+                        float medium[4], VolumeState &state) {
+    state = {true, false, "the game sets no fog and the override is off", "none"};
+    state.raster = true;
+    float color[3], start = 0, scale = 0, density = 0, full = 0;
+    uint32_t mode;
+    const float reach = -std::log(volumeVisibility);
+    if (options.volumetricOverride) {
+      mode = 1;
+      density = reach / (std::max(options.volumetricDistance, .01f) / options.sceneScale);
+      std::copy_n(options.volumetricColor, 3, color);
+      full = reach / density;
+      state.source = "override";
+    } else {
+      mode = fog.mode;
+      if ((mode == 1 || mode == 2) && fog.density > 0) {
+        density = fog.density;
+        full = (mode == 1 ? reach : std::sqrt(reach)) / density;
+      } else if (mode == 3 && fog.end > 0) {
+        scale = fog.scale > 0 ? fog.scale : 1 / fog.end;
+        start = fog.end - 1 / scale;
+        full = fog.end;
+      } else
+        return false;
+      for (int c = 0; c < 3; ++c)
+        color[c] = volumeLinear(std::clamp(fog.color[c], 0.f, 1.f));
+      state.source = "game fog";
+    }
+    if (!std::isfinite(density) || !std::isfinite(scale) || !std::isfinite(start))
+      return false;
+    const float brightness = std::max(options.volumetricRasterBrightness, 0.f);
+    std::fill_n(config, 4, 0u);
+    config[1] = 1;
+    for (int c = 0; c < 3; ++c)
+      medium[c] = std::max(color[c], 0.f) * brightness;
+    medium[3] = 0;
+    params[0] = start;
+    params[1] = scale;
+    params[2] = density;
+    params[3] = float(mode);
+    state.active = true;
+    state.reason = "";
+    state.visibilityMeters = full * options.sceneScale;
+    return true;
+  }
 } // namespace remix::trace

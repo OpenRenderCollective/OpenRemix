@@ -384,6 +384,9 @@ namespace remix::config {
         TRACE(sparseMaxRate, .0625f, 1);
         TRACE(volumetrics, 0, 1);
         TRACE(volumetricOverride, 0, 1);
+        TRACE(volumetricRaster, 0, 1);
+        TRACE(volumetricRasterBrightness, 0, 1000);
+        TRACE(volumetricFogDensityScale, 0, 100);
         TRACE(volumetricDistance, .01f, 100000);
         TRACE(volumetricHeightFalloff, 0, 100000);
         TRACE(volumetricBaseHeight, -100000, 100000);

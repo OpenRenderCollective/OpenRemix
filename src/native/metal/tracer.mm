@@ -2126,6 +2126,17 @@ namespace remix::metal {
     std::fill_n(constants.volumeConfig, 4, 0u);
     std::fill_n(constants.volumeFrame, 4, 0u);
     v.active = false;
+    // Raster fog: constants only (volume_policy.h rasterFog), nothing to update.
+    if (options.volumetrics && options.volumetricRaster) {
+      if (constants.splitLocal[3] || constants.sun[3] != 0 || options.sharcDebug || options.debugView) {
+        remix::trace::g_volumeState = {true, false, "a debug view is on", "none"};
+        remix::trace::g_volumeState.raster = true;
+      } else
+        remix::trace::rasterFog(options, remix::trace::gameFog(), constants.volumeConfig, constants.volumeParams,
+                                constants.volumeMedium, remix::trace::g_volumeState);
+      v.inactiveReason = remix::trace::g_volumeState.active ? "raster fog" : remix::trace::g_volumeState.reason;
+      return;
+    }
     const auto medium = remix::trace::volumeMedium(options, remix::trace::gameFog());
     const bool ready = computePipelineAsync(device, volumeUpdate.stage, volumeUpdate.base) != nil;
     v.inactiveReason = !options.volumetrics ? "not requested"

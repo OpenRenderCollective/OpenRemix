@@ -14,6 +14,17 @@ namespace remix {
     std::fill_n(frame.volumeConfig, 4, 0u);
     std::fill_n(frame.volumeFrame, 4, 0u);
     v.active = false;
+    // Raster fog: constants only (volume_policy.h rasterFog), nothing to update.
+    if (options.volumetrics && options.volumetricRaster) {
+      if (frame.splitLocal[3] || frame.sun[3] != 0 || options.sharcDebug || options.debugView) {
+        trace::g_volumeState = {true, false, "a debug view is on", "none"};
+        trace::g_volumeState.raster = true;
+      } else
+        trace::rasterFog(options, trace::gameFog(), frame.volumeConfig, frame.volumeParams, frame.volumeMedium,
+                         trace::g_volumeState);
+      v.inactiveReason = trace::g_volumeState.active ? "raster fog" : trace::g_volumeState.reason;
+      return;
+    }
     const auto medium = trace::volumeMedium(options, trace::gameFog());
     v.inactiveReason = !options.volumetrics ? "not requested"
                        : !medium.active     ? "the game sets no fog and the override is off"

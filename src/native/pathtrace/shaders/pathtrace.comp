@@ -4115,7 +4115,8 @@ void main() {
   // The sky is not at its geometry: the raster depth of a sky box's faces
   // drew the box into the medium, edges, corners and all.
   float far=1e30;
-  if(frame.volumeConfig.x!=0u||frame.cameraMedium.w>0) {
+  bool rasterFog=frame.volumeConfig.x==0u&&frame.volumeConfig.y==1u;
+  if(frame.volumeConfig.x!=0u||rasterFog||frame.cameraMedium.w>0) {
     float kind=frame.target.w!=0?imageLoad(primaryNormal,pixel).w:-1;
     if(kind>=32)kind-=32; // a screen camera's surface
     if(kind>=16)kind-=16; // a thin film
@@ -4128,6 +4129,21 @@ void main() {
   }
   if(frame.volumeConfig.x!=0u) {
     volumeMarch(origin,direction,far,fogLight,fogTransmittance);
+    transparent=fogLight+fogTransmittance*transparent;tint*=fogTransmittance;
+  } else if(rasterFog&&far<1e30) {
+    // Raster fog (volume_policy.h rasterFog): as a raster game blends it, by
+    // view depth (along the camera's axis, from the eye-relative matrix: the
+    // absolute one loses directions to rounding far from the origin), the sky
+    // left clear. Laid over everything composed here as the march's result is.
+    vec4 axisNear=frame.inverseCameraRelative*vec4(0,0,0,1),axisFar=frame.inverseCameraRelative*vec4(0,0,.99999,1);
+    float viewDepth=far*max(dot(direction,normalize(axisFar.xyz/axisFar.w-axisNear.xyz/axisNear.w)),0);
+    float amount;
+    if(frame.volumeParams.w==3)amount=clamp((viewDepth-frame.volumeParams.x)*frame.volumeParams.y,0,1);
+    else {
+      float k=frame.volumeParams.z*viewDepth;
+      amount=1-exp(-(frame.volumeParams.w==2?k*k:k));
+    }
+    fogTransmittance=1-amount;fogLight=frame.volumeMedium.rgb*amount;
     transparent=fogLight+fogTransmittance*transparent;tint*=fogTransmittance;
   }
   // A camera inside a translucent body (under water): its medium up to the

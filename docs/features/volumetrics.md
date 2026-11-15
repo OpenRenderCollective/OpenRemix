@@ -17,6 +17,7 @@ nothing until there is a medium.
 | `volumetricBaseHeight` | 0 | Height (meters) below which the density is whole. |
 | `volumetricUpAxis` | 3 | The world's up axis, for the height falloff and the NUMOS sky: 0 X, 1 Y, 2 Z, 3 Auto (Y or Z, from the camera: game cameras do not roll). |
 | `volumetricMaxDistance` | 250 | The medium fills at most this many meters of a camera ray, the sky's included. |
+| `volumetricFogDensityScale` | 1 | Scales the game's exponential fog density for the traced medium (raster fog takes it as given). |
 
 The game's fog is what `remixapi_SetFogState` last gave: exponential fog's
 density is the extinction; squared-exponential and linear fog get the
@@ -24,6 +25,18 @@ exponential that leaves 5% of the light at the distance where theirs does.
 The fog colour, normalized, tints what the medium scatters: how bright the
 fog is comes from the lights. A game that sets no fog has no medium unless the
 override is on.
+
+## Raster fog
+
+`volumetricRaster` (0/1, default 0; **Raster fog**) draws the medium as a
+raster game draws its fog instead of tracing it: each pixel is blended towards
+the fog colour by its view depth, up to the first surface that is not a
+blended sheet; the sky stays clear. The game's mode is kept as it is (linear
+from its start to its end, `remixapi_FogInfo::scale` being 1 / (end - start)
+as in D3D; exponential and squared exponential by its density); the override
+is exponential fog leaving 5% at `volumetricDistance`. The fog is unlit:
+`volumetricRasterBrightness` (1) is the radiance of its colour. No grids,
+update pass or march: one blend per pixel in the composition pass.
 
 ## How it runs
 
