@@ -28,6 +28,17 @@ typedef struct remixapi_LightInfoForwardCutoffEXT {
   float distance;
 } remixapi_LightInfoForwardCutoffEXT;
 
+// Optional sphere light shadow clearance in scene units, measured from the
+// emitter centre: nothing nearer the centre than this shadows the light (a
+// glow drawn over the object that holds it: a fire in a barrel). Zero: none.
+// Path traced lighting only.
+#define REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SHADOW_CLEARANCE_EXT ((remixapi_StructType)0x7fff1079)
+typedef struct remixapi_LightInfoShadowClearanceEXT {
+  remixapi_StructType sType;
+  const void* pNext;
+  float distance;
+} remixapi_LightInfoShadowClearanceEXT;
+
 // Optional pNext on opaque MaterialInfo. Nonzero roughness/metalness constants
 // or a roughness/metalness/normal map automatically select EON + GGX. Completely
 // zero-initialized legacy parameters retain Lambert shading. This override also

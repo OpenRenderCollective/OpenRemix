@@ -147,7 +147,7 @@ vec3 volumeCandidate(LightEmitter light,vec3 p,float size,inout uint state,out v
     fraction=.5*sinMax2/(1+sqrt(max(0,1-sinMax2)));
     // A point of the sphere, for a penumbra as wide as the emitter.
     vec3 offset=vec3(lightRandom(state),lightRandom(state),lightRandom(state))*2-1;
-    endpoint=light.positionRadius.xyz+offset*(radius*.577);
+    endpoint=clearedEndpoint(light,p,light.positionRadius.xyz+offset*(radius*.577));
   }
   vec3 delta=endpoint-p;
   if(dot(delta,delta)<=1e-12)return vec3(0);

@@ -162,6 +162,10 @@ namespace remix {
         ext(REMIXAPI_STRUCT_TYPE_LIGHT_INFO_FORWARD_CUTOFF_EXT));
     if (cutoff && (!std::isfinite(cutoff->distance) || cutoff->distance < 0))
       throw invalid;
+    const auto *clearance = static_cast<const remixapi_LightInfoShadowClearanceEXT *>(
+        ext(REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SHADOW_CLEARANCE_EXT));
+    if (clearance && (!std::isfinite(clearance->distance) || clearance->distance < 0))
+      throw invalid;
     auto *usd = static_cast<const remixapi_LightInfoUSDEXT *>(ext(REMIXAPI_STRUCT_TYPE_LIGHT_INFO_USD_EXT));
     Vec position{}, x{1, 0, 0}, y{0, 1, 0}, z{0, 0, -1}, radiance = vec(info.radiance);
     float radius = .5f, width = 1, height = 1, span = 1, angle = .53f, volumetric = 1;
@@ -423,6 +427,8 @@ namespace remix {
       emitter.bakeHint = bakeHint;
       if (cutoff && type == REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT)
         emitter.forwardCutoff = cutoff->distance;
+      if (clearance && type == REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT)
+        emitter.shadowClearance = clearance->distance;
     }
     m_lights[info.hash] = std::move(definition);
     handle = reinterpret_cast<remixapi_LightHandle>(uintptr_t(info.hash));

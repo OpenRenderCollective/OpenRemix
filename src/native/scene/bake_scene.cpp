@@ -202,6 +202,10 @@ namespace remix::scene {
         hash.add(uint32_t(0x4355544fu));
         hash.add(light.forwardCutoff);
       }
+      if (light.shadowClearance > 0) {
+        hash.add(uint32_t(0x434c4541u));
+        hash.add(light.shadowClearance);
+      }
     }
     uint64_t styledShapeHash(std::span<const SphereLight> lights) {
       Hash hash;

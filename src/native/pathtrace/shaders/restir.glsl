@@ -62,7 +62,7 @@ vec3 restirContribution(Hit hit,LightEmitter light,vec2 uv,out vec3 specular,out
   physical*=scale;
   specular*=scale;
   // Sphere lights are not geometry; triangle emitters are, so stop short of them.
-  endpoint=light.radiance.w==0?p.x:offsetRay(p.x,dot(p.n,-w)>0?p.n:-p.n);
+  endpoint=light.radiance.w==0?clearedEndpoint(light,hit.p,p.x):offsetRay(p.x,dot(p.n,-w)>0?p.n:-p.n);
   return physical;
 }
 // Whether a surface (position, normal) could have a nonzero target for the
@@ -229,7 +229,7 @@ Reservoir restirInitial(Hit hit,uint state,float depth,ivec2 pixel) {
           LightEmitter light=emitters.data[p.light];
           RestirPoint q=restirPoint(light,vec2(p.u,p.v));
           vec3 point=vec3(p.x,p.y,p.z),normal=restirUnpackNormal(p.normal);
-          vec3 endpoint=light.radiance.w==0?q.x:offsetRay(q.x,dot(q.n,point-q.x)>0?q.n:-q.n);
+          vec3 endpoint=light.radiance.w==0?clearedEndpoint(light,point,q.x):offsetRay(q.x,dot(q.n,point-q.x)>0?q.n:-q.n);
           float visible=clamp(localLuminance(localVisibility(offsetRay(point,normal),endpoint)),0,1);
           occlusionChange=wasOccluded?visible:1-visible;
         }

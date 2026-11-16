@@ -4,6 +4,23 @@ struct LightEmitter { vec4 positionRadius; vec4 radiance; vec4 corners[3]; vec4 
 struct LightNode { vec4 minimumPower; vec4 maximum; uvec4 links; };
 layout(buffer_reference,std430,buffer_reference_align=16) readonly buffer LightEmitters { LightEmitter data[]; };
 layout(buffer_reference,std430,buffer_reference_align=16) readonly buffer LightNodes { LightNode data[]; };
+// A sphere light's shadow clearance (corners[2].z;
+// remixapi_LightInfoShadowClearanceEXT): nothing nearer its centre than that
+// shadows it. The visibility ray from `origin` to `endpoint` (a point of the
+// emitter) ends where it enters that sphere; from within it, at once.
+vec3 clearedEndpoint(LightEmitter light,vec3 origin,vec3 endpoint) {
+  float clearance=light.radiance.w==0?light.corners[2].z:0;
+  if(clearance<=0)return endpoint;
+  vec3 delta=endpoint-origin;float reach=length(delta);
+  if(reach<=1e-6)return endpoint;
+  vec3 direction=delta/reach,from=origin-light.positionRadius.xyz;
+  float along=dot(from,direction),outside=dot(from,from)-clearance*clearance;
+  if(outside<=0)return origin;
+  float discriminant=along*along-outside;
+  if(discriminant<=0)return endpoint;
+  float entry=-along-sqrt(discriminant);
+  return entry>0&&entry<reach?origin+direction*entry:endpoint;
+}
 float lightRandom(inout uint state) {
   state=hash(state+0x9e3779b9u);return float(state>>8)*(1.0/16777216.0);
 }
@@ -344,7 +361,7 @@ LocalCandidate localCandidate(LightEmitter light,Hit hit,inout uint state,bool a
   vec3 scale=emitterRadiance(light,-direction)*(2*oneMinusCos*cosine*attenuation)*frame.localScale.x;
   result.physical=materialResponse(hit,direction,result.specular)*scale;
   result.specular*=scale;
-  result.endpoint=hit.p+direction*distance;result.distance=distance;
+  result.endpoint=clearedEndpoint(light,hit.p,hit.p+direction*distance);result.distance=distance;
   return result;
 }
 float localLuminance(vec3 value) { return dot(value,vec3(.2126,.7152,.0722)); }
@@ -748,7 +765,7 @@ vec3 localLighting(Hit hit,uint state,uint samples,out float lightDistance,bool 
       distance=max(0,inside?projected+root:projected-root);
       vec3 scale=emitterRadiance(light,-direction)*(2*oneMinusCos*cosine*attenuation)*frame.localScale.x;
       physical=materialResponse(hit,direction,physicalSpecular)*scale;physicalSpecular*=scale;
-      endpoint=hit.p+direction*distance;
+      endpoint=clearedEndpoint(light,hit.p,hit.p+direction*distance);
     }
     // A spot light facing away or a back-facing response: no visibility ray.
     if(localLuminance(physical)<=0)continue;
