@@ -771,6 +771,10 @@ namespace remix {
         options.localSamples = uint32_t(samples);
       ui::SliderFloat("Local light strength", &options.localIntensity, 0.f, 4.f);
       ui::SliderFloat("Light reach (0 = unlimited)", &options.localRange, 0.f, 64.f, "%.1f");
+      ui::Checkbox("Soft sphere lights", &options.softSphereLights);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Sphere lights fall off as a game's point lights do, 1 / (d^2 + r^2): the same far\n"
+                          "away, but no flat, hard-edged disc where a light's sphere sinks into a wall.");
       if (options.localRange > 0 && options.localRange < .01f)
         options.localRange = .01f;
       ImGui::BeginDisabled(rrActive);

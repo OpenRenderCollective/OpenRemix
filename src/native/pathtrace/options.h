@@ -95,6 +95,13 @@ namespace remix {
     uint32_t separateLocalLighting = 3;  // combined, shared rays, per-family rays, combined separate pass
     uint32_t localSamples = 1;
     float localIntensity = 1, localRange = 16;
+    // softSphereLights: a sphere light lights a surface as a raster game's
+    // point light does, its radiance times pi r^2 / (d^2 + r^2) (the cosine
+    // over the part of it above the surface), not the solid angle it fills:
+    // the same far away, but no flat, hard-edged disc where its sphere sinks
+    // into a wall. A game whose lights are points given a size (Unity's
+    // 1 / (1 + 25 d^2 / range^2) is this with r = range / 5) wants it.
+    bool softSphereLights = false;
     float localDirectClamp = 0, indirectClamp = 0;
     // The two clamps in multiples of middle grey at the current exposure
     // (the radiance that displays as 0.18): one setting works across games'
