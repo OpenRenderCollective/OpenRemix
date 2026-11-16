@@ -2113,43 +2113,16 @@ namespace remix {
                          options.emissiveLights && options.localLights ? mode : 0u);
     const auto lightStart = Clock::now();
     const auto stageEnd = lightStart;
-    // Storage kept from frame to frame (megabytes with many emissive triangles).
-    auto &lights = m_gpu->lightInput;
-    if (options.torchLights) resources.copySphereLights(lights);
-    else lights.clear();
-    const auto sphereCount = lights.size();
-    // The static set's emitters where the set keeps them (scene::mergedEmitters
-    // has them in trace order; the light tree orders its input itself), then
-    // the frame's own.
-    size_t emitterCount = frame.emitterCount;
-    if (frame.staticUnits)
-      for (const uint32_t slot : g.statics.emitting())
-        emitterCount += g.statics.units()[slot].emitters.size();
-    lights.reserve(sphereCount + emitterCount);
-    const auto gather = [&](const scene::TraceFrame::Emitter &source, bool animated) {
-      auto light = source.light;
-      if (animated)
-        staged.history.apply(light, source.layout);
-      if (options.emissiveLights && light.radius > 1e-8f)
-        lights.push_back(light);
-    };
-    if (frame.staticUnits)
-      for (const uint32_t slot : g.statics.emitting())
-        for (const auto &source : g.statics.units()[slot].emitters)
-          gather(source, filterEmission && source.animated);
-    // The frame's runs: each light copied once, into the tree's input.
-    for (const auto &run : frame.emitters) {
-      const auto &source = *run.lights;
-      for (size_t i = 0; i < source.size(); ++i) {
-        lights.push_back(source[i]);
-        auto &light = lights.back();
-        light.dynamic = run.dynamic;
-        if (run.animated)
-          staged.history.apply(light, (*run.reduction)[i].layout);
-        if (!options.emissiveLights || !(light.radius > 1e-8f))
-          lights.pop_back();
-      }
-    }
+    // The sphere lights, the static set's emitters where the set keeps them,
+    // then the frame's own (the light tree orders its input itself), kept from
+    // frame to frame: what changed is gathered again, and named to the trees.
+    auto &spheres = m_gpu->sphereInput;
+    if (options.torchLights) resources.copySphereLights(spheres);
+    else spheres.clear();
+    auto &changes = m_gpu->lightChanges;
+    const auto &lights = m_gpu->lightGather.gather(spheres, frame, frame.staticUnits ? &g.statics : nullptr,
+                                                   staged.history, {options.emissiveLights, filterEmission}, changes);
+    const auto sphereCount = m_gpu->lightGather.sphereCount();
     staged.history.end();
     staged.hasEmissive = lights.size() > sphereCount;
     const auto gathered = Clock::now();
@@ -2162,13 +2135,24 @@ namespace remix {
       staged.emissive.setClusterSize(options.emissiveClusterSize);
       staged.torch.setPowerExponent(options.lightPowerExponent);
       staged.emissive.setPowerExponent(options.lightPowerExponent);
-      staged.torch.update({lights.begin(), lights.begin() + sphereCount});
-      staged.emissive.update({lights.begin() + sphereCount, lights.end()});
+      // Each family's part of the changes, in its own indices.
+      auto &part = m_gpu->familyChanges;
+      const auto family = [&](uint32_t begin, uint32_t end) {
+        part.serial = changes.serial;
+        part.previous = changes.previous;
+        part.ranges.clear();
+        for (const auto &[first, last] : changes.ranges)
+          if (first < end && last > begin)
+            part.ranges.emplace_back(std::max(first, begin) - begin, std::min(last, end) - begin);
+        return &part;
+      };
+      staged.torch.update(std::span(lights).first(sphereCount), family(0, uint32_t(sphereCount)));
+      staged.emissive.update(std::span(lights).subspan(sphereCount), family(uint32_t(sphereCount), lightCount));
     }
     const auto split = Clock::now();
     staged.combined.setClusterSize(options.emissiveClusterSize);
     staged.combined.setPowerExponent(options.lightPowerExponent);
-    staged.combined.update(lights);
+    staged.combined.update(lights, &changes);
     {
       std::lock_guard lock(scene::g_lightTreeSaveMutex);
       if (!scene::g_lightTreeSavePath.empty()) {

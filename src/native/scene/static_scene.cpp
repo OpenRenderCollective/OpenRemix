@@ -3,6 +3,7 @@
 #include "scene/resources.h"
 #include <remix/remix_native_ext.h>
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <tuple>
@@ -13,6 +14,13 @@ namespace remix::scene {
       const float det = m[0] * (m[5] * m[10] - m[9] * m[6]) - m[4] * (m[1] * m[10] - m[9] * m[2]) +
                         m[8] * (m[1] * m[6] - m[5] * m[2]);
       return std::abs(det) < 1e-12f;
+    }
+    // Unit generations, unique in the process: a slot and its generation name
+    // one build's surfaces and emitters even across static sets (the tracer's
+    // light gather keeps a unit's emitters by them).
+    uint64_t nextUnitGeneration() {
+      static std::atomic<uint64_t> generations{0};
+      return ++generations;
     }
   } // namespace
 
@@ -90,7 +98,7 @@ namespace remix::scene {
       unit.handle = entry.handle;
       unit.id = records[0].instanceId;
       unit.index = records[0].instanceIndex;
-      unit.generation = ++m_generation;
+      unit.generation = nextUnitGeneration();
       unit.live = true;
       unit.singular = singularModel(records[0].model);
       unit.surfaces.clear();
@@ -214,7 +222,7 @@ namespace remix::scene {
           }
         if (!rebuild)
           continue;
-        unit.generation = ++m_generation;
+        unit.generation = nextUnitGeneration();
         if (!unit.pending) {
           unit.pending = true;
           m_rebuilt.push_back(slot);

@@ -12,6 +12,7 @@
 #include "platform/workers.h"
 #include "scene/emission.h"
 #include "scene/light_bvh.h"
+#include "scene/light_gather.h"
 #include "scene/opacity.h"
 #include "scene/static_scene.h"
 #include "scene/up_axis.h"
@@ -742,7 +743,11 @@ namespace remix {
     std::vector<std::shared_ptr<Arena>> arenas;
     std::unique_ptr<Buffer> scratch, table, uniform, sheetMaterials;
     scene::LightBvh lightBvh;
-    std::vector<scene::SphereLight> lightInput; // prepareScene's gathered lights (storage kept)
+    // prepareScene's light input, gathered as it changes, and its scratch: the
+    // sphere lights and what changed in it.
+    scene::LightGather lightGather;
+    std::vector<scene::SphereLight> sphereInput;
+    scene::LightBvh::InputChanges lightChanges, familyChanges;
     scene::LightVisibility lightVisibility;
     std::unique_ptr<Buffer> visibilityNodes, visibilityLeaves, visibilityTable;
     uint64_t visibilityPartitionVersion = 0, visibilityTableVersion = 0;
