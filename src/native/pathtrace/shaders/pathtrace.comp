@@ -4269,7 +4269,9 @@ void main() {
     }
     // Interleaved gradient noise: a fixed fine pattern, nothing to trail.
     float jitter=fract(52.9829189*fract(dot(vec2(pixel),vec2(.06711056,.00583715))));
-    fogLight+=rasterFogGlow(origin,direction,far,forward,jitter);
+    // The sky clear of the glow as well, if so asked: as the game's fog leaves it.
+    if(far<1e30||frame.volumeGrid==0||!rasterGlowClearSky())
+      fogLight+=rasterFogGlow(origin,direction,far,forward,jitter);
     transparent=fogLight+fogTransmittance*transparent;tint*=fogTransmittance;
   }
   // A camera inside a translucent body (under water): its medium up to the

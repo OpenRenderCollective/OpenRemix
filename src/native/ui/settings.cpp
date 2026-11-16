@@ -1022,42 +1022,57 @@ namespace remix {
           if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Scales the game's fog density for the glow, as for the traced medium.");
         }
-        ui::SliderFloat("Glow: lights", &options.volumetricLightScale, 0.f, 4.f, "%.2f");
-        ui::SliderFloat("Glow: emissive surfaces", &options.volumetricEmissiveScale, 0.f, 4.f, "%.2f");
+        // Each source: a toggle, and its strength while on.
+        auto source = [](const char *label, const char *slider, bool &on, float &scale, const char *tooltip) {
+          ui::Checkbox(label, &on);
+          if (tooltip && ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", tooltip);
+          if (on) {
+            ImGui::Indent();
+            ui::SliderFloat(slider, &scale, 0.f, 4.f, "%.2f");
+            ImGui::Unindent();
+          }
+        };
+        source("Game lights glow", "Game lights strength", options.volumetricRasterGlowLights,
+               options.volumetricLightScale, nullptr);
+        source("Emissive surfaces glow", "Emissive strength", options.volumetricRasterGlowEmissive,
+               options.volumetricEmissiveScale,
+               "Emissive surfaces glow as clusters of a 2 m grid, competing with the game's lights for\n"
+               "the shadow cubes.");
+        source("Sun glows", "Sun strength", options.volumetricRasterGlowSun, options.volumetricSunScale, nullptr);
+        source("Sky glows", "Sky strength", options.volumetricRasterGlowSky, options.volumetricSkyScale,
+               "The sky's light in the fog, shadowed: five maps, one for each fifth of the sky,\n"
+               "as far across as the sun's.");
+        ui::Checkbox("Keep the sky clear", &options.volumetricRasterClearSky);
         if (ImGui::IsItemHovered())
-          ImGui::SetTooltip("Emissive surfaces glow as clusters of a 2 m grid, competing with the lights for\n"
-                            "the glowing lights' shadow cubes.");
-        ui::SliderFloat("Glow: sun", &options.volumetricSunScale, 0.f, 4.f, "%.2f");
-        ui::SliderFloat("Glow: sky", &options.volumetricSkyScale, 0.f, 4.f, "%.2f");
-        if (ImGui::IsItemHovered())
-          ImGui::SetTooltip("The sky's light in the fog, shadowed: five maps, one for each fifth of the sky,\n"
-                            "as far across as the sun's.");
+          ImGui::SetTooltip("No glow over the sky either, as the game's fog leaves it: the glow stops at the\n"
+                            "horizon and at a light's edge against the sky.");
         int glowLights = int(options.volumetricRasterLights), glowSize = int(options.volumetricRasterShadowSize),
             glowSteps = int(options.volumetricRasterSteps);
-        if (ui::SliderInt("Glowing lights", &glowLights, 0, 64))
+        if (ui::SliderInt("Primary lights", &glowLights, 0, 64))
           options.volumetricRasterLights = uint32_t(glowLights);
         if (ImGui::IsItemHovered())
-          ImGui::SetTooltip("How many lights get a detailed shadow cube: those that send the most into view.\n"
+          ImGui::SetTooltip("Lights with a detailed shadow cube: those that send the most into view.\n"
                             "Each traces one every frame.");
-        if (ui::SliderInt("Glow shadow detail", &glowSize, 16, 256))
+        if (ui::SliderInt("Primary shadow detail", &glowSize, 16, 256))
           options.volumetricRasterShadowSize = uint32_t(glowSize);
         if (ImGui::IsItemHovered())
           ImGui::SetTooltip("Texels a side of each light's shadow cube face: sharper shafts, more rays\n"
                             "(6 x this^2 a light, every frame).");
-        if (ui::SliderInt("Glow samples", &glowSteps, 1, 64))
+        if (ui::SliderInt("Primary samples", &glowSteps, 1, 64))
           options.volumetricRasterSteps = uint32_t(glowSteps);
         if (ImGui::IsItemHovered())
           ImGui::SetTooltip("Shadow samples per pixel along each light's reach.");
         int softLights = int(options.volumetricRasterSoftLights), softSize = int(options.volumetricRasterSoftSize),
             softSteps = int(options.volumetricRasterSoftSteps);
-        if (ui::SliderInt("More glowing lights", &softLights, 0, 128))
+        if (ui::SliderInt("Secondary lights", &softLights, 0, 128))
           options.volumetricRasterSoftLights = uint32_t(softLights);
         if (ImGui::IsItemHovered())
-          ImGui::SetTooltip("The next lights get a coarse shadow cube (128 lights in all at most); lights past\n"
+          ImGui::SetTooltip("The lights after the primary ones, with a cheaper, coarse shadow cube (128 in all at most); lights past\n"
                             "them do not glow.");
-        if (ui::SliderInt("Their shadow detail", &softSize, 4, 256))
+        if (ui::SliderInt("Secondary shadow detail", &softSize, 4, 256))
           options.volumetricRasterSoftSize = uint32_t(softSize);
-        if (ui::SliderInt("Their samples", &softSteps, 1, 64))
+        if (ui::SliderInt("Secondary samples", &softSteps, 1, 64))
           options.volumetricRasterSoftSteps = uint32_t(softSteps);
         int sunSize = int(options.volumetricRasterSunSize), sunSteps = int(options.volumetricRasterSunSteps);
         if (ui::SliderInt("Sun shadow detail", &sunSize, 64, 2048))

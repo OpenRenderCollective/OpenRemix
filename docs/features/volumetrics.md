@@ -30,6 +30,8 @@ nothing until there is a medium.
 | `volumetricRasterSoftSize` | 16 | Raster fog: texels a side of a coarse cube's face (4-256). |
 | `volumetricRasterSoftSteps` | 4 | Raster fog: samples of a coarse-cube light along a camera ray (1-64). |
 | `volumetricRasterSkySize` | 128 | Raster fog: texels a side of each of the sky's five maps (16-1024). |
+| `volumetricRasterGlowLights`, `volumetricRasterGlowEmissive`, `volumetricRasterGlowSun`, `volumetricRasterGlowSky` | 1 | Raster fog: whether the game's lights, emissive surfaces, the sun and the sky glow. |
+| `volumetricRasterClearSky` | 0 | Raster fog: no glow over the sky either, as the game's fog leaves it clear. |
 
 The game's fog is what `remixapi_SetFogState` last gave: exponential fog's
 density is the extinction; squared-exponential and linear fog get the

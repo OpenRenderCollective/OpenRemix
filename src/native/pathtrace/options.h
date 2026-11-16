@@ -233,6 +233,12 @@ namespace remix {
     uint32_t volumetricRasterSoftLights = 48, volumetricRasterSoftSize = 16, volumetricRasterSoftSteps = 4;
     uint32_t volumetricRasterSunSize = 512, volumetricRasterSunSteps = 16, volumetricRasterSkySize = 128;
     float volumetricRasterSunExtent = 64;
+    // Which sources glow in raster fog (their volumetric*Scale applies on
+    // top): the game's lights, emissive surfaces, the sun, the sky. With
+    // volumetricRasterClearSky the sky is left clear of the glow too, as of
+    // the fog colour.
+    bool volumetricRasterGlowLights = true, volumetricRasterGlowEmissive = true;
+    bool volumetricRasterGlowSun = true, volumetricRasterGlowSky = true, volumetricRasterClearSky = false;
     // Each source's share of the scattered light, on top of a light's own
     // volumetricRadianceScale: the sun, lights (sphere, rect, disk, cylinder),
     // emissive surfaces, the sky.
