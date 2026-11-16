@@ -181,6 +181,10 @@ namespace remix::metal {
       float cellUnits = 0, eye[3] = {};
       size_t bytes = 0;
       const char *inactiveReason = "not requested";
+      // Raster fog's glow (volume_policy.h rasterGlowLights): the lights given
+      // a shadow cube this frame and the cubes' size; `cells` holds them.
+      uint32_t glowLights = 0, glowSize = 0;
+      std::vector<std::pair<float, uint32_t>> glowScratch;
     } volume;
     void configureVolume(id<MTLCommandBuffer> command, Frame &frame, const TraceOptions &options);
     void recordVolume(id<MTLCommandBuffer> command);

@@ -18,6 +18,11 @@ nothing until there is a medium.
 | `volumetricUpAxis` | 3 | The world's up axis, for the height falloff and the NUMOS sky: 0 X, 1 Y, 2 Z, 3 Auto (Y or Z, from the camera: game cameras do not roll). |
 | `volumetricMaxDistance` | 250 | The medium fills at most this many meters of a camera ray, the sky's included. |
 | `volumetricFogDensityScale` | 1 | Scales the game's exponential fog density for the traced medium (raster fog takes it as given). |
+| `volumetricRaster` | 0 | Raster fog (below). |
+| `volumetricRasterBrightness` | 1 | Raster fog: the fog colour's radiance. |
+| `volumetricRasterLights` | 16 | Raster fog: how many lights glow (0-64). |
+| `volumetricRasterShadowSize` | 64 | Raster fog: texels a side of a glowing light's shadow cube face (16-256). |
+| `volumetricRasterSteps` | 12 | Raster fog: samples of each glowing light along a camera ray (1-64). |
 
 The game's fog is what `remixapi_SetFogState` last gave: exponential fog's
 density is the extinction; squared-exponential and linear fog get the
@@ -37,13 +42,29 @@ as in D3D; exponential and squared exponential by its density); the override
 is exponential fog leaving 5% at `volumetricDistance`. The fog colour is
 unlit: `volumetricRasterBrightness` (1) is its radiance.
 
-Local lights glow in it as in the traced medium, without shadows: per pixel,
-the light tree is cut to at most 24 nodes (the heaviest for that camera ray
-split first) and each light's scattering along the ray is integrated in
-closed form within its range. The glow's scattering is the traced medium's
+Local lights glow in it, shadowed, with no history to settle or trail:
+
+1. Each frame the `volumetricRasterLights` (16) sphere lights that send the
+   most into view (intensity over squared distance, among those whose reach
+   comes within `volumetricMaxDistance` in front of the camera) each get a
+   shadow cube: `volumetricRasterShadowSize` (64) texels a side a face, the
+   distance from the light to the first opaque surface, traced anew by the
+   volume update pass (6 x 64^2 rays a light). Blended sheets let the light
+   through.
+2. Each camera ray that crosses a light's reach before its first surface takes
+   `volumetricRasterSteps` (12) samples of it, spaced evenly in the angle the
+   ray subtends at the light, so they gather where the glow is brightest. Each
+   compares its distance with the four nearest texels of the cube; the
+   samples are offset per pixel by a fixed noise pattern, the same every
+   frame.
+
+A light's glow is its single scattering towards the camera within its reach
+(its range, `localRange`, at most `volumetricMaxDistance`), dimmed by the
+raster fog in front of it. Its scattering is the traced medium's
 (`volumetricFogDensityScale` included) times `volumetricScattering`;
-`volumetricLightScale` and `volumetricEmissiveScale` and each light's own
-volumetric radiance scale apply. No grids, update pass or march.
+`volumetricLightScale` and each light's own volumetric radiance scale apply.
+Lights past the first `volumetricRasterLights` and emissive surfaces do not
+glow; neither does the sun.
 
 ## How it runs
 

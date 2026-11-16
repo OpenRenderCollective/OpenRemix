@@ -207,14 +207,21 @@ namespace remix {
     // volumetricRaster: the medium is no traced medium but the game's fog as
     // a raster game draws it (volume_policy.h rasterFog): each pixel blended
     // towards the fog colour by its view depth, the sky left clear, plus the
-    // unshadowed glow of local lights in it (volumetricScattering and the
-    // source shares scale it). No grids, no update pass, no march; the fog
-    // colour itself is unlit, so volumetricRasterBrightness gives the
+    // shadowed glow of local lights in it (volumetricScattering and the
+    // source shares scale it). No grids, no history, no march through cells;
+    // the fog colour itself is unlit, so volumetricRasterBrightness gives the
     // (display-referred) colour its radiance. volumetricFogDensityScale
-    // scales the game's exponential fog density for the traced medium only: a
-    // density tuned for raster fog reads far thicker as a lit medium.
+    // scales the game's exponential fog density for the traced medium (and the
+    // glow): a density tuned for raster fog reads far thicker as a lit medium.
+    // The glow: the volumetricRasterLights sphere lights that send the most
+    // into view each get a cube of volumetricRasterShadowSize^2 texels a face,
+    // the distance to the first opaque surface, traced anew every frame; each
+    // camera ray crossing a light's reach takes volumetricRasterSteps samples
+    // of it against that cube. Lights past the first volumetricRasterLights
+    // have no glow.
     bool volumetricRaster = false;
     float volumetricRasterBrightness = 1, volumetricFogDensityScale = 1;
+    uint32_t volumetricRasterLights = 16, volumetricRasterShadowSize = 64, volumetricRasterSteps = 12;
     // Each source's share of the scattered light, on top of a light's own
     // volumetricRadianceScale: the sun, lights (sphere, rect, disk, cylinder),
     // emissive surfaces, the sky.

@@ -1014,7 +1014,7 @@ namespace remix {
       if (options.volumetrics && options.volumetricRaster) {
         ui::SliderFloat("Light glow", &options.volumetricScattering, 0.f, 8.f, "%.2f");
         if (ImGui::IsItemHovered())
-          ImGui::SetTooltip("The glow of local lights in the fog, unshadowed; 1 is as bright as the traced\n"
+          ImGui::SetTooltip("The glow of local lights in the fog, shadowed; 1 is as bright as the traced\n"
                             "medium's. Each light's own volumetric radiance scale applies as well.");
         if (!options.volumetricOverride) {
           ui::SliderFloat("Game fog density (glow)", &options.volumetricFogDensityScale, .001f, 4.f, "%.3f",
@@ -1023,10 +1023,26 @@ namespace remix {
             ImGui::SetTooltip("Scales the game's fog density for the glow, as for the traced medium.");
         }
         ui::SliderFloat("Glow: lights", &options.volumetricLightScale, 0.f, 4.f, "%.2f");
-        ui::SliderFloat("Glow: emissive surfaces", &options.volumetricEmissiveScale, 0.f, 4.f, "%.2f");
+        int glowLights = int(options.volumetricRasterLights), glowSize = int(options.volumetricRasterShadowSize),
+            glowSteps = int(options.volumetricRasterSteps);
+        if (ui::SliderInt("Glowing lights", &glowLights, 0, 64))
+          options.volumetricRasterLights = uint32_t(glowLights);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("How many sphere lights glow: those that send the most into view. Each traces a\n"
+                            "shadow cube every frame.");
+        if (ui::SliderInt("Glow shadow detail", &glowSize, 16, 256))
+          options.volumetricRasterShadowSize = uint32_t(glowSize);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("Texels a side of each light's shadow cube face: sharper shafts, more rays\n"
+                            "(6 x this^2 a light, every frame).");
+        if (ui::SliderInt("Glow samples", &glowSteps, 1, 64))
+          options.volumetricRasterSteps = uint32_t(glowSteps);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("Shadow samples per pixel along each light's reach.");
         const auto volume = trace::g_volumeState;
         if (volume.active)
-          ImGui::TextWrapped("Raster fog: on (%s), full at %.1f m", volume.source, volume.visibilityMeters);
+          ImGui::TextWrapped("Raster fog: on (%s), full at %.1f m; %u lights glow", volume.source,
+                             volume.visibilityMeters, volume.glowLights);
         else
           ImGui::TextWrapped("Raster fog: off (%s)", volume.reason);
       } else if (options.volumetrics) {

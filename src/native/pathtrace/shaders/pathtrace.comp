@@ -3241,83 +3241,56 @@ float rasterFogAmount(float viewDepth) {
   float k=frame.volumeParams.z*max(viewDepth,0);
   return 1-exp(-(frame.volumeParams.w==2?k*k:k));
 }
-// A light-tree node's share of a camera ray's glow: its power over the
-// squared distance from the segment [0, far] to its centre, no nearer than
-// its own extent.
-float rasterGlowWeight(LightNode node,vec3 origin,vec3 direction,float far) {
-  vec3 centre=.5*(node.maximum.xyz+node.minimumPower.xyz),halfSize=.5*(node.maximum.xyz-node.minimumPower.xyz);
-  vec3 offset=centre-origin-direction*clamp(dot(centre-origin,direction),0,far);
-  return node.minimumPower.w/max(dot(offset,offset),max(dot(halfSize,halfSize),1e-6));
-}
-// What one emitter scatters towards the camera from the fog along [0, far],
-// unshadowed, before the medium's scattering and the 1/4 pi phase: its
-// intensity towards the ray's nearest point times the integral of 1 / d^2
-// along the ray (atan in closed form), within its range, dimmed by the raster
-// fog in front of that point. A sphere's intensity is its radiance over its
-// disc; a triangle's, its radiance over its area seen from there.
-vec3 rasterGlowEmitter(LightEmitter light,vec3 origin,vec3 direction,float far,float forward) {
-  vec3 centre=light.positionRadius.xyz;float radius=max(light.positionRadius.w,1e-3);
-  float along=dot(centre-origin,direction);
-  vec3 offset=centre-origin-direction*along;
-  float h2=max(dot(offset,offset),radius*radius),h=sqrt(h2);
-  float t0=0,t1=far;
-  float range=light.radiance.w==0?light.corners[1].x:0;
-  if(range>0) {
-    if(h2>=range*range)return vec3(0);
-    float chord=sqrt(range*range-h2);
-    t0=max(t0,along-chord);t1=min(t1,along+chord);
-  }
-  if(t1<=t0)return vec3(0);
-  float nearest=clamp(along,t0,t1);
-  vec3 outgoing=normalize(origin+direction*nearest-centre);
-  vec3 intensity;
-  float v=light.corners[1].w,scale;
-  if(light.radiance.w!=0) {
-    vec3 normal=cross(light.corners[1].xyz-light.corners[0].xyz,light.corners[2].xyz-light.corners[0].xyz);
-    float twiceArea=length(normal);
-    if(twiceArea<=1e-12)return vec3(0);
-    float cosine=dot(normal/twiceArea,outgoing);
-    if(light.radiance.w>1)cosine=abs(cosine);
-    intensity=light.radiance.rgb*(.5*twiceArea*max(cosine,0));
-    scale=(-1-v)*frame.volumeLightScales.z;
-  } else {
-    intensity=emitterRadiance(light,outgoing)*(3.14159265359*radius*radius);
-    scale=v*frame.volumeLightScales.y;
-  }
-  float integral=(atan((t1-along)/h)-atan((t0-along)/h))/h;
-  return intensity*(integral*scale*localFalloff(h2)*(1-rasterFogAmount(nearest*forward)));
-}
 // Raster fog's glow around the local lights, which a traced medium shows and
-// a flat fog colour cannot. The light tree is cut to at most 24 nodes by
-// splitting the heaviest (rasterGlowWeight) until only leaves remain; the
-// leaves are evaluated, and clusters left over when the cut is full (the
-// faintest) are dropped. Tinted by the fog colour as the traced medium is.
-vec3 rasterFogGlow(vec3 origin,vec3 direction,float far,float forward) {
-  if(frame.volumeMedium.w<=0||frame.localConfig.x==0u||frame.lightNodes==0)return vec3(0);
-  LightNodes nodes=LightNodes(frame.lightNodes);
+// a flat fog colour cannot: for each light given a shadow cube this frame
+// (volume_policy.h rasterGlowLights) whose reach the camera ray crosses
+// before `far`, its single scattering towards the camera there, shadowed by
+// its cube (volume.glsl rasterShadow) and dimmed by the raster fog in front.
+// volumeFrame.x samples a light, spaced evenly in the angle the ray subtends
+// at the light (equiangular: they gather where the light is brightest, and
+// each carries an equal share of the 1 / d^2 integral); `jitter` offsets
+// them per pixel, the same every frame. Tinted by the fog colour as the
+// traced medium is.
+vec3 rasterFogGlow(vec3 origin,vec3 direction,float far,float forward,float jitter) {
+  uint lights=frame.volumeConfig.z;
+  if(lights==0u||frame.volumeGrid==0||frame.volumeMedium.w<=0||frame.lightEmitters==0)return vec3(0);
+  VolumeCells header=VolumeCells(frame.volumeGrid);
   LightEmitters emitters=LightEmitters(frame.lightEmitters);
+  uint steps=max(frame.volumeFrame.x,1u);
   far=min(far,1e6);
-  const uint cutSize=24u;
-  uint cut[cutSize];float weight[cutSize];
-  uint count=1u;cut[0]=0u;weight[0]=1;
-  for(uint step=1u;step<cutSize;++step) {
-    int heaviest=-1;float most=0;
-    for(uint i=0u;i<count;++i)
-      if(nodes.data[cut[i]].links.w>1u&&weight[i]>most){most=weight[i];heaviest=int(i);}
-    if(heaviest<0)break;
-    uvec4 links=nodes.data[cut[heaviest]].links;
-    cut[heaviest]=links.x;weight[heaviest]=rasterGlowWeight(nodes.data[links.x],origin,direction,far);
-    cut[count]=links.y;weight[count]=rasterGlowWeight(nodes.data[links.y],origin,direction,far);++count;
-  }
   vec3 glow=vec3(0);
-  for(uint i=0u;i<count;++i) {
-    uvec4 links=nodes.data[cut[i]].links;
-    if(links.w!=1u||weight[i]<=0)continue;
-    // A leaf of many emitters (an emissive mesh): its first eight stand for all.
-    uint emitterCount=max(links.y,1u),evaluated=min(emitterCount,8u);
-    vec3 leaf=vec3(0);
-    for(uint e=0u;e<evaluated;++e)leaf+=rasterGlowEmitter(emitters.data[links.z+e],origin,direction,far,forward);
-    glow+=leaf*(float(emitterCount)/float(evaluated));
+  for(uint slot=0u;slot<lights;++slot) {
+    vec4 centreReach=header.data[slot*2u];
+    vec3 centre=centreReach.xyz;float reach=centreReach.w;
+    float along=dot(centre-origin,direction);
+    vec3 offset=centre-origin-direction*along;
+    float h2=dot(offset,offset);
+    if(h2>=reach*reach)continue;
+    float chord=sqrt(reach*reach-h2),t0=max(0.,along-chord),t1=min(far,along+chord);
+    if(t1<=t0)continue;
+    LightEmitter light=emitters.data[floatBitsToUint(header.data[slot*2u+1u].x)];
+    float radius=max(light.positionRadius.w,1e-3);
+    // No nearer than the light's own surface: a ray through the light would
+    // otherwise gather an unbounded 1 / d^2.
+    float h=sqrt(max(h2,radius*radius));
+    float a0=atan((t0-along)/h),a1=atan((t1-along)/h),step=(a1-a0)/float(steps);
+    vec3 sum=vec3(0);
+    for(uint i=0u;i<steps;++i) {
+      float t=along+h*tan(a0+(float(i)+jitter)*step);
+      vec3 toPoint=origin+direction*t-centre;
+      float d2=max(dot(toPoint,toPoint),radius*radius);
+      float falloff=emitterFalloff(light,d2);
+      if(falloff<=0)continue;
+      float lit=rasterShadow(slot,toPoint);
+      if(lit<=0)continue;
+      // The sample's share of the integral of 1 / d^2 is step / h with the
+      // ray's own distance to the centre; (t - along)^2 + h^2 over d2 corrects
+      // for a ray that passes inside the light's radius.
+      float share=((t-along)*(t-along)+h*h)/d2;
+      sum+=emitterRadiance(light,toPoint*inversesqrt(d2))*(falloff*lit*share*(1-rasterFogAmount(t*forward)));
+    }
+    float v=light.corners[1].w;
+    glow+=sum*(step/h*3.14159265359*radius*radius*v*frame.volumeLightScales.y);
   }
   vec3 tint=frame.volumeMedium.rgb;
   float brightest=max(max(tint.r,tint.g),tint.b);
@@ -4233,7 +4206,9 @@ void main() {
       float amount=rasterFogAmount(far*forward);
       fogTransmittance=1-amount;fogLight=frame.volumeMedium.rgb*amount;
     }
-    fogLight+=rasterFogGlow(origin,direction,far,forward);
+    // Interleaved gradient noise: a fixed fine pattern, nothing to trail.
+    float jitter=fract(52.9829189*fract(dot(vec2(pixel),vec2(.06711056,.00583715))));
+    fogLight+=rasterFogGlow(origin,direction,far,forward,jitter);
     transparent=fogLight+fogTransmittance*transparent;tint*=fogTransmittance;
   }
   // A camera inside a translucent body (under water): its medium up to the

@@ -1,9 +1,12 @@
 #pragma once
 #include "pathtrace/options.h"
+#include "scene/light_bvh.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <mutex>
+#include <utility>
+#include <vector>
 
 namespace remix::trace {
   // The game's fog as remixapi_SetFogState last gave it (D3D fog: mode 0
@@ -102,6 +105,7 @@ namespace remix::trace {
     uint32_t cells = 0, levels = 0;
     float visibilityMeters = 0, reachMeters = 0;
     bool raster = false; // TraceOptions::volumetricRaster
+    uint32_t glowLights = 0; // raster fog: lights with a shadow cube this frame
   };
   inline VolumeState g_volumeState;
 
@@ -165,5 +169,80 @@ namespace remix::trace {
     state.reason = "";
     state.visibilityMeters = full * options.sceneScale;
     return true;
+  }
+
+  // Raster fog's shadowed glow (volume.glsl rasterShadowTexel, pathtrace.comp
+  // rasterFogGlow). The buffer at Frame::volumeGrid starts with one of these
+  // per glowing light (rasterGlowSlots of them), then each light's cube of
+  // distances: six faces of size^2 floats.
+  struct RasterGlowLight {
+    float centreReach[4] = {}; // world units
+    uint32_t emitter = 0, unused[3] = {};
+  };
+  static_assert(sizeof(RasterGlowLight) == 32);
+  inline constexpr uint32_t rasterGlowSlots = 64;
+  inline uint32_t rasterGlowCount(const TraceOptions &options) {
+    return std::min(options.volumetricRasterLights, rasterGlowSlots);
+  }
+  inline uint32_t rasterGlowSize(const TraceOptions &options) {
+    return std::clamp(options.volumetricRasterShadowSize, 16u, 256u);
+  }
+  inline size_t rasterGlowBytes(uint32_t lights, uint32_t size) {
+    return sizeof(RasterGlowLight) * rasterGlowSlots + size_t(lights) * 6 * size * size * sizeof(float);
+  }
+
+  // The sphere lights whose glow the camera sees most: each one's intensity
+  // (its volumetric scale included) over its squared distance from the eye,
+  // among those whose reach (its range, the local light range, at most
+  // volumetricMaxDistance) comes within volumetricMaxDistance of the eye and
+  // in front of it. Emissive triangles have no glow: there are too many to
+  // give each a cube. `scored` is scratch kept by the caller.
+  inline uint32_t rasterGlowLights(const TraceOptions &options, const std::vector<scene::LightEmitter> &emitters,
+                                   const float eye[3], const float forward[3], uint32_t limit,
+                                   std::vector<std::pair<float, uint32_t>> &scored, RasterGlowLight *out) {
+    scored.clear();
+    if (limit == 0 || options.volumetricLightScale <= 0)
+      return 0;
+    const float maxReach = std::max(options.volumetricMaxDistance, 1.f) / options.sceneScale;
+    for (uint32_t i = 0; i < emitters.size(); ++i) {
+      const auto &e = emitters[i];
+      if (e.radiance[3] != 0 || e.corners[1][3] <= 0)
+        continue;
+      const float radius = std::max(e.positionRadius[3], 1e-3f);
+      const float power = (.2126f * e.radiance[0] + .7152f * e.radiance[1] + .0722f * e.radiance[2]) * radius *
+                          radius * e.corners[1][3];
+      if (!(power > 0))
+        continue;
+      float reach = maxReach;
+      if (e.corners[1][0] > 0)
+        reach = std::min(reach, e.corners[1][0]);
+      if (options.localRange > 0)
+        reach = std::min(reach, options.localRange);
+      float offset[3], distance2 = 0, ahead = 0;
+      for (int c = 0; c < 3; ++c) {
+        offset[c] = e.positionRadius[c] - eye[c];
+        distance2 += offset[c] * offset[c];
+        ahead += offset[c] * forward[c];
+      }
+      if (ahead < -reach || std::sqrt(distance2) - reach > maxReach)
+        continue;
+      scored.push_back({power / std::max(distance2, radius * radius), i});
+    }
+    const uint32_t count = uint32_t(std::min<size_t>(limit, scored.size()));
+    std::partial_sort(scored.begin(), scored.begin() + count, scored.end(),
+                      [](const auto &a, const auto &b) { return a.first > b.first; });
+    for (uint32_t i = 0; i < count; ++i) {
+      const auto &e = emitters[scored[i].second];
+      float reach = maxReach;
+      if (e.corners[1][0] > 0)
+        reach = std::min(reach, e.corners[1][0]);
+      if (options.localRange > 0)
+        reach = std::min(reach, options.localRange);
+      out[i] = {};
+      std::copy_n(e.positionRadius, 3, out[i].centreReach);
+      out[i].centreReach[3] = reach;
+      out[i].emitter = scored[i].second;
+    }
+    return count;
   }
 } // namespace remix::trace

@@ -108,7 +108,83 @@ void volumeMarch(vec3 origin,vec3 direction,float far,out vec3 inscatter,out flo
   }
   inscatter*=frame.volumeMedium.rgb*frame.volumeParams.z;
 }
+// Raster fog's glow (volume.cpp, volume_policy.h RasterGlowLight): with
+// raster fog (volumeConfig x 0, y 1) the buffer holds volumeConfig.z lights'
+// shadow cubes of volumeConfig.w texels a side, after a header of 64 slots
+// (centre, reach; emitter). A cube texel holds the distance from the light's
+// centre to the first opaque surface that way (its reach if none).
+layout(buffer_reference,std430,buffer_reference_align=4) buffer RasterShadows { float data[]; };
+const uint rasterGlowHeader=64u*8u;
+// A cube face (0..5: +x -x +y -y +z -z) and a point of it in [-1, 1]^2 as a
+// direction, and back.
+vec3 rasterCubeDirection(uint face,vec2 uv) {
+  uint axis=face>>1;vec3 d;
+  d[axis]=(face&1u)!=0u?-1.:1.;d[(axis+1u)%3u]=uv.x;d[(axis+2u)%3u]=uv.y;
+  return d;
+}
+uint rasterCubeFace(vec3 d,out vec2 uv) {
+  vec3 a=abs(d);
+  uint axis=a.x>=a.y&&a.x>=a.z?0u:a.y>=a.z?1u:2u;
+  uv=vec2(d[(axis+1u)%3u],d[(axis+2u)%3u])/max(a[axis],1e-20);
+  return axis*2u+(d[axis]<0?1u:0u);
+}
+// How much of light `slot`'s light reaches a point `offset` from its centre:
+// the four nearest texels compared (a texel's width of penumbra, so edges do
+// not crawl), each passing if the point is nearer than its surface.
+float rasterShadow(uint slot,vec3 offset) {
+  uint size=frame.volumeConfig.w;
+  vec2 uv;uint face=rasterCubeFace(offset,uv);
+  float distance=length(offset),bias=distance*3/float(size);
+  vec2 q=(uv*.5+.5)*float(size)-.5;
+  ivec2 base=ivec2(floor(q));vec2 f=q-vec2(base);
+  RasterShadows cubes=RasterShadows(frame.volumeGrid);
+  uint first=rasterGlowHeader+(slot*6u+face)*size*size;
+  float lit=0;
+  for(int corner=0;corner<4;++corner) {
+    ivec2 texel=clamp(base+ivec2(corner&1,corner>>1),ivec2(0),ivec2(size-1));
+    float w=(corner&1)!=0?f.x:1-f.x;w*=(corner>>1)!=0?f.y:1-f.y;
+    if(distance<cubes.data[first+uint(texel.y)*size+uint(texel.x)]-bias)lit+=w;
+  }
+  return lit;
+}
 #ifdef VOLUME_UPDATE_PASS
+// The nearest opaque surface from a light's centre along `direction` within
+// [minimum, maximum]: as a shadow ray sees it, but blended sheets let the
+// light through (the glow behind a window is not cut off at the glass).
+float rasterShadowLayer(accelerationStructureEXT scene,vec3 origin,vec3 direction,float minimum,float maximum) {
+  rayQueryEXT query;
+  rayQueryInitializeEXT(query,scene,shadowFlags(),shadowMask(),origin,minimum,direction,maximum);
+  while(rayQueryProceedEXT(query)) {
+    if(rayQueryGetIntersectionTypeEXT(query,false)!=gl_RayQueryCandidateIntersectionTriangleEXT)continue;
+    Surface s=surfaces[rayQueryGetIntersectionInstanceCustomIndexEXT(query,false)+rayQueryGetIntersectionGeometryIndexEXT(query,false)];
+    s.indices=s.traceIndices;
+    if(enableDecals&&decalSurface(s))continue;
+    if((s.state.w&4)==0&&!rayQueryGetIntersectionFrontFaceEXT(query,false))continue;
+    if((s.state.w&2)!=0)continue;
+    if(!acceptCandidate(s,rayQueryGetIntersectionPrimitiveIndexEXT(query,false),rayQueryGetIntersectionBarycentricsEXT(query,false)))continue;
+    rayQueryConfirmIntersectionEXT(query);
+  }
+  return rayQueryGetIntersectionTypeEXT(query,true)!=gl_RayQueryCommittedIntersectionNoneEXT?rayQueryGetIntersectionTEXT(query,true):maximum;
+}
+// One texel of a glowing light's shadow cube, from the surface of the
+// light's sphere outwards (a lamp's own bulb does not hide it).
+void rasterShadowTexel(uint index) {
+  uint size=frame.volumeConfig.w,perLight=6u*size*size,slot=index/perLight;
+  if(frame.volumeGrid==0||slot>=frame.volumeConfig.z)return;
+  uint local=index%perLight,face=local/(size*size),texel=local%(size*size);
+  vec2 uv=(vec2(texel%size,texel/size)+.5)/float(size)*2-1;
+  vec3 direction=normalize(rasterCubeDirection(face,uv));
+  VolumeCells header=VolumeCells(frame.volumeGrid);
+  vec4 centreReach=header.data[slot*2u];
+  uint emitter=floatBitsToUint(header.data[slot*2u+1u].x);
+  float radius=LightEmitters(frame.lightEmitters).data[emitter].positionRadius.w;
+  float minimum=max(radius,1e-4*max(centreReach.w,1)),distance=centreReach.w;
+  if(distance>minimum) {
+    if((frame.target.z&1)!=0)distance=rasterShadowLayer(staticScene,centreReach.xyz,direction,minimum,distance);
+    if((frame.target.z&2)!=0)distance=rasterShadowLayer(dynamicScene,centreReach.xyz,direction,minimum,distance);
+  }
+  RasterShadows(frame.volumeGrid).data[rasterGlowHeader+slot*perLight+local]=distance;
+}
 // A local emitter's volumetric radiance scale times its source's share
 // (lights, emissive surfaces: Frame::volumeLightScales). Emissive surfaces
 // store theirs negated less one (light_bvh.cpp).
@@ -211,6 +287,7 @@ vec3 volumeLocal(vec3 p,float size,inout uint state) {
   return sum;
 }
 void volumeUpdate(uint index) {
+  if(frame.volumeConfig.x==0u&&frame.volumeConfig.y==1u){rasterShadowTexel(index);return;}
   uint n=frame.volumeConfig.y,levels=frame.volumeConfig.z,perLevel=n*n*n,total=perLevel*levels;
   if(frame.volumeGrid==0||index>total)return;
   VolumeCells cells=VolumeCells(frame.volumeGrid);

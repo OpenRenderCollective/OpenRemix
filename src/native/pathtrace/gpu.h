@@ -870,6 +870,10 @@ namespace remix {
       float cellUnits = 0, eye[3] = {};
       VkDeviceSize bytes = 0; // requested size of `cells`
       const char *inactiveReason = "not requested";
+      // Raster fog's glow (volume_policy.h rasterGlowLights): the lights given
+      // a shadow cube this frame and the cubes' size; `cells` holds them.
+      uint32_t glowLights = 0, glowSize = 0;
+      std::vector<std::pair<float, uint32_t>> glowScratch;
     } volume;
     void configureVolume(VkCommandBuffer command, Frame &frame, const TraceOptions &options);
     void recordVolume(VkCommandBuffer command);
