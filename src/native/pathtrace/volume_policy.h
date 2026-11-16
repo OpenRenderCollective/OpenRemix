@@ -197,8 +197,8 @@ namespace remix::trace {
     // Emissive surfaces: their area-weighted mean normal (unit) and its
     // length, how much they face one way (1 a flat panel, 0 all ways).
     float normalCoherence[4] = {};
-    // A sphere light's emitter; where the cube's rays start; the radius below
-    // which 1 / d^2 is held.
+    // A sphere light's emitter; where the cube's rays start; the radius that
+    // softens 1 / d^2 to 1 / (d^2 + r^2).
     uint32_t emitter = 0;
     float minimum = 0, radius = 0, unused = 0;
   };
@@ -227,7 +227,8 @@ namespace remix::trace {
     // cube size and samples, the sky maps' size (0: no sky glow).
     uint32_t sharp = 0, softSize = 0, softSteps = 0, skySize = 0;
     // How far camera rays take samples of the sun and the sky (world units);
-    // 1: the sky is left clear of the glow (volumetricRasterClearSky).
+    // 1: the sky is left clear of the sun's and the sky's glow
+    // (volumetricRasterClearSky).
     float march = 0;
     uint32_t clearSky = 0, unused[2] = {};
   };

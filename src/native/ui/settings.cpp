@@ -1045,8 +1045,8 @@ namespace remix {
                "as far across as the sun's.");
         ui::Checkbox("Keep the sky clear", &options.volumetricRasterClearSky);
         if (ImGui::IsItemHovered())
-          ImGui::SetTooltip("No glow over the sky either, as the game's fog leaves it: the glow stops at the\n"
-                            "horizon and at a light's edge against the sky.");
+          ImGui::SetTooltip("No sun or sky glow over the sky, as the game's fog leaves it clear; the lights'\n"
+                            "halos still show against it.");
         int glowLights = int(options.volumetricRasterLights), glowSize = int(options.volumetricRasterShadowSize),
             glowSteps = int(options.volumetricRasterSteps);
         if (ui::SliderInt("Primary lights", &glowLights, 0, 64))

@@ -126,7 +126,8 @@ vec4 rasterGlowSlot(uint slot,uint field) { return VolumeCells(frame.volumeGrid)
 uvec4 rasterGlowCounts() { return floatBitsToUint(VolumeCells(frame.volumeGrid).data[rasterCountsSlot]); }
 // How far camera rays take samples of the sun and the sky.
 float rasterGlowMarch() { return VolumeCells(frame.volumeGrid).data[rasterCountsSlot+1u].x; }
-// The sky is left clear of the glow (TraceOptions::volumetricRasterClearSky).
+// The sky is left clear of the sun's and the sky's glow
+// (TraceOptions::volumetricRasterClearSky).
 bool rasterGlowClearSky() { return floatBitsToUint(VolumeCells(frame.volumeGrid).data[rasterCountsSlot+1u].y)!=0u; }
 // The first float of light `slot`'s cube, and its size; for slot
 // volumeConfig.z, where the cubes end.

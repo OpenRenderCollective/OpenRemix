@@ -3298,6 +3298,7 @@ vec3 rasterFogGlow(vec3 origin,vec3 direction,float far,float forward,float jitt
   uvec4 counts=rasterGlowCounts();
   uint lights=frame.volumeConfig.z;
   LightEmitters emitters=LightEmitters(frame.lightEmitters);
+  bool sky=far>=1e30;
   far=min(far,1e6);
   vec3 glow=vec3(0);
   for(uint slot=0u;slot<lights;++slot) {
@@ -3315,20 +3316,24 @@ vec3 rasterFogGlow(vec3 origin,vec3 direction,float far,float forward,float jitt
     if(sphere)light=emitters.data[floatBitsToUint(limits.x)];
     float radius=max(limits.z,1e-4);
     uint steps=max(slot<counts.x?frame.volumeFrame.x:counts.z,1u);
-    // No nearer than the light's own size: a ray through the light would
-    // otherwise gather an unbounded 1 / d^2.
-    float h=sqrt(max(h2,radius*radius));
+    // 1 / (d^2 + r^2) with r the light's size, not 1 / d^2 held at r: held,
+    // the fog within the light's sphere glowed evenly, a solid orb with a hard
+    // edge wherever the sphere met a wall or the lamp around it. Softened,
+    // the glow peaks at the centre and fades smoothly, with no edge. The
+    // ray's distance to the centre takes in r^2 so the samples stay
+    // equiangular for it.
+    float h=sqrt(h2+radius*radius);
     float a0=atan((t0-along)/h),a1=atan((t1-along)/h),angle=(a1-a0)/float(steps);
     vec3 sum=vec3(0);
     for(uint i=0u;i<steps;++i) {
       float t=along+h*tan(a0+(float(i)+jitter)*angle);
       vec3 toPoint=origin+direction*t-centre;
-      float d2=max(dot(toPoint,toPoint),radius*radius);
-      float falloff=sphere?emitterFalloff(light,d2):localFalloff(d2);
+      float distance2=dot(toPoint,toPoint);
+      float falloff=sphere?emitterFalloff(light,distance2):localFalloff(distance2);
       if(falloff<=0)continue;
       float lit=rasterShadow(slot,toPoint);
       if(lit<=0)continue;
-      vec3 outgoing=toPoint*inversesqrt(d2);
+      vec3 outgoing=toPoint*inversesqrt(max(distance2,1e-12));
       // Emissive surfaces: their radiance times area towards `outgoing`, a
       // flat panel by its cosine, surfaces facing all ways by its mean (1/4;
       // 1/2 two-sided).
@@ -3340,17 +3345,17 @@ vec3 rasterFogGlow(vec3 origin,vec3 direction,float far,float forward,float jitt
         float facing=twoSided?abs(cosine):max(cosine,0);
         intensity=intensityKind.rgb*mix(twoSided?.5:.25,facing,normalCoherence.w);
       }
-      // The sample's share of the integral of 1 / d^2 is angle / h with the
-      // ray's own distance to the centre; (t - along)^2 + h^2 over d2 corrects
-      // for a ray that passes inside the light's radius.
-      float share=((t-along)*(t-along)+h*h)/d2;
-      sum+=intensity*(falloff*lit*share*(1-rasterFogAmount(t*forward)));
+      // Each sample's share of the integral of 1 / (d^2 + r^2) is angle / h.
+      sum+=intensity*(falloff*lit*(1-rasterFogAmount(t*forward)));
     }
     glow+=sphere?sum*(angle/h*3.14159265359*radius*radius*light.corners[1].w*frame.volumeLightScales.y)
                 :sum*(angle/h*frame.volumeLightScales.z);
   }
   glow*=frame.localScale.x/(4*3.14159265359);
-  glow+=rasterOpenGlow(origin,direction,far,forward,jitter);
+  // Keep the sky clear (volumetricRasterClearSky): of the sun's and the sky's
+  // glow, which fill the fog everywhere; a light's own halo still shows
+  // against the sky.
+  if(!sky||!rasterGlowClearSky())glow+=rasterOpenGlow(origin,direction,far,forward,jitter);
   vec3 tint=frame.volumeMedium.rgb;
   float brightest=max(max(tint.r,tint.g),tint.b);
   tint=brightest>0?tint/brightest:vec3(1);
@@ -4269,9 +4274,7 @@ void main() {
     }
     // Interleaved gradient noise: a fixed fine pattern, nothing to trail.
     float jitter=fract(52.9829189*fract(dot(vec2(pixel),vec2(.06711056,.00583715))));
-    // The sky clear of the glow as well, if so asked: as the game's fog leaves it.
-    if(far<1e30||frame.volumeGrid==0||!rasterGlowClearSky())
-      fogLight+=rasterFogGlow(origin,direction,far,forward,jitter);
+    fogLight+=rasterFogGlow(origin,direction,far,forward,jitter);
     transparent=fogLight+fogTransmittance*transparent;tint*=fogTransmittance;
   }
   // A camera inside a translucent body (under water): its medium up to the

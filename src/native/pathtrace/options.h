@@ -235,8 +235,8 @@ namespace remix {
     float volumetricRasterSunExtent = 64;
     // Which sources glow in raster fog (their volumetric*Scale applies on
     // top): the game's lights, emissive surfaces, the sun, the sky. With
-    // volumetricRasterClearSky the sky is left clear of the glow too, as of
-    // the fog colour.
+    // volumetricRasterClearSky the sky is left clear of the sun's and the
+    // sky's glow too, as of the fog colour (a light's halo still shows).
     bool volumetricRasterGlowLights = true, volumetricRasterGlowEmissive = true;
     bool volumetricRasterGlowSun = true, volumetricRasterGlowSky = true, volumetricRasterClearSky = false;
     // Each source's share of the scattered light, on top of a light's own
