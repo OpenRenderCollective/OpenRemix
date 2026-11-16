@@ -9,6 +9,13 @@ namespace remix::scene {
   // Cached, deterministic area quadrature in UV space. No emission texture reads
   // occur in lighting rays. Texture snapshots own the cache's lifetime.
   std::array<float, 3> triangleEmission(const Draw &draw, uint32_t triangle, const float *uvTransform);
+  // What of a blended draw's coverage scales its emitted light (emission.cpp):
+  // the texture's alpha, the vertices', and a factor for the whole draw.
+  struct EmissionCoverage {
+    bool texture = false, vertex = false;
+    float scale = 1;
+  };
+  EmissionCoverage emissionCoverage(const Draw &draw);
   SphereLight triangleEmitter(const Draw &draw, uint32_t triangle, const std::array<float, 3> &radiance);
   // Excludes texture contents and sprite frame: only animation may be smoothed.
   uint64_t emissionHistoryKey(const Draw &draw, uint32_t triangle);
@@ -31,8 +38,9 @@ namespace remix::scene {
     using Reduction = std::vector<Triangle>;
     std::shared_ptr<const Reduction> reduce(const Draw &draw, const std::array<float, 4> &uv);
     // The draw's emitters, triangleEmitter of each triangle of its reduction
-    // (in its order): kept while the draw's identity, surface, transform,
-    // sidedness and reduction stay the same (a prop at rest is not transformed
+    // (in its order) times the draw's coverage scale: kept while the draw's
+    // identity, surface, transform, sidedness, coverage scale and reduction
+    // stay the same (a prop at rest is not transformed
     // again every frame). Skinned draws are made each time. A list once
     // returned is never changed (frames hold it).
     std::shared_ptr<const std::vector<SphereLight>> emitters(const Draw &draw,
@@ -46,6 +54,7 @@ namespace remix::scene {
       std::shared_ptr<const Reduction> reduction;
       std::weak_ptr<Surface> surface;
       Matrix model{};
+      float coverage = 1; // emissionCoverage's scale
       uint64_t instanceId = 0, used = 0;
       uint32_t instanceIndex = 0, surfaceIndex = 0;
       bool doubleSided = false;
@@ -53,8 +62,9 @@ namespace remix::scene {
     };
     std::unordered_map<uint64_t, Emitters> emitterEntries;
     uint64_t emitterFrame = 1;
+    // ..., the coverage the estimate weighs by (1 texture alpha, 2 vertex alpha).
     using Key = std::tuple<std::array<float, 3>, std::array<float, 4>, uint8_t, uint8_t, uint8_t, uint8_t, uint8_t,
-                           uint8_t, std::array<float, 4>>;
+                           uint8_t, std::array<float, 4>, uint8_t>;
     struct Entry {
       std::weak_ptr<Texture> texture;
       bool textured = false;
@@ -70,7 +80,8 @@ namespace remix::scene {
     };
     std::unordered_map<const Surface *, SurfaceEntries> surfaces;
   };
-  // Every triangle of a reduction as an emitter (triangleEmitter), in its order,
+  // Every triangle of a reduction as an emitter (triangleEmitter), its radiance
+  // times the draw's coverage scale (emissionCoverage), in its order,
   // with the surface's group and their spatial ranks: a Morton order of the
   // triangles' centers in object space, so a rigid prop keeps them as it moves.
   void triangleEmitters(const Draw &draw, const SurfaceEmissionCache::Reduction &reduction,
