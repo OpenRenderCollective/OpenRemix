@@ -15,6 +15,11 @@
 //   REMIX_BENCH_STATIC [12000] retained instances, REMIX_BENCH_MESHES [4000]
 //   REMIX_BENCH_MATERIALS [1500], REMIX_BENCH_ACTORS [40], REMIX_BENCH_LIGHTS [64]
 //   REMIX_BENCH_EMISSIVE [300] retained emissive fixtures (18 triangles each)
+//   REMIX_BENCH_MOVING_LIGHTS [0] of the sphere lights, how many move every
+//     frame (UpdateLightDefinition: a game's carried or animated lights)
+//   REMIX_BENCH_FIREBALLS [0] emissive spheres (720 triangles, dynamic
+//     instances) alive at once, each growing over 90 frames and replaced by a
+//     new one (a new identity elsewhere): explosions
 //   REMIX_BENCH_OVERLAY [1] full-screen DrawScreenOverlay every frame; 2 also
 //     redraws a compass strip each frame (a changing HUD), 0 none
 //   REMIX_BENCH_STABLE_IDS [1] InstanceIdentityEXT on per-frame draws
@@ -23,7 +28,10 @@
 //     frame's GPU inputs (output-identity checks between builds); the scene
 //     animates by frame index, so equal builds give equal files.
 #include "api/exports.h"
+#include "pathtrace/renderer.h"
 #include "runtime/prepared.h"
+#include "scene/light_bvh.h"
+#include "scene/trace_frame.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <cmath>
@@ -187,6 +195,8 @@ int main() {
   const uint32_t materialCount = env("REMIX_BENCH_MATERIALS", 1500), actorCount = env("REMIX_BENCH_ACTORS", 40);
   const uint32_t lightCount = env("REMIX_BENCH_LIGHTS", 64);
   const uint32_t emissiveCount = env("REMIX_BENCH_EMISSIVE", 300);
+  const uint32_t movingLights = std::min(lightCount, env("REMIX_BENCH_MOVING_LIGHTS", 0));
+  const uint32_t fireballCount = env("REMIX_BENCH_FIREBALLS", 0);
   const uint32_t overlayMode = env("REMIX_BENCH_OVERLAY", 1);
   const bool overlay = overlayMode != 0, stableIds = env("REMIX_BENCH_STABLE_IDS", 1) != 0;
   const char *digestPath = std::getenv("REMIX_BENCH_DIGEST");
@@ -434,10 +444,11 @@ int main() {
 
   // Sphere lights (drawn every frame) and the sun.
   std::vector<remixapi_LightHandle> lights(lightCount);
+  std::vector<remixapi_Float3D> lightPositions(lightCount);
   for (uint32_t i = 0; i < lightCount; ++i) {
     remixapi_LightInfoSphereEXT sphere{};
     sphere.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT;
-    sphere.position = {80 * random.unit() - 40, 20 + 80 * random.unit(), 2 + 3 * random.unit()};
+    sphere.position = lightPositions[i] = {80 * random.unit() - 40, 20 + 80 * random.unit(), 2 + 3 * random.unit()};
     sphere.radius = .1f;
     remixapi_LightInfo light{};
     light.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
@@ -445,6 +456,70 @@ int main() {
     light.hash = 0x700000 + i;
     light.radiance = {20, 16, 12};
     ok(api.CreateLight(&light, &lights[i]), "CreateLight");
+  }
+
+  // Fireballs: a UV sphere (16 rings of 24 segments) with a textured emissive material.
+  remixapi_MeshHandle fireball = nullptr;
+  if (fireballCount) {
+    for (size_t p = 0; p < rgba.size(); p += 4) {
+      rgba[p] = 255;
+      rgba[p + 1] = uint8_t(96 + random.next() % 128);
+      rgba[p + 2] = uint8_t(random.next() % 64);
+      rgba[p + 3] = 255;
+    }
+    texture(0x830000, REMIXAPI_FORMAT_R8G8B8A8_SRGB, 32, rgba.data(), rgba.size());
+    const auto firePath = path(0x830000);
+    remixapi_MaterialInfoOpaqueEXT opaque{};
+    opaque.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
+    opaque.albedoConstant = {0, 0, 0};
+    opaque.opacityConstant = 1;
+    opaque.roughnessConstant = 1;
+    opaque.alphaTestType = 7;
+    remixapi_MaterialInfo info{};
+    info.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
+    info.pNext = &opaque;
+    info.hash = 0x840000;
+    info.emissiveTexture = firePath.c_str();
+    info.emissiveIntensity = 8;
+    info.emissiveColorConstant = {1, 1, 1};
+    remixapi_MaterialHandle fire;
+    ok(api.CreateMaterial(&info, &fire), "CreateMaterial (fireball)");
+    constexpr uint32_t rings = 16, segments = 24;
+    vertices[0].clear();
+    indices[0].clear();
+    for (uint32_t r = 0; r <= rings; ++r)
+      for (uint32_t s = 0; s <= segments; ++s) {
+        const float theta = 3.14159265f * float(r) / rings, phi = 6.2831853f * float(s) / segments;
+        remixapi_HardcodedVertex v{};
+        v.position[0] = std::sin(theta) * std::cos(phi);
+        v.position[1] = std::sin(theta) * std::sin(phi);
+        v.position[2] = std::cos(theta);
+        std::copy_n(v.position, 3, v.normal);
+        v.texcoord[0] = float(s) / segments;
+        v.texcoord[1] = float(r) / rings;
+        v.color = 0xffffffff;
+        vertices[0].push_back(v);
+      }
+    for (uint32_t r = 0; r < rings; ++r)
+      for (uint32_t s = 0; s < segments; ++s) {
+        const uint32_t a = r * (segments + 1) + s, b = a + segments + 1;
+        if (r)
+          indices[0].insert(indices[0].end(), {a, b, a + 1});
+        if (r + 1 < rings)
+          indices[0].insert(indices[0].end(), {a + 1, b, b + 1});
+      }
+    remixapi_MeshInfoSurfaceTriangles surface{};
+    surface.vertices_values = vertices[0].data();
+    surface.vertices_count = vertices[0].size();
+    surface.indices_values = indices[0].data();
+    surface.indices_count = indices[0].size();
+    surface.material = fire;
+    remixapi_MeshInfo mesh{};
+    mesh.sType = REMIXAPI_STRUCT_TYPE_MESH_INFO;
+    mesh.hash = 0x850000;
+    mesh.surfaces_values = &surface;
+    mesh.surfaces_count = 1;
+    ok(api.CreateMesh(&mesh, &fireball), "CreateMesh (fireball)");
   }
   remixapi_LightInfoDistantEXT distant{};
   distant.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DISTANT_EXT;
@@ -504,8 +579,39 @@ int main() {
     parameters.fovYInDegrees = 80;
     ok(api.SetupCamera(&camera), "SetupCamera (view model)");
     ok(api.DrawLightInstance(sun), "DrawLightInstance (sun)");
+    for (uint32_t i = 0; i < movingLights; ++i) {
+      remixapi_LightInfoSphereEXT sphere{};
+      sphere.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT;
+      sphere.position = lightPositions[i];
+      sphere.position.x += 2 * std::sin(float(frame) * .05f + float(i));
+      sphere.radius = .1f;
+      remixapi_LightInfo light{};
+      light.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
+      light.pNext = &sphere;
+      light.hash = 0x700000 + i;
+      light.radiance = {20, 16, 12};
+      ok(api.UpdateLightDefinition(lights[i], &light), "UpdateLightDefinition");
+    }
     for (auto light : lights)
       ok(api.DrawLightInstance(light), "DrawLightInstance");
+    // Each fireball lives 90 frames, growing; the next is a new instance elsewhere.
+    for (uint32_t k = 0; k < fireballCount; ++k) {
+      constexpr uint32_t life = 90;
+      const uint32_t phase = frame + k * life / fireballCount, generation = phase / life, age = phase % life;
+      Random place{(uint64_t(k) << 32 | generation) * 2654435761ull + 1};
+      remixapi_InstanceIdentityEXT identity{};
+      identity.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_IDENTITY_EXT;
+      identity.instanceId = 0x30000000ull + (uint64_t(k) << 16) + (generation & 0xffff);
+      identity.classification = REMIXAPI_INSTANCE_DYNAMIC_EXT;
+      identity.rasterVisible = 1;
+      remixapi_InstanceInfo instance{};
+      instance.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO;
+      instance.pNext = &identity;
+      instance.mesh = fireball;
+      instance.transform = translation(40 * place.unit() - 20, 10 + 40 * place.unit(), 2 + 2 * place.unit(), 0,
+                                       .5f + 3.5f * float(age) / life);
+      ok(api.DrawInstance(&instance), "DrawInstance (fireball)");
+    }
     ok(remixapi_DrawSceneInstancesEXT(nullptr), "DrawSceneInstancesEXT");
     auto skinned = [&](remixapi_MeshHandle mesh, uint64_t id, uint32_t actor, const remixapi_Transform &transform,
                        uint32_t category) {
@@ -544,9 +650,10 @@ int main() {
   };
 
   std::printf("scene: %u retained over %u meshes (%llu vertices), %u materials, %u actors (%llu skinned "
-              "vertices), %u lights, %u emissive fixtures, overlay %s, stable ids %s, %ux%u\n",
+              "vertices), %u lights (%u moving), %u emissive fixtures, %u fireballs, overlay %s, stable ids %s, "
+              "%ux%u\n",
               staticCount, meshCount, (unsigned long long)staticVertices, materialCount, actorCount,
-              (unsigned long long)actorVertices, lightCount, emissiveCount,
+              (unsigned long long)actorVertices, lightCount, movingLights, emissiveCount, fireballCount,
               overlayMode == 2 ? "changing"
               : overlay        ? "static"
                                : "off",
@@ -566,6 +673,9 @@ int main() {
   Stats phases[phaseCount];
   uint64_t conversions = 0, uploadBytes = 0, surfaceCount = 0, primaryCount = 0, rasterCount = 0, textureCount = 0,
            skinnedCount = 0, rasterBytes = 0, measured = 0;
+  remix::trace::g_sceneCosts = {};
+  remix::scene::g_lightChurn = {};
+  remix::scene::g_frameCosts = {};
   const auto wall = std::chrono::steady_clock::now();
   for (uint32_t i = 0; i < frames; ++i) {
     submitMilliseconds = 0;
@@ -636,6 +746,31 @@ int main() {
   };
   std::printf("measured %llu of %u frames, %.1f FPS wall clock\n", (unsigned long long)measured, frames,
               double(frames) / seconds);
+  {
+    // Scene preparation's light steps (PathTracer::prepareScene), and with
+    // REMIX_SCENE_TIMINGS=1 the light tree update's phases.
+    const auto &c = remix::trace::g_sceneCosts;
+    const double n = c.frames ? double(c.frames) : 1;
+    std::printf("scene preparation mean ms: total %.3f, frame %.3f, gather %.3f, family trees %.3f, light tree %.3f, "
+                "visibility %.3f (%u lights in the slowest frame)\n",
+                c.sum.total / n, c.sum.frame / n, c.sum.gather / n, c.sum.split / n, c.sum.tree / n,
+                c.sum.visibility / n, c.lights);
+    const auto &churn = remix::scene::g_lightChurn;
+    const double u = double(std::max<uint64_t>(churn.updates, 1));
+    const auto &ph = churn.phases;
+    std::printf("light tree: %llu updates, dynamic part rebuilds %llu (lights added %llu); phases mean ms: order "
+                "%.3f, copy %.3f, moved+compare %.3f, static match %.3f, dynamic merge %.3f, slot writes %.3f, bounds "
+                "%.3f, builds %.3f, counts %.3f, significance %.3f\n",
+                (unsigned long long)churn.updates, (unsigned long long)churn.rebuilds,
+                (unsigned long long)churn.added, ph[0] / u, ph[1] / u, ph[2] / u, ph[3] / u, ph[4] / u, ph[5] / u,
+                ph[6] / u, ph[7] / u, ph[8] / u, ph[9] / u);
+    const auto &f = remix::scene::g_frameCosts;
+    const double m = double(std::max<uint64_t>(f.frames, 1));
+    std::printf("frame step mean ms: static set sync %.3f, local check %.3f, ids %.3f, instances %.3f, sort %.3f, "
+                "emitters %.3f, opacity found %.3f, opacity new %.3f | emitters %.0f a frame\n",
+                f.sync / m, f.local / m, f.ids / m, f.instances / m, f.sort / m, f.emitters / m, f.find / m,
+                f.partition / m, f.emitterCount / m);
+  }
   std::puts("FramePerformanceEXT:");
   line("present", present);
   line("scene", scene);
