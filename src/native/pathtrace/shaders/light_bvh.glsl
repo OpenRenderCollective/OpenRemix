@@ -21,6 +21,13 @@ vec3 clearedEndpoint(LightEmitter light,vec3 origin,vec3 endpoint) {
   float entry=-along-sqrt(discriminant);
   return entry>0&&entry<reach?origin+direction*entry:endpoint;
 }
+// Within its clearance a sphere light lights as from the clearance's distance
+// (times distance squared over clearance squared): what holds the glow is in
+// it, not beside a small bright ball whose outline shows on it.
+float clearanceFade(LightEmitter light,float distance2) {
+  float clearance=light.radiance.w==0?light.corners[2].z:0;
+  return clearance>0?min(1,distance2/(clearance*clearance)):1;
+}
 float lightRandom(inout uint state) {
   state=hash(state+0x9e3779b9u);return float(state>>8)*(1.0/16777216.0);
 }
@@ -339,7 +346,7 @@ LocalCandidate localCandidate(LightEmitter light,Hit hit,inout uint state,bool a
   LocalCandidate result;result.physical=result.specular=vec3(0);result.endpoint=hit.p;result.distance=0;
   vec3 delta=light.positionRadius.xyz-hit.p;
   float distance2=dot(delta,delta),radius=light.positionRadius.w;
-  float attenuation=localFalloff(distance2);
+  float attenuation=localFalloff(distance2)*clearanceFade(light,distance2);
   if(attenuation==0)return result;
   bool inside=distance2<=radius*radius;
   vec3 axis=distance2>1e-20?delta*inversesqrt(distance2):hit.n;
@@ -744,7 +751,7 @@ vec3 localLighting(Hit hit,uint state,uint samples,out float lightDistance,bool 
     } else {
       vec3 delta=light.positionRadius.xyz-hit.p;
       float distance2=dot(delta,delta),radius=light.positionRadius.w;
-      float attenuation=localFalloff(distance2);
+      float attenuation=localFalloff(distance2)*clearanceFade(light,distance2);
       if(attenuation==0)continue;
       bool inside=distance2<=radius*radius;
       vec3 axis=distance2>1e-20?delta*inversesqrt(distance2):hit.n;
