@@ -206,9 +206,11 @@ namespace remix {
     float volumetricScattering = 1, volumetricMaxDistance = 250;
     // volumetricRaster: the medium is no traced medium but the game's fog as
     // a raster game draws it (volume_policy.h rasterFog): each pixel blended
-    // towards the fog colour by its view depth, the sky left clear. No grids,
-    // no update pass, no march; unlit, so volumetricRasterBrightness gives
-    // the (display-referred) fog colour its radiance. volumetricFogDensityScale
+    // towards the fog colour by its view depth, the sky left clear, plus the
+    // unshadowed glow of local lights in it (volumetricScattering and the
+    // source shares scale it). No grids, no update pass, no march; the fog
+    // colour itself is unlit, so volumetricRasterBrightness gives the
+    // (display-referred) colour its radiance. volumetricFogDensityScale
     // scales the game's exponential fog density for the traced medium only: a
     // density tuned for raster fog reads far thicker as a lit medium.
     bool volumetricRaster = false;

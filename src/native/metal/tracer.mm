@@ -2133,7 +2133,8 @@ namespace remix::metal {
         remix::trace::g_volumeState.raster = true;
       } else
         remix::trace::rasterFog(options, remix::trace::gameFog(), constants.volumeConfig, constants.volumeParams,
-                                constants.volumeMedium, remix::trace::g_volumeState);
+                                constants.volumeMedium, constants.volumeLightScales,
+                                remix::trace::g_volumeState);
       v.inactiveReason = remix::trace::g_volumeState.active ? "raster fog" : remix::trace::g_volumeState.reason;
       return;
     }

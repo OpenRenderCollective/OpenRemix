@@ -109,11 +109,15 @@ namespace remix::trace {
   // without grids. volumeConfig x 0 (no traced medium), y 1; volumeMedium
   // the linear fog colour times volumetricRasterBrightness; volumeParams:
   // start (world units), 1 / (end - start), density per world unit, mode
-  // (D3D: 1 exp, 2 exp2, 3 linear). The game's linear fog comes as D3D's:
+  // (D3D: 1 exp, 2 exp2, 3 linear); volumeMedium.w the scattering of the
+  // glow around local lights: the traced medium's extinction (with
+  // volumetricFogDensityScale) times volumetricScattering, so the glow is as
+  // bright as the traced medium's would be. lightScales: volumeLightScales.
+  // The game's linear fog comes as D3D's:
   // `scale` 1 / (end - start). The override is exponential fog that leaves
   // 5% at volumetricDistance. Fills `state`; false: no fog this frame.
   inline bool rasterFog(const TraceOptions &options, const GameFog &fog, uint32_t config[4], float params[4],
-                        float medium[4], VolumeState &state) {
+                        float medium[4], float lightScales[4], VolumeState &state) {
     state = {true, false, "the game sets no fog and the override is off", "none"};
     state.raster = true;
     float color[3], start = 0, scale = 0, density = 0, full = 0;
@@ -147,7 +151,12 @@ namespace remix::trace {
     config[1] = 1;
     for (int c = 0; c < 3; ++c)
       medium[c] = std::max(color[c], 0.f) * brightness;
-    medium[3] = 0;
+    const auto lit = volumeMedium(options, fog);
+    medium[3] = lit.active ? lit.extinction * std::max(options.volumetricScattering, 0.f) : 0;
+    const float scales[4] = {options.volumetricSunScale, options.volumetricLightScale, options.volumetricEmissiveScale,
+                             options.volumetricSkyScale};
+    for (int i = 0; i < 4; ++i)
+      lightScales[i] = std::max(scales[i], 0.f);
     params[0] = start;
     params[1] = scale;
     params[2] = density;

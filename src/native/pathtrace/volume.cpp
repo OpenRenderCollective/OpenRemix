@@ -21,7 +21,7 @@ namespace remix {
         trace::g_volumeState.raster = true;
       } else
         trace::rasterFog(options, trace::gameFog(), frame.volumeConfig, frame.volumeParams, frame.volumeMedium,
-                         trace::g_volumeState);
+                         frame.volumeLightScales, trace::g_volumeState);
       v.inactiveReason = trace::g_volumeState.active ? "raster fog" : trace::g_volumeState.reason;
       return;
     }

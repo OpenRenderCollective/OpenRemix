@@ -34,9 +34,16 @@ the fog colour by its view depth, up to the first surface that is not a
 blended sheet; the sky stays clear. The game's mode is kept as it is (linear
 from its start to its end, `remixapi_FogInfo::scale` being 1 / (end - start)
 as in D3D; exponential and squared exponential by its density); the override
-is exponential fog leaving 5% at `volumetricDistance`. The fog is unlit:
-`volumetricRasterBrightness` (1) is the radiance of its colour. No grids,
-update pass or march: one blend per pixel in the composition pass.
+is exponential fog leaving 5% at `volumetricDistance`. The fog colour is
+unlit: `volumetricRasterBrightness` (1) is its radiance.
+
+Local lights glow in it as in the traced medium, without shadows: per pixel,
+the light tree is cut to at most 24 nodes (the heaviest for that camera ray
+split first) and each light's scattering along the ray is integrated in
+closed form within its range. The glow's scattering is the traced medium's
+(`volumetricFogDensityScale` included) times `volumetricScattering`;
+`volumetricLightScale` and `volumetricEmissiveScale` and each light's own
+volumetric radiance scale apply. No grids, update pass or march.
 
 ## How it runs
 
