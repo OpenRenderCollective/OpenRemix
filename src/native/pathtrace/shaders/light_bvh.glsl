@@ -24,6 +24,15 @@ vec3 clearedEndpoint(LightEmitter light,vec3 origin,vec3 endpoint) {
 // Within its clearance a sphere light lights as from the clearance's distance
 // (times distance squared over clearance squared): what holds the glow is in
 // it, not beside a small bright ball whose outline shows on it.
+// The same for the tree's samples, which take a direction: within its
+// clearance (the squared clearance returned; 0 outside it) the light is a
+// point at its centre, of the solid angle it has from the clearance's
+// distance. A sphere sampled there showed its outline on what holds it: all
+// of it lit a surface within the ball, a sliver of it the surface beside.
+float heldDistance2(LightEmitter light,float distance2) {
+  float clearance=light.corners[2].z;
+  return clearance>0&&distance2<clearance*clearance?clearance*clearance:0;
+}
 float clearanceFade(LightEmitter light,float distance2) {
   float clearance=light.radiance.w==0?light.corners[2].z:0;
   return clearance>0?min(1,distance2/(clearance*clearance)):1;
@@ -346,15 +355,15 @@ LocalCandidate localCandidate(LightEmitter light,Hit hit,inout uint state,bool a
   LocalCandidate result;result.physical=result.specular=vec3(0);result.endpoint=hit.p;result.distance=0;
   vec3 delta=light.positionRadius.xyz-hit.p;
   float distance2=dot(delta,delta),radius=light.positionRadius.w;
-  float attenuation=localFalloff(distance2)*clearanceFade(light,distance2);
+  float attenuation=localFalloff(distance2);
   if(attenuation==0)return result;
-  bool inside=distance2<=radius*radius;
+  float held2=heldDistance2(light,distance2);bool held=held2>0,inside=!held&&distance2<=radius*radius;
   vec3 axis=distance2>1e-20?delta*inversesqrt(distance2):hit.n;
-  float sinMax2=min(1,radius*radius/max(distance2,1e-20));
+  float sinMax2=min(1,radius*radius/max(held?held2:distance2,1e-20));
   // Stable for small, distant lights: 1-sqrt(1-x) = x/(1+sqrt(1-x)).
   float oneMinusCos=inside?2:sinMax2/(1+sqrt(max(0,1-sinMax2)));
   vec2 sampleU=localEmitterSample(vec2(lightRandom(state),lightRandom(state)),blue,stream);
-  float cosTheta=1-sampleU.x*oneMinusCos;
+  float cosTheta=held?1:1-sampleU.x*oneMinusCos;
   float sinTheta=sqrt(max(0,(1-cosTheta)*(1+cosTheta)));
   float phi=6.28318530718*sampleU.y;
   vec3 tangent=normalize(cross(abs(axis.z)<.999?vec3(0,0,1):vec3(0,1,0),axis));
@@ -751,15 +760,15 @@ vec3 localLighting(Hit hit,uint state,uint samples,out float lightDistance,bool 
     } else {
       vec3 delta=light.positionRadius.xyz-hit.p;
       float distance2=dot(delta,delta),radius=light.positionRadius.w;
-      float attenuation=localFalloff(distance2)*clearanceFade(light,distance2);
+      float attenuation=localFalloff(distance2);
       if(attenuation==0)continue;
-      bool inside=distance2<=radius*radius;
+      float held2=heldDistance2(light,distance2);bool held=held2>0,inside=!held&&distance2<=radius*radius;
       vec3 axis=distance2>1e-20?delta*inversesqrt(distance2):hit.n;
-      float sinMax2=min(1,radius*radius/max(distance2,1e-20));
+      float sinMax2=min(1,radius*radius/max(held?held2:distance2,1e-20));
       // Stable for small, distant lights: 1-sqrt(1-x) = x/(1+sqrt(1-x)).
       float oneMinusCos=inside?2:sinMax2/(1+sqrt(max(0,1-sinMax2)));
       vec2 sampleU=localEmitterSample(vec2(lightRandom(state),lightRandom(state)),blue,sampleIndex*8u);
-      float cosTheta=1-sampleU.x*oneMinusCos;
+      float cosTheta=held?1:1-sampleU.x*oneMinusCos;
       float sinTheta=sqrt(max(0,(1-cosTheta)*(1+cosTheta)));
       float phi=6.28318530718*sampleU.y;
       vec3 tangent=normalize(cross(abs(axis.z)<.999?vec3(0,0,1):vec3(0,1,0),axis));
