@@ -4,6 +4,7 @@
 #include <array>
 #include <atomic>
 #include <mutex>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -78,7 +79,23 @@ namespace remix::scene {
   class LightBvh {
   public:
     LightBvh() : m_instance(nextInstance()) {}
-    bool update(const std::vector<SphereLight> &lights);
+    // What the caller knows changed in an update's input (PathTracer's
+    // gather): the input has the size of the one numbered `previous` and,
+    // outside `ranges` ([first, end) input indices, ascending), the same lights
+    // in the same places. Then only those lights are compared, written and
+    // refitted, instead of all of them (most of a level's emitters are at rest
+    // while a few lights move). A hint relative to another input than this
+    // hierarchy's last one is ignored, as is one whose changed lights differ
+    // in identity, type, surface, rank or dynamic flag, and one due a rebuild:
+    // those updates compare everything. Either way the result is the same.
+    struct InputChanges {
+      uint64_t serial = 0, previous = 0; // this input's number, and the one it is relative to
+      std::vector<std::pair<uint32_t, uint32_t>> ranges;
+    };
+    bool update(std::span<const SphereLight> lights, const InputChanges *changes);
+    bool update(const std::vector<SphereLight> &lights, const InputChanges *changes = nullptr) {
+      return update(std::span<const SphereLight>(lights), changes);
+    }
     // Upload deltas. A GPU copy made at `generation` of this hierarchy (by
     // instance()) is brought up to date by copying only the emitters and
     // nodes changed since, as [first, end) ranges (nearby ones merged):
@@ -119,6 +136,7 @@ namespace remix::scene {
     // builds: the whole hierarchy (static indices changed). refits: updates
     // that kept them. dynamicBuilds: refits that rebuilt the dynamic part.
     uint64_t generation = 0, builds = 0, refits = 0, dynamicBuilds = 0;
+    uint64_t changedOnly = 0; // updates that read only the changes they were told of (InputChanges)
     uint64_t sorts = 0; // updates whose input came in a new order
     enum Reason : uint32_t { None, Initial, FirstDynamic, Settled, Retired, Cleared, ReasonCount };
     uint64_t buildReasons[ReasonCount] = {};
@@ -164,9 +182,17 @@ namespace remix::scene {
     void buildInto(uint32_t index, std::vector<uint32_t> &order, uint32_t begin, uint32_t end, uint32_t level);
     void bounds(uint32_t index);
     void significance(const std::vector<SphereLight> &sorted);
+    // An update of only the input ranges `changes` names (update's
+    // InputChanges): false, having changed nothing, when it does not apply
+    // and everything must be compared. `result` is update's.
+    bool updateChanged(std::span<const SphereLight> input, const InputChanges &changes, bool &result);
+    // After an update that compared everything: which slot holds each sorted
+    // input light (m_slotOf), which dynamic slots have one, and the absent
+    // static slots' retirement.
+    void mapSlots();
     uint64_t due(uint64_t oldest, uint64_t newest, uint32_t stale) const;
     // m_order by (type, identity) of the input; radix sort on these.
-    void sortOrder(const std::vector<SphereLight> &lights);
+    void sortOrder(std::span<const SphereLight> lights);
     std::vector<std::pair<uint64_t, uint32_t>> m_sortKeys, m_sortSpare;
     struct SortRun {
       uint32_t triangle;
@@ -205,6 +231,36 @@ namespace remix::scene {
       return next++;
     }
     std::vector<uint64_t> m_dynamicSeen; // the same per dynamic light (absent ones are kept unlit)
+    // For updates of only what changed (updateChanged), kept by the updates
+    // that compare everything: the input this hierarchy last took (its
+    // InputChanges::serial, 0: unnumbered), each input light's place in the
+    // sorted input (m_order inverted), each sorted light's slot, which dynamic
+    // slots have a light, the static slots gone long enough to drop at the next
+    // build and the update the next of the others is.
+    uint64_t m_inputSerial = 0;
+    // The last update that matched the input to the slots (each present
+    // static slot was seen then): what a slot that leaves records as its last
+    // sighting, as one stamped by every such update would.
+    uint64_t m_lastMatched = 0;
+    std::vector<uint32_t> m_position, m_slotOf;
+    std::vector<uint8_t> m_dynamicPresent;
+    uint32_t m_retired = 0, m_stale = 0;
+    uint64_t m_nextStale = ~0ull;
+    // significance's comparison with its snapshot, per sorted light (its
+    // energy, its share of the change and its snapshot light, ~0u: none) and
+    // in sum (the change, and the snapshot's and the input's energy): an
+    // update of a few lights moves the sums by theirs. Valid while sorted
+    // positions are those significance last saw.
+    std::vector<double> m_lightEnergies, m_lightChanges;
+    std::vector<uint32_t> m_snapshotOf;
+    double m_changedEnergy = 0, m_snapshotEnergy = 0, m_inputEnergy = 0;
+    bool m_significanceValid = false;
+    // Scratch of updateChanged (storage kept): changed input index and
+    // sorted position, the lights they replaced, nodes to refit.
+    std::vector<std::pair<uint32_t, uint32_t>> m_changed;
+    std::vector<SphereLight> m_replaced;
+    std::vector<uint32_t> m_refit;
+    std::vector<uint8_t> m_refitMarks; // per node, all zero between updates
     // Scratch of update (storage kept): see there.
     std::vector<uint32_t> m_extraIndex, m_mergeSource;
     std::vector<uint64_t> m_mergeStamps, m_mergeSeen;
