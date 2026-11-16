@@ -106,6 +106,7 @@ namespace remix::trace {
     float visibilityMeters = 0, reachMeters = 0;
     bool raster = false; // TraceOptions::volumetricRaster
     uint32_t glowLights = 0; // raster fog: lights with a shadow cube this frame
+    bool glowSun = false;    // raster fog: the sun glows this frame
   };
   inline VolumeState g_volumeState;
 
@@ -173,13 +174,31 @@ namespace remix::trace {
 
   // Raster fog's shadowed glow (volume.glsl rasterShadowTexel, pathtrace.comp
   // rasterFogGlow). The buffer at Frame::volumeGrid starts with one of these
-  // per glowing light (rasterGlowSlots of them), then each light's cube of
-  // distances: six faces of size^2 floats.
+  // per glowing light (rasterGlowSlots of them) and the sun's map
+  // (RasterGlowSun), then each light's cube of distances (six faces of
+  // size^2 floats), then the sun's map (sunSize^2 floats).
   struct RasterGlowLight {
-    float centreReach[4] = {}; // world units
-    uint32_t emitter = 0, unused[3] = {};
+    float originReach[4] = {}; // the cube's centre and the light's reach (world units)
+    // A sphere light: unused (its emitter has its radiance). Emissive
+    // surfaces: their summed radiance times area (with their volumetric
+    // scales), and 1 (one-sided) or 2 (two-sided).
+    float intensityKind[4] = {};
+    // Emissive surfaces: their area-weighted mean normal (unit) and its
+    // length, how much they face one way (1 a flat panel, 0 all ways).
+    float normalCoherence[4] = {};
+    // A sphere light's emitter; where the cube's rays start; the radius below
+    // which 1 / d^2 is held.
+    uint32_t emitter = 0;
+    float minimum = 0, radius = 0, unused = 0;
   };
-  static_assert(sizeof(RasterGlowLight) == 32);
+  static_assert(sizeof(RasterGlowLight) == 64);
+  struct RasterGlowSun {
+    float centreExtent[4] = {}; // the map's centre, half its width (world units)
+    float rightHeight[4] = {};  // its x axis; the rays' start above the centre
+    float upLength[4] = {};     // its y axis; how far a camera ray takes samples
+    float toSun[4] = {};        // towards the sun
+  };
+  static_assert(sizeof(RasterGlowSun) == 64);
   inline constexpr uint32_t rasterGlowSlots = 64;
   inline uint32_t rasterGlowCount(const TraceOptions &options) {
     return std::min(options.volumetricRasterLights, rasterGlowSlots);
@@ -187,62 +206,229 @@ namespace remix::trace {
   inline uint32_t rasterGlowSize(const TraceOptions &options) {
     return std::clamp(options.volumetricRasterShadowSize, 16u, 256u);
   }
-  inline size_t rasterGlowBytes(uint32_t lights, uint32_t size) {
-    return sizeof(RasterGlowLight) * rasterGlowSlots + size_t(lights) * 6 * size * size * sizeof(float);
+  inline uint32_t rasterSunSize(const TraceOptions &options) {
+    return std::clamp(options.volumetricRasterSunSize, 64u, 2048u);
+  }
+  inline size_t rasterGlowBytes(uint32_t lights, uint32_t size, uint32_t sunSize) {
+    return sizeof(RasterGlowLight) * rasterGlowSlots + sizeof(RasterGlowSun) +
+           (size_t(lights) * 6 * size * size + size_t(sunSize) * sunSize) * sizeof(float);
   }
 
-  // The sphere lights whose glow the camera sees most: each one's intensity
-  // (its volumetric scale included) over its squared distance from the eye,
-  // among those whose reach (its range, the local light range, at most
+  // Emissive triangles as glowing lights: too many to give each a cube, so
+  // those within one cell of a world grid (rasterClusterMeters) are summed into
+  // one, at their area-weighted centre, facing their mean normal. Rebuilt
+  // when the light tree changes.
+  inline constexpr float rasterClusterMeters = 2;
+  struct RasterGlowCluster {
+    float centre[3] = {}, normal[3] = {}, intensity[3] = {};
+    float area = 0, power = 0, coherence = 0;
+    bool twoSided = false;
+  };
+  inline void rasterGlowClusters(const TraceOptions &options, const std::vector<scene::LightEmitter> &emitters,
+                                 std::vector<RasterGlowCluster> &clusters) {
+    clusters.clear();
+    const float cell = rasterClusterMeters / options.sceneScale;
+    struct Sum {
+      double centre[3] = {}, normal[3] = {}, intensity[3] = {}, area = 0;
+      bool twoSided = false;
+    };
+    std::vector<std::pair<uint64_t, uint32_t>> keys;
+    std::vector<Sum> sums;
+    for (const auto &e : emitters) {
+      // Emissive surfaces store their volumetric scale negated less one.
+      const float v = e.corners[1][3];
+      if (e.radiance[3] == 0 || v >= -1)
+        continue;
+      const float scale = -1 - v;
+      float edge1[3], edge2[3];
+      for (int c = 0; c < 3; ++c) {
+        edge1[c] = e.corners[1][c] - e.corners[0][c];
+        edge2[c] = e.corners[2][c] - e.corners[0][c];
+      }
+      const float n[3] = {edge1[1] * edge2[2] - edge1[2] * edge2[1], edge1[2] * edge2[0] - edge1[0] * edge2[2],
+                          edge1[0] * edge2[1] - edge1[1] * edge2[0]};
+      const float twiceArea = std::sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+      if (!(twiceArea > 0) || !std::isfinite(twiceArea))
+        continue;
+      const float area = .5f * twiceArea;
+      uint64_t key = 0;
+      for (int c = 0; c < 3; ++c)
+        key = key * 0x100000001b3ull ^ uint64_t(int64_t(std::floor(e.positionRadius[c] / cell)));
+      keys.push_back({key, uint32_t(sums.size())});
+      Sum sum;
+      for (int c = 0; c < 3; ++c) {
+        sum.centre[c] = double(e.positionRadius[c]) * area;
+        sum.normal[c] = double(n[c]) * .5;
+        sum.intensity[c] = double(e.radiance[c]) * area * scale;
+      }
+      sum.area = area;
+      sum.twoSided = e.radiance[3] > 1;
+      sums.push_back(sum);
+    }
+    // A cell's triangles are those of one key, gathered by sorting.
+    std::sort(keys.begin(), keys.end());
+    for (size_t i = 0; i < keys.size();) {
+      Sum total;
+      size_t j = i;
+      for (; j < keys.size() && keys[j].first == keys[i].first; ++j) {
+        const auto &t = sums[keys[j].second];
+        for (int c = 0; c < 3; ++c) {
+          total.centre[c] += t.centre[c];
+          total.normal[c] += t.normal[c];
+          total.intensity[c] += t.intensity[c];
+        }
+        total.area += t.area;
+        total.twoSided |= t.twoSided;
+      }
+      i = j;
+      RasterGlowCluster cluster;
+      const double length = std::sqrt(total.normal[0] * total.normal[0] + total.normal[1] * total.normal[1] +
+                                      total.normal[2] * total.normal[2]);
+      for (int c = 0; c < 3; ++c) {
+        cluster.centre[c] = float(total.centre[c] / total.area);
+        cluster.normal[c] = length > 0 ? float(total.normal[c] / length) : 0;
+        cluster.intensity[c] = float(total.intensity[c]);
+      }
+      cluster.area = float(total.area);
+      cluster.coherence = total.twoSided ? 0 : float(std::min(length / total.area, 1.0));
+      cluster.twoSided = total.twoSided;
+      cluster.power = .2126f * cluster.intensity[0] + .7152f * cluster.intensity[1] + .0722f * cluster.intensity[2];
+      if (cluster.power > 0 && std::isfinite(cluster.power))
+        clusters.push_back(cluster);
+    }
+  }
+
+  // The lights whose glow the camera sees most: each one's intensity (its
+  // volumetric scales included) over its squared distance from the eye, among
+  // those whose reach (a sphere light's range, the local light range, at most
   // volumetricMaxDistance) comes within volumetricMaxDistance of the eye and
-  // in front of it. Emissive triangles have no glow: there are too many to
-  // give each a cube. `scored` is scratch kept by the caller.
+  // in front of it. Sphere lights and emissive clusters (rasterGlowClusters)
+  // compete for the same cubes. `scored` is scratch kept by the caller.
   inline uint32_t rasterGlowLights(const TraceOptions &options, const std::vector<scene::LightEmitter> &emitters,
-                                   const float eye[3], const float forward[3], uint32_t limit,
+                                   const std::vector<RasterGlowCluster> &clusters, const float eye[3],
+                                   const float forward[3], uint32_t limit,
                                    std::vector<std::pair<float, uint32_t>> &scored, RasterGlowLight *out) {
     scored.clear();
-    if (limit == 0 || options.volumetricLightScale <= 0)
+    if (limit == 0)
       return 0;
     const float maxReach = std::max(options.volumetricMaxDistance, 1.f) / options.sceneScale;
-    for (uint32_t i = 0; i < emitters.size(); ++i) {
-      const auto &e = emitters[i];
-      if (e.radiance[3] != 0 || e.corners[1][3] <= 0)
-        continue;
-      const float radius = std::max(e.positionRadius[3], 1e-3f);
-      const float power = (.2126f * e.radiance[0] + .7152f * e.radiance[1] + .0722f * e.radiance[2]) * radius *
-                          radius * e.corners[1][3];
-      if (!(power > 0))
-        continue;
+    const float clusterReach = options.localRange > 0 ? std::min(maxReach, options.localRange) : maxReach;
+    auto consider = [&](const float centre[3], float reach, float power, float radius, uint32_t index) {
+      float distance2 = 0, ahead = 0;
+      for (int c = 0; c < 3; ++c) {
+        const float offset = centre[c] - eye[c];
+        distance2 += offset * offset;
+        ahead += offset * forward[c];
+      }
+      if (ahead < -reach || std::sqrt(distance2) - reach > maxReach)
+        return;
+      scored.push_back({power / std::max(distance2, radius * radius), index});
+    };
+    auto sphereReach = [&](const scene::LightEmitter &e) {
       float reach = maxReach;
       if (e.corners[1][0] > 0)
         reach = std::min(reach, e.corners[1][0]);
       if (options.localRange > 0)
         reach = std::min(reach, options.localRange);
-      float offset[3], distance2 = 0, ahead = 0;
-      for (int c = 0; c < 3; ++c) {
-        offset[c] = e.positionRadius[c] - eye[c];
-        distance2 += offset[c] * offset[c];
-        ahead += offset[c] * forward[c];
+      return reach;
+    };
+    if (options.volumetricLightScale > 0)
+      for (uint32_t i = 0; i < emitters.size(); ++i) {
+        const auto &e = emitters[i];
+        if (e.radiance[3] != 0 || e.corners[1][3] <= 0)
+          continue;
+        const float radius = std::max(e.positionRadius[3], 1e-3f);
+        const float power = (.2126f * e.radiance[0] + .7152f * e.radiance[1] + .0722f * e.radiance[2]) * radius *
+                            radius * 3.14159265f * e.corners[1][3] * options.volumetricLightScale;
+        if (power > 0)
+          consider(e.positionRadius, sphereReach(e), power, radius, i);
       }
-      if (ahead < -reach || std::sqrt(distance2) - reach > maxReach)
-        continue;
-      scored.push_back({power / std::max(distance2, radius * radius), i});
-    }
+    const uint32_t clusterFlag = 0x80000000u;
+    if (options.volumetricEmissiveScale > 0)
+      for (uint32_t i = 0; i < clusters.size(); ++i) {
+        const auto &c = clusters[i];
+        consider(c.centre, clusterReach, c.power * options.volumetricEmissiveScale,
+                 std::sqrt(c.area / 3.14159265f), i | clusterFlag);
+      }
     const uint32_t count = uint32_t(std::min<size_t>(limit, scored.size()));
     std::partial_sort(scored.begin(), scored.begin() + count, scored.end(),
                       [](const auto &a, const auto &b) { return a.first > b.first; });
+    const float cell = rasterClusterMeters / options.sceneScale;
     for (uint32_t i = 0; i < count; ++i) {
-      const auto &e = emitters[scored[i].second];
-      float reach = maxReach;
-      if (e.corners[1][0] > 0)
-        reach = std::min(reach, e.corners[1][0]);
-      if (options.localRange > 0)
-        reach = std::min(reach, options.localRange);
-      out[i] = {};
-      std::copy_n(e.positionRadius, 3, out[i].centreReach);
-      out[i].centreReach[3] = reach;
-      out[i].emitter = scored[i].second;
+      auto &o = out[i];
+      o = {};
+      const uint32_t index = scored[i].second;
+      if (index & clusterFlag) {
+        const auto &c = clusters[index & ~clusterFlag];
+        // A panel's cube starts just in front of it, so the panel itself and
+        // the wall it is on do not hide it; surfaces facing all ways start at
+        // their centre.
+        const float lift = c.coherence > .5f ? .05f * cell : 0;
+        for (int k = 0; k < 3; ++k) {
+          o.originReach[k] = c.centre[k] + c.normal[k] * lift;
+          o.intensityKind[k] = c.intensity[k];
+          o.normalCoherence[k] = c.normal[k];
+        }
+        o.originReach[3] = clusterReach;
+        o.intensityKind[3] = c.twoSided ? 2.f : 1.f;
+        o.normalCoherence[3] = c.coherence;
+        o.minimum = .01f * cell;
+        o.radius = std::max(std::sqrt(c.area / 3.14159265f) * .5f, .01f * cell);
+      } else {
+        const auto &e = emitters[index];
+        std::copy_n(e.positionRadius, 3, o.originReach);
+        o.originReach[3] = sphereReach(e);
+        o.emitter = index;
+        o.radius = std::max(e.positionRadius[3], 1e-3f);
+        // From the sphere's surface: a lamp's own bulb does not hide it.
+        o.minimum = std::max(o.radius, 1e-4f * o.originReach[3]);
+      }
     }
     return count;
+  }
+
+  // The sun's shadow map for raster fog's glow: square, `extent` to each side
+  // of the eye across the sun's direction, its texels fixed in the world (the
+  // centre snapped to them) so shadow edges stay put as the camera moves.
+  // Rays start `height` above the centre towards the sun. False without a
+  // sun. `direction`: the way the sunlight travels.
+  inline bool rasterGlowSun(const TraceOptions &options, const float eye[3], const float direction[3],
+                            const float radiance[4], uint32_t size, float march, RasterGlowSun &sun) {
+    if (options.volumetricSunScale <= 0 || radiance[3] <= 0 || !(radiance[0] + radiance[1] + radiance[2] > 0))
+      return false;
+    float to[3] = {-direction[0], -direction[1], -direction[2]};
+    const float length = std::sqrt(to[0] * to[0] + to[1] * to[1] + to[2] * to[2]);
+    if (!(length > 0) || !std::isfinite(length))
+      return false;
+    for (auto &c : to)
+      c /= length;
+    // Any axis not along the sun, crossed with it.
+    const bool alongY = std::abs(to[1]) > .9f;
+    const float hint[3] = {alongY ? 1.f : 0.f, alongY ? 0.f : 1.f, 0};
+    float right[3] = {hint[1] * to[2] - hint[2] * to[1], hint[2] * to[0] - hint[0] * to[2],
+                      hint[0] * to[1] - hint[1] * to[0]};
+    const float rl = std::sqrt(right[0] * right[0] + right[1] * right[1] + right[2] * right[2]);
+    for (auto &c : right)
+      c /= rl;
+    const float up[3] = {to[1] * right[2] - to[2] * right[1], to[2] * right[0] - to[0] * right[2],
+                         to[0] * right[1] - to[1] * right[0]};
+    const float extent = std::max(options.volumetricRasterSunExtent, 1.f) / options.sceneScale;
+    const float texel = 2 * extent / float(size);
+    float x = 0, y = 0;
+    for (int c = 0; c < 3; ++c) {
+      x += eye[c] * right[c];
+      y += eye[c] * up[c];
+    }
+    const float dx = std::round(x / texel) * texel - x, dy = std::round(y / texel) * texel - y;
+    for (int c = 0; c < 3; ++c) {
+      sun.centreExtent[c] = eye[c] + dx * right[c] + dy * up[c];
+      sun.rightHeight[c] = right[c];
+      sun.upLength[c] = up[c];
+      sun.toSun[c] = to[c];
+    }
+    sun.centreExtent[3] = extent;
+    sun.rightHeight[3] = 4 * extent;
+    sun.upLength[3] = march;
+    return true;
   }
 } // namespace remix::trace

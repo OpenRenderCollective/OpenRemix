@@ -2126,7 +2126,7 @@ namespace remix::metal {
     std::fill_n(constants.volumeConfig, 4, 0u);
     std::fill_n(constants.volumeFrame, 4, 0u);
     v.active = false;
-    v.glowLights = 0;
+    v.glowLights = v.glowSunSize = 0;
     // Raster fog: constants (volume_policy.h rasterFog), and for its glow a
     // shadow cube per light, traced anew by the update pass every frame.
     if (options.volumetrics && options.volumetricRaster) {
@@ -2136,9 +2136,10 @@ namespace remix::metal {
       } else if (remix::trace::rasterFog(options, remix::trace::gameFog(), constants.volumeConfig,
                                          constants.volumeParams, constants.volumeMedium, constants.volumeLightScales,
                                          remix::trace::g_volumeState) &&
-                 constants.volumeMedium[3] > 0 && constants.localConfig[0] &&
+                 constants.volumeMedium[3] > 0 &&
                  computePipelineAsync(device, volumeUpdate.stage, volumeUpdate.base) != nil) {
         remix::trace::RasterGlowLight lights[remix::trace::rasterGlowSlots];
+        remix::trace::RasterGlowSun sun;
         // The camera's axis: any depth of the screen's centre lies on it.
         const auto &m = constants.inverseCameraRelative;
         float forward[3], length = 0;
@@ -2151,12 +2152,24 @@ namespace remix::metal {
           for (auto &f : forward)
             f /= length;
         const uint32_t limit = remix::trace::rasterGlowCount(options), size = remix::trace::rasterGlowSize(options);
-        const uint32_t count = remix::trace::rasterGlowLights(options, lightBvh.emitters(), constants.eye, forward,
-                                                              limit, v.glowScratch, lights);
-        if (count) {
+        const uint32_t sunSize = remix::trace::rasterSunSize(options);
+        uint32_t count = 0;
+        if (constants.localConfig[0]) {
+          if (v.glowClustersInstance != lightBvh.instance() || v.glowClustersGeneration != lightBvh.generation) {
+            remix::trace::rasterGlowClusters(options, lightBvh.emitters(), v.glowClusters);
+            v.glowClustersInstance = lightBvh.instance();
+            v.glowClustersGeneration = lightBvh.generation;
+          }
+          count = remix::trace::rasterGlowLights(options, lightBvh.emitters(), v.glowClusters, constants.eye,
+                                                 forward, limit, v.glowScratch, lights);
+        }
+        const bool sunGlow =
+            remix::trace::rasterGlowSun(options, constants.eye, constants.direction, constants.radiance, sunSize,
+                                        remix::trace::g_volumeState.visibilityMeters / options.sceneScale, sun);
+        if (count || sunGlow) {
           // Allocated for the most lights allowed: the count changes as
           // lights come into view.
-          const size_t bytes = remix::trace::rasterGlowBytes(limit, size);
+          const size_t bytes = remix::trace::rasterGlowBytes(limit, size, sunSize);
           if (!v.cells || v.bytes != bytes) {
             if (v.cells)
               frame().retiredBuffers.push_back(std::move(v.cells));
@@ -2164,24 +2177,32 @@ namespace remix::metal {
             v.bytes = bytes;
           }
           // The header, copied in command order after last frame's reads.
-          auto header = buffer(lights, sizeof(remix::trace::RasterGlowLight) * count);
+          constexpr size_t lightBytes = sizeof(remix::trace::RasterGlowLight) * remix::trace::rasterGlowSlots;
+          std::vector<uint8_t> header(lightBytes + sizeof(sun));
+          std::memcpy(header.data(), lights, sizeof(remix::trace::RasterGlowLight) * count);
+          std::memcpy(header.data() + lightBytes, &sun, sizeof(sun));
+          auto staged = buffer(header.data(), header.size());
           id<MTLBlitCommandEncoder> blit = blitEncoder(command, @"Volumetrics: raster fog's glowing lights");
-          [blit copyFromBuffer:header->handle
+          [blit copyFromBuffer:staged->handle
                   sourceOffset:0
                       toBuffer:v.cells->handle
              destinationOffset:0
-                          size:sizeof(remix::trace::RasterGlowLight) * count];
+                          size:header.size()];
           [blit endEncoding];
-          frame().retiredBuffers.push_back(std::move(header));
+          frame().retiredBuffers.push_back(std::move(staged));
           v.valid = false; // the buffer holds no traced medium's cells now
           v.glowLights = count;
           v.glowSize = size;
+          v.glowSunSize = sunGlow ? sunSize : 0;
           v.active = true;
           remix::trace::g_volumeState.glowLights = count;
+          remix::trace::g_volumeState.glowSun = sunGlow;
           constants.volumeGrid = v.cells->address;
           constants.volumeConfig[2] = count;
           constants.volumeConfig[3] = size;
           constants.volumeFrame[0] = std::clamp(options.volumetricRasterSteps, 1u, 64u);
+          constants.volumeFrame[1] = v.glowSunSize;
+          constants.volumeFrame[2] = std::clamp(options.volumetricRasterSunSteps, 1u, 64u);
         }
       }
       v.inactiveReason = remix::trace::g_volumeState.active ? "raster fog" : remix::trace::g_volumeState.reason;
@@ -2275,10 +2296,11 @@ namespace remix::metal {
     // every glowing light's cube. The shader indexes workgroup.x * 64 + the
     // local index (as ReGIR's presampling): count / 64 groups of 8x8, so a
     // width of / 8.
-    const uint32_t count = v.glowLights ? v.glowLights * 6 * v.glowSize * v.glowSize
-                                        : v.cellsPerSide * v.cellsPerSide * v.cellsPerSide * v.levels + 1;
+    const bool glow = v.glowLights || v.glowSunSize;
+    const uint32_t count = glow ? v.glowLights * 6 * v.glowSize * v.glowSize + v.glowSunSize * v.glowSunSize
+                                : v.cellsPerSide * v.cellsPerSide * v.cellsPerSide * v.levels + 1;
     dispatch(command, volumeUpdate, select(volumeUpdate),
-             v.glowLights ? "Volumetrics: raster fog's shadow cubes" : "Volumetrics: light the medium's cells",
+             glow ? "Volumetrics: raster fog's shadow maps" : "Volumetrics: light the medium's cells",
              (count + 7) / 8, 1);
   }
 

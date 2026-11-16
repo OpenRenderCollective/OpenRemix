@@ -218,10 +218,16 @@ namespace remix {
     // the distance to the first opaque surface, traced anew every frame; each
     // camera ray crossing a light's reach takes volumetricRasterSteps samples
     // of it against that cube. Lights past the first volumetricRasterLights
-    // have no glow.
+    // have no glow. Emissive surfaces glow as clusters of a 2 m world grid,
+    // competing with the sphere lights for the cubes. The sun's glow:
+    // volumetricRasterSunSize^2 texels of a map volumetricRasterSunExtent
+    // meters to each side of the eye across the sun, traced every frame;
+    // camera rays take volumetricRasterSunSteps samples of it.
     bool volumetricRaster = false;
     float volumetricRasterBrightness = 1, volumetricFogDensityScale = 1;
     uint32_t volumetricRasterLights = 16, volumetricRasterShadowSize = 64, volumetricRasterSteps = 12;
+    uint32_t volumetricRasterSunSize = 512, volumetricRasterSunSteps = 16;
+    float volumetricRasterSunExtent = 64;
     // Each source's share of the scattered light, on top of a light's own
     // volumetricRadianceScale: the sun, lights (sphere, rect, disk, cylinder),
     // emissive surfaces, the sky.

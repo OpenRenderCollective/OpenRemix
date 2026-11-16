@@ -23,6 +23,9 @@ nothing until there is a medium.
 | `volumetricRasterLights` | 16 | Raster fog: how many lights glow (0-64). |
 | `volumetricRasterShadowSize` | 64 | Raster fog: texels a side of a glowing light's shadow cube face (16-256). |
 | `volumetricRasterSteps` | 12 | Raster fog: samples of each glowing light along a camera ray (1-64). |
+| `volumetricRasterSunSize` | 512 | Raster fog: texels a side of the sun's shadow map (64-2048). |
+| `volumetricRasterSunExtent` | 64 | Raster fog: meters the sun's shadow map reaches to each side of the camera. |
+| `volumetricRasterSunSteps` | 16 | Raster fog: samples of the sun along a camera ray (1-64). |
 
 The game's fog is what `remixapi_SetFogState` last gave: exponential fog's
 density is the extinction; squared-exponential and linear fog get the
@@ -42,29 +45,38 @@ as in D3D; exponential and squared exponential by its density); the override
 is exponential fog leaving 5% at `volumetricDistance`. The fog colour is
 unlit: `volumetricRasterBrightness` (1) is its radiance.
 
-Local lights glow in it, shadowed, with no history to settle or trail:
+Lights and the sun glow in it, shadowed, with no history to settle or trail:
 
-1. Each frame the `volumetricRasterLights` (16) sphere lights that send the
-   most into view (intensity over squared distance, among those whose reach
-   comes within `volumetricMaxDistance` in front of the camera) each get a
-   shadow cube: `volumetricRasterShadowSize` (64) texels a side a face, the
-   distance from the light to the first opaque surface, traced anew by the
-   volume update pass (6 x 64^2 rays a light). Blended sheets let the light
-   through.
+1. Each frame the `volumetricRasterLights` (16) lights that send the most into
+   view (intensity over squared distance, among those whose reach comes within
+   `volumetricMaxDistance` in front of the camera) each get a shadow cube:
+   `volumetricRasterShadowSize` (64) texels a side a face, the distance from
+   the light to the first opaque surface, traced anew by the volume update
+   pass (6 x 64^2 rays a light). Blended sheets let the light through. Sphere
+   lights compete with emissive surfaces, which are summed into clusters, one
+   per cell of a 2 m world grid: their area-weighted centre, their summed
+   radiance times area, and their mean normal (a flat panel glows by the
+   cosine, surfaces facing all ways evenly). A panel's cube starts just in
+   front of it.
 2. Each camera ray that crosses a light's reach before its first surface takes
    `volumetricRasterSteps` (12) samples of it, spaced evenly in the angle the
    ray subtends at the light, so they gather where the glow is brightest. Each
-   compares its distance with the four nearest texels of the cube; the
-   samples are offset per pixel by a fixed noise pattern, the same every
-   frame.
+   compares its distance with the four nearest texels of the cube.
+3. The sun: a map of `volumetricRasterSunSize`^2 (512^2) rays down the sun's
+   direction, `volumetricRasterSunExtent` (64) meters to each side of the
+   camera, its texels fixed in the world so shadow edges hold still as the
+   camera moves. Camera rays take `volumetricRasterSunSteps` (16) samples up
+   to where the fog leaves 5% of the light, closer together near the camera;
+   past the map's edge a ray keeps the last shadow it saw.
 
-A light's glow is its single scattering towards the camera within its reach
-(its range, `localRange`, at most `volumetricMaxDistance`), dimmed by the
-raster fog in front of it. Its scattering is the traced medium's
+The samples are offset per pixel by a fixed noise pattern, the same every
+frame. A light's glow is its single scattering towards the camera within its
+reach (its range, `localRange`, at most `volumetricMaxDistance`), dimmed by
+the raster fog in front of it. Its scattering is the traced medium's
 (`volumetricFogDensityScale` included) times `volumetricScattering`;
-`volumetricLightScale` and each light's own volumetric radiance scale apply.
-Lights past the first `volumetricRasterLights` and emissive surfaces do not
-glow; neither does the sun.
+`volumetricLightScale`, `volumetricEmissiveScale`, `volumetricSunScale` and
+each light's own volumetric radiance scale apply. Lights past the first
+`volumetricRasterLights` do not glow.
 
 ## How it runs
 

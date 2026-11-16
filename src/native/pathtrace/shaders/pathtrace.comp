@@ -3241,61 +3241,99 @@ float rasterFogAmount(float viewDepth) {
   float k=frame.volumeParams.z*max(viewDepth,0);
   return 1-exp(-(frame.volumeParams.w==2?k*k:k));
 }
-// Raster fog's glow around the local lights, which a traced medium shows and
-// a flat fog colour cannot: for each light given a shadow cube this frame
+// The sun's light scattered towards the camera by the raster fog along
+// [0, far], up to where the fog leaves 5% (the sun map's upLength.w):
+// volumeFrame.z samples spaced quadratically (the near fog counts most), each
+// shadowed by the sun's map (volume.glsl rasterSunShadow; past its edge, as
+// the last sample on it) and the clouds and dimmed by the fog in front.
+// Isotropic: the sun's irradiance (pi lightRadiance) over 4 pi.
+vec3 rasterSunGlow(vec3 origin,vec3 direction,float far,float forward,float jitter) {
+  uint size=frame.volumeFrame.y,steps=max(frame.volumeFrame.z,1u);
+  if(size==0u)return vec3(0);
+  float reach=min(far,rasterGlowSlot(rasterSunSlot/4u,2u).w);
+  if(reach<=0)return vec3(0);
+  float sum=0,lit=1,near=0;
+  for(uint i=0u;i<steps;++i) {
+    float u=float(i+1u)/float(steps),next=reach*u*u;
+    float t=mix(near,next,jitter);
+    vec3 p=origin+direction*t;
+    float shadow=rasterSunShadow(p);
+    if(shadow>=0)lit=shadow;
+    if(lit>0)sum+=lit*cloudShadow(p)*(1-rasterFogAmount(t*forward))*(next-near);
+    near=next;
+  }
+  return sum*.25*frame.lightRadiance.rgb*frame.lightRadiance.w*frame.volumeLightScales.x;
+}
+// Raster fog's glow around the lights, which a traced medium shows and a
+// flat fog colour cannot: for each light given a shadow cube this frame
 // (volume_policy.h rasterGlowLights) whose reach the camera ray crosses
 // before `far`, its single scattering towards the camera there, shadowed by
 // its cube (volume.glsl rasterShadow) and dimmed by the raster fog in front.
 // volumeFrame.x samples a light, spaced evenly in the angle the ray subtends
 // at the light (equiangular: they gather where the light is brightest, and
-// each carries an equal share of the 1 / d^2 integral); `jitter` offsets
-// them per pixel, the same every frame. Tinted by the fog colour as the
-// traced medium is.
+// each carries an equal share of the 1 / d^2 integral). Then the sun's
+// (rasterSunGlow). `jitter` offsets the samples per pixel, the same every
+// frame. Tinted by the fog colour as the traced medium is.
 vec3 rasterFogGlow(vec3 origin,vec3 direction,float far,float forward,float jitter) {
-  uint lights=frame.volumeConfig.z;
-  if(lights==0u||frame.volumeGrid==0||frame.volumeMedium.w<=0||frame.lightEmitters==0)return vec3(0);
-  VolumeCells header=VolumeCells(frame.volumeGrid);
+  if(frame.volumeGrid==0||frame.volumeMedium.w<=0)return vec3(0);
+  uint lights=frame.volumeConfig.z,steps=max(frame.volumeFrame.x,1u);
   LightEmitters emitters=LightEmitters(frame.lightEmitters);
-  uint steps=max(frame.volumeFrame.x,1u);
   far=min(far,1e6);
   vec3 glow=vec3(0);
   for(uint slot=0u;slot<lights;++slot) {
-    vec4 centreReach=header.data[slot*2u];
-    vec3 centre=centreReach.xyz;float reach=centreReach.w;
+    vec4 originReach=rasterGlowSlot(slot,0u);
+    vec3 centre=originReach.xyz;float reach=originReach.w;
     float along=dot(centre-origin,direction);
     vec3 offset=centre-origin-direction*along;
     float h2=dot(offset,offset);
     if(h2>=reach*reach)continue;
     float chord=sqrt(reach*reach-h2),t0=max(0.,along-chord),t1=min(far,along+chord);
     if(t1<=t0)continue;
-    LightEmitter light=emitters.data[floatBitsToUint(header.data[slot*2u+1u].x)];
-    float radius=max(light.positionRadius.w,1e-3);
-    // No nearer than the light's own surface: a ray through the light would
+    vec4 intensityKind=rasterGlowSlot(slot,1u),normalCoherence=rasterGlowSlot(slot,2u),limits=rasterGlowSlot(slot,3u);
+    bool sphere=intensityKind.w==0;
+    LightEmitter light;
+    if(sphere)light=emitters.data[floatBitsToUint(limits.x)];
+    float radius=max(limits.z,1e-4);
+    // No nearer than the light's own size: a ray through the light would
     // otherwise gather an unbounded 1 / d^2.
     float h=sqrt(max(h2,radius*radius));
-    float a0=atan((t0-along)/h),a1=atan((t1-along)/h),step=(a1-a0)/float(steps);
+    float a0=atan((t0-along)/h),a1=atan((t1-along)/h),angle=(a1-a0)/float(steps);
     vec3 sum=vec3(0);
     for(uint i=0u;i<steps;++i) {
-      float t=along+h*tan(a0+(float(i)+jitter)*step);
+      float t=along+h*tan(a0+(float(i)+jitter)*angle);
       vec3 toPoint=origin+direction*t-centre;
       float d2=max(dot(toPoint,toPoint),radius*radius);
-      float falloff=emitterFalloff(light,d2);
+      float falloff=sphere?emitterFalloff(light,d2):localFalloff(d2);
       if(falloff<=0)continue;
       float lit=rasterShadow(slot,toPoint);
       if(lit<=0)continue;
-      // The sample's share of the integral of 1 / d^2 is step / h with the
+      vec3 outgoing=toPoint*inversesqrt(d2);
+      // Emissive surfaces: their radiance times area towards `outgoing`, a
+      // flat panel by its cosine, surfaces facing all ways by its mean (1/4;
+      // 1/2 two-sided).
+      vec3 intensity;
+      if(sphere)intensity=emitterRadiance(light,outgoing);
+      else {
+        float cosine=dot(normalCoherence.xyz,outgoing);
+        bool twoSided=intensityKind.w>1.5;
+        float facing=twoSided?abs(cosine):max(cosine,0);
+        intensity=intensityKind.rgb*mix(twoSided?.5:.25,facing,normalCoherence.w);
+      }
+      // The sample's share of the integral of 1 / d^2 is angle / h with the
       // ray's own distance to the centre; (t - along)^2 + h^2 over d2 corrects
       // for a ray that passes inside the light's radius.
       float share=((t-along)*(t-along)+h*h)/d2;
-      sum+=emitterRadiance(light,toPoint*inversesqrt(d2))*(falloff*lit*share*(1-rasterFogAmount(t*forward)));
+      sum+=intensity*(falloff*lit*share*(1-rasterFogAmount(t*forward)));
     }
-    float v=light.corners[1].w;
-    glow+=sum*(step/h*3.14159265359*radius*radius*v*frame.volumeLightScales.y);
+    glow+=sphere?sum*(angle/h*3.14159265359*radius*radius*light.corners[1].w*frame.volumeLightScales.y)
+                :sum*(angle/h*frame.volumeLightScales.z);
   }
+  glow*=frame.localScale.x/(4*3.14159265359);
+  glow+=rasterSunGlow(origin,direction,far,forward,jitter);
   vec3 tint=frame.volumeMedium.rgb;
   float brightest=max(max(tint.r,tint.g),tint.b);
   tint=brightest>0?tint/brightest:vec3(1);
-  return glow*tint*(frame.volumeMedium.w*frame.localScale.x/(4*3.14159265359));
+  return glow*tint*frame.volumeMedium.w;
 }
 // The colour a camera inside a translucent body (remixapi_CameraMediumEXT)
 // sees of the body over `distance`: what is absorbed becomes the body's colour

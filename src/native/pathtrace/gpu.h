@@ -6,6 +6,7 @@
 #include "pathtrace/renderer.h"
 #include "pathtrace/shader_code.h"
 #include "pathtrace/tlas_policy.h"
+#include "pathtrace/volume_policy.h"
 #include "scene/portals.h"
 #include "platform/gpu_timers.h"
 #include "platform/timing.h"
@@ -871,9 +872,13 @@ namespace remix {
       VkDeviceSize bytes = 0; // requested size of `cells`
       const char *inactiveReason = "not requested";
       // Raster fog's glow (volume_policy.h rasterGlowLights): the lights given
-      // a shadow cube this frame and the cubes' size; `cells` holds them.
-      uint32_t glowLights = 0, glowSize = 0;
+      // a shadow cube this frame, the cubes' size and the sun map's (0: no
+      // sun); `cells` holds them. The emissive clusters are those of the light
+      // tree at glowClustersInstance / Generation.
+      uint32_t glowLights = 0, glowSize = 0, glowSunSize = 0;
       std::vector<std::pair<float, uint32_t>> glowScratch;
+      std::vector<trace::RasterGlowCluster> glowClusters;
+      uint64_t glowClustersInstance = 0, glowClustersGeneration = ~0ull;
     } volume;
     void configureVolume(VkCommandBuffer command, Frame &frame, const TraceOptions &options);
     void recordVolume(VkCommandBuffer command);

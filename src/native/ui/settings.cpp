@@ -1023,6 +1023,11 @@ namespace remix {
             ImGui::SetTooltip("Scales the game's fog density for the glow, as for the traced medium.");
         }
         ui::SliderFloat("Glow: lights", &options.volumetricLightScale, 0.f, 4.f, "%.2f");
+        ui::SliderFloat("Glow: emissive surfaces", &options.volumetricEmissiveScale, 0.f, 4.f, "%.2f");
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("Emissive surfaces glow as clusters of a 2 m grid, competing with the lights for\n"
+                            "the glowing lights' shadow cubes.");
+        ui::SliderFloat("Glow: sun", &options.volumetricSunScale, 0.f, 4.f, "%.2f");
         int glowLights = int(options.volumetricRasterLights), glowSize = int(options.volumetricRasterShadowSize),
             glowSteps = int(options.volumetricRasterSteps);
         if (ui::SliderInt("Glowing lights", &glowLights, 0, 64))
@@ -1039,10 +1044,22 @@ namespace remix {
           options.volumetricRasterSteps = uint32_t(glowSteps);
         if (ImGui::IsItemHovered())
           ImGui::SetTooltip("Shadow samples per pixel along each light's reach.");
+        int sunSize = int(options.volumetricRasterSunSize), sunSteps = int(options.volumetricRasterSunSteps);
+        if (ui::SliderInt("Sun shadow detail", &sunSize, 64, 2048))
+          options.volumetricRasterSunSize = uint32_t(sunSize);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("Texels a side of the sun's shadow map around the camera (this^2 rays every frame).");
+        ui::SliderFloat("Sun shadow reach (m)", &options.volumetricRasterSunExtent, 8.f, 1000.f, "%.0f",
+                        ImGuiSliderFlags_Logarithmic);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("How far to each side of the camera the sun's shadow map reaches; past it the fog\n"
+                            "keeps the last shadow a camera ray saw.");
+        if (ui::SliderInt("Sun samples", &sunSteps, 1, 64))
+          options.volumetricRasterSunSteps = uint32_t(sunSteps);
         const auto volume = trace::g_volumeState;
         if (volume.active)
-          ImGui::TextWrapped("Raster fog: on (%s), full at %.1f m; %u lights glow", volume.source,
-                             volume.visibilityMeters, volume.glowLights);
+          ImGui::TextWrapped("Raster fog: on (%s), full at %.1f m; %u lights glow%s", volume.source,
+                             volume.visibilityMeters, volume.glowLights, volume.glowSun ? ", and the sun" : "");
         else
           ImGui::TextWrapped("Raster fog: off (%s)", volume.reason);
       } else if (options.volumetrics) {
