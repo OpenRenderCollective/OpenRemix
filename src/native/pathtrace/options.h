@@ -213,20 +213,25 @@ namespace remix {
     // (display-referred) colour its radiance. volumetricFogDensityScale
     // scales the game's exponential fog density for the traced medium (and the
     // glow): a density tuned for raster fog reads far thicker as a lit medium.
-    // The glow: the volumetricRasterLights sphere lights that send the most
-    // into view each get a cube of volumetricRasterShadowSize^2 texels a face,
-    // the distance to the first opaque surface, traced anew every frame; each
+    // The glow: the volumetricRasterLights lights that send the most into
+    // view each get a cube of volumetricRasterShadowSize^2 texels a face, the
+    // distance to the first opaque surface, traced anew every frame; each
     // camera ray crossing a light's reach takes volumetricRasterSteps samples
-    // of it against that cube. Lights past the first volumetricRasterLights
-    // have no glow. Emissive surfaces glow as clusters of a 2 m world grid,
-    // competing with the sphere lights for the cubes. The sun's glow:
-    // volumetricRasterSunSize^2 texels of a map volumetricRasterSunExtent
-    // meters to each side of the eye across the sun, traced every frame;
-    // camera rays take volumetricRasterSunSteps samples of it.
+    // of it against that cube. The next volumetricRasterSoftLights get coarse
+    // cubes (volumetricRasterSoftSize, volumetricRasterSoftSteps samples);
+    // lights past those (128 in all at most) have no glow. Emissive surfaces
+    // glow as clusters of a 2 m world grid, competing with the sphere lights
+    // for the cubes. The sun's glow: volumetricRasterSunSize^2 texels of a
+    // map volumetricRasterSunExtent meters to each side of the eye across the
+    // sun, traced every frame; camera rays take volumetricRasterSunSteps
+    // samples of it. The sky's: five maps of volumetricRasterSkySize^2 texels,
+    // as far across, one for each of five equal parts of the sky above the
+    // horizon, sampled with the sun's.
     bool volumetricRaster = false;
     float volumetricRasterBrightness = 1, volumetricFogDensityScale = 1;
     uint32_t volumetricRasterLights = 16, volumetricRasterShadowSize = 64, volumetricRasterSteps = 12;
-    uint32_t volumetricRasterSunSize = 512, volumetricRasterSunSteps = 16;
+    uint32_t volumetricRasterSoftLights = 48, volumetricRasterSoftSize = 16, volumetricRasterSoftSteps = 4;
+    uint32_t volumetricRasterSunSize = 512, volumetricRasterSunSteps = 16, volumetricRasterSkySize = 128;
     float volumetricRasterSunExtent = 64;
     // Each source's share of the scattered light, on top of a light's own
     // volumetricRadianceScale: the sun, lights (sphere, rect, disk, cylinder),

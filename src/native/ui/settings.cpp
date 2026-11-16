@@ -1028,13 +1028,17 @@ namespace remix {
           ImGui::SetTooltip("Emissive surfaces glow as clusters of a 2 m grid, competing with the lights for\n"
                             "the glowing lights' shadow cubes.");
         ui::SliderFloat("Glow: sun", &options.volumetricSunScale, 0.f, 4.f, "%.2f");
+        ui::SliderFloat("Glow: sky", &options.volumetricSkyScale, 0.f, 4.f, "%.2f");
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("The sky's light in the fog, shadowed: five maps, one for each fifth of the sky,\n"
+                            "as far across as the sun's.");
         int glowLights = int(options.volumetricRasterLights), glowSize = int(options.volumetricRasterShadowSize),
             glowSteps = int(options.volumetricRasterSteps);
         if (ui::SliderInt("Glowing lights", &glowLights, 0, 64))
           options.volumetricRasterLights = uint32_t(glowLights);
         if (ImGui::IsItemHovered())
-          ImGui::SetTooltip("How many sphere lights glow: those that send the most into view. Each traces a\n"
-                            "shadow cube every frame.");
+          ImGui::SetTooltip("How many lights get a detailed shadow cube: those that send the most into view.\n"
+                            "Each traces one every frame.");
         if (ui::SliderInt("Glow shadow detail", &glowSize, 16, 256))
           options.volumetricRasterShadowSize = uint32_t(glowSize);
         if (ImGui::IsItemHovered())
@@ -1044,22 +1048,39 @@ namespace remix {
           options.volumetricRasterSteps = uint32_t(glowSteps);
         if (ImGui::IsItemHovered())
           ImGui::SetTooltip("Shadow samples per pixel along each light's reach.");
+        int softLights = int(options.volumetricRasterSoftLights), softSize = int(options.volumetricRasterSoftSize),
+            softSteps = int(options.volumetricRasterSoftSteps);
+        if (ui::SliderInt("More glowing lights", &softLights, 0, 128))
+          options.volumetricRasterSoftLights = uint32_t(softLights);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("The next lights get a coarse shadow cube (128 lights in all at most); lights past\n"
+                            "them do not glow.");
+        if (ui::SliderInt("Their shadow detail", &softSize, 4, 256))
+          options.volumetricRasterSoftSize = uint32_t(softSize);
+        if (ui::SliderInt("Their samples", &softSteps, 1, 64))
+          options.volumetricRasterSoftSteps = uint32_t(softSteps);
         int sunSize = int(options.volumetricRasterSunSize), sunSteps = int(options.volumetricRasterSunSteps);
         if (ui::SliderInt("Sun shadow detail", &sunSize, 64, 2048))
           options.volumetricRasterSunSize = uint32_t(sunSize);
         if (ImGui::IsItemHovered())
           ImGui::SetTooltip("Texels a side of the sun's shadow map around the camera (this^2 rays every frame).");
-        ui::SliderFloat("Sun shadow reach (m)", &options.volumetricRasterSunExtent, 8.f, 1000.f, "%.0f",
+        ui::SliderFloat("Sun and sky shadow reach (m)", &options.volumetricRasterSunExtent, 8.f, 1000.f, "%.0f",
                         ImGuiSliderFlags_Logarithmic);
         if (ImGui::IsItemHovered())
-          ImGui::SetTooltip("How far to each side of the camera the sun's shadow map reaches; past it the fog\n"
+          ImGui::SetTooltip("How far to each side of the camera the sun's and sky's maps reach; past them the fog\n"
                             "keeps the last shadow a camera ray saw.");
-        if (ui::SliderInt("Sun samples", &sunSteps, 1, 64))
+        if (ui::SliderInt("Sun and sky samples", &sunSteps, 1, 64))
           options.volumetricRasterSunSteps = uint32_t(sunSteps);
+        int skySize = int(options.volumetricRasterSkySize);
+        if (ui::SliderInt("Sky shadow detail", &skySize, 16, 1024))
+          options.volumetricRasterSkySize = uint32_t(skySize);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("Texels a side of each of the sky's five shadow maps (5 x this^2 rays every frame).");
         const auto volume = trace::g_volumeState;
         if (volume.active)
-          ImGui::TextWrapped("Raster fog: on (%s), full at %.1f m; %u lights glow%s", volume.source,
-                             volume.visibilityMeters, volume.glowLights, volume.glowSun ? ", and the sun" : "");
+          ImGui::TextWrapped("Raster fog: on (%s), full at %.1f m; %u lights glow%s%s", volume.source,
+                             volume.visibilityMeters, volume.glowLights, volume.glowSun ? ", the sun" : "",
+                             volume.glowSky ? ", the sky" : "");
         else
           ImGui::TextWrapped("Raster fog: off (%s)", volume.reason);
       } else if (options.volumetrics) {

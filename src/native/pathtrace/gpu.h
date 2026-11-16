@@ -871,11 +871,12 @@ namespace remix {
       float cellUnits = 0, eye[3] = {};
       VkDeviceSize bytes = 0; // requested size of `cells`
       const char *inactiveReason = "not requested";
-      // Raster fog's glow (volume_policy.h rasterGlowLights): the lights given
-      // a shadow cube this frame, the cubes' size and the sun map's (0: no
-      // sun); `cells` holds them. The emissive clusters are those of the light
+      // Raster fog's glow (volume_policy.h rasterGlowFrame): the update
+      // pass's threads (0: the traced medium's) and the header uploaded;
+      // `cells` holds the maps. The emissive clusters are those of the light
       // tree at glowClustersInstance / Generation.
-      uint32_t glowLights = 0, glowSize = 0, glowSunSize = 0;
+      uint32_t glowThreads = 0;
+      trace::RasterGlowHeader glowHeader;
       std::vector<std::pair<float, uint32_t>> glowScratch;
       std::vector<trace::RasterGlowCluster> glowClusters;
       uint64_t glowClustersInstance = 0, glowClustersGeneration = ~0ull;

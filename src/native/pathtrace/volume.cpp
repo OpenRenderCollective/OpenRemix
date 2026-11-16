@@ -14,7 +14,7 @@ namespace remix {
     std::fill_n(frame.volumeConfig, 4, 0u);
     std::fill_n(frame.volumeFrame, 4, 0u);
     v.active = false;
-    v.glowLights = v.glowSunSize = 0;
+    v.glowThreads = 0;
     // The update pass, compiled in the background: false until it is ready.
     auto pipeline = [&] {
       if (!v.update && !v.pipelineFailed) {
@@ -65,8 +65,6 @@ namespace remix {
       } else if (trace::rasterFog(options, trace::gameFog(), frame.volumeConfig, frame.volumeParams,
                                   frame.volumeMedium, frame.volumeLightScales, trace::g_volumeState) &&
                  frame.volumeMedium[3] > 0 && pipeline()) {
-        trace::RasterGlowLight lights[trace::rasterGlowSlots];
-        trace::RasterGlowSun sun;
         // The camera's axis: any depth of the screen's centre lies on it.
         const auto &m = frame.inverseCameraRelative;
         float forward[3], length = 0;
@@ -78,48 +76,46 @@ namespace remix {
         if (length > 0 && std::isfinite(length))
           for (auto &f : forward)
             f /= length;
-        uint32_t count = 0;
-        if (frame.localConfig[0]) {
-          if (v.glowClustersInstance != lightBvh.instance() || v.glowClustersGeneration != lightBvh.generation) {
-            trace::rasterGlowClusters(options, lightBvh.emitters(), v.glowClusters);
-            v.glowClustersInstance = lightBvh.instance();
-            v.glowClustersGeneration = lightBvh.generation;
-          }
-          count = trace::rasterGlowLights(options, lightBvh.emitters(), v.glowClusters, frame.eye, forward,
-                                          trace::rasterGlowCount(options), v.glowScratch, lights);
+        if (frame.localConfig[0] &&
+            (v.glowClustersInstance != lightBvh.instance() || v.glowClustersGeneration != lightBvh.generation)) {
+          trace::rasterGlowClusters(options, lightBvh.emitters(), v.glowClusters);
+          v.glowClustersInstance = lightBvh.instance();
+          v.glowClustersGeneration = lightBvh.generation;
         }
-        const uint32_t size = trace::rasterGlowSize(options), sunSize = trace::rasterSunSize(options);
-        // Sun samples reach as far as the fog leaves 5% of the light.
-        const bool sunGlow =
-            trace::rasterGlowSun(options, frame.eye, frame.direction, frame.radiance, sunSize,
-                                 trace::g_volumeState.visibilityMeters / options.sceneScale, sun);
-        // Allocated for the most lights allowed, not this frame's count: the
-        // count changes as lights come into view.
-        if ((count || sunGlow) && allocate(trace::rasterGlowBytes(trace::rasterGlowCount(options), size, sunSize))) {
+        // Sun and sky samples reach as far as the fog leaves 5% of the light.
+        trace::RasterGlowFrame glow;
+        if (trace::rasterGlowFrame(options, lightBvh.emitters(), v.glowClusters, frame.localConfig[0] != 0,
+                                   frame.eye, forward, frame.direction, frame.radiance,
+                                   trace::g_volumeState.visibilityMeters / options.sceneScale, v.glowScratch,
+                                   v.glowHeader, glow) &&
+            allocate(glow.bytes)) {
           // Last frame's compose read the header; this frame's update reads
-          // it after the copy.
+          // it after the copy. The sky's radiance is the update's to write.
           barrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT,
                   VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT);
-          if (count)
-            vkCmdUpdateBuffer(command, v.cells->handle, 0, sizeof(trace::RasterGlowLight) * count, lights);
-          if (sunGlow)
-            vkCmdUpdateBuffer(command, v.cells->handle, sizeof(trace::RasterGlowLight) * trace::rasterGlowSlots,
-                              sizeof(sun), &sun);
+          if (glow.lights)
+            vkCmdUpdateBuffer(command, v.cells->handle, 0, sizeof(trace::RasterGlowLight) * glow.lights,
+                              v.glowHeader.lights);
+          constexpr size_t maps = offsetof(trace::RasterGlowHeader, sun),
+                           radiance = offsetof(trace::RasterGlowHeader, skyRadiance),
+                           counts = offsetof(trace::RasterGlowHeader, sharp);
+          vkCmdUpdateBuffer(command, v.cells->handle, maps, radiance - maps, &v.glowHeader.sun);
+          vkCmdUpdateBuffer(command, v.cells->handle, counts, sizeof(trace::RasterGlowHeader) - counts,
+                            &v.glowHeader.sharp);
           barrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
-                  VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
+                  VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
           v.valid = false; // the buffer holds no traced medium's cells now
-          v.glowLights = count;
-          v.glowSize = size;
-          v.glowSunSize = sunGlow ? sunSize : 0;
+          v.glowThreads = glow.threads;
           v.active = true;
-          trace::g_volumeState.glowLights = count;
-          trace::g_volumeState.glowSun = sunGlow;
+          trace::g_volumeState.glowLights = glow.lights;
+          trace::g_volumeState.glowSun = glow.sunSize != 0;
+          trace::g_volumeState.glowSky = v.glowHeader.skySize != 0;
           frame.volumeGrid = v.cells->address;
-          frame.volumeConfig[2] = count;
-          frame.volumeConfig[3] = size;
-          frame.volumeFrame[0] = std::clamp(options.volumetricRasterSteps, 1u, 64u);
-          frame.volumeFrame[1] = v.glowSunSize;
-          frame.volumeFrame[2] = std::clamp(options.volumetricRasterSunSteps, 1u, 64u);
+          frame.volumeConfig[2] = glow.lights;
+          frame.volumeConfig[3] = glow.size;
+          frame.volumeFrame[0] = glow.steps;
+          frame.volumeFrame[1] = glow.sunSize;
+          frame.volumeFrame[2] = glow.sunSteps;
         }
       }
       v.inactiveReason = trace::g_volumeState.active ? "raster fog" : trace::g_volumeState.reason;
@@ -203,7 +199,7 @@ namespace remix {
     auto &v = volume;
     if (!v.active)
       return;
-    gpu::GpuScope scope(command, v.glowLights || v.glowSunSize ? "Volumetrics: raster fog's shadow maps"
+    gpu::GpuScope scope(command, v.glowThreads ? "Volumetrics: raster fog's shadow maps"
                                                                 : "Volumetrics: light the medium's cells");
     // Queue-ordered across frame slots: last frame's marches have read the
     // cells before this frame's update writes them.
@@ -212,12 +208,11 @@ namespace remix {
     vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &set, 0, nullptr);
     bindTrace(command, v.update, layout, defaultFeatures);
     // One thread a cell and one for the medium beyond them; or one a texel of
-    // every glowing light's cube.
+    // every map of raster fog's glow (trace::rasterGlowFrame).
     const uint32_t count =
-        v.glowLights || v.glowSunSize
-            ? v.glowLights * 6 * v.glowSize * v.glowSize + v.glowSunSize * v.glowSunSize
-            : v.cellsPerSide * v.cellsPerSide * v.cellsPerSide * v.levels + 1;
-    vkCmdDispatch(command, (count + 63) / 64, 1, 1);
+        v.glowThreads ? v.glowThreads : v.cellsPerSide * v.cellsPerSide * v.cellsPerSide * v.levels + 1;
+    const uint32_t groups = (count + 63) / 64;
+    vkCmdDispatch(command, std::min(groups, 32768u), (groups + 32767) / 32768, 1);
     barrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
   }

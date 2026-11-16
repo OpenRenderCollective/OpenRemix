@@ -108,19 +108,37 @@ void volumeMarch(vec3 origin,vec3 direction,float far,out vec3 inscatter,out flo
   }
   inscatter*=frame.volumeMedium.rgb*frame.volumeParams.z;
 }
-// Raster fog's glow (volume.cpp, volume_policy.h RasterGlowLight): with
-// raster fog (volumeConfig x 0, y 1) the buffer holds a header of 64 light
-// slots (four vec4 each) and the sun's map (four vec4), then volumeConfig.z
-// lights' shadow cubes of volumeConfig.w texels a side, then the sun's map of
-// volumeFrame.y texels a side (0: no sun). A cube texel holds the distance
-// from the light to the first opaque surface that way (its reach if none); a
-// sun texel, the distance down from the map's plane above the camera.
+// Raster fog's glow (volume.cpp, volume_policy.h RasterGlowHeader): with
+// raster fog (volumeConfig x 0, y 1) the buffer holds a header of 128 light
+// slots (four vec4 each), the sun's map and the sky's five (four vec4 each),
+// the sky parts' radiance, and the counts (rasterGlowCounts); then
+// volumeConfig.z lights' shadow cubes, the first `sharp` of volumeConfig.w
+// texels a side and the rest of softSize; then the sun's map of volumeFrame.y
+// texels a side (0: no sun), then the sky's of skySize (0: no sky). A cube
+// texel holds the distance from the light to the first opaque surface that
+// way (its reach if none); a map texel, the distance down from the map's
+// plane above the camera.
 layout(buffer_reference,std430,buffer_reference_align=4) buffer RasterShadows { float data[]; };
-const uint rasterGlowHeader=64u*16u+16u,rasterSunSlot=256u;
+const uint rasterSunSlot=512u,rasterSkySlot=516u,rasterSkyRadianceSlot=536u,rasterCountsSlot=541u;
+const uint rasterSkyMaps=5u,rasterGlowHeader=543u*4u;
 vec4 rasterGlowSlot(uint slot,uint field) { return VolumeCells(frame.volumeGrid).data[slot*4u+field]; }
-uint rasterSunFirst() {
-  uint size=frame.volumeConfig.w;
-  return rasterGlowHeader+frame.volumeConfig.z*6u*size*size;
+// sharp, softSize, softSteps, skySize.
+uvec4 rasterGlowCounts() { return floatBitsToUint(VolumeCells(frame.volumeGrid).data[rasterCountsSlot]); }
+// How far camera rays take samples of the sun and the sky.
+float rasterGlowMarch() { return VolumeCells(frame.volumeGrid).data[rasterCountsSlot+1u].x; }
+// The first float of light `slot`'s cube, and its size; for slot
+// volumeConfig.z, where the cubes end.
+uint rasterCube(uint slot,out uint size) {
+  uvec4 counts=rasterGlowCounts();
+  uint sharp=counts.x,big=frame.volumeConfig.w;
+  if(slot<sharp){size=big;return rasterGlowHeader+slot*6u*big*big;}
+  size=counts.y;
+  return rasterGlowHeader+sharp*6u*big*big+(slot-sharp)*6u*size*size;
+}
+uint rasterSunFirst() { uint size;return rasterCube(frame.volumeConfig.z,size); }
+uint rasterSkyFirst(uint part) {
+  uint skySize=rasterGlowCounts().w;
+  return rasterSunFirst()+frame.volumeFrame.y*frame.volumeFrame.y+part*skySize*skySize;
 }
 // A cube face (0..5: +x -x +y -y +z -z) and a point of it in [-1, 1]^2 as a
 // direction, and back.
@@ -152,22 +170,22 @@ float rasterCompare(uint first,uint size,vec2 q,float distance,float bias) {
 // How much of light `slot`'s light reaches a point `offset` from its cube's
 // centre.
 float rasterShadow(uint slot,vec3 offset) {
-  uint size=frame.volumeConfig.w;
+  uint size;uint first=rasterCube(slot,size);
   vec2 uv;uint face=rasterCubeFace(offset,uv);
   float distance=length(offset);
-  return rasterCompare(rasterGlowHeader+(slot*6u+face)*size*size,size,(uv*.5+.5)*float(size)-.5,distance,
-                       distance*3/float(size));
+  return rasterCompare(first+face*size*size,size,(uv*.5+.5)*float(size)-.5,distance,distance*3/float(size));
 }
-// How much sunlight reaches a point, by the sun's map; -1 off the map.
-float rasterSunShadow(vec3 p) {
-  uint size=frame.volumeFrame.y;
-  vec4 centre=rasterGlowSlot(rasterSunSlot/4u,0u),right=rasterGlowSlot(rasterSunSlot/4u,1u);
-  vec4 up=rasterGlowSlot(rasterSunSlot/4u,2u),toSun=rasterGlowSlot(rasterSunSlot/4u,3u);
+// How much light reaches a point by the map at header vec4 `block` (the
+// sun's or a sky part's, volume_policy.h RasterGlowMap) whose texels start at
+// `first`; -1 off the map.
+float rasterMapShadow(uint block,uint first,uint size,vec3 p) {
+  vec4 centre=rasterGlowSlot(block/4u,0u),right=rasterGlowSlot(block/4u,1u);
+  vec4 up=rasterGlowSlot(block/4u,2u),toward=rasterGlowSlot(block/4u,3u);
   vec3 q=p-centre.xyz;
   vec2 xy=vec2(dot(q,right.xyz),dot(q,up.xyz))/centre.w;
   if(any(greaterThan(abs(xy),vec2(1))))return -1;
   float texel=2*centre.w/float(size);
-  return rasterCompare(rasterSunFirst(),size,(xy*.5+.5)*float(size)-.5,right.w-dot(q,toSun.xyz),1.5*texel);
+  return rasterCompare(first,size,(xy*.5+.5)*float(size)-.5,right.w-dot(q,toward.xyz),1.5*texel);
 }
 #ifdef VOLUME_UPDATE_PASS
 // The nearest opaque surface from `origin` along `direction` within
@@ -195,29 +213,67 @@ float rasterShadowRay(vec3 origin,vec3 direction,float minimum,float maximum) {
   if((frame.target.z&2)!=0)distance=rasterShadowLayer(dynamicScene,origin,direction,minimum,distance);
   return distance;
 }
-// One texel of the sun's map: a ray down the sun's direction from the
-// map's plane, `height` above the camera.
-void rasterSunTexel(uint index) {
-  uint size=frame.volumeFrame.y;
-  if(index>=size*size)return;
-  vec4 centre=rasterGlowSlot(rasterSunSlot/4u,0u),right=rasterGlowSlot(rasterSunSlot/4u,1u);
-  vec4 up=rasterGlowSlot(rasterSunSlot/4u,2u),toSun=rasterGlowSlot(rasterSunSlot/4u,3u);
+// One texel of a map (rasterMapShadow): a ray against the map's direction
+// from its plane, `height` above the camera.
+void rasterMapTexel(uint block,uint first,uint size,uint index) {
+  vec4 centre=rasterGlowSlot(block/4u,0u),right=rasterGlowSlot(block/4u,1u);
+  vec4 up=rasterGlowSlot(block/4u,2u),toward=rasterGlowSlot(block/4u,3u);
   vec2 xy=((vec2(index%size,index/size)+.5)/float(size)*2-1)*centre.w;
-  vec3 origin=centre.xyz+right.xyz*xy.x+up.xyz*xy.y+toSun.xyz*right.w;
-  RasterShadows(frame.volumeGrid).data[rasterSunFirst()+index]=rasterShadowRay(origin,-toSun.xyz,0,2*right.w);
+  vec3 origin=centre.xyz+right.xyz*xy.x+up.xyz*xy.y+toward.xyz*right.w;
+  RasterShadows(frame.volumeGrid).data[first+index]=rasterShadowRay(origin,-toward.xyz,0,2*right.w);
 }
-// One texel of a glowing light's shadow cube, from where the slot says its
-// rays start (a sphere light's surface: a lamp's own bulb does not hide it);
-// past the cubes, the sun's map.
+// A sky part's mean radiance (volume_policy.h RasterGlowHeader): part 0 the
+// cap within cosine 0.8 of the zenith, parts 1..4 the quarters of the band
+// below it, about +a, +b, -a, -b (the axes after the up axis). An 8x8 grid
+// over the part, the same every frame: nothing to settle.
+void rasterSkyRadiance(uint part) {
+  uint upAxis=uint(frame.upAxis),a=(upAxis+1u)%3u,b=(upAxis+2u)%3u;
+  vec3 sum=vec3(0);
+  for(uint i=0u;i<64u;++i) {
+    vec2 u=(vec2(i&7u,i>>3)+.5)/8;
+    float z=part==0u?mix(.8,1.,u.x):.8*u.x;
+    float angle=part==0u?6.28318530718*u.y:1.57079632679*(float(part-1u)+u.y-.5);
+    float r=sqrt(max(0,1-z*z));
+    vec3 direction=vec3(0);direction[upAxis]=z;direction[a]=r*cos(angle);direction[b]=r*sin(angle);
+    sum+=environmentRadiance(direction);
+  }
+  sum*=frame.volumeLightScales.w/64;
+  if(any(isnan(sum))||any(isinf(sum)))sum=vec3(0);
+  VolumeCells(frame.volumeGrid).data[rasterSkyRadianceSlot+part]=vec4(sum,0);
+}
+// One thread of raster fog's glow (volume_policy.h rasterGlowFrame): a texel
+// of a glowing light's shadow cube, from where the slot says its rays start
+// (a sphere light's surface: a lamp's own bulb does not hide it); past the
+// cubes, the sun's map, the sky's, and a sky part's radiance.
 void rasterShadowTexel(uint index) {
   if(frame.volumeGrid==0)return;
-  uint size=frame.volumeConfig.w,perLight=6u*size*size,lights=frame.volumeConfig.z;
-  if(index>=lights*perLight){if(frame.volumeFrame.y!=0u)rasterSunTexel(index-lights*perLight);return;}
-  uint slot=index/perLight,local=index%perLight,face=local/(size*size),texel=local%(size*size);
-  vec2 uv=(vec2(texel%size,texel/size)+.5)/float(size)*2-1;
-  vec4 originReach=rasterGlowSlot(slot,0u),limits=rasterGlowSlot(slot,3u);
-  RasterShadows(frame.volumeGrid).data[rasterGlowHeader+slot*perLight+local]=
-      rasterShadowRay(originReach.xyz,normalize(rasterCubeDirection(face,uv)),limits.y,originReach.w);
+  uvec4 counts=rasterGlowCounts();
+  uint lights=frame.volumeConfig.z,sharp=counts.x,big=frame.volumeConfig.w,small=counts.y;
+  uint sharpTexels=sharp*6u*big*big,cubeTexels=sharpTexels+(lights-sharp)*6u*small*small;
+  if(index<cubeTexels) {
+    uint size=index<sharpTexels?big:small,perLight=6u*size*size;
+    uint rest=index<sharpTexels?index:index-sharpTexels;
+    uint slot=(index<sharpTexels?0u:sharp)+rest/perLight,local=rest%perLight;
+    uint face=local/(size*size),texel=local%(size*size);
+    vec2 uv=(vec2(texel%size,texel/size)+.5)/float(size)*2-1;
+    vec4 originReach=rasterGlowSlot(slot,0u),limits=rasterGlowSlot(slot,3u);
+    uint first=rasterCube(slot,size);
+    RasterShadows(frame.volumeGrid).data[first+local]=
+        rasterShadowRay(originReach.xyz,normalize(rasterCubeDirection(face,uv)),limits.y,originReach.w);
+    return;
+  }
+  index-=cubeTexels;
+  uint sunSize=frame.volumeFrame.y;
+  if(index<sunSize*sunSize){rasterMapTexel(rasterSunSlot,rasterSunFirst(),sunSize,index);return;}
+  index-=sunSize*sunSize;
+  uint skySize=counts.w,skyTexels=skySize*skySize;
+  if(index<rasterSkyMaps*skyTexels) {
+    uint part=index/skyTexels;
+    rasterMapTexel(rasterSkySlot+part*4u,rasterSkyFirst(part),skySize,index%skyTexels);
+    return;
+  }
+  index-=rasterSkyMaps*skyTexels;
+  if(skySize!=0u&&index<rasterSkyMaps)rasterSkyRadiance(index);
 }
 // A local emitter's volumetric radiance scale times its source's share
 // (lights, emissive surfaces: Frame::volumeLightScales). Emissive surfaces

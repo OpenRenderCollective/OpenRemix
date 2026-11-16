@@ -390,6 +390,10 @@ namespace remix::config {
         TRACE(volumetricRasterLights, 0, 64);
         TRACE(volumetricRasterShadowSize, 16, 256);
         TRACE(volumetricRasterSteps, 1, 64);
+        TRACE(volumetricRasterSoftLights, 0, 128);
+        TRACE(volumetricRasterSoftSize, 4, 256);
+        TRACE(volumetricRasterSoftSteps, 1, 64);
+        TRACE(volumetricRasterSkySize, 16, 1024);
         TRACE(volumetricRasterSunSize, 64, 2048);
         TRACE(volumetricRasterSunSteps, 1, 64);
         TRACE(volumetricRasterSunExtent, 1, 10000);

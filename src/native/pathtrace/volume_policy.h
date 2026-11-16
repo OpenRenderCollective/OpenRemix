@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdint>
 #include <mutex>
+#include <cstddef>
 #include <utility>
 #include <vector>
 
@@ -107,6 +108,7 @@ namespace remix::trace {
     bool raster = false; // TraceOptions::volumetricRaster
     uint32_t glowLights = 0; // raster fog: lights with a shadow cube this frame
     bool glowSun = false;    // raster fog: the sun glows this frame
+    bool glowSky = false;    // raster fog: the sky glows this frame
   };
   inline VolumeState g_volumeState;
 
@@ -173,10 +175,11 @@ namespace remix::trace {
   }
 
   // Raster fog's shadowed glow (volume.glsl rasterShadowTexel, pathtrace.comp
-  // rasterFogGlow). The buffer at Frame::volumeGrid starts with one of these
-  // per glowing light (rasterGlowSlots of them) and the sun's map
-  // (RasterGlowSun), then each light's cube of distances (six faces of
-  // size^2 floats), then the sun's map (sunSize^2 floats).
+  // rasterFogGlow). The buffer at Frame::volumeGrid starts with a
+  // RasterGlowHeader, then each glowing light's cube of distances (six faces
+  // of size^2 floats: the first `sharp` lights' of volumetricRasterShadowSize
+  // texels a side, the rest's of volumetricRasterSoftSize), then the sun's
+  // map (sunSize^2 floats), then the sky's maps (rasterSkyMaps of skySize^2).
   struct RasterGlowLight {
     float originReach[4] = {}; // the cube's centre and the light's reach (world units)
     // A sphere light: unused (its emitter has its radiance). Emissive
@@ -192,27 +195,37 @@ namespace remix::trace {
     float minimum = 0, radius = 0, unused = 0;
   };
   static_assert(sizeof(RasterGlowLight) == 64);
-  struct RasterGlowSun {
+  // An orthographic shadow map: square, centreExtent.w to each side of its
+  // centre across `toward`, its rays starting rightHeight.w above the plane
+  // and going against `toward`.
+  struct RasterGlowMap {
     float centreExtent[4] = {}; // the map's centre, half its width (world units)
     float rightHeight[4] = {};  // its x axis; the rays' start above the centre
-    float upLength[4] = {};     // its y axis; how far a camera ray takes samples
-    float toSun[4] = {};        // towards the sun
+    float upUnused[4] = {};     // its y axis
+    float toward[4] = {};       // towards the light (the sun, a part of the sky)
   };
-  static_assert(sizeof(RasterGlowSun) == 64);
-  inline constexpr uint32_t rasterGlowSlots = 64;
-  inline uint32_t rasterGlowCount(const TraceOptions &options) {
-    return std::min(options.volumetricRasterLights, rasterGlowSlots);
-  }
-  inline uint32_t rasterGlowSize(const TraceOptions &options) {
-    return std::clamp(options.volumetricRasterShadowSize, 16u, 256u);
-  }
-  inline uint32_t rasterSunSize(const TraceOptions &options) {
-    return std::clamp(options.volumetricRasterSunSize, 64u, 2048u);
-  }
-  inline size_t rasterGlowBytes(uint32_t lights, uint32_t size, uint32_t sunSize) {
-    return sizeof(RasterGlowLight) * rasterGlowSlots + sizeof(RasterGlowSun) +
-           (size_t(lights) * 6 * size * size + size_t(sunSize) * sunSize) * sizeof(float);
-  }
+  static_assert(sizeof(RasterGlowMap) == 64);
+  // The sky as rasterSkyMaps parts of equal solid angle above the horizon: a
+  // cap about the zenith (to 36.9 degrees from it) and four quarters of the
+  // band below it. Each part's map looks along the part's mean direction.
+  inline constexpr uint32_t rasterGlowSlots = 128, rasterSkyMaps = 5;
+  struct RasterGlowHeader {
+    RasterGlowLight lights[rasterGlowSlots];
+    RasterGlowMap sun, sky[rasterSkyMaps];
+    // Each sky part's mean radiance (volumetricSkyScale included): written
+    // by the update pass (volume.glsl rasterSkyRadiance), not uploaded.
+    float skyRadiance[rasterSkyMaps][4] = {};
+    // The lights with a full-size cube (the first ones), the other lights'
+    // cube size and samples, the sky maps' size (0: no sky glow).
+    uint32_t sharp = 0, softSize = 0, softSteps = 0, skySize = 0;
+    // How far camera rays take samples of the sun and the sky (world units).
+    float march = 0, unused[3] = {};
+  };
+  // volume.glsl's offsets (in vec4s): the sun's map 512, the sky's 516, their
+  // radiance 536, the counts 541; 543 in all.
+  static_assert(offsetof(RasterGlowHeader, sun) == 512 * 16 && offsetof(RasterGlowHeader, sky) == 516 * 16 &&
+                offsetof(RasterGlowHeader, skyRadiance) == 536 * 16 && offsetof(RasterGlowHeader, sharp) == 541 * 16 &&
+                sizeof(RasterGlowHeader) == 543 * 16);
 
   // Emissive triangles as glowing lights: too many to give each a cube, so
   // those within one cell of a world grid (rasterClusterMeters) are summed into
@@ -387,22 +400,12 @@ namespace remix::trace {
     return count;
   }
 
-  // The sun's shadow map for raster fog's glow: square, `extent` to each side
-  // of the eye across the sun's direction, its texels fixed in the world (the
-  // centre snapped to them) so shadow edges stay put as the camera moves.
-  // Rays start `height` above the centre towards the sun. False without a
-  // sun. `direction`: the way the sunlight travels.
-  inline bool rasterGlowSun(const TraceOptions &options, const float eye[3], const float direction[3],
-                            const float radiance[4], uint32_t size, float march, RasterGlowSun &sun) {
-    if (options.volumetricSunScale <= 0 || radiance[3] <= 0 || !(radiance[0] + radiance[1] + radiance[2] > 0))
-      return false;
-    float to[3] = {-direction[0], -direction[1], -direction[2]};
-    const float length = std::sqrt(to[0] * to[0] + to[1] * to[1] + to[2] * to[2]);
-    if (!(length > 0) || !std::isfinite(length))
-      return false;
-    for (auto &c : to)
-      c /= length;
-    // Any axis not along the sun, crossed with it.
+  // A shadow map for raster fog's glow (RasterGlowMap): `extent` to each side
+  // of the eye across `to` (unit, towards the light), its texels fixed in the
+  // world (the centre snapped to them) so shadow edges stay put as the camera
+  // moves. Rays start 4 extents above the centre towards the light.
+  inline void rasterGlowMap(const float eye[3], const float to[3], float extent, uint32_t size, RasterGlowMap &map) {
+    // Any axis not along `to`, crossed with it.
     const bool alongY = std::abs(to[1]) > .9f;
     const float hint[3] = {alongY ? 1.f : 0.f, alongY ? 0.f : 1.f, 0};
     float right[3] = {hint[1] * to[2] - hint[2] * to[1], hint[2] * to[0] - hint[0] * to[2],
@@ -412,7 +415,6 @@ namespace remix::trace {
       c /= rl;
     const float up[3] = {to[1] * right[2] - to[2] * right[1], to[2] * right[0] - to[0] * right[2],
                          to[0] * right[1] - to[1] * right[0]};
-    const float extent = std::max(options.volumetricRasterSunExtent, 1.f) / options.sceneScale;
     const float texel = 2 * extent / float(size);
     float x = 0, y = 0;
     for (int c = 0; c < 3; ++c) {
@@ -420,15 +422,118 @@ namespace remix::trace {
       y += eye[c] * up[c];
     }
     const float dx = std::round(x / texel) * texel - x, dy = std::round(y / texel) * texel - y;
+    map = {};
     for (int c = 0; c < 3; ++c) {
-      sun.centreExtent[c] = eye[c] + dx * right[c] + dy * up[c];
-      sun.rightHeight[c] = right[c];
-      sun.upLength[c] = up[c];
-      sun.toSun[c] = to[c];
+      map.centreExtent[c] = eye[c] + dx * right[c] + dy * up[c];
+      map.rightHeight[c] = right[c];
+      map.upUnused[c] = up[c];
+      map.toward[c] = to[c];
     }
-    sun.centreExtent[3] = extent;
-    sun.rightHeight[3] = 4 * extent;
-    sun.upLength[3] = march;
+    map.centreExtent[3] = extent;
+    map.rightHeight[3] = 4 * extent;
+  }
+  // The sun's map; false without a sun. `direction`: the way sunlight travels.
+  inline bool rasterGlowSun(const TraceOptions &options, const float eye[3], const float direction[3],
+                            const float radiance[4], uint32_t size, RasterGlowMap &sun) {
+    if (options.volumetricSunScale <= 0 || radiance[3] <= 0 || !(radiance[0] + radiance[1] + radiance[2] > 0))
+      return false;
+    float to[3] = {-direction[0], -direction[1], -direction[2]};
+    const float length = std::sqrt(to[0] * to[0] + to[1] * to[1] + to[2] * to[2]);
+    if (!(length > 0) || !std::isfinite(length))
+      return false;
+    for (auto &c : to)
+      c /= length;
+    rasterGlowMap(eye, to, std::max(options.volumetricRasterSunExtent, 1.f) / options.sceneScale, size, sun);
+    return true;
+  }
+  // The sky parts' directions (RasterGlowHeader): the zenith, then the band's
+  // quarters about the axes after the up axis (+a, +b, -a, -b), at its mean
+  // height (the cosine from the zenith 0.4, the middle of [0, 0.8]).
+  inline void rasterSkyDirection(uint32_t part, uint32_t upAxis, float out[3]) {
+    out[0] = out[1] = out[2] = 0;
+    const uint32_t up = std::min(upAxis, 2u), a = (up + 1) % 3, b = (up + 2) % 3;
+    if (part == 0) {
+      out[up] = 1;
+      return;
+    }
+    const float side = std::sqrt(1 - .4f * .4f);
+    out[up] = .4f;
+    out[part & 1 ? a : b] = part < 3 ? side : -side;
+  }
+
+  // Sizes of the glow's maps.
+  inline uint32_t rasterGlowSize(const TraceOptions &options) {
+    return std::clamp(options.volumetricRasterShadowSize, 16u, 256u);
+  }
+  inline uint32_t rasterSoftSize(const TraceOptions &options) {
+    return std::clamp(options.volumetricRasterSoftSize, 4u, 256u);
+  }
+  inline uint32_t rasterSunSize(const TraceOptions &options) {
+    return std::clamp(options.volumetricRasterSunSize, 64u, 2048u);
+  }
+  inline uint32_t rasterSkySize(const TraceOptions &options) {
+    return std::clamp(options.volumetricRasterSkySize, 16u, 1024u);
+  }
+  // How many lights get a cube of each size, at most: the sharp, then soft.
+  inline uint32_t rasterSharpCount(const TraceOptions &options) {
+    return std::min(options.volumetricRasterLights, 64u);
+  }
+  inline uint32_t rasterSoftCount(const TraceOptions &options) {
+    return std::min(options.volumetricRasterSoftLights, rasterGlowSlots - rasterSharpCount(options));
+  }
+
+  // A frame of raster fog's glow: what to upload, how big the buffer is and
+  // how many threads the update pass takes (one a texel of every map, and
+  // one a sky part for its radiance).
+  struct RasterGlowFrame {
+    uint32_t lights = 0, size = 0, sunSize = 0, steps = 0, sunSteps = 0;
+    size_t bytes = 0;
+    uint32_t threads = 0;
+  };
+  // The buffer is sized for the most lights allowed, not this frame's count:
+  // the count changes as lights come into view.
+  inline bool rasterGlowFrame(const TraceOptions &options, const std::vector<scene::LightEmitter> &emitters,
+                              const std::vector<RasterGlowCluster> &clusters, bool localLights, const float eye[3],
+                              const float forward[3], const float sunDirection[3], const float sunRadiance[4],
+                              float march, std::vector<std::pair<float, uint32_t>> &scored,
+                              RasterGlowHeader &header, RasterGlowFrame &out) {
+    out = {};
+    const uint32_t sharpLimit = rasterSharpCount(options), softLimit = rasterSoftCount(options);
+    const uint32_t size = rasterGlowSize(options), softSize = rasterSoftSize(options);
+    const uint32_t sunSize = rasterSunSize(options), skySize = rasterSkySize(options);
+    const uint32_t count =
+        localLights ? rasterGlowLights(options, emitters, clusters, eye, forward, sharpLimit + softLimit, scored,
+                                       header.lights)
+                    : 0;
+    const bool sun = rasterGlowSun(options, eye, sunDirection, sunRadiance, sunSize, header.sun);
+    const bool sky = options.volumetricSkyScale > 0;
+    if (sky) {
+      const float extent = std::max(options.volumetricRasterSunExtent, 1.f) / options.sceneScale;
+      for (uint32_t part = 0; part < rasterSkyMaps; ++part) {
+        float to[3];
+        rasterSkyDirection(part, options.volumetricUpAxis, to);
+        rasterGlowMap(eye, to, extent, skySize, header.sky[part]);
+      }
+    }
+    if (!count && !sun && !sky)
+      return false;
+    header.sharp = std::min(count, sharpLimit);
+    header.softSize = softSize;
+    header.softSteps = std::clamp(options.volumetricRasterSoftSteps, 1u, 64u);
+    header.skySize = sky ? skySize : 0;
+    header.march = march;
+    out.lights = count;
+    out.size = size;
+    out.sunSize = sun ? sunSize : 0;
+    out.steps = std::clamp(options.volumetricRasterSteps, 1u, 64u);
+    out.sunSteps = std::clamp(options.volumetricRasterSunSteps, 1u, 64u);
+    const size_t sharpTexels = size_t(6) * size * size, softTexels = size_t(6) * softSize * softSize;
+    const size_t mapTexels = size_t(sunSize) * sunSize + size_t(rasterSkyMaps) * skySize * skySize;
+    out.bytes = sizeof(RasterGlowHeader) + (sharpLimit * sharpTexels + softLimit * softTexels + mapTexels) * 4;
+    const size_t threads = header.sharp * sharpTexels + (count - header.sharp) * softTexels +
+                           size_t(out.sunSize) * out.sunSize +
+                           (sky ? size_t(rasterSkyMaps) * skySize * skySize + rasterSkyMaps : 0);
+    out.threads = uint32_t(threads);
     return true;
   }
 } // namespace remix::trace
