@@ -23,7 +23,7 @@ namespace remix::scene {
   struct StaticUnit {
     uint64_t handle = 0, id = 0;
     uint32_t index = 0;                        // instanceIndex
-    uint64_t generation = 0;                   // changes whenever the unit is (re)built
+    uint64_t generation = 0;                   // changes whenever the unit is (re)built; unique in the process
     bool live = false;                         // the slot holds a unit
     bool singular = false;                     // dropped from tracing, as prepareTraceFrame drops it
     bool pending = false;                      // listed in rebuilt()
@@ -132,7 +132,7 @@ namespace remix::scene {
     std::unordered_map<uint64_t, std::vector<uint32_t>> m_handles;               // handle -> units by index
     std::unordered_map<std::pair<uint64_t, uint32_t>, uint32_t, KeyHash> m_keys; // (id, index) -> unit count
     std::unordered_map<uint64_t, uint32_t> m_ids;                                // id -> unit count
-    uint64_t m_epoch = ~0ull, m_generation = 0;
+    uint64_t m_epoch = ~0ull;
     uint32_t m_duplicates = 0;
     size_t m_tracedUnits = 0, m_tracedSurfaces = 0, m_liveSurfaces = 0, m_livePbr = 0;
     bool m_orderChanged = false, m_orderDirty = false, m_emittingDirty = false;

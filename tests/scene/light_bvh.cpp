@@ -868,4 +868,119 @@ int main() {
     checkLeaves("Single-emitter leaves lost their shares");
     std::puts("Clusters: surface runs in rank order, power shares, refits and size one passed");
   }
+  // Updates told what changed (InputChanges) must leave the hierarchy exactly
+  // as updates that compare everything: across animation, moving lights,
+  // dynamic instances, lights leaving and returning (so slots retire and
+  // builds come due), reordered input and hints that no longer hold.
+  {
+    std::mt19937 random(31337);
+    std::vector<SphereLight> pool;
+    // Spheres, then surfaces of 12 triangles (one surface a dynamic instance).
+    for (uint32_t i = 0; i < 24; ++i) {
+      SphereLight light;
+      light.id = 1000 + i;
+      light.radius = .2f;
+      pool.push_back(light);
+    }
+    for (uint32_t surface = 0; surface < 20; ++surface)
+      for (uint32_t t = 0; t < 12; ++t) {
+        SphereLight light;
+        light.id = 50000 + surface * 100 + t;
+        light.triangle = 1 + t % 2;
+        light.group = 900 + surface;
+        light.rank = t;
+        light.dynamic = surface == 3;
+        pool.push_back(light);
+      }
+    const auto place = [&](SphereLight &light) {
+      for (unsigned c = 0; c < 3; ++c) {
+        light.position[c] = float(random() % 4000) / 10;
+        for (unsigned v = 0; v < 3; ++v)
+          light.corners[v][c] = light.position[c] + (v == c ? .6f : 0);
+      }
+      if (light.triangle)
+        light.radius = .5f;
+    };
+    for (auto &light : pool) {
+      place(light);
+      for (auto &channel : light.radiance)
+        channel = float(1 + random() % 50);
+    }
+    // Which lights are submitted: most always, a few come and go.
+    std::vector<uint8_t> present(pool.size(), 1);
+    LightBvh hinted, compared;
+    hinted.setClusterSize(4);
+    compared.setClusterSize(4);
+    std::vector<SphereLight> input, previous;
+    LightBvh::InputChanges changes;
+    uint64_t serial = 0, previousSerial = 0, hintedUpdates = 0;
+    for (uint32_t frame = 0; frame < 2400; ++frame) {
+      // Animation and movement of a few lights every frame.
+      for (unsigned edit = 0; edit < 3; ++edit) {
+        auto &light = pool[random() % pool.size()];
+        for (auto &channel : light.radiance)
+          channel = frame % 5 ? float(random() % 50) : 0;
+      }
+      if (frame % 3 == 0)
+        place(pool[random() % 24]);
+      if (frame % 2 == 0)
+        place(pool[24 + 3 * 12 + random() % 12]); // the dynamic instance's triangles
+      // A light leaving or returning now and then; some leave for good.
+      if (frame % 97 == 0) {
+        const size_t i = random() % pool.size();
+        present[i] = !present[i];
+      }
+      input.clear();
+      for (size_t i = 0; i < pool.size(); ++i)
+        if (present[i])
+          input.push_back(pool[i]);
+      if (frame % 211 == 0)
+        std::shuffle(input.begin(), input.end(), random);
+      // What changed since the last input, as a gather would say it (whole
+      // when the size changed: then no hint).
+      changes.serial = ++serial;
+      changes.previous = input.size() == previous.size() ? previousSerial : 0;
+      changes.ranges.clear();
+      if (changes.previous)
+        for (uint32_t i = 0; i < input.size(); ++i)
+          if (!(input[i] == previous[i])) {
+            if (!changes.ranges.empty() && changes.ranges.back().second == i)
+              ++changes.ranges.back().second;
+            else
+              changes.ranges.emplace_back(i, i + 1);
+          }
+      // Once in a while a hint that names another input: it must be ignored.
+      if (frame % 157 == 0)
+        changes.previous += 7;
+      const bool a = hinted.update(input, &changes), b = compared.update(input);
+      previous = input;
+      previousSerial = changes.serial;
+      char message[128];
+      std::snprintf(message, sizeof(message), "Hinted light update differs at frame %u", frame);
+      require(a == b && hinted.generation == compared.generation && hinted.builds == compared.builds &&
+                  hinted.refits == compared.refits && hinted.dynamicBuilds == compared.dynamicBuilds &&
+                  hinted.lightingGeneration == compared.lightingGeneration &&
+                  hinted.visibilityGeneration == compared.visibilityGeneration && hinted.active == compared.active &&
+                  hinted.staticLights == compared.staticLights && hinted.dynamicLights == compared.dynamicLights &&
+                  hinted.retiredSlots == compared.retiredSlots &&
+                  hinted.unlitDynamicSlots == compared.unlitDynamicSlots &&
+                  hinted.instanceLights == compared.instanceLights,
+              message);
+      require(hinted.nodes().size() == compared.nodes().size() &&
+                  hinted.emitters().size() == compared.emitters().size() &&
+                  std::memcmp(hinted.nodes().data(), compared.nodes().data(),
+                              hinted.nodes().size() * sizeof(LightNode)) == 0 &&
+                  std::memcmp(hinted.emitters().data(), compared.emitters().data(),
+                              hinted.emitters().size() * sizeof(LightEmitter)) == 0,
+              message);
+      require(hinted.moved().size() == compared.moved().size() &&
+                  std::memcmp(hinted.moved().data(), compared.moved().data(),
+                              hinted.moved().size() * sizeof(MovedLight)) == 0,
+              message);
+    }
+    hintedUpdates = hinted.changedOnly;
+    require(hintedUpdates > 1000 && compared.changedOnly == 0, "Hinted light updates rarely took the changed lights alone");
+    std::printf("Hinted updates: %llu of 2400 updates read only their changes; the same hierarchy as comparing all\n",
+                (unsigned long long)hintedUpdates);
+  }
 }
