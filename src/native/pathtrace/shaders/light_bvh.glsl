@@ -29,13 +29,25 @@ vec3 clearedEndpoint(LightEmitter light,vec3 origin,vec3 endpoint) {
 // point at its centre, of the solid angle it has from the clearance's
 // distance. A sphere sampled there showed its outline on what holds it: all
 // of it lit a surface within the ball, a sliver of it the surface beside.
+// A sphere light's hold distance (corners[2].w;
+// remixapi_LightInfoFalloffEXT) holds its strength the same way, and shadows
+// nothing less.
 float heldDistance2(LightEmitter light,float distance2) {
-  float clearance=light.corners[2].z;
+  float clearance=max(light.corners[2].z,light.corners[2].w);
   return clearance>0&&distance2<clearance*clearance?clearance*clearance:0;
 }
+// A sphere light's range (corners[1].x; remixapi_LightInfoFalloffEXT): it
+// fades to nothing there, by 1 - d^2 / range^2, d no less than its hold
+// distance (within that it is as at that distance).
+float rangeFade(LightEmitter light,float distance2) {
+  float range=light.radiance.w==0?light.corners[1].x:0;
+  if(range<=0)return 1;
+  float hold=light.corners[2].w;
+  return max(0,1-max(distance2,hold*hold)/(range*range));
+}
 float clearanceFade(LightEmitter light,float distance2) {
-  float clearance=light.radiance.w==0?light.corners[2].z:0;
-  return clearance>0?min(1,distance2/(clearance*clearance)):1;
+  float clearance=light.radiance.w==0?max(light.corners[2].z,light.corners[2].w):0;
+  return (clearance>0?min(1,distance2/(clearance*clearance)):1)*rangeFade(light,distance2);
 }
 float lightRandom(inout uint state) {
   state=hash(state+0x9e3779b9u);return float(state>>8)*(1.0/16777216.0);
@@ -355,7 +367,7 @@ LocalCandidate localCandidate(LightEmitter light,Hit hit,inout uint state,bool a
   LocalCandidate result;result.physical=result.specular=vec3(0);result.endpoint=hit.p;result.distance=0;
   vec3 delta=light.positionRadius.xyz-hit.p;
   float distance2=dot(delta,delta),radius=light.positionRadius.w;
-  float attenuation=localFalloff(distance2);
+  float attenuation=localFalloff(distance2)*rangeFade(light,distance2);
   if(attenuation==0)return result;
   float held2=heldDistance2(light,distance2);bool held=held2>0,inside=!held&&distance2<=radius*radius;
   vec3 axis=distance2>1e-20?delta*inversesqrt(distance2):hit.n;
@@ -760,7 +772,7 @@ vec3 localLighting(Hit hit,uint state,uint samples,out float lightDistance,bool 
     } else {
       vec3 delta=light.positionRadius.xyz-hit.p;
       float distance2=dot(delta,delta),radius=light.positionRadius.w;
-      float attenuation=localFalloff(distance2);
+      float attenuation=localFalloff(distance2)*rangeFade(light,distance2);
       if(attenuation==0)continue;
       float held2=heldDistance2(light,distance2);bool held=held2>0,inside=!held&&distance2<=radius*radius;
       vec3 axis=distance2>1e-20?delta*inversesqrt(distance2):hit.n;

@@ -76,6 +76,8 @@ namespace remix::scene {
         e.corners[2][0] = float(light.ies);
         e.corners[2][1] = float(light.cookie);
         e.corners[2][2] = light.shadowClearance; // light_bvh.glsl clearedEndpoint
+        e.corners[2][3] = light.holdDistance;    // light_bvh.glsl heldDistance2
+        e.corners[1][0] = light.range;           // light_bvh.glsl rangeFade
         if (light.cookie) {
           std::copy_n(light.cookieUp, 3, e.corners[0]);
           e.corners[0][3] = light.cookieTan;
@@ -91,6 +93,7 @@ namespace remix::scene {
     bool sameGeometry(const SphereLight &a, const SphereLight &b) {
       bool same = a.coneCos == b.coneCos && a.softness == b.softness && a.focus == b.focus && a.ies == b.ies &&
                   a.cookie == b.cookie && a.cookieTan == b.cookieTan && a.shadowClearance == b.shadowClearance &&
+                  a.holdDistance == b.holdDistance && a.range == b.range &&
                   std::equal(a.cookieUp, a.cookieUp + 3, b.cookieUp) &&
                   std::equal(a.direction, a.direction + 3, b.direction) && a.radius == b.radius &&
                   std::equal(a.position, a.position + 3, b.position);

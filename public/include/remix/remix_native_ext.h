@@ -40,6 +40,20 @@ typedef struct remixapi_LightInfoShadowClearanceEXT {
   float distance;
 } remixapi_LightInfoShadowClearanceEXT;
 
+// Optional pNext on a sphere LightInfo: a game light's falloff, where the game
+// does not light by the inverse square alone. Within `holdDistance` of its
+// centre the light is no stronger than at that distance (shadows are as
+// without it), and it fades to nothing at `range` by 1 - d^2 / range^2 (d no
+// less than holdDistance). Source's dynamic lights light the world so. Zero:
+// none of that part. Path traced lighting only.
+#define REMIXAPI_STRUCT_TYPE_LIGHT_INFO_FALLOFF_EXT ((remixapi_StructType)0x7fff107a)
+typedef struct remixapi_LightInfoFalloffEXT {
+  remixapi_StructType sType;
+  const void* pNext;
+  float holdDistance;
+  float range;
+} remixapi_LightInfoFalloffEXT;
+
 // Optional pNext on opaque MaterialInfo. Nonzero roughness/metalness constants
 // or a roughness/metalness/normal map automatically select EON + GGX. Completely
 // zero-initialized legacy parameters retain Lambert shading. This override also

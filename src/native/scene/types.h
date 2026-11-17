@@ -429,6 +429,9 @@ namespace remix {
       // Spheres: nothing nearer the centre than this shadows the light
       // (remixapi_LightInfoShadowClearanceEXT), in scene units.
       float shadowClearance = 0;
+      // Spheres: no stronger within holdDistance than at it, and nothing past
+      // range (remixapi_LightInfoFalloffEXT), in scene units. Zero: none.
+      float holdDistance = 0, range = 0;
       bool operator==(const SphereLight &) const = default;
     };
     struct DomeLight {
