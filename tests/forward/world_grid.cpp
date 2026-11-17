@@ -125,6 +125,23 @@ int main() {
     std::fprintf(stderr, "Curved chart exception: %s\n", error.what());
     return 1;
   }
+  {
+    scene::BakeScene corner;
+    corner.ready = true;
+    face(corner, 0, 0, 2, 2, 3, 3);
+    lm::Options inset;
+    inset.receiverInsetMetres = .004f;
+    const auto origin = lm::plan(corner);
+    const auto moved = lm::plan(corner, inset);
+    require(moved.owners == origin.owners && moved.addresses == origin.addresses,
+            "Ray origin inset preserves the atlas texel mapping");
+    const auto &chart = moved.charts.front();
+    const auto edge = moved.owners[(chart.page * moved.pageSize + chart.y) * moved.pageSize + chart.x + 1];
+    const auto &point = moved.points[edge];
+    require(origin.points[edge].position[1] == 0 && point.position[1] >= .00399f &&
+                point.position[1] < .005f && point.position[2] == 0,
+            "An edge sample starts on the receiving face and above the adjacent plane");
+  }
   auto scene = adjacent(true);
   auto &rotated = scene.charts[1];
   const float oldWidth = float(rotated.width - 1);

@@ -60,7 +60,9 @@ namespace remix::forward::lightmap {
     uint32_t address(const Layout &layout, const Allocation &chart, uint32_t x, uint32_t y) {
       return (chart.page * layout.pageSize + chart.y + y) * layout.pageSize + chart.x + x;
     }
+    using ReceiverInset = std::pair<uint32_t, Vec3>;
     void rasterize(const scene::BakeScene &scene, uint32_t chartIndex, Layout &layout, const Options &options,
+                   std::vector<ReceiverInset> &insets,
                    std::stop_token cancelled) {
       const auto &source = scene.charts[chartIndex];
       const auto &allocation = layout.charts[chartIndex];
@@ -74,6 +76,8 @@ namespace remix::forward::lightmap {
       std::vector<float> interior(owners.size(), -1);
       std::vector<float> donorDistance(owners.size());
       std::vector<uint32_t> queue;
+      const uint32_t firstPoint = uint32_t(layout.points.size());
+      std::vector<Vec3> traceOffsets;
       double fallbackArea = 0;
       bake::Point fallbackPoint;
       uint32_t fallbackX = 0, fallbackY = 0;
@@ -117,6 +121,46 @@ namespace remix::forward::lightmap {
             point.normal[c] = n[c];
           }
           return point;
+        };
+        std::array<double, 3> minimumWeights{};
+        if (options.receiverInsetMetres > 0) {
+          const double doubledArea = std::sqrt(dot(geometric, geometric));
+          for (uint32_t c = 0; c < 3; ++c) {
+            Vec3 oppositeEdge{};
+            for (uint32_t axis = 0; axis < 3; ++axis)
+              oppositeEdge[axis] = positions[(c + 2) % 3][axis] - positions[(c + 1) % 3][axis];
+            minimumWeights[c] = std::min(1. / 6, double(options.receiverInsetMetres) *
+                std::sqrt(dot(oppositeEdge, oppositeEdge)) / (scene.sceneScale * doubledArea));
+          }
+        }
+        auto traceOffset = [&](const std::array<double, 3> &weights) {
+          if (weights[0] >= minimumWeights[0] && weights[1] >= minimumWeights[1] &&
+              weights[2] >= minimumWeights[2])
+            return Vec3{};
+          // Project onto the inset triangle in world space. A move toward
+          // the centroid can drift along long, narrow triangles.
+          const double span = 1 - minimumWeights[0] - minimumWeights[1] - minimumWeights[2];
+          std::array<Vec3, 3> inner{};
+          for (uint32_t axis = 0; axis < 3; ++axis) {
+            double base = 0;
+            for (uint32_t c = 0; c < 3; ++c)
+              base += (minimumWeights[c] - weights[c]) * positions[c][axis];
+            for (uint32_t c = 0; c < 3; ++c)
+              inner[c][axis] = float(base + span * positions[c][axis]);
+          }
+          Vec3 best = inner[0];
+          for (uint32_t c = 0; c < 3; ++c) {
+            const auto &start = inner[c], &end = inner[(c + 1) % 3];
+            Vec3 edge{}, offset{};
+            for (uint32_t axis = 0; axis < 3; ++axis)
+              edge[axis] = end[axis] - start[axis];
+            const float fraction = std::clamp(-dot(start, edge) / dot(edge, edge), 0.f, 1.f);
+            for (uint32_t axis = 0; axis < 3; ++axis)
+              offset[axis] = start[axis] + fraction * edge[axis];
+            if (dot(offset, offset) < dot(best, best))
+              best = offset;
+          }
+          return best;
         };
         if (std::abs(area) > fallbackArea) {
           fallbackArea = std::abs(area);
@@ -166,6 +210,8 @@ namespace remix::forward::lightmap {
                 throw std::invalid_argument("Overlapping or folded surface lightmap chart");
               if (interior[local] < -1e-7f && (centreInside || sampleDistance < donorDistance[local])) {
                 layout.points[owners[local]] = point;
+                if (options.receiverInsetMetres > 0)
+                  traceOffsets[owners[local] - firstPoint] = traceOffset(weights);
                 layout.sampleCenters[owners[local]] = uint8_t(centreInside);
                 interior[local] = centreInside ? float(minimum) : -1;
                 donorDistance[local] = sampleDistance;
@@ -178,6 +224,8 @@ namespace remix::forward::lightmap {
             queue.push_back(local);
             layout.pointCharts.push_back(chartIndex);
             layout.points.push_back(point);
+            if (options.receiverInsetMetres > 0)
+              traceOffsets.push_back(traceOffset(weights));
             layout.sampleCenters.push_back(uint8_t(centreInside));
             layout.receiverSamples.push_back(1);
             layout.addresses.push_back(address(layout, allocation, x, y));
@@ -200,6 +248,9 @@ namespace remix::forward::lightmap {
         layout.receiverSamples.push_back(1);
         layout.addresses.push_back(address(layout, allocation, fallbackX, fallbackY));
       }
+      for (uint32_t i = 0; i < traceOffsets.size(); ++i)
+        if (traceOffsets[i] != Vec3{})
+          insets.emplace_back(firstPoint + i, traceOffsets[i]);
       // Only a one-texel ring around actual coverage can support the rendered
       // bilinear footprint. Unused interiors of a triangular chart's bounding
       // rectangle must not import the whole neighbouring face.
@@ -252,10 +303,22 @@ namespace remix::forward::lightmap {
                       std::stop_token cancelled) {
     result.owners.resize(size_t(result.pages) * options.pageSize * options.pageSize, unowned);
     result.footprints.resize(result.owners.size());
+    std::vector<ReceiverInset> insets;
     for (uint32_t i = 0; i < scene.charts.size(); ++i)
-      rasterize(scene, i, result, options, cancelled);
+      rasterize(scene, i, result, options, insets, cancelled);
     extendSeams(scene, result, options.padding, cancelled);
     extendCurvedSeams(scene, result, options.padding, cancelled);
+    // Keep chart topology and seam ownership at the exact surface coordinates.
+    // Move only the ray sites, so intersections at t=0 do not disappear under
+    // the ray minimum distance. Coplanar aliases share the same trace origin.
+    for (const auto &[index, offset] : insets)
+      if (result.receiverSources.empty() || result.receiverSources[index] == unowned)
+        for (uint32_t axis = 0; axis < 3; ++axis)
+          result.points[index].position[axis] += offset[axis];
+    if (!insets.empty())
+      for (size_t i = 0; i < result.receiverSources.size(); ++i)
+        if (const auto source = result.receiverSources[i]; source != unowned)
+          result.points[i].position = result.points[source].position;
     return result;
   }
 } // namespace remix::forward::lightmap
