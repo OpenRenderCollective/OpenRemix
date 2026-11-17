@@ -2923,9 +2923,8 @@ layout(buffer_reference,std430,buffer_reference_align=16) readonly buffer MovedL
 float movedLightEstimate(LightEmitter light,Hit hit) {
   vec3 delta=light.positionRadius.xyz-hit.p;float distance2=max(dot(delta,delta),1e-12);
   vec3 direction=delta*inversesqrt(distance2);
-  float radius=light.positionRadius.w,sinMax2=min(1,radius*radius/distance2);
-  float oneMinusCos=sinMax2/(1+sqrt(max(0,1-sinMax2)));
-  return localLuminance(light.radiance.rgb)*emitterShaping(light,-direction)*2*oneMinusCos
+  float oneMinusCos,measure;sphereLightCone(distance2,light.positionRadius.w,oneMinusCos,measure);
+  return localLuminance(light.radiance.rgb)*emitterShaping(light,-direction)*measure
       *max(0,dot(hit.n,direction))*emitterFalloff(light,distance2)*frame.localScale.x;
 }
 // A surface moving on its own (a door swinging) changes the light it

@@ -850,6 +850,7 @@ namespace remix::metal {
     frame.localConfig[2] = uint32_t(lightBvh.lightingGeneration);
     frame.localConfig[3] = uint32_t(lightBvh.lightingGeneration >> 32) |
                            (options.adaptiveLocalSampling ? 0x80000000u : 0u) |
+                           (options.softSphereLights ? 0x20000000u : 0u) |
                            (lighting.hasEmissive ? 0u : 0x40000000u); // sphere-only set: guide sphere lights too
     frame.localScale[0] = options.localIntensity;
     frame.localScale[1] = options.localRange;
