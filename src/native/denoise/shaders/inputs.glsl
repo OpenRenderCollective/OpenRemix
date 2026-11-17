@@ -76,6 +76,12 @@ layout(set=1,binding=57,rgba16f) uniform image2D movingB;
 // The local-light passes' motion vectors (guideMotion, pointed off screen
 // where an occluder moved: localOcclusionConfidence).
 layout(set=1,binding=58,rgba32f) uniform image2D localMotion;
+// For host passes (the composition passes write them): the view depth of
+// the first surface that is not a sheet (REMIXAPI_HOST_TARGET_VIEW_OPAQUE_DEPTH_EXT)
+// and the sheets' transmittance in front of it, before fog and media
+// (REMIXAPI_HOST_TARGET_VIEW_TRANSMITTANCE_EXT).
+layout(set=1,binding=59,r32f) uniform image2D opaqueDepth;
+layout(set=1,binding=60,rgba16f) uniform image2D sheetTransmittance;
 layout(set=1,binding=25,std140) uniform TemporalFrame {
   mat4 view;
   mat4 previousView;

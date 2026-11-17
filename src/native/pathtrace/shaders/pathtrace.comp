@@ -1035,6 +1035,7 @@ Hit primarySurface(ivec2 pixel,inout vec3 origin,inout vec3 direction,bool sheet
   front=vec3(0);layers=0;
   bool raster=frame.target.w!=0,bent=false,body=false,trace=!raster,first=true,record=false;
   vec3 traceOrigin=origin,traceDirection=direction;
+  uint portals=0u,chain=0u;
   Hit hit;
   if(raster) {
     hit=rasterSurface(pixel,origin,true);
@@ -1062,6 +1063,15 @@ Hit primarySurface(ivec2 pixel,inout vec3 origin,inout vec3 direction,bool sheet
       if(record&&traced.t==1e30)hit.film.x=0;
       else hit=traced;
       record=false;
+      // Behind sheets (a sphere around the camera in front of a portal), a
+      // ray portal's opening goes on from its partner, as replaceScreen
+      // carries the camera ray that meets it first; sheets past a portal are
+      // passed, as the composition's layer walk does not follow it.
+      if(layers!=0u&&hit.t<1e30&&!hit.blended&&hit.surface>=0&&
+         portalTeleport(uint(hit.surface),hit.p,traceOrigin,traceDirection,portals,chain,frame.rayPortalConfig.x)) {
+        origin=traceOrigin;direction=traceDirection;trace=true;continue;
+      }
+      if(portals!=0u&&hit.t<1e30&&hit.blended){traceOrigin=offsetRay(hit.p,-hit.ng);trace=true;continue;}
     }
     if(first){first=false;if(diagnose&&frame.splitLocal.w!=0)front=debugGeometry(hit,pixel);}
     if(!sheets||layers>=32u||!hit.blended)break;
@@ -4306,6 +4316,33 @@ void main() {
   }
   imageStore(transparentLight,pixel,vec4(safeRadiance(foreground+tint*imageLoad(primaryPrevious,pixel).rgb),1));
   imageStore(transmittance,pixel,vec4(signedCount<0?vec3(0):tint,opacityProduct));
+  // For host passes: the sheets' transmittance before the media, and the
+  // view depth of the first surface that is not a sheet. Without sheets that is
+  // the guide's (what a ray portal or a mirror shows); the guides and the raster
+  // depth are the front sheet's otherwise, so the centre ray is followed past
+  // the sheets to the surface behind them.
+  imageStore(sheetTransmittance,pixel,vec4(signedCount<0?vec3(0):guideTint,1));
+  float opaqueZ=imageLoad(guideDepth,pixel).x;
+  if(sheetCount!=0) {
+    opaqueZ=1e10;
+    vec2 centerNdc=(vec2(pixel)+vec2(0.5))/vec2(frame.target.xy)*2-1;
+    vec4 centerNear=frame.inverseCamera*vec4(centerNdc,0,1);
+    vec4 centerFar=frame.inverseCamera*vec4(centerNdc,0.99999,1);
+    vec3 behindOrigin=centerNear.xyz/centerNear.w;
+    vec3 behindDirection=normalize(centerFar.xyz/centerFar.w-behindOrigin);
+    for(uint layer=0;layer<32;++layer) {
+      cameraRay=frame.cameraCull.x!=0u;
+      Hit hit=closestGeometry(behindOrigin,behindDirection,1e30,false);
+      cameraRay=false;
+      if(hit.t==1e30)break;
+      if(!hit.blended) {
+        opaqueZ=abs((temporal.view*vec4(hit.p,1)).z);
+        break;
+      }
+      behindOrigin=offsetRay(hit.p,-hit.ng);
+    }
+  }
+  imageStore(opaqueDepth,pixel,vec4(opaqueZ));
 #endif
   float count=float(frame.config.w);
   if (count>0) {

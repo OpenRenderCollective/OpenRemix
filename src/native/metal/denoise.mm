@@ -131,7 +131,7 @@ namespace remix::metal::denoise {
       if (i == Normal || i == PreviousNormal || i == FrontNormal)
         pixel = MTLPixelFormatRGB10A2Unorm;
       if (i == Depth || i == PreviousDepth || i == Confidence || i == RrHitDistance || i == FrontDepth ||
-          i == FrontConfidence || i == LocalConfidence)
+          i == FrontConfidence || i == LocalConfidence || i == OpaqueDepth)
         pixel = MTLPixelFormatR32Float;
       if (i == PsrMirror)
         pixel = MTLPixelFormatRGBA32Uint;
@@ -152,6 +152,8 @@ namespace remix::metal::denoise {
         w = h = 1;
       if (i == LocalMotion)
         w = local ? width : 1, h = local ? height : 1;
+      if (i == OpaqueDepth || i == SheetTransmittance)
+        w = width, h = height;
       g.images[i] = g.texture(pixel, w, h);
     }
     for (auto &uniform : g.uniforms)
