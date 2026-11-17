@@ -1239,12 +1239,17 @@ namespace remix {
     configureIndirect(frame, options, querySharc);
     {
       // The split primary's results (rtx.native.pathtrace.splitPrimary): the
-      // denoised opaque pass, densely launched.
+      // denoised opaque pass, densely launched; after the pixels' elements,
+      // the listed launch's arguments and pixels (pathtrace.comp PrimaryLocals).
       frame.primaryLocal = 0;
       if (options.splitPrimary && denoiser && !options.sparseRendering) {
-        const VkDeviceSize bytes = VkDeviceSize(extent.width) * extent.height * 48;
+        const VkDeviceSize pixels = VkDeviceSize(extent.width) * extent.height;
+        const VkDeviceSize bytes = pixels * 48 + 16 + (pixels + 3) / 4 * 16;
         if (!primaryLocal || primaryLocal->size < bytes) {
-          auto next = buffer(bytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, false);
+          auto next = buffer(bytes,
+                             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
+                                 VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                             false);
           if (primaryLocal)
             retiredBuffers.push_back(std::move(primaryLocal));
           primaryLocal = std::move(next);
@@ -1753,15 +1758,28 @@ namespace remix {
         bindTrace(command, sparseLit, opaqueLayout, sparseLitFeatures);
         vkCmdDispatchIndirect(command, sparse.count->handle, 16);
       } else if (primarySplit) {
-        // The split primary: surfaces and local light (and the pixels with
-        // traced surfaces, whole), then the rest from its results.
+        // The split primary: surfaces and local light, listing the pixels
+        // with traced surfaces; those whole (the one launch's pipeline over
+        // the list), then the rest from the producer's results.
+        const VkDeviceSize listOffset = VkDeviceSize(extent.width) * extent.height * 48;
+        const uint32_t listArguments[4] = {0, 1, 1, 0};
+        vkCmdUpdateBuffer(command, primaryLocal->handle, listOffset, sizeof(listArguments), listArguments);
+        barrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
         {
           gpu::GpuScope scope(command, "Trace opaque: primary surface, local (split primary)", extent);
           bindTrace(command, primaryProducer, primaryProducerLayout, primaryProducerFeatures);
           vkCmdDispatch(command, (extent.width + 7) / 8, (extent.height + 7) / 8, 1);
         }
         barrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
-                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT,
+                VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_INDIRECT_COMMAND_READ_BIT);
+        {
+          // Disjoint from the consumer's pixels.
+          gpu::GpuScope scope(command, "Trace opaque: traced primary surfaces (split primary)", extent);
+          bindTrace(command, opaquePipeline, opaqueLayout, opaqueFeatures | featurePrimaryList);
+          vkCmdDispatchIndirect(command, primaryLocal->handle, listOffset);
+        }
         gpu::GpuScope scope(command, "Trace opaque: direct, sun, emissive (split primary)", extent);
         bindTrace(command, primaryConsumer, primaryConsumerLayout, primaryConsumerFeatures);
         vkCmdDispatch(command, (extent.width + 7) / 8, (extent.height + 7) / 8, 1);

@@ -41,6 +41,8 @@ namespace remix::trace::detail {
     featureLocalGuiding = 128,
     featureSmallSet = 256,
     featureResampling = 512,
+    // The opaque pipeline over the split primary producer's list (pathtrace.comp primaryListLaunch).
+    featurePrimaryList = 1024,
   };
   // What a stage outside the lighting selection sees: decals, local lights
   // and guiding on (as their constants' defaults were), the rest off.
@@ -395,7 +397,8 @@ namespace remix {
     bool multiSheetFailed = false; // the multi-sheet pass's compile failed: the composition pass composes layers
     std::unique_ptr<Buffer> sheetResults;
     // rtx.native.pathtrace.splitPrimary: the producer's results for the
-    // consumer, 48 bytes a pixel (pathtrace.comp PrimaryLocals).
+    // consumer, 48 bytes a pixel, then the listed launch's arguments and
+    // pixels (pathtrace.comp PrimaryLocals).
     std::unique_ptr<Buffer> primaryLocal;
     VkPipeline compute = VK_NULL_HANDLE, composite[2] = {};
     VkPipeline splitDirectCompute = VK_NULL_HANDLE;
