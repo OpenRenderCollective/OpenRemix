@@ -3233,6 +3233,133 @@ bool thickSheet(Hit hit,inout vec3 direction,inout float alpha,inout vec3 throug
   direction=bent;
   return true;
 }
+// Raster fog (volume_policy.h rasterFog): how much of a point at this view
+// depth is fog.
+float rasterFogAmount(float viewDepth) {
+  if(frame.volumeParams.w==3)return clamp((viewDepth-frame.volumeParams.x)*frame.volumeParams.y,0,1);
+  float k=frame.volumeParams.z*max(viewDepth,0);
+  return 1-exp(-(frame.volumeParams.w==2?k*k:k));
+}
+// The sun's and the sky's light scattered towards the camera by the raster
+// fog along [0, far], up to where the fog leaves 5% (rasterGlowMarch):
+// volumeFrame.z samples spaced quadratically (the near fog counts most),
+// dimmed by the fog in front. The sun's shadowed by its map (volume.glsl
+// rasterMapShadow) and the clouds: isotropic, its irradiance (pi
+// lightRadiance) over 4 pi. Each sky part's by its own map: its radiance times
+// its solid angle (2 pi / 5) over 4 pi. Past a map's edge a sample keeps the
+// last sample's light on it.
+vec3 rasterOpenGlow(vec3 origin,vec3 direction,float far,float forward,float jitter) {
+  uvec4 counts=rasterGlowCounts();
+  uint sunSize=frame.volumeFrame.y,skySize=counts.w,steps=max(frame.volumeFrame.z,1u);
+  if(sunSize==0u&&skySize==0u)return vec3(0);
+  float reach=min(far,rasterGlowMarch());
+  if(reach<=0)return vec3(0);
+  vec3 skyLight[5];float skyLit[5];
+  uint sunFirst=rasterSunFirst(),skyFirst=skySize!=0u?rasterSkyFirst(0u):0u;
+  for(uint part=0u;part<rasterSkyMaps;++part) {
+    skyLight[part]=skySize!=0u?VolumeCells(frame.volumeGrid).data[rasterSkyRadianceSlot+part].rgb*.1:vec3(0);
+    skyLit[part]=1;
+  }
+  float sun=0,sunLit=1,near=0;vec3 sky=vec3(0);
+  for(uint i=0u;i<steps;++i) {
+    float u=float(i+1u)/float(steps),next=reach*u*u;
+    float t=mix(near,next,jitter);
+    vec3 p=origin+direction*t;
+    float weight=(1-rasterFogAmount(t*forward))*(next-near);
+    if(sunSize!=0u) {
+      float shadow=rasterMapShadow(rasterSunSlot,sunFirst,sunSize,p);
+      if(shadow>=0)sunLit=shadow;
+      if(sunLit>0)sun+=sunLit*cloudShadow(p)*weight;
+    }
+    for(uint part=0u;part<rasterSkyMaps;++part) {
+      if(all(equal(skyLight[part],vec3(0))))continue;
+      float shadow=rasterMapShadow(rasterSkySlot+part*4u,skyFirst+part*skySize*skySize,skySize,p);
+      if(shadow>=0)skyLit[part]=shadow;
+      sky+=skyLight[part]*(skyLit[part]*weight);
+    }
+    near=next;
+  }
+  return sun*.25*frame.lightRadiance.rgb*frame.lightRadiance.w*frame.volumeLightScales.x+sky;
+}
+// Raster fog's glow around the lights, which a traced medium shows and a
+// flat fog colour cannot: for each light given a shadow cube this frame
+// (volume_policy.h rasterGlowLights) whose reach the camera ray crosses
+// before `far`, its single scattering towards the camera there, shadowed by
+// its cube (volume.glsl rasterShadow) and dimmed by the raster fog in front.
+// volumeFrame.x samples a light, spaced evenly in the angle the ray subtends
+// at the light (equiangular: they gather where the light is brightest, and
+// each carries an equal share of the 1 / d^2 integral); the lights past the
+// first `sharp` (coarser cubes) take softSteps. Then the sun's and the sky's
+// (rasterOpenGlow). `jitter` offsets the samples per pixel, the same every
+// frame. Tinted by the fog colour as the traced medium is.
+vec3 rasterFogGlow(vec3 origin,vec3 direction,float far,float forward,float jitter) {
+  if(frame.volumeGrid==0||frame.volumeMedium.w<=0)return vec3(0);
+  uvec4 counts=rasterGlowCounts();
+  uint lights=frame.volumeConfig.z;
+  LightEmitters emitters=LightEmitters(frame.lightEmitters);
+  bool sky=far>=1e30;
+  far=min(far,1e6);
+  vec3 glow=vec3(0);
+  for(uint slot=0u;slot<lights;++slot) {
+    vec4 originReach=rasterGlowSlot(slot,0u);
+    vec3 centre=originReach.xyz;float reach=originReach.w;
+    float along=dot(centre-origin,direction);
+    vec3 offset=centre-origin-direction*along;
+    float h2=dot(offset,offset);
+    if(h2>=reach*reach)continue;
+    float chord=sqrt(reach*reach-h2),t0=max(0.,along-chord),t1=min(far,along+chord);
+    if(t1<=t0)continue;
+    vec4 intensityKind=rasterGlowSlot(slot,1u),normalCoherence=rasterGlowSlot(slot,2u),limits=rasterGlowSlot(slot,3u);
+    bool sphere=intensityKind.w==0;
+    LightEmitter light;
+    if(sphere)light=emitters.data[floatBitsToUint(limits.x)];
+    float radius=max(limits.z,1e-4);
+    uint steps=max(slot<counts.x?frame.volumeFrame.x:counts.z,1u);
+    // 1 / (d^2 + r^2) with r the light's size, not 1 / d^2 held at r: held,
+    // the fog within the light's sphere glowed evenly, a solid orb with a hard
+    // edge wherever the sphere met a wall or the lamp around it. Softened,
+    // the glow peaks at the centre and fades smoothly, with no edge. The
+    // ray's distance to the centre takes in r^2 so the samples stay
+    // equiangular for it.
+    float h=sqrt(h2+radius*radius);
+    float a0=atan((t0-along)/h),a1=atan((t1-along)/h),angle=(a1-a0)/float(steps);
+    vec3 sum=vec3(0);
+    for(uint i=0u;i<steps;++i) {
+      float t=along+h*tan(a0+(float(i)+jitter)*angle);
+      vec3 toPoint=origin+direction*t-centre;
+      float distance2=dot(toPoint,toPoint);
+      float falloff=sphere?emitterFalloff(light,distance2):localFalloff(distance2);
+      if(falloff<=0)continue;
+      float lit=rasterShadow(slot,toPoint);
+      if(lit<=0)continue;
+      vec3 outgoing=toPoint*inversesqrt(max(distance2,1e-12));
+      // Emissive surfaces: their radiance times area towards `outgoing`, a
+      // flat panel by its cosine, surfaces facing all ways by its mean (1/4;
+      // 1/2 two-sided).
+      vec3 intensity;
+      if(sphere)intensity=emitterRadiance(light,outgoing);
+      else {
+        float cosine=dot(normalCoherence.xyz,outgoing);
+        bool twoSided=intensityKind.w>1.5;
+        float facing=twoSided?abs(cosine):max(cosine,0);
+        intensity=intensityKind.rgb*mix(twoSided?.5:.25,facing,normalCoherence.w);
+      }
+      // Each sample's share of the integral of 1 / (d^2 + r^2) is angle / h.
+      sum+=intensity*(falloff*lit*(1-rasterFogAmount(t*forward)));
+    }
+    glow+=sphere?sum*(angle/h*3.14159265359*radius*radius*light.corners[1].w*frame.volumeLightScales.y)
+                :sum*(angle/h*frame.volumeLightScales.z);
+  }
+  glow*=frame.localScale.x/(4*3.14159265359);
+  // Keep the sky clear (volumetricRasterClearSky): of the sun's and the sky's
+  // glow, which fill the fog everywhere; a light's own halo still shows
+  // against the sky.
+  if(!sky||!rasterGlowClearSky())glow+=rasterOpenGlow(origin,direction,far,forward,jitter);
+  vec3 tint=frame.volumeMedium.rgb;
+  float brightest=max(max(tint.r,tint.g),tint.b);
+  tint=brightest>0?tint/brightest:vec3(1);
+  return glow*tint*frame.volumeMedium.w;
+}
 // The colour a camera inside a translucent body (remixapi_CameraMediumEXT)
 // sees of the body over `distance`: what is absorbed becomes the body's colour
 // lit as a surface facing up would be by the sky and the sun. transmittance:
@@ -3318,7 +3445,9 @@ void main() {
   regirPresample(gl_WorkGroupID.x*64u+gl_LocalInvocationIndex);
   return;
 #elif defined(VOLUME_UPDATE_PASS)
-  volumeUpdate(gl_WorkGroupID.x*64u+gl_LocalInvocationIndex);
+  // Rows of 32768 groups (volume.cpp recordVolume): one row of 65535 at most
+  // held too few threads for the largest of raster fog's maps.
+  volumeUpdate((gl_WorkGroupID.y*32768u+gl_WorkGroupID.x)*64u+gl_LocalInvocationIndex);
   return;
 #elif defined(ORCA_SPARSE_PASS)
   // One sparse path per tile, at a pixel that changes every frame.
@@ -4114,7 +4243,8 @@ void main() {
   // The sky is not at its geometry: the raster depth of a sky box's faces
   // drew the box into the medium, edges, corners and all.
   float far=1e30;
-  if(frame.volumeConfig.x!=0u||frame.cameraMedium.w>0) {
+  bool rasterFog=frame.volumeConfig.x==0u&&frame.volumeConfig.y==1u;
+  if(frame.volumeConfig.x!=0u||rasterFog||frame.cameraMedium.w>0) {
     float kind=frame.target.w!=0?imageLoad(primaryNormal,pixel).w:-1;
     if(kind>=32)kind-=32; // a screen camera's surface
     if(kind>=16)kind-=16; // a thin film
@@ -4127,6 +4257,23 @@ void main() {
   }
   if(frame.volumeConfig.x!=0u) {
     volumeMarch(origin,direction,far,fogLight,fogTransmittance);
+    transparent=fogLight+fogTransmittance*transparent;tint*=fogTransmittance;
+  } else if(rasterFog) {
+    // Raster fog (volume_policy.h rasterFog): as a raster game blends it, by
+    // view depth (along the camera's axis, from the eye-relative matrix: the
+    // absolute one loses directions to rounding far from the origin), the sky
+    // left clear; and the glow of the local lights in it (rasterFogGlow), the
+    // sky's included. Laid over everything composed here as the march's
+    // result is.
+    vec4 axisNear=frame.inverseCameraRelative*vec4(0,0,0,1),axisFar=frame.inverseCameraRelative*vec4(0,0,.99999,1);
+    float forward=max(dot(direction,normalize(axisFar.xyz/axisFar.w-axisNear.xyz/axisNear.w)),0);
+    if(far<1e30) {
+      float amount=rasterFogAmount(far*forward);
+      fogTransmittance=1-amount;fogLight=frame.volumeMedium.rgb*amount;
+    }
+    // Interleaved gradient noise: a fixed fine pattern, nothing to trail.
+    float jitter=fract(52.9829189*fract(dot(vec2(pixel),vec2(.06711056,.00583715))));
+    fogLight+=rasterFogGlow(origin,direction,far,forward,jitter);
     transparent=fogLight+fogTransmittance*transparent;tint*=fogTransmittance;
   }
   // A camera inside a translucent body (under water): its medium up to the

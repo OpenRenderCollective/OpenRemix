@@ -17,6 +17,7 @@
 #include "metal/frame.h"
 #include "pathtrace/frame_tables.h"
 #include "pathtrace/tlas_policy.h"
+#include "pathtrace/volume_policy.h"
 #include "platform/timing.h"
 #include "platform/workers.h"
 #include "scene/emission.h"
@@ -181,6 +182,15 @@ namespace remix::metal {
       float cellUnits = 0, eye[3] = {};
       size_t bytes = 0;
       const char *inactiveReason = "not requested";
+      // Raster fog's glow (volume_policy.h rasterGlowFrame): the update
+      // pass's threads (0: the traced medium's) and the header uploaded;
+      // `cells` holds the maps. The emissive clusters are those of the light
+      // tree at glowClustersInstance / Generation.
+      uint32_t glowThreads = 0;
+      remix::trace::RasterGlowHeader glowHeader;
+      std::vector<std::pair<float, uint32_t>> glowScratch;
+      std::vector<remix::trace::RasterGlowCluster> glowClusters;
+      uint64_t glowClustersInstance = 0, glowClustersGeneration = ~0ull;
     } volume;
     void configureVolume(id<MTLCommandBuffer> command, Frame &frame, const TraceOptions &options);
     void recordVolume(id<MTLCommandBuffer> command);

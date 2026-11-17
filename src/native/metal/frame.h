@@ -73,6 +73,8 @@ namespace remix::metal::trace {
     // march distance, scattered light scale, base height. volumeMedium:
     // scattering albedo, extinction per world unit. volumeHeight: up axis,
     // density falloff per world unit. volumeEye/Previous: the windows' centre.
+    // Raster fog (x 0, y 1) has its own in volumeMedium and volumeParams
+    // (volume_policy.h rasterFog).
     uint64_t volumeGrid = 0;
     // Seconds of the runtime's clock (wrapped), for scrolling maps; the world's
     // up axis (0 x, 1 y, 2 z: rtx.native.pathtrace.volumetricUpAxis).

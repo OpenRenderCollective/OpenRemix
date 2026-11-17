@@ -211,6 +211,41 @@ namespace remix {
     float volumetricHeightFalloff = 0, volumetricBaseHeight = 0;
     uint32_t volumetricUpAxis = 3;
     float volumetricScattering = 1, volumetricMaxDistance = 250;
+    // volumetricRaster: the medium is no traced medium but the game's fog as
+    // a raster game draws it (volume_policy.h rasterFog): each pixel blended
+    // towards the fog colour by its view depth, the sky left clear, plus the
+    // shadowed glow of local lights in it (volumetricScattering and the
+    // source shares scale it). No grids, no history, no march through cells;
+    // the fog colour itself is unlit, so volumetricRasterBrightness gives the
+    // (display-referred) colour its radiance. volumetricFogDensityScale
+    // scales the game's exponential fog density for the traced medium (and the
+    // glow): a density tuned for raster fog reads far thicker as a lit medium.
+    // The glow: the volumetricRasterLights lights that send the most into
+    // view each get a cube of volumetricRasterShadowSize^2 texels a face, the
+    // distance to the first opaque surface, traced anew every frame; each
+    // camera ray crossing a light's reach takes volumetricRasterSteps samples
+    // of it against that cube. The next volumetricRasterSoftLights get coarse
+    // cubes (volumetricRasterSoftSize, volumetricRasterSoftSteps samples);
+    // lights past those (128 in all at most) have no glow. Emissive surfaces
+    // glow as clusters of a 2 m world grid, competing with the sphere lights
+    // for the cubes. The sun's glow: volumetricRasterSunSize^2 texels of a
+    // map volumetricRasterSunExtent meters to each side of the eye across the
+    // sun, traced every frame; camera rays take volumetricRasterSunSteps
+    // samples of it. The sky's: five maps of volumetricRasterSkySize^2 texels,
+    // as far across, one for each of five equal parts of the sky above the
+    // horizon, sampled with the sun's.
+    bool volumetricRaster = false;
+    float volumetricRasterBrightness = 1, volumetricFogDensityScale = 1;
+    uint32_t volumetricRasterLights = 16, volumetricRasterShadowSize = 64, volumetricRasterSteps = 12;
+    uint32_t volumetricRasterSoftLights = 48, volumetricRasterSoftSize = 16, volumetricRasterSoftSteps = 4;
+    uint32_t volumetricRasterSunSize = 512, volumetricRasterSunSteps = 16, volumetricRasterSkySize = 128;
+    float volumetricRasterSunExtent = 64;
+    // Which sources glow in raster fog (their volumetric*Scale applies on
+    // top): the game's lights, emissive surfaces, the sun, the sky. With
+    // volumetricRasterClearSky the sky is left clear of the sun's and the
+    // sky's glow too, as of the fog colour (a light's halo still shows).
+    bool volumetricRasterGlowLights = true, volumetricRasterGlowEmissive = true;
+    bool volumetricRasterGlowSun = true, volumetricRasterGlowSky = true, volumetricRasterClearSky = false;
     // Each source's share of the scattered light, on top of a light's own
     // volumetricRadianceScale: the sun, lights (sphere, rect, disk, cylinder),
     // emissive surfaces, the sky.

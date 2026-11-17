@@ -2127,6 +2127,77 @@ namespace remix::metal {
     std::fill_n(constants.volumeConfig, 4, 0u);
     std::fill_n(constants.volumeFrame, 4, 0u);
     v.active = false;
+    v.glowThreads = 0;
+    // Raster fog: constants (volume_policy.h rasterFog), and for its glow a
+    // shadow cube per light, traced anew by the update pass every frame.
+    if (options.volumetrics && options.volumetricRaster) {
+      if (constants.splitLocal[3] || constants.sun[3] != 0 || options.sharcDebug || options.debugView) {
+        remix::trace::g_volumeState = {true, false, "a debug view is on", "none"};
+        remix::trace::g_volumeState.raster = true;
+      } else if (remix::trace::rasterFog(options, remix::trace::gameFog(), constants.volumeConfig,
+                                         constants.volumeParams, constants.volumeMedium, constants.volumeLightScales,
+                                         remix::trace::g_volumeState) &&
+                 constants.volumeMedium[3] > 0 &&
+                 computePipelineAsync(device, volumeUpdate.stage, volumeUpdate.base) != nil) {
+        // The camera's axis: any depth of the screen's centre lies on it.
+        const auto &m = constants.inverseCameraRelative;
+        float forward[3], length = 0;
+        for (int r = 0; r < 3; ++r) {
+          forward[r] = (m[8 + r] * .5f + m[12 + r]) / (m[11] * .5f + m[15]);
+          length += forward[r] * forward[r];
+        }
+        length = std::sqrt(length);
+        if (length > 0 && std::isfinite(length))
+          for (auto &f : forward)
+            f /= length;
+        if (constants.localConfig[0] &&
+            (v.glowClustersInstance != lightBvh.instance() || v.glowClustersGeneration != lightBvh.generation)) {
+          remix::trace::rasterGlowClusters(options, lightBvh.emitters(), v.glowClusters);
+          v.glowClustersInstance = lightBvh.instance();
+          v.glowClustersGeneration = lightBvh.generation;
+        }
+        remix::trace::RasterGlowFrame glow;
+        if (remix::trace::rasterGlowFrame(options, lightBvh.emitters(), v.glowClusters, constants.localConfig[0] != 0,
+                                          constants.eye, forward, constants.direction, constants.radiance,
+                                          remix::trace::g_volumeState.visibilityMeters / options.sceneScale,
+                                          v.glowScratch, v.glowHeader, glow)) {
+          if (!v.cells || v.bytes != glow.bytes) {
+            if (v.cells)
+              frame().retiredBuffers.push_back(std::move(v.cells));
+            v.cells = buffer(nullptr, glow.bytes);
+            v.bytes = glow.bytes;
+          }
+          // The header, copied in command order after last frame's reads;
+          // the sky's radiance is the update's to write.
+          constexpr size_t radiance = offsetof(remix::trace::RasterGlowHeader, skyRadiance),
+                           counts = offsetof(remix::trace::RasterGlowHeader, sharp);
+          auto staged = buffer(&v.glowHeader, sizeof(v.glowHeader));
+          id<MTLBlitCommandEncoder> blit = blitEncoder(command, @"Volumetrics: raster fog's glowing lights");
+          [blit copyFromBuffer:staged->handle sourceOffset:0 toBuffer:v.cells->handle destinationOffset:0 size:radiance];
+          [blit copyFromBuffer:staged->handle
+                  sourceOffset:counts
+                      toBuffer:v.cells->handle
+             destinationOffset:counts
+                          size:sizeof(v.glowHeader) - counts];
+          [blit endEncoding];
+          frame().retiredBuffers.push_back(std::move(staged));
+          v.valid = false; // the buffer holds no traced medium's cells now
+          v.glowThreads = glow.threads;
+          v.active = true;
+          remix::trace::g_volumeState.glowLights = glow.lights;
+          remix::trace::g_volumeState.glowSun = glow.sunSize != 0;
+          remix::trace::g_volumeState.glowSky = v.glowHeader.skySize != 0;
+          constants.volumeGrid = v.cells->address;
+          constants.volumeConfig[2] = glow.lights;
+          constants.volumeConfig[3] = glow.size;
+          constants.volumeFrame[0] = glow.steps;
+          constants.volumeFrame[1] = glow.sunSize;
+          constants.volumeFrame[2] = glow.sunSteps;
+        }
+      }
+      v.inactiveReason = remix::trace::g_volumeState.active ? "raster fog" : remix::trace::g_volumeState.reason;
+      return;
+    }
     const auto medium = remix::trace::volumeMedium(options, remix::trace::gameFog());
     const bool ready = computePipelineAsync(device, volumeUpdate.stage, volumeUpdate.base) != nil;
     v.inactiveReason = !options.volumetrics ? "not requested"
@@ -2155,10 +2226,13 @@ namespace remix::metal {
     // they hold, and the environment's share of it (volume.glsl).
     const size_t bytes = (size_t(cells) * cells * cells * levels + 1) * 2 * 16;
     bool reset = !v.valid || v.cellsPerSide != cells || v.levels != levels || v.cellUnits != cellUnits;
-    if (!v.cells || v.bytes != bytes) {
-      if (v.cells)
+    if (!v.cells || v.bytes != bytes || !v.valid) {
+      if (v.cells && v.bytes != bytes) {
         frame().retiredBuffers.push_back(std::move(v.cells));
-      v.cells = buffer(nullptr, bytes);
+        v.cells.reset();
+      }
+      if (!v.cells)
+        v.cells = buffer(nullptr, bytes);
       v.bytes = bytes;
       // Every cell starts without samples.
       id<MTLBlitCommandEncoder> blit = blitEncoder(command, @"Volumetrics: clear the cells");
@@ -2208,11 +2282,15 @@ namespace remix::metal {
     auto &v = volume;
     if (!v.active)
       return;
-    const uint32_t count = v.cellsPerSide * v.cellsPerSide * v.cellsPerSide * v.levels;
-    // The shader indexes workgroup.x * 64 + the local index (as ReGIR's
-    // presampling): (count + 1) / 64 groups of 8x8, so a width of / 8.
-    dispatch(command, volumeUpdate, select(volumeUpdate), "Volumetrics: light the medium's cells", (count + 1 + 7) / 8,
-             1);
+    // One thread a cell and one for the medium beyond them; or one a texel of
+    // every map of raster fog's glow (trace::rasterGlowFrame). The shader indexes workgroup.x * 64 + the
+    // local index (as ReGIR's presampling): count / 64 groups of 8x8, so a
+    // width of / 8.
+    const bool glow = v.glowThreads != 0;
+    const uint32_t count = glow ? v.glowThreads : v.cellsPerSide * v.cellsPerSide * v.cellsPerSide * v.levels + 1;
+    dispatch(command, volumeUpdate, select(volumeUpdate),
+             glow ? "Volumetrics: raster fog's shadow maps" : "Volumetrics: light the medium's cells",
+             (count + 7) / 8, 1);
   }
 
   // pathtrace/regir.cpp configureRegir: pools are redrawn every frame from the
