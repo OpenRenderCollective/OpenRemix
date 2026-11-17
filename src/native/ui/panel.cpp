@@ -134,6 +134,12 @@ namespace remix::ui {
             drawTab(user, i, draft);
           ImGui::PopID();
         }
+        if (hasPlugin) {
+          ImGui::PushID(int(Tab::Plugin));
+          if (Panel tab{pluginTab})
+            drawTab(user, int(Tab::Plugin), draft);
+          ImGui::PopID();
+        }
         const bool found = searchMatches() > 0;
         setSearch(nullptr);
         if (!found)
@@ -162,9 +168,11 @@ namespace remix::ui {
             if (i == int(Tab::Profiles)) {
               drawProfiles(profiles, profileUi);
               drawPanelColors(panel);
-            } else if (i == int(Tab::Plugin))
+            } else if (i == int(Tab::Plugin)) {
+              // The runtime's settings that are the game's, then the plugin's own.
+              drawTab(user, i, draft);
               remixapi_imgui_InvokeDrawCallback();
-            else
+            } else
               drawTab(user, i, draft);
           });
           ImGui::EndTabItem();
@@ -173,7 +181,7 @@ namespace remix::ui {
       ImGui::EndTabBar();
       profileUi.restoreTab = false;
     }
-    if ((searching || panel.tab <= int(Tab::Capture)) && draft != profiles.current())
+    if ((searching || panel.tab <= int(Tab::Capture) || panel.tab == int(Tab::Plugin)) && draft != profiles.current())
       profiles.edit(draft);
     ImGui::BeginChild("Profile footer", ImVec2(0, std::max(1.f, ImGui::GetContentRegionAvail().y)),
                       ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);

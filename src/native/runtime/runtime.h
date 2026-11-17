@@ -331,6 +331,7 @@ namespace remix {
     void drawSettingsTab(int tab, config::Settings &settings);
     void drawDisplayTab(config::Settings &settings);
     void drawLightingTab(config::Settings &settings);
+    void drawHostPassesOption(config::Settings &settings);
     void drawMaterialsTab(config::Settings &settings);
     void drawSkyTab(config::Settings &settings);
     void drawPostProcessTab(config::Settings &settings);

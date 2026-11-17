@@ -1,3 +1,4 @@
+#include "api/imgui_compat.h"
 #if !defined(REMIX_METAL)
 #include "forward/lightmap/denoise.h"
 #endif
@@ -50,9 +51,31 @@ namespace remix {
     case ui::Tab::Capture:
       drawCaptureTab(settings);
       break;
+    case ui::Tab::Plugin:
+      drawHostPassesOption(settings);
+      break;
     default:
       break;
     }
+  }
+
+  // The host's shader passes on or off: shown to a host that uses them
+  // (remixapi_GetHostPassesEnabledEXT), at the head of the plugin's tab, or under
+  // Lighting > Game where the plugin has none.
+  void RemixNativeRuntime::drawHostPassesOption(config::Settings &settings) {
+    if (!m_hostPasses.asked())
+      return;
+    const bool replayed = hostPassesSupported();
+    ImGui::BeginDisabled(!replayed);
+    ui::Checkbox("Pass-through game shaders (experimental)", &settings.hostPasses);
+    ImGui::EndDisabled();
+    if (ImGui::IsItemHovered())
+      ImGui::SetTooltip("Replays the game's screen-space passes (post-processing effects, addon shaders)\n"
+                        "on the path-traced frame with the game's own shaders, before the HUD. Off: the\n"
+                        "game's shader passes are not replayed and the frame is composed without them.\n"
+                        "Applies from the next frame.");
+    if (!replayed)
+      ImGui::TextWrapped("Not available with this backend yet: the game's shader passes are not replayed.");
   }
 
   // How the frame reaches the screen: the renderer, upscaling, frame generation, HDR10.
@@ -1105,20 +1128,9 @@ namespace remix {
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Meters per world unit (1 for meter-scale hosts, 0.0254 for Source inches).\n"
                           "Converts the denoiser's hit distances and the visibility-guide cell size.");
-      // Shown to a host that uses host passes (remixapi_GetHostPassesEnabledEXT).
-      if (m_hostPasses.asked()) {
-        const bool replayed = hostPassesSupported();
-        ImGui::BeginDisabled(!replayed);
-        ui::Checkbox("Pass-through game shaders (experimental)", &settings.hostPasses);
-        ImGui::EndDisabled();
-        if (ImGui::IsItemHovered())
-          ImGui::SetTooltip("Replays the game's screen-space passes (post-processing effects, addon shaders)\n"
-                            "on the path-traced frame with the game's own shaders, before the HUD. Off: the\n"
-                            "game's shader passes are not replayed and the frame is composed without them.\n"
-                            "Applies from the next frame.");
-        if (!replayed)
-          ImGui::TextWrapped("Not available with this backend yet: the game's shader passes are not replayed.");
-      }
+      // (With the plugin's own options where it has a tab: drawHostPassesOption.)
+      if (!remixapi_imgui_HasDrawCallback())
+        drawHostPassesOption(settings);
       ui::Checkbox("Path-trace view models", &options.viewModel);
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("First-person view models (VIEW_MODEL camera instances) are path-traced in the\n"
