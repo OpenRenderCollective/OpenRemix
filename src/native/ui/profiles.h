@@ -45,8 +45,10 @@ namespace remix::ui {
   void drawProfileFooter(config::Profiles &profiles, ProfileUi &ui);
   void drawMods(ProfileUi &ui, config::Settings &settings);
   void drawProfileDialogs(config::Profiles &profiles, ProfileUi &ui);
-  // The panel's tabs, in order (config::PanelState::tab). drawPanel draws Profiles and Plugin
-  // itself and the others through DrawSettingsTab; the tabs up to Capture edit the profile's settings.
+  // The panel's tabs, as config::PanelState::tab counts them: the order they are shown in, but
+  // for Plugin (a plugin's own, where one draws: remixapi_imgui_RegisterDrawCallback), which is
+  // shown first. drawPanel draws Profiles and Plugin itself and the others through
+  // DrawSettingsTab; the tabs up to Capture edit the profile's settings.
   enum class Tab {
     Display,
     Lighting,

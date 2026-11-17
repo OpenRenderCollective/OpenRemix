@@ -21,9 +21,12 @@
  */
 
 #include "api/imgui_compat.h"
+#include <algorithm>
 #include <atomic>
 #include <cfloat>
 #include <imgui.h>
+#include <mutex>
+#include <string>
 
 // Static callback storage - allows external plugins/wrappers to register ImGui draw callbacks.
 static std::atomic<PFN_remixapi_imgui_DrawCallback> s_drawCallback{nullptr};
@@ -54,6 +57,27 @@ extern "C" RIMGUI_EXPORT void remixapi_imgui_InvokeDrawCallback() {
 
 extern "C" RIMGUI_EXPORT int remixapi_imgui_HasDrawCallback() {
   return s_drawCallback.load(std::memory_order_acquire) != nullptr ? 1 : 0;
+}
+
+static std::mutex s_drawTitleLock;
+static std::string s_drawTitle;
+
+extern "C" RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_SetDrawCallbackTitle(const char *title) {
+  std::lock_guard<std::mutex> lock(s_drawTitleLock);
+  // (Not ImGui's "##": what follows it would be the tab's identifier.)
+  s_drawTitle = title ? title : "";
+  s_drawTitle.resize(std::min({s_drawTitle.find('#'), s_drawTitle.size(), size_t(48)}));
+}
+
+extern "C" RIMGUI_EXPORT int remixapi_imgui_GetDrawCallbackTitle(char *out, int size) {
+  std::lock_guard<std::mutex> lock(s_drawTitleLock);
+  const std::string &title = s_drawTitle.empty() ? std::string("Plugin") : s_drawTitle;
+  if (out && size > 0) {
+    const size_t count = std::min(title.size(), size_t(size - 1));
+    title.copy(out, count);
+    out[count] = 0;
+  }
+  return int(title.size());
 }
 
 extern "C" RIMGUI_EXPORT void RIMGUI_CALL

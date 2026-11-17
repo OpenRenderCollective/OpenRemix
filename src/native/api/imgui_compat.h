@@ -51,6 +51,12 @@ RIMGUI_EXPORT void remixapi_imgui_InvokeDrawCallback();
 
 RIMGUI_EXPORT int remixapi_imgui_HasDrawCallback();
 
+// The name of the developer panel's tab that the draw callback fills (the game's or the
+// wrapper's: "Garry's Mod"); "Plugin" where none was set, or null or an empty one. Copied.
+RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_SetDrawCallbackTitle(const char *title);
+// Writes it to `out` (terminated; cut to `size`) and returns its length.
+RIMGUI_EXPORT int remixapi_imgui_GetDrawCallbackTitle(char *out, int size);
+
 RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_RegisterOverlayCallback(PFN_remixapi_imgui_DrawCallback callback,
                                                                       void *userData);
 

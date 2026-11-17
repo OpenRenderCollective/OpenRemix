@@ -4,6 +4,7 @@
 #include "ui/widgets.h"
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <imgui.h>
 #include <string>
 
@@ -94,8 +95,15 @@ namespace remix::ui {
     }
     const bool hasPlugin = remixapi_imgui_HasDrawCallback() != 0;
     const int tabCount = int(hasPlugin ? Tab::Plugin : Tab::Profiles) + 1;
-    static const char *tabs[] = {"Display",     "Lighting", "Materials", "Sky & weather", "Post-Process", "Performance",
-                                 "Diagnostics", "Textures", "Capture",   "Profiles",      "Plugin"};
+    // The plugin's tab: named by the plugin (the game's name), and the first of the bar.
+    char pluginTab[80] = "Plugin";
+    if (hasPlugin) {
+      char title[56];
+      remixapi_imgui_GetDrawCallbackTitle(title, int(sizeof(title)));
+      std::snprintf(pluginTab, sizeof(pluginTab), "%s###Plugin tab", title);
+    }
+    const char *tabs[] = {"Display",     "Lighting", "Materials", "Sky & weather", "Post-Process", "Performance",
+                          "Diagnostics", "Textures", "Capture",   "Profiles",      pluginTab};
     const float footerHeight = ImGui::GetFrameHeightWithSpacing() * 2 + ImGui::GetStyle().ItemSpacing.y * 2;
     auto draft = profiles.current();
     if (panel.tab >= tabCount)
@@ -143,7 +151,9 @@ namespace remix::ui {
         if (ImGui::IsItemHovered())
           ImGui::SetTooltip("Close developer panel (%s)", profileUi.menuShortcut.c_str());
       }
-      for (int i = 0; i < tabCount; ++i) {
+      for (int at = 0; at < tabCount; ++at) {
+        // (panel.tab counts in ui::Tab's order, where the plugin's is last.)
+        const int i = !hasPlugin ? at : at == 0 ? int(Tab::Plugin) : at - 1;
         const auto flags =
             profileUi.restoreTab && i == restoreTab ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None;
         if (ImGui::BeginTabItem(tabs[i], nullptr, flags)) {
