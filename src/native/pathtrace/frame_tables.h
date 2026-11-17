@@ -946,7 +946,8 @@ namespace remix::trace {
       std::copy_n(material.emission, 3, value.emission);
       value.emission[3] = decode.selfIlluminationScale;
       if (material.emissionTexture &&
-          (material.emission[0] > 0 || material.emission[1] > 0 || material.emission[2] > 0)) {
+          (material.selfIllumination || material.emission[0] > 0 || material.emission[1] > 0 ||
+           material.emission[2] > 0)) {
         if (count() >= limit)
           env.tooManyObjects();
         value.textureState[2] = uint32_t(count()) + 1;
