@@ -21,12 +21,15 @@
  */
 
 #include "api/imgui_compat.h"
+#include "ui/widgets.h"
 #include <algorithm>
 #include <atomic>
 #include <cfloat>
 #include <imgui.h>
+#include <memory>
 #include <mutex>
 #include <string>
+#include <vector>
 
 // Static callback storage - allows external plugins/wrappers to register ImGui draw callbacks.
 static std::atomic<PFN_remixapi_imgui_DrawCallback> s_drawCallback{nullptr};
@@ -34,6 +37,9 @@ static std::atomic<void *> s_drawCallbackUserData{nullptr};
 
 static std::atomic<PFN_remixapi_imgui_DrawCallback> s_overlayCallback{nullptr};
 static std::atomic<void *> s_overlayCallbackUserData{nullptr};
+
+// The panels a draw callback has open (the UI's thread).
+static std::vector<std::unique_ptr<remix::ui::Panel>> s_panels;
 
 // --- Callback Registration ---
 
@@ -53,6 +59,9 @@ extern "C" RIMGUI_EXPORT void remixapi_imgui_InvokeDrawCallback() {
   if (cb) {
     cb(s_drawCallbackUserData.load(std::memory_order_acquire));
   }
+  // (Panels the callback left open, innermost first.)
+  while (!s_panels.empty())
+    s_panels.pop_back();
 }
 
 extern "C" RIMGUI_EXPORT int remixapi_imgui_HasDrawCallback() {
@@ -78,6 +87,29 @@ extern "C" RIMGUI_EXPORT int remixapi_imgui_GetDrawCallbackTitle(char *out, int 
     out[count] = 0;
   }
   return int(title.size());
+}
+
+extern "C" RIMGUI_EXPORT int RIMGUI_CALL remixapi_imgui_BeginPanel(const char *label, int defaultOpen) {
+  if (!ImGui::GetCurrentContext())
+    return 0;
+  s_panels.push_back(
+      std::make_unique<remix::ui::Panel>(label ? label : "", defaultOpen ? ImGuiTreeNodeFlags_DefaultOpen : 0));
+  return *s_panels.back() ? 1 : 0;
+}
+
+extern "C" RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_EndPanel(void) {
+  if (!s_panels.empty())
+    s_panels.pop_back();
+}
+
+extern "C" RIMGUI_EXPORT int RIMGUI_CALL remixapi_imgui_OptionCheckbox(const char *label, int *v) {
+  if (!ImGui::GetCurrentContext())
+    return 0;
+  bool value = v && *v != 0;
+  const bool changed = remix::ui::Checkbox(label ? label : "", &value);
+  if (v)
+    *v = value ? 1 : 0;
+  return changed ? 1 : 0;
 }
 
 extern "C" RIMGUI_EXPORT void RIMGUI_CALL

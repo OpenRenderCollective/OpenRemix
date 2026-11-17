@@ -57,6 +57,15 @@ RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_SetDrawCallbackTitle(const char *t
 // Writes it to `out` (terminated; cut to `size`) and returns its length.
 RIMGUI_EXPORT int remixapi_imgui_GetDrawCallbackTitle(char *out, int size);
 
+// The developer panel's own widgets, for a draw callback's tab to look as the runtime's do.
+// A panel (a section: a header with a disclosure triangle over a backdrop; one inside another
+// is a subpanel): returns whether it is open, and what is drawn until EndPanel is its
+// contents. EndPanel is called whether it is open or not.
+RIMGUI_EXPORT int RIMGUI_CALL remixapi_imgui_BeginPanel(const char *label, int defaultOpen);
+RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_EndPanel(void);
+// A checkbox as the panel's settings have it: the box in the control column, the label after.
+RIMGUI_EXPORT int RIMGUI_CALL remixapi_imgui_OptionCheckbox(const char *label, int *v);
+
 RIMGUI_EXPORT void RIMGUI_CALL remixapi_imgui_RegisterOverlayCallback(PFN_remixapi_imgui_DrawCallback callback,
                                                                       void *userData);
 

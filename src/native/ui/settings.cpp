@@ -52,7 +52,10 @@ namespace remix {
       drawCaptureTab(settings);
       break;
     case ui::Tab::Plugin:
-      drawHostPassesOption(settings);
+      // A section of the plugin's tab, as the plugin's own are (remixapi_imgui_BeginPanel).
+      if (m_hostPasses.asked())
+        if (ui::Panel panel{"Shaders", ImGuiTreeNodeFlags_DefaultOpen})
+          drawHostPassesOption(settings);
       break;
     default:
       break;
