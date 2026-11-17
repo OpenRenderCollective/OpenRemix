@@ -125,12 +125,18 @@ layout(constant_id=13) const uint sparseLaunch=0u;
 // 1, the producer: every pixel's primary surface and, where it came from the
 // raster G-buffer alone, its local light (after the subsurface draw, as the
 // opaque pass takes it), stored with the random state it leaves
-// (PrimaryLocals); a pixel whose surface needed a traced camera ray or the
-// sheet walk (decals, films, subsurface records, sheets) it shades whole and
-// marks done. 2, the consumer: the other pixels, their surface read from the
+// (PrimaryLocals); a pixel whose surface needs a traced camera ray or the
+// sheet walk (decals, films, subsurface records, sheets) it lists and marks
+// done. 2, the consumer: the other pixels, their surface read from the
 // G-buffer, their local light from the producer; everything else as the
-// opaque pass. 0: one launch.
+// opaque pass. 0: one launch; pushed with primaryListLaunch, the one launch
+// over the producer's list (the pixels it would have shaded whole).
 layout(constant_id=16) const uint primaryRole=0u;
+// The traced fallbacks and the second local light sampler they inline made
+// the producer several times larger than its usual pixel needs (instruction
+// cache misses, and the occupancy of their registers); listed, those pixels
+// take the one launch's code, the same as before.
+#define primaryListLaunch (primaryRole==0u&&sparseLaunch==0u&&(features.bits&1024u)!=0u)
 // The wavefront local light queue (rtx.native.pathtrace.wavefrontLocalQueue):
 // a deferring shade kernel leaves its vertex's local light sample to the
 // local kernel (WAVEFRONT_PASS 9), keeping the light sampler out of its
@@ -277,13 +283,29 @@ float backdropPortal=1e30;bool backdropQuery=false;
 // culling (the camera's cluster is not where they are).
 bool screenSheets=false;
 // Set when the primary surface needed a traced camera ray or the sheet walk
-// (primarySurface, rasterSurface): the split primary producer shades it whole.
+// (primarySurface, rasterSurface): the split primary producer lists it.
 bool primaryTraced=false;
 // The split primary's per-pixel results (primaryRole): three elements a
 // pixel, the local light and its distance, its specular share and the
-// emissive distance, then the random state after it and whether the
-// producer shaded the pixel whole (y).
+// emissive distance, then the random state after it and whether the pixel
+// is shaded whole by the listed launch (y). After the pixels' elements: the
+// listed launch's dispatch arguments (x groups, then 1, 1, and the count in
+// w), then the listed pixels (x | y << 16), four an element.
 layout(buffer_reference,std430,buffer_reference_align=16) buffer PrimaryLocals { uvec4 data[]; };
+uint primaryListBase() { return frame.target.x*frame.target.y*3u; }
+void primaryList(ivec2 pixel) {
+  // One atomic a subgroup; its pixels stay neighbours in the list.
+  uvec4 ballot=subgroupBallot(true);
+  uint count=subgroupBallotBitCount(ballot),rank=subgroupBallotExclusiveBitCount(ballot),base=0u;
+  PrimaryLocals list=PrimaryLocals(frame.primaryLocal);
+  uint header=primaryListBase();
+  if(subgroupElect()) {
+    base=atomicAdd(list.data[header].w,count);
+    atomicMax(list.data[header].x,(base+count+63u)/64u);
+  }
+  uint slot=subgroupBroadcastFirst(base)+rank;
+  list.data[header+1u+slot/4u][slot%4u]=uint(pixel.x)|(uint(pixel.y)<<16);
+}
 // Angle between neighbouring pixel rays at the screen centre, scaled to output
 // pixels (visibilityProbe.z: render/output size, the upscaler's mip bias).
 // Orthographic cameras give zero: finest mip.
@@ -3667,6 +3689,11 @@ void main() {
     if(index>=SparseCount(frame.sparseCount).data[1])return;
     uint listed=SparseList(frame.sparseList).pixels[index];
     pixel=ivec2(listed&0xffffu,listed>>16);shadingPixel=pixel;
+  } else if(primaryListLaunch) {
+    uint index=gl_WorkGroupID.x*64u+gl_LocalInvocationIndex,header=primaryListBase();
+    if(index>=PrimaryLocals(frame.primaryLocal).data[header].w)return;
+    uint listed=PrimaryLocals(frame.primaryLocal).data[header+1u+index/4u][index%4u];
+    pixel=ivec2(listed&0xffffu,listed>>16);shadingPixel=pixel;
   } else {
     if (any(greaterThanEqual(pixel,ivec2(frame.target.xy)))) return;
     if(sparseLaunch==2u&&sparseSelected(pixel))return;
@@ -3692,24 +3719,30 @@ void main() {
     producedSpecular=PrimaryLocals(frame.primaryLocal).data[primaryIndex+1u];
     primary=rasterSurface(pixel,origin,false);
     diagnostic=frame.splitLocal.w!=0?debugGeometry(primary,pixel):vec3(0);
+  } else if(primaryProducer) {
+    // primarySurface's own conditions (as the wavefront start kernel's split)
+    // tell from the G-buffer a pixel it would trace.
+    primary=rasterSurface(pixel,origin,false);
+    if(frame.target.w==0||primaryTraced||primary.decal||primary.film.x<0||primary.blended) {
+      PrimaryLocals(frame.primaryLocal).data[primaryIndex+2u]=uvec4(0u,1u,0u,0u);
+      primaryList(pixel);
+      return;
+    }
   } else
     primary=primarySurface(pixel,origin,direction,true,sheetCount,true,diagnostic);
   if(primaryProducer) {
-    if(!primaryTraced) {
-      // The consumer's pixel: its local light where the opaque pass takes it.
-      vec3 local=vec3(0),localSpecular=vec3(0);float localDistance=0,emissiveDistance=0;
-      if(primary.t<1e30&&!primary.blended) {
-        Hit lit=primary;vec3 sssTint=vec3(1);float sssSpecular=1;bool sssMoved=false;
-        if(subsurfaceCapable&&primary.sss.w!=0&&random()<abs(primary.sss.w))sssMoved=subsurfaceMove(lit,sssTint,sssSpecular);
-        opaqueLocal(lit,sssMoved,sssTint,sssSpecular,local,localSpecular,localDistance,emissiveDistance);
-      }
-      PrimaryLocals(frame.primaryLocal).data[primaryIndex]=uvec4(floatBitsToUint(local),floatBitsToUint(localDistance));
-      PrimaryLocals(frame.primaryLocal).data[primaryIndex+1u]=
-          uvec4(floatBitsToUint(localSpecular),floatBitsToUint(emissiveDistance));
-      PrimaryLocals(frame.primaryLocal).data[primaryIndex+2u]=uvec4(rng,0u,0u,0u);
-      return;
+    // The consumer's pixel: its local light where the opaque pass takes it.
+    vec3 local=vec3(0),localSpecular=vec3(0);float localDistance=0,emissiveDistance=0;
+    if(primary.t<1e30) {
+      Hit lit=primary;vec3 sssTint=vec3(1);float sssSpecular=1;bool sssMoved=false;
+      if(subsurfaceCapable&&primary.sss.w!=0&&random()<abs(primary.sss.w))sssMoved=subsurfaceMove(lit,sssTint,sssSpecular);
+      opaqueLocal(lit,sssMoved,sssTint,sssSpecular,local,localSpecular,localDistance,emissiveDistance);
     }
-    PrimaryLocals(frame.primaryLocal).data[primaryIndex+2u]=uvec4(0u,1u,0u,0u);
+    PrimaryLocals(frame.primaryLocal).data[primaryIndex]=uvec4(floatBitsToUint(local),floatBitsToUint(localDistance));
+    PrimaryLocals(frame.primaryLocal).data[primaryIndex+1u]=
+        uvec4(floatBitsToUint(localSpecular),floatBitsToUint(emissiveDistance));
+    PrimaryLocals(frame.primaryLocal).data[primaryIndex+2u]=uvec4(rng,0u,0u,0u);
+    return;
   }
 #ifdef TEMPORAL
   if(temporal.translucency.x!=0&&sheetCount!=1) {

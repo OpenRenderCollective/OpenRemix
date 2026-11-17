@@ -193,13 +193,21 @@ split bounces add dispatches without work.
 
 `rtx.native.pathtrace.splitPrimary` (0/1, default 1) runs the denoised opaque
 lighting pass as two launches over the screen (`pathtrace.comp`
-`primaryRole`, a specialization of the opaque pipeline's own variant):
+`primaryRole`, a specialization of the opaque pipeline's own variant), and
+a third over a list:
 
-- **producer**: every pixel's primary surface and, where it came from the
-  raster G-buffer alone, its local light (after the subsurface draw, as the
+- **producer**: every pixel's raster surface and, where the raster G-buffer
+  alone describes it, its local light (after the subsurface draw, as the
   one launch takes it), stored with the random state it leaves (48 bytes a
-  pixel). A pixel whose surface needed a traced camera ray or the sheet walk
-  (decals, films, subsurface records, sheets) it shades whole and marks done.
+  pixel). A pixel whose surface needs a traced camera ray or the sheet walk
+  (decals, films, subsurface records, sheets: the start kernel's conditions)
+  it lists and marks done.
+- **listed pixels**: the one launch's pipeline over the producer's list
+  (`primaryListLaunch`, an indirect launch), each pixel shaded whole as the
+  producer used to. The producer then holds neither the traced fallbacks
+  nor the second copy of the light sampler they inlined: on
+  `ep2_outland_01a` its code was about 96k instructions, and a GPU Trace
+  showed 18% of its warps' samples waiting on instruction fetch.
 - **consumer**: the other pixels, the surface read from the G-buffer and the
   local light from the producer; sun, guides and stores as before.
 
