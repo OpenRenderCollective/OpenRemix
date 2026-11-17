@@ -51,14 +51,21 @@ namespace remix::forward::bake {
         float visibility = 1;
         if (const auto directional = grid.depth.visibility(index, delta, minimumVariance)) visibility = *directional;
         else {
-          uint32_t axis = 0;
-          for (uint32_t c = 1; c < 3; ++c) if (std::abs(delta[c]) > std::abs(delta[axis])) axis = c;
-          const auto &moment = probe.moments[axis * 2 + uint32_t(delta[axis] < 0)];
-          if (moment[3] <= 0) continue;
-          if (distance > moment[0]) {
-            const float variance = std::max(minimumVariance, moment[1] - moment[0] * moment[0]);
-            const float difference = distance - moment[0];
-            visibility = std::pow(variance / (variance + difference * difference), 3.f);
+          const float dominant = std::max({std::abs(delta[0]), std::abs(delta[1]), std::abs(delta[2])});
+          if (dominant > 1e-8f) {
+            float weightedVisibility = 0, totalAngular = 0;
+            for (uint32_t axis = 0; axis < 3; ++axis) {
+              const float t = std::clamp((std::abs(delta[axis]) / dominant - .75f) * 4.f, 0.f, 1.f);
+              const auto &moment = probe.moments[axis * 2 + uint32_t(delta[axis] < 0)];
+              if (t <= 0 || moment[3] <= 0) continue;
+              const float angular = t * t * (3.f - 2.f * t);
+              const float variance = std::max(minimumVariance, moment[1] - moment[0] * moment[0]);
+              const float difference = std::max(distance - moment[0], 0.f);
+              weightedVisibility += angular * std::pow(variance / (variance + difference * difference), 3.f);
+              totalAngular += angular;
+            }
+            if (totalAngular <= 0) continue;
+            visibility = weightedVisibility / totalAngular;
           }
         }
         const float facing = distance > 1e-6f ? dot(normal, delta) / distance : -1;

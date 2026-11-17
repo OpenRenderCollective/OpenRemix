@@ -51,15 +51,24 @@ float bakeCellStencil(vec3 position, vec3 normal, uvec3 dimensions, uvec3 start,
     float distance = length(delta);
     float visibility = 1;
     if (!bakedProbeDepthVisibility(index, delta, minimumVariance, visibility)) {
-      vec3 absolute = abs(delta);
-      uint axis = absolute.x >= absolute.y && absolute.x >= absolute.z ? 0u
-                  : absolute.y >= absolute.z ? 1u : 2u;
-      vec4 moments = bakeProbeMoment(index, axis * 2u + (delta[axis] < 0 ? 1u : 0u));
-      if (moments.w <= 0) continue;
-      if (distance > moments.x) {
+      // Blend only near sector boundaries, where the signed axial moments
+      // would otherwise switch abruptly across a planar receiver.
+      vec3 magnitude = abs(delta);
+      float dominant = max(max(magnitude.x, magnitude.y), magnitude.z);
+      vec3 angular = smoothstep(vec3(.75), vec3(1), magnitude / max(dominant, 1e-8));
+      float weightedVisibility = 0, totalAngular = 0;
+      for (uint axis = 0u; axis < 3u; ++axis) {
+        if (angular[axis] <= 0) continue;
+        vec4 moments = bakeProbeMoment(index, axis * 2u + (delta[axis] < 0 ? 1u : 0u));
+        if (moments.w <= 0) continue;
         float variance = max(minimumVariance, moments.y - moments.x * moments.x);
-        float difference = distance - moments.x;
-        visibility = pow(variance / (variance + difference * difference), 3);
+        float difference = max(distance - moments.x, 0);
+        weightedVisibility += angular[axis] * pow(variance / (variance + difference * difference), 3);
+        totalAngular += angular[axis];
+      }
+      if (dominant > 1e-8) {
+        if (totalAngular <= 0) continue;
+        visibility = weightedVisibility / totalAngular;
       }
     }
     float facing = distance > 1e-6 ? dot(normal, delta) / distance : -1;
