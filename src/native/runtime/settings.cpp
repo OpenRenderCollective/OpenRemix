@@ -377,6 +377,7 @@ namespace remix::config {
         TRACE(regir, 0, 1);
         TRACE(regirCellSize, .125f, 16);
         TRACE(sparseRendering, 0, 1);
+        TRACE(sheetTiles, 0, 1);
         TRACE(sparseAdaptiveRate, 0, 1);
         TRACE(sparseSamplingRate, .0625f, 1);
         TRACE(sparseResolutionExponent, 0, 1);

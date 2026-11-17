@@ -17,6 +17,15 @@ namespace remix::trace {
     const char *reason = "";
   };
   inline SparseState g_sparseState;
+  // Sheet tiles (sheet_tiles.cpp) in the last traced frame (diagnostics):
+  // whether the sheet passes launched over their tiles, otherwise why not (a
+  // string literal), and the error their pipelines failed with (0: none).
+  struct SheetTileState {
+    bool requested = false, active = false;
+    const char *reason = "";
+    int error = 0;
+  };
+  inline SheetTileState g_sheetTileState;
   // Ray portals (remixapi_MaterialInfoPortalEXT) in the last traced frame
   // (diagnostics): portal draws, pairs with both portals drawn, draws of an
   // index already taken, teleports per camera ray, and whether the pass that

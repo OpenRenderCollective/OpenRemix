@@ -272,7 +272,9 @@ namespace remix::trace::detail {
     // rtx.native.pathtrace.splitPrimary: the split primary's per-pixel
     // results (pathtrace.comp PrimaryLocals; 0: the opaque pass in one launch).
     uint64_t primaryLocal = 0;
-    uint32_t primaryLocalPadding[2] = {};
+    // The sheet passes' tiles (sheet_tiles.cpp, pathtrace.comp SheetTiles; 0:
+    // they launch over the screen).
+    uint64_t sheetTiles = 0;
     // rayPortals as the previous traced frame had them (zero for a pair that
     // was closed then; this frame's after a history reset): what is seen
     // through a pair that moved is reprojected through its previous map.
@@ -857,6 +859,22 @@ namespace remix {
       const char *inactiveReason = "not requested";
     } sparse;
     void configureSparse(VkCommandBuffer command, Frame &frame, const TraceOptions &options, VkExtent2D extent);
+    // Sheet tiles (sheet_tiles.cpp, TraceOptions::sheetTiles): the screen's
+    // 8x8 tiles sorted by whether they have a sheet, as indirect dispatches
+    // of the sheet passes and of the plain composition (the composition
+    // stage without the sheets' code), for its layout without and with the
+    // denoiser.
+    struct SheetTilesState {
+      VkPipeline classify = VK_NULL_HANDLE, plain = VK_NULL_HANDLE, plainTemporal = VK_NULL_HANDLE;
+      std::unique_ptr<Buffer> buffer; // SheetTiles: the two dispatches, then the tiles
+      bool active = false, pipelineFailed = false;
+      int error = 0; // what the pipelines failed with
+      const char *inactiveReason = "not requested";
+    } sheetTiles;
+    void configureSheetTiles(Frame &frame, const TraceOptions &options, VkExtent2D extent, bool temporal);
+    void recordSheetTiles(VkCommandBuffer command, VkExtent2D extent);
+    // The plain composition's pipeline for the composition's layout.
+    VkPipeline plainComposition(bool temporal) const { return temporal ? sheetTiles.plainTemporal : sheetTiles.plain; }
     // Volumetrics (volume.cpp): the medium's scattered light in nested
     // world-space grids, one buffer for every level's cells.
     struct Volume {

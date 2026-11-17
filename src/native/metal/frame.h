@@ -135,7 +135,7 @@ namespace remix::metal::trace {
     uint64_t wavefrontPaths = 0;
     uint32_t wavefrontStride = 0, wavefrontFlags = 0;
     uint64_t primaryLocal = 0; // the split primary's results (Vulkan only; 0 here)
-    uint32_t primaryLocalPadding[2] = {};
+    uint64_t sheetTiles = 0; // the sheet passes' tiles (Vulkan only; 0 here)
     float previousRayPortals[scene::rayPortalSlots][4][4] = {}; // (pathtrace/gpu.h) none here either
   };
   static_assert(sizeof(Frame) == 3456 && offsetof(Frame, previousRayPortals) == 2944 && offsetof(Frame, wavefrontPaths) == 2912 && offsetof(Frame, rayPortalPlanes) == 2880 &&
