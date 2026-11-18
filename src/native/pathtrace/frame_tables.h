@@ -1070,7 +1070,11 @@ namespace remix::trace {
           std::all_of(instance.begin(), instance.end(), [](const auto &surface) { return surface.draw.decal; });
       // A wound cut is tested at every candidate: never opaque in traversal.
       const bool wounded = recordOut && draw.wound;
-      input.noOpaque = wounded || backdropTested;
+      // A blended layer's micromap (scene/opacity.cpp) settles only where it
+      // never shows; every other candidate is its layer test, never opaque.
+      const bool layered = std::any_of(instance.begin(), instance.end(),
+                                       [](const auto &surface) { return surface.draw.blendedCoverage(); });
+      input.noOpaque = wounded || backdropTested || layered;
       write(sceneCursor, model.data(), sizeof(model));
       write(sceneCursor, &view.fingerprint, sizeof(view.fingerprint));
       write(sceneCursor, &draw.instanceId, sizeof(draw.instanceId));

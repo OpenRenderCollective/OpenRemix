@@ -6,6 +6,7 @@
 #include <memory>
 #include <mutex>
 #include <tuple>
+#include <unordered_map>
 
 namespace remix::scene {
   // Coverage belongs to immutable CPU snapshots, independent of any GPU layout.
@@ -154,11 +155,31 @@ namespace remix::scene {
                                               std::array<Region, 4> &out, unsigned &count);
     OpacityPartition::Reason opaqueTexels(const Draw &draw, const std::array<float, 4> &uv, uint32_t triangle,
                                           TextureEntries *texture, std::map<Region, bool> &regions);
-    // Reads only its arguments, so background threads can run it.
+    // One triangle's micro-triangles: a special index, or (special 0) its
+    // level and packed states; counts by state.
+    struct BakedTriangle {
+      int32_t special = 0;
+      uint32_t level = 0;
+      std::string packed;
+      std::array<uint64_t, 4> counts{};
+    };
+    // A blended layer's baked triangles (Draw::blendedCoverage) by texture
+    // coordinates and vertex alpha, for one texture, cache key and level.
+    // Particles are new meshes every frame of the same few quads: each is
+    // baked once, on the frame's thread, with nothing to wait for.
+    struct LayerMemo {
+      std::weak_ptr<Texture> texture;
+      uint32_t level = 0;
+      std::unordered_map<std::string, BakedTriangle> triangles;
+    };
+    std::map<Key, LayerMemo> layers;
+    // Reads only its arguments (and memo, given only on the frame's thread),
+    // so background threads can run it.
     static std::shared_ptr<const OpacityMicromap> bakeMicromap(float texelMargin, uint32_t micromapLevel,
                                                                const Draw &draw, const std::array<float, 4> &uv,
                                                                const OpacityPartition &partition,
-                                                               const TextureEntries *texture, bool usesTexture);
+                                                               const TextureEntries *texture, bool usesTexture,
+                                                               LayerMemo *memo = nullptr);
     struct Baker;
     std::shared_ptr<Baker> baker; // setAsyncMicromaps
     // Returns the epoch the bake was queued in (Entry::bakeEpoch).
