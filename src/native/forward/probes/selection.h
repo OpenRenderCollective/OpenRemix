@@ -29,9 +29,14 @@ namespace remix::forward::probes {
   // Spread a bounded fitting budget across validated origins, weighting distance
   // by capped clearance. Input order resolves ties within an enclosure class.
   std::vector<size_t> spreadSites(std::span<const RegionSite> sites, uint32_t budget, float clearanceCap,
-                                  std::stop_token cancelled = {});
+                                  std::stop_token cancelled = {}, std::span<const size_t> initial = {});
   // Geometry-weighted marginal box-volume coverage, with sheltered regions
   // before open space. Occupancy and hardware origin validation happen first.
   std::vector<size_t> selectRegions(std::span<const FittedRegion> regions, uint32_t count,
-                                    std::stop_token cancelled = {});
+                                    std::stop_token cancelled = {}, std::span<const size_t> initial = {});
+  // Greedy marginal charted-surface area from prevalidated receiver footprints.
+  // Footprints carry visibility evidence; proxy overlap alone never implies coverage.
+  std::vector<size_t> selectSupportedRegions(std::span<const FittedRegion> regions,
+      std::span<const std::vector<uint32_t>> footprints, std::span<const double> areas,
+      uint32_t count, std::stop_token cancelled = {});
 } // namespace remix::forward::probes

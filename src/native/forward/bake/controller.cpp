@@ -28,7 +28,10 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <stdexcept>
+#include <string>
 #include <unordered_set>
 
 namespace remix::forward::bake {
@@ -200,10 +203,53 @@ namespace remix::forward::bake {
                                        deviceIdentity, cancellation.get_token(), directLighting, fallbackReflections);
           diffuseRecovery = bool(cached);
         }
+        const char *replan = std::getenv("REMIX_DEBUG_PROBE_REPLAN");
+        const bool debugReflectionReplan = replan && std::strcmp(replan, "1") == 0;
+        const char *trial = std::getenv("REMIX_CUBEMAP_PLACEMENT_TRIAL");
+        const bool reflectionTrial = trial && std::strcmp(trial, "1") == 0 && config.reflectionProbes;
         if (cached && directionalFieldsRequested() && cached->directDiffuse &&
             (!cached->directionalAttempted || (cached->directionals.empty() &&
              cached->directionalBudget < mixed::directionalStorageBudget(cached->layout))))
           cached.reset(); // Upgrade only a missing capability or a smaller declined budget.
+        if (!cached && debugReflectionReplan)
+          throw std::runtime_error("Reflection replan diagnostic requires compatible warm diffuse lighting");
+        if (cached && (debugReflectionReplan || reflectionTrial)) {
+          if (debugReflectionReplan) {
+            if (cached->captures.empty())
+              throw std::runtime_error("Reflection replan diagnostic requires cached baseline captures");
+            const char *candidatePrefix = std::getenv("REMIX_DEBUG_PROBE_CANDIDATES");
+            if (!candidatePrefix || !*candidatePrefix)
+              throw std::runtime_error("Reflection replan diagnostic requires REMIX_DEBUG_PROBE_CANDIDATES output path");
+            const auto receivers = probes::sampleReceivers(*source, 8192, cancellation.get_token());
+            probes::configureInfluence(*source, cached->captures, config.reflectionDetailTolerance,
+                                       cancellation.get_token());
+            const auto footprints = probes::receiverFootprints(*source, cached->captures, receivers,
+                                                                cancellation.get_token());
+            const std::filesystem::path footprintPath = std::string(candidatePrefix) + ".baseline-footprints.json";
+            if (std::filesystem::exists(footprintPath))
+              throw std::runtime_error("Baseline reflection footprint report already exists");
+            std::ofstream footprintOutput(footprintPath);
+            footprintOutput.exceptions(std::ios::failbit | std::ios::badbit);
+            footprintOutput << '[';
+            for (size_t capture = 0; capture < footprints.size(); ++capture) {
+              footprintOutput << (capture ? ",[" : "[");
+              const auto &owners = footprints[capture];
+              for (size_t receiver = 0; receiver < owners.size(); ++receiver)
+                footprintOutput << (receiver ? "," : "") << owners[receiver];
+              footprintOutput << ']';
+            }
+            footprintOutput << "]\n";
+          }
+          // The playable trial uses the same reflection-only recovery as the
+          // diagnostic, without output files or a cache format migration.
+          // Keep the compatible diffuse bake intact for a cheap rollback.
+          cached->missingReflections = true;
+          cached->captures.clear();
+          cached->specular = {};
+          cached->reflectionOwner.reset();
+          cached->reflectionKey = 0;
+          std::fprintf(stderr, "Forward cubemap placement trial: warm diffuse retained; reflections regenerate without cache writes\n");
+        }
         if (cached && depthCapture) {
           sunDepth = SunDepth::prepare(physical, device, *source, cached->layout, cancellation.get_token(),
                                        true, config.textureResolution);
@@ -213,8 +259,10 @@ namespace remix::forward::bake {
                                cache::key(0, config, lightCutoff, deviceIdentity, directLighting,
                                           fallbackReflections, source.get()), bool(cached));
         if (cached) {
-          if (!diffuseRecovery)
+          if (!diffuseRecovery && !debugReflectionReplan && !reflectionTrial)
             (void)cache::writeDiffuseReference(cacheFile.parent_path(), diffuseReference, cancellation.get_token());
+          if (debugReflectionReplan || reflectionTrial)
+            cacheFile.clear(); // Keep both the warm container and reflection indexes untouched.
           irradianceContents = cached->contents;
           reflectionRecovery = cached->missingReflections;
           grid = std::move(cached->grid);
