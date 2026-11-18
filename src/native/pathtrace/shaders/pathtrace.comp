@@ -3429,6 +3429,50 @@ vec3 rasterFogGlow(vec3 origin,vec3 direction,float far,float forward,float jitt
   tint=brightest>0?tint/brightest:vec3(1);
   return glow*tint*frame.volumeMedium.w;
 }
+// remixapi_DrawVolumeShaftsEXT: the light shafts' glow along a camera ray up to
+// `far` (the first surface that is not a sheet). Each shaft is clipped to its
+// tapered box (both caps, four sides), then its glow is summed at 8 points of
+// that stretch, offset by `jitter`: the sides' soft fade and the fade along the
+// axis. A wall inside a shaft cuts the stretch, so the glow fades with the
+// path left through it instead of ending at an edge.
+vec3 volumeShaftGlow(vec3 origin,vec3 direction,float far,float jitter) {
+  vec3 sum=vec3(0);
+  uint count=min(frame.volumeShaftConfig.x,32u);
+  for(uint i=0;i<count;++i) {
+    vec4 place=frame.volumeShafts[i*5],sideU=frame.volumeShafts[i*5+1],sideV=frame.volumeShafts[i*5+2];
+    vec4 glow=frame.volumeShafts[i*5+3],farCap=frame.volumeShafts[i*5+4];
+    float len=place.w;
+    vec3 axis=cross(sideU.xyz,sideV.xyz);
+    vec3 p=origin-place.xyz;
+    vec3 o=vec3(dot(p,sideU.xyz),dot(p,sideV.xyz),dot(p,axis));
+    vec3 d=vec3(dot(direction,sideU.xyz),dot(direction,sideV.xyz),dot(direction,axis));
+    float ku=(farCap.x-sideU.w)/len,kv=(farCap.y-sideV.w)/len;
+    // Half-spaces a t + b <= 0: the caps, then |x| <= half u (z), |y| <= half v (z).
+    vec2 planes[6]=vec2[6](vec2(-d.z,-o.z),vec2(d.z,o.z-len),
+                           vec2(d.x-ku*d.z,o.x-sideU.w-ku*o.z),vec2(-d.x-ku*d.z,-o.x-sideU.w-ku*o.z),
+                           vec2(d.y-kv*d.z,o.y-sideV.w-kv*o.z),vec2(-d.y-kv*d.z,-o.y-sideV.w-kv*o.z));
+    float t0=0,t1=far;
+    for(int k=0;k<6;++k) {
+      vec2 h=planes[k];
+      if(abs(h.x)<1e-8) { if(h.y>0)t1=-1; }
+      else if(h.x>0)t1=min(t1,-h.y/h.x);
+      else t0=max(t0,-h.y/h.x);
+    }
+    if(!(t1>t0))continue;
+    float stretch=t1-t0,soft=max(farCap.z,1e-4),along=0;
+    for(int k=0;k<8;++k) {
+      vec3 q=o+d*(t0+stretch*(float(k)+jitter)*.125);
+      float s=clamp(q.z/len,0,1);
+      vec2 half_=max(vec2(sideU.w+(farCap.x-sideU.w)*s,sideV.w+(farCap.y-sideV.w)*s),vec2(1e-5));
+      vec2 across=abs(q.xy)/half_;
+      float r=farCap.w>.5?length(across):max(across.x,across.y);
+      float side=clamp((1-r)/soft,0,1);
+      along+=side*side*(3-2*side)*mix(1,glow.w,s);
+    }
+    sum+=glow.rgb*(along*stretch*.125);
+  }
+  return sum;
+}
 // The colour a camera inside a translucent body (remixapi_CameraMediumEXT)
 // sees of the body over `distance`: what is absorbed becomes the body's colour
 // lit as a surface facing up would be by the sky and the sun. transmittance:
@@ -4359,7 +4403,7 @@ void main() {
   // drew the box into the medium, edges, corners and all.
   float far=1e30;
   bool rasterFog=frame.volumeConfig.x==0u&&frame.volumeConfig.y==1u;
-  if((frame.volumeConfig.x&1u)!=0u||rasterFog||frame.cameraMedium.w>0) {
+  if((frame.volumeConfig.x&1u)!=0u||rasterFog||frame.cameraMedium.w>0||frame.volumeShaftConfig.x!=0u) {
     float kind=frame.target.w!=0?imageLoad(primaryNormal,pixel).w:-1;
     if(kind>=32)kind-=32; // a screen camera's surface
     if(kind>=16)kind-=16; // a thin film
@@ -4390,6 +4434,13 @@ void main() {
     float jitter=fract(52.9829189*fract(dot(vec2(pixel),vec2(.06711056,.00583715))));
     fogLight+=rasterFogGlow(origin,direction,far,forward,jitter);
     transparent=fogLight+fogTransmittance*transparent;tint*=fogTransmittance;
+  }
+  // Light shafts (remixapi_DrawVolumeShaftsEXT): glowing air in front of the
+  // first surface, added over the medium like its own glow.
+  if(frame.volumeShaftConfig.x!=0u) {
+    float jitter=fract(52.9829189*fract(dot(vec2(pixel),vec2(.06711056,.00583715))));
+    vec3 shafts=volumeShaftGlow(origin,direction,far,jitter);
+    transparent+=shafts;fogLight+=shafts;
   }
   // A camera inside a translucent body (under water): its medium up to the
   // first surface, sheet or not, nearest of all. Guides stay on the surfaces.

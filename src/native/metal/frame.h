@@ -139,8 +139,12 @@ namespace remix::metal::trace {
     uint64_t primaryLocal = 0; // the split primary's results (Vulkan only; 0 here)
     uint64_t sheetTiles = 0; // the sheet passes' tiles (Vulkan only; 0 here)
     float previousRayPortals[scene::rayPortalSlots][4][4] = {}; // (pathtrace/gpu.h) none here either
+    // remixapi_DrawVolumeShaftsEXT (pathtrace/gpu.h, 32 slots): none drawn here.
+    float volumeShafts[32][5][4] = {};
+    uint32_t volumeShaftConfig[4] = {};
   };
-  static_assert(sizeof(Frame) == 3456 && offsetof(Frame, previousRayPortals) == 2944 && offsetof(Frame, wavefrontPaths) == 2912 && offsetof(Frame, rayPortalPlanes) == 2880 &&
+  static_assert(offsetof(Frame, volumeShafts) == 3456 && offsetof(Frame, volumeShaftConfig) == 3456 + 32 * 80);
+  static_assert(sizeof(Frame) == 6032 && offsetof(Frame, previousRayPortals) == 2944 && offsetof(Frame, wavefrontPaths) == 2912 && offsetof(Frame, rayPortalPlanes) == 2880 &&
                 offsetof(Frame, rayPortals) == 2352 && offsetof(Frame, rayPortalPadding) == 2344 &&
                 offsetof(Frame, woundVertices) == 2328 && offsetof(Frame, sheetMaterials) == 2320 &&
                 offsetof(Frame, screenCameras) == 1808 && offsetof(Frame, srgbTextures) == 1280 &&

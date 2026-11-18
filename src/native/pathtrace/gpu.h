@@ -285,8 +285,13 @@ namespace remix::trace::detail {
     // was closed then; this frame's after a history reset): what is seen
     // through a pair that moved is reprojected through its previous map.
     alignas(16) float previousRayPortals[scene::rayPortalSlots][4][4] = {};
+    // remixapi_DrawVolumeShaftsEXT: the shafts drawn (volumeShaftConfig[0]),
+    // 5 vec4 each (volume_policy.h packVolumeShaft).
+    alignas(16) float volumeShafts[volumeShaftSlots][5][4] = {};
+    uint32_t volumeShaftConfig[4] = {};
   };
-  static_assert(offsetof(Frame, previousRayPortals) == 2944 && sizeof(Frame) == 3456);
+  static_assert(offsetof(Frame, previousRayPortals) == 2944 && offsetof(Frame, volumeShafts) == 3456 &&
+                sizeof(Frame) == 3456 + volumeShaftSlots * 80 + 16);
   static_assert(offsetof(Frame, sheetMaterials) == 2320 && offsetof(Frame, woundVertices) == 2328 &&
                 offsetof(Frame, subsurfaceUnits) == 2336 && offsetof(Frame, rayPortalPadding) == 2344 &&
                 offsetof(Frame, rayPortals) == 2352 && offsetof(Frame, rayPortalPlanes) == 2880 &&

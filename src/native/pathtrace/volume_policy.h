@@ -1,6 +1,8 @@
 #pragma once
 #include "pathtrace/options.h"
 #include "scene/light_bvh.h"
+#include "scene/volume_shaft.h"
+#include <array>
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -10,6 +12,55 @@
 #include <vector>
 
 namespace remix::trace {
+  // remixapi_DrawVolumeShaftsEXT: the shafts the traced view draws at most.
+  inline constexpr uint32_t volumeShaftSlots = 32;
+
+  // A shaft as the compose pass reads it (pathtrace.comp volumeShaftGlow), 5
+  // vec4: origin and length; u and the near half extent along it; v and the
+  // near half extent along it (oriented so cross(u, v) is the axis); radiance
+  // and the far fade; the far half extents, softness and shape.
+  inline void packVolumeShaft(const VolumeShaft &s, float (&out)[5][4]) {
+    const auto &u = s.u, &a = s.axis;
+    std::array<float, 3> v = s.v;
+    const float cross[3] = {u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]};
+    if (cross[0] * a[0] + cross[1] * a[1] + cross[2] * a[2] < 0)
+      v = {-v[0], -v[1], -v[2]};
+    const float rows[5][4] = {{s.origin[0], s.origin[1], s.origin[2], s.length},
+                              {u[0], u[1], u[2], s.nearHalf[0]},
+                              {v[0], v[1], v[2], s.nearHalf[1]},
+                              {s.radiance[0], s.radiance[1], s.radiance[2], s.farFade},
+                              {s.farHalf[0], s.farHalf[1], s.softness, float(s.shape)}};
+    std::copy(&rows[0][0], &rows[0][0] + 20, &out[0][0]);
+  }
+
+  // The shafts drawn this frame: those not wholly behind the eye (along
+  // `forward`), nearest first, at most volumeShaftSlots. Indices into `shafts`.
+  inline std::vector<uint32_t> selectVolumeShafts(const std::vector<VolumeShaft> &shafts, const float eye[3],
+                                                  const float forward[3]) {
+    std::vector<std::pair<float, uint32_t>> ranked;
+    ranked.reserve(shafts.size());
+    for (uint32_t i = 0; i < shafts.size(); ++i) {
+      const auto &s = shafts[i];
+      // The bounding sphere: the centre of the axis, reaching the far corners.
+      const float half = s.length * .5f;
+      const float wide = std::max(std::hypot(s.nearHalf[0], s.nearHalf[1]), std::hypot(s.farHalf[0], s.farHalf[1]));
+      const float radius = std::hypot(half, wide);
+      float d[3];
+      for (int c = 0; c < 3; ++c)
+        d[c] = s.origin[c] + s.axis[c] * half - eye[c];
+      if (d[0] * forward[0] + d[1] * forward[1] + d[2] * forward[2] < -radius)
+        continue;
+      ranked.emplace_back(std::max(std::sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]) - radius, 0.f), i);
+    }
+    const size_t keep = std::min<size_t>(ranked.size(), volumeShaftSlots);
+    std::partial_sort(ranked.begin(), ranked.begin() + keep, ranked.end());
+    std::vector<uint32_t> chosen;
+    chosen.reserve(keep);
+    for (size_t i = 0; i < keep; ++i)
+      chosen.push_back(ranked[i].second);
+    return chosen;
+  }
+
   // The game's fog as remixapi_SetFogState last gave it (D3D fog: mode 0
   // none, 1 exp, 2 exp2, 3 linear; distances in world units).
   struct GameFog {

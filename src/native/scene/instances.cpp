@@ -325,6 +325,68 @@ namespace remix {
     return it == m_materials.end() ? nullptr : it->second;
   }
 
+  void NativeResources::drawVolumeShafts(const remixapi_VolumeShaftEXT *shafts, uint32_t count) {
+    constexpr uint32_t maxShafts = 4096;
+    if (count && !shafts)
+      throw invalid;
+    std::vector<VolumeShaft> accepted;
+    accepted.reserve(std::min(count, maxShafts));
+    auto dot = [](const float *a, const float *b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; };
+    for (uint32_t i = 0; i < count && accepted.size() < maxShafts; ++i) {
+      const auto &in = shafts[i];
+      if (in.sType != REMIXAPI_STRUCT_TYPE_VOLUME_SHAFT_EXT || in.shape > REMIXAPI_VOLUME_SHAFT_ELLIPSE_EXT)
+        throw invalid;
+      const float values[] = {in.origin.x,   in.origin.y,   in.origin.z,  in.axis.x,    in.axis.y,
+                              in.axis.z,     in.halfU.x,    in.halfU.y,   in.halfU.z,   in.halfV.x,
+                              in.halfV.y,    in.halfV.z,    in.farScaleU, in.farScaleV, in.radiance.x,
+                              in.radiance.y, in.radiance.z, in.farFade,   in.softness};
+      finite(values, std::size(values));
+      if (in.farScaleU < 0 || in.farScaleV < 0 || in.radiance.x < 0 || in.radiance.y < 0 || in.radiance.z < 0 ||
+          in.farFade < 0)
+        throw invalid;
+      // An orthonormal frame from what was given: the sides made perpendicular
+      // to the axis and to each other. A degenerate shaft (no length, no width,
+      // no glow) is left out, not refused: a host's fitted mesh may collapse.
+      VolumeShaft s;
+      float axis[3] = {in.axis.x, in.axis.y, in.axis.z};
+      s.length = std::sqrt(dot(axis, axis));
+      if (!(s.length > 1e-6f))
+        continue;
+      for (int c = 0; c < 3; ++c)
+        s.axis[c] = axis[c] / s.length;
+      float u[3] = {in.halfU.x, in.halfU.y, in.halfU.z}, v[3] = {in.halfV.x, in.halfV.y, in.halfV.z};
+      const float ua = dot(u, s.axis.data());
+      for (int c = 0; c < 3; ++c)
+        u[c] -= ua * s.axis[c];
+      s.nearHalf[0] = std::sqrt(dot(u, u));
+      if (!(s.nearHalf[0] > 1e-6f))
+        continue;
+      for (int c = 0; c < 3; ++c)
+        s.u[c] = u[c] / s.nearHalf[0];
+      const float va = dot(v, s.axis.data()), vu = dot(v, s.u.data());
+      for (int c = 0; c < 3; ++c)
+        v[c] -= va * s.axis[c] + vu * s.u[c];
+      s.nearHalf[1] = std::sqrt(dot(v, v));
+      if (!(s.nearHalf[1] > 1e-6f))
+        continue;
+      for (int c = 0; c < 3; ++c)
+        s.v[c] = v[c] / s.nearHalf[1];
+      s.shape = in.shape;
+      float scaleU = in.farScaleU, scaleV = in.farScaleV;
+      if (s.shape == REMIXAPI_VOLUME_SHAFT_ELLIPSE_EXT)
+        scaleU = scaleV = (scaleU + scaleV) * .5f;
+      s.farHalf = {s.nearHalf[0] * scaleU, s.nearHalf[1] * scaleV};
+      s.origin = {in.origin.x, in.origin.y, in.origin.z};
+      s.radiance = {in.radiance.x, in.radiance.y, in.radiance.z};
+      s.farFade = in.farFade;
+      s.softness = std::clamp(in.softness, 0.f, 1.f);
+      if (std::max({s.radiance[0], s.radiance[1], s.radiance[2]}) * std::max(1.f, s.farFade) <= 0)
+        continue;
+      accepted.push_back(s);
+    }
+    m_volumeShafts = std::move(accepted);
+  }
+
   void NativeResources::appendHalo(const Halo &halo, std::vector<Draw> &&draws, const float *origin) {
     if (draws.empty() || m_haloDraws + draws.size() > maxHaloDraws)
       return;

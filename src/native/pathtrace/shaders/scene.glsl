@@ -139,6 +139,8 @@ layout(set=0,binding=3,std140) uniform Frame {
   uint64_t primaryLocal; // split primary results (pathtrace.comp PrimaryLocals; 0: one launch)
   uint64_t sheetTiles; // the sheet passes' tiles (pathtrace.comp SheetTiles; 0: they launch over the screen)
   vec4 previousRayPortals[32]; // rayPortals as the previous traced frame had them (zero: the pair was closed)
+  vec4 volumeShafts[160]; // remixapi_DrawVolumeShaftsEXT, 5 per shaft (volume_policy.h packVolumeShaft)
+  uvec4 volumeShaftConfig; // shafts drawn, reserved
 } frame;
 // Instance mask bit of view models (pathtrace/tlas_policy.h).
 const uint viewModelInstanceMask=64u;

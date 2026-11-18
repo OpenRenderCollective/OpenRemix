@@ -29,6 +29,7 @@ namespace remix {
     m_overlay.clear();
     m_halos.clear();
     m_haloDraws = 0;
+    m_volumeShafts.clear();
     m_masks.clear();
     m_maskDraws = 0;
     m_cutGroups = 0;
@@ -94,6 +95,7 @@ namespace remix {
     m_uiDraws.clear();
     m_halos.clear();
     m_haloDraws = 0;
+    m_volumeShafts.clear();
     m_masks.clear();
     m_maskDraws = 0;
     m_cutGroups = 0;

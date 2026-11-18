@@ -193,6 +193,13 @@ REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_UpdateLightDefinition(remixap
   return resourceCall([&](auto &resources) { resources.updateLight(handle, *info); });
 }
 
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_DrawVolumeShaftsEXT(const remixapi_VolumeShaftEXT *shafts,
+                                                                       uint32_t count) {
+  if (count && !shafts)
+    return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
+  return resourceCall([&](auto &resources) { resources.drawVolumeShafts(shafts, count); });
+}
+
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_UpdateMeshVerticesEXT(remixapi_MeshHandle mesh,
                                                                          uint32_t surfaceCount,
                                                                          const remixapi_MeshVerticesEXT *surfaces) {

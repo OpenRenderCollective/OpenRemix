@@ -26,6 +26,7 @@
 #include <vector>
 
 #include "scene/free_camera.h"
+#include "scene/volume_shaft.h"
 #include "platform/utf8_path.h"
 
 namespace remix {
@@ -310,6 +311,9 @@ namespace remix {
     bool cameraMediumFog() const { return m_cameraMediumFog; }
     // remixapi_CameraScreensEXT, by slot (scene/instances.cpp).
     const ScreenCameras &screenCameras() const { return m_screenCameras; }
+    // remixapi_DrawVolumeShaftsEXT: this frame's light shafts (scene/instances.cpp).
+    void drawVolumeShafts(const remixapi_VolumeShaftEXT *shafts, uint32_t count);
+    const std::vector<VolumeShaft> &volumeShafts() const { return m_volumeShafts; }
     void createLight(const remixapi_LightInfo &info, remixapi_LightHandle &handle);
     // IES profiles (remixapi_LightInfoIesProfileEXT), scene::kIesBins floats
     // each. Adding one makes a new vector, so a published frame keeps its own.
@@ -489,6 +493,7 @@ namespace remix {
     ScreenCameras m_screenCameras = {};
     std::vector<scene::Draw> m_draws, m_uiDraws, m_overlay;
     std::vector<scene::HaloGroup> m_halos;
+    std::vector<VolumeShaft> m_volumeShafts;
     size_t m_haloDraws = 0;
     // Moves a halo instance's draws into its group (the group with equal
     // parameters, or a new one); origin: a retained replay's scene origin.

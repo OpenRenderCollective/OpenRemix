@@ -11,6 +11,9 @@ test('Bake scene membership, content identity and snapshot ownership', bake_scen
 publish_test = executable('remix-publish-test', 'publish.cpp',
   include_directories : test_includes, link_with : scene_library, dependencies : threads_dep)
 test('Published frames and resource lifetime', publish_test, timeout : 60)
+volume_shafts_test = executable('remix-volume-shafts-test', 'volume_shafts.cpp',
+  include_directories : test_includes, link_with : scene_library)
+test('Light shafts drawn, published and chosen', volume_shafts_test)
 refresh_test = executable('remix-mesh-refresh-test', 'refresh.cpp',
   include_directories : test_includes, link_with : scene_library)
 test('Mesh refresh lineage, retained replay and correspondence', refresh_test)
