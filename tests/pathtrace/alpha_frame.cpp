@@ -10,14 +10,23 @@
 // (remixapi_InstanceInfoBlendEXT: texel times vertex colour) and a material
 // that blends (blendType 1) and alpha-tests at 2/255.
 //
+// The stains are ULTRAKILL's blood on floors and walls as UnityRTX draws them
+// (UltrakillBloodStains): one quad per stain lifted 1 cm off its surface,
+// mapped to a cell of the game's 160x32 splatter atlas, all in one mesh drawn
+// as multiplicative paint (DST_COLOR * ZERO, a dynamic decal) with an alpha
+// test at 0.5 and a wet finish (remixapi_MaterialInfoPaintFinishEXT).
+//
 // Needs a display and a ray-tracing Vulkan device. Runs only when
 // REMIX_BENCH_ALPHA is set, to a comma-separated list of what to draw:
-// blood, smoke, foliage (or none: the room alone).
+// blood, stains, smoke, foliage (or none: the room alone).
 // Optional environment (defaults in brackets):
 //   REMIX_BENCH_FRAMES [300] measured frames, REMIX_BENCH_WARMUP [200]
 //   REMIX_BENCH_WIDTH/HEIGHT [1920x1080] window size
 //   REMIX_BENCH_SPRAYS [6] blood sprays, REMIX_BENCH_DROPS [75] drops a spray,
 //   REMIX_BENCH_FAINT [20] translucent drops a spray
+//   REMIX_BENCH_STAINS [800] blood stains, REMIX_BENCH_STAIN_EVERY [0] frames
+//     between a new stain replacing the oldest (its mesh created again; 0: never)
+//   REMIX_BENCH_PAINT_FINISH [1] 0: the stains tint only, without their wet finish
 //   REMIX_BENCH_SMOKE [120] smoke billboards, REMIX_BENCH_LEAVES [6000] leaf quads
 //   REMIX_BENCH_BLOOD_CUTOUT [0] 1: the drops alpha-tested, not blended
 //   REMIX_BENCH_FREEZE [0] 1: the particles hold still
@@ -143,23 +152,44 @@ namespace {
       "#############...", "#############...", "##############..", "##############..",
       "##############..", "##############..", "#############...", "#############...",
       "############....", "##########......", "................", "................"};
+  // ULTRAKILL's Bloodsplatter_Atlas: 5 splatters side by side, alpha 0 or 1;
+  // a row's 160 texels as hex, the lowest bit leftmost.
+  const char *splatterAtlas[32] = {
+      "00f0000000000000000000000000000000000000", "1ff000000007003c00007ff80600000000700000",
+      "3f8000e07f8f003c001ffffc0fff000000f80018", "300180e07fff0f3000fffffc0ffff70003f800f8",
+      "000781e07fffff8003fffffc07fffff807ff01f0", "063f81e03fffff800ffffff803fffffc07ffc1f0",
+      "07fc19f03ffffffc3ffffff0001ffffc3fffc1f0", "03fe19f03ffffffc3dffffe039fffff87fffe0e0",
+      "01ff81f07ffffc0031ffffc63ffffff07c7fe000", "00c380f07ffff00003fffc061ffffff07c7ffc00",
+      "01c060787ffffc0007fff0001ffffff8387ffe00", "0783e03c7ffffff007ffe0003ffffff8003fff00",
+      "071fc00c7ffffff00fffc1c03ffffff8003ffff8", "07fe00003fe7fff01fff87c03ffffff8000ffffc",
+      "03ff00603fc3fe001fff0fc61ffffff80007fffc", "03fff8600f8ff0001ffc3fce1ffc7bf80007fffc",
+      "7001f80007cef0001ff87fcc3ff0f3f81e0ffffc", "7e00300007c0f0001ff07fcc7f81e7f83f0ffffc",
+      "3fe0338007cee0001fe01ec07e038ff83f1ffffe", "1ff81f801f9e03c01fc01ec038031ffc3f1ffffe",
+      "1fffff801c7c0ff01f801cc000003ffc1e1ffffe", "0ffff7001cfc0ff01f801ce00001fffc001ffffe",
+      "07ffffe003f81ff81f807ce03003fffc001ffffe", "07fffff807fb9ffe0f00fc607807fffc001ffffe",
+      "3ffffff80ff7dffe0003fc0078dfe7bc001ffffc", "3dfffff01ff7dffe0003000031ff0fbe003ffffc",
+      "1dfffff03fe7cff00607003801f80f1e003ffff8", "0ffffffc3fe38ff00e0f007800c00f1e003ffffc",
+      "0ffffffc3fe003c01f0e03e00000060c001ffffe", "0e7f18c03fc003803f0e03c0000000000000fffe",
+      "007000000e0003803c0003800000000000003f3e", "000000000000000000000000000000000000001c",
+  };
 } // namespace
 
 int main() {
   const char *what = std::getenv("REMIX_BENCH_ALPHA");
   if (!what) {
-    std::puts("Alpha frame benchmark skipped (set REMIX_BENCH_ALPHA=blood,smoke,foliage or none)");
+    std::puts("Alpha frame benchmark skipped (set REMIX_BENCH_ALPHA=blood,stains,smoke,foliage or none)");
     return 77;
   }
   const std::string cases = what;
   const bool blood = cases.find("blood") != std::string::npos, smoke = cases.find("smoke") != std::string::npos,
-             foliage = cases.find("foliage") != std::string::npos;
+             foliage = cases.find("foliage") != std::string::npos, stains = cases.find("stains") != std::string::npos;
   const uint32_t frames = env("REMIX_BENCH_FRAMES", 300), warmup = env("REMIX_BENCH_WARMUP", 200);
   const uint32_t width = env("REMIX_BENCH_WIDTH", 1920), height = env("REMIX_BENCH_HEIGHT", 1080);
   const uint32_t sprays = blood ? env("REMIX_BENCH_SPRAYS", 6) : 0, drops = env("REMIX_BENCH_DROPS", 75);
   const uint32_t faintDrops = env("REMIX_BENCH_FAINT", 20);
   const uint32_t smokeCount = smoke ? env("REMIX_BENCH_SMOKE", 120) : 0;
   const uint32_t leafCount = foliage ? env("REMIX_BENCH_LEAVES", 6000) : 0;
+  const uint32_t stainCount = stains ? env("REMIX_BENCH_STAINS", 800) : 0, stainEvery = env("REMIX_BENCH_STAIN_EVERY", 0);
 
   remixapi_Interface api{};
   remixapi_InitializeLibraryInfo init{};
@@ -287,6 +317,32 @@ int main() {
       }
   }
   const auto leafPath = texture(0xa1004, REMIXAPI_FORMAT_R8G8B8A8_SRGB, 64, pixels);
+  // The stains' paint: red where the atlas covers, clear elsewhere (UnityRTX's
+  // blood paint texture).
+  std::filesystem::path paintPath;
+  {
+    std::vector<uint8_t> paint(160 * 32 * 4, 0);
+    for (uint32_t y = 0; y < 32; ++y)
+      for (uint32_t x = 0; x < 160; ++x) {
+        const char digit = splatterAtlas[y][39 - x / 4];
+        const uint32_t nibble = uint32_t(digit <= '9' ? digit - '0' : digit - 'a' + 10);
+        auto *p = &paint[(y * 160 + x) * 4];
+        p[0] = 255;
+        p[3] = (nibble >> (x % 4)) & 1u ? 255 : 0;
+      }
+    remixapi_TextureInfo info{};
+    info.sType = REMIXAPI_STRUCT_TYPE_TEXTURE_INFO;
+    info.hash = 0xa1005;
+    info.width = 160;
+    info.height = 32;
+    info.depth = info.mipLevels = 1;
+    info.format = REMIXAPI_FORMAT_R8G8B8A8_UNORM;
+    info.data = paint.data();
+    info.dataSize = paint.size();
+    remixapi_TextureHandle handle;
+    ok(api.CreateTexture(&info, &handle), "CreateTexture (paint)");
+    paintPath = path(0xa1005);
+  }
 
   auto material = [&](uint64_t hash, const std::filesystem::path &albedo, float roughness, bool blended,
                       uint8_t alphaReference, bool pointSampled) {
@@ -320,6 +376,29 @@ int main() {
   const auto trailMaterial = material(0xa2002, trailPath, bloodRoughness, !cutout, cutout ? 128 : 2, true);
   const auto smokeMaterial = material(0xa2003, smokePath, .7f, true, 2, false);
   const auto leafMaterial = material(0xa2004, leafPath, .6f, false, 127, false);
+  remixapi_MaterialHandle paintMaterial;
+  {
+    remixapi_MaterialInfoPaintFinishEXT finish{};
+    finish.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_PAINT_FINISH_EXT;
+    // REMIX_BENCH_PAINT_FINISH=0: the paint tints only (no wet finish).
+    finish.enabled = env("REMIX_BENCH_PAINT_FINISH", 1) != 0;
+    remixapi_MaterialInfoOpaqueEXT opaque{};
+    opaque.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
+    opaque.pNext = &finish;
+    opaque.albedoConstant = {1, 1, 1};
+    opaque.opacityConstant = 1;
+    opaque.roughnessConstant = .12f;
+    opaque.alphaTestType = 6;
+    opaque.alphaReferenceValue = 127;
+    remixapi_MaterialInfo info{};
+    info.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
+    info.pNext = &opaque;
+    info.hash = 0xa2005;
+    info.albedoTexture = paintPath.c_str();
+    info.filterMode = 0;
+    info.wrapModeU = info.wrapModeV = 1;
+    ok(api.CreateMaterial(&info, &paintMaterial), "CreateMaterial (paint)");
+  }
 
   // REMIX_BENCH_UPDATE=1: particle meshes say they may be updated in place
   // (remixapi_MeshInfoUpdateEXT); their counts are constant, so their BLASes refit.
@@ -477,6 +556,81 @@ int main() {
     ok(api.DrawInstance(&instance), "DrawInstance");
   };
 
+  // Stain i: three in four on the floor ahead, the rest on the back wall and
+  // the pillars' fronts; turned at random, 0.4-1.4 m across, lifted 1 cm.
+  Batch stainBatch;
+  uint32_t stainFirst = ~0u;
+  auto stainQuads = [&](uint32_t first) {
+    stainBatch.clear();
+    for (uint32_t i = first; i < first + stainCount; ++i) {
+      Random seed{uint64_t(i) * 15485863ull + 11};
+      const float size = seed.range(.2f, .7f), angle = seed.range(0, 6.2831853f);
+      V3 centre, a, b;
+      if (seed.unit() < .75f) {
+        centre = {seed.range(-5, 5), seed.range(-1, 9), .01f};
+        a = {std::cos(angle), std::sin(angle), 0};
+        b = {-std::sin(angle), std::cos(angle), 0};
+      } else if (seed.unit() < .5f) {
+        centre = {seed.range(-8, 8), 15.99f, seed.range(.3f, 4)};
+        a = {std::cos(angle), 0, std::sin(angle)};
+        b = {-std::sin(angle), 0, std::cos(angle)};
+      } else {
+        centre = {-6.f + 4.f * float(seed.next() % 4) + seed.range(-.3f, .3f), 8.49f, seed.range(.3f, 3.7f)};
+        a = {std::cos(angle), 0, std::sin(angle)};
+        b = {-std::sin(angle), 0, std::cos(angle)};
+      }
+      const auto base = uint32_t(stainBatch.vertices.size());
+      const V3 n = normalize(cross(a, b));
+      const float u = float(i % 5) * .2f;
+      stainBatch.vertex(centre - a * size - b * size, n, u, 0, 0xffffffff);
+      stainBatch.vertex(centre + a * size - b * size, n, u + .2f, 0, 0xffffffff);
+      stainBatch.vertex(centre + a * size + b * size, n, u + .2f, 1, 0xffffffff);
+      stainBatch.vertex(centre - a * size + b * size, n, u, 1, 0xffffffff);
+      stainBatch.indices.insert(stainBatch.indices.end(), {base, base + 2, base + 1, base, base + 3, base + 2});
+    }
+  };
+  remixapi_MeshHandle stainMesh = nullptr;
+  auto drawStains = [&](uint32_t frame) {
+    if (!stainCount)
+      return;
+    const uint32_t first = stainEvery ? frame / stainEvery : 0;
+    if (first != stainFirst) {
+      stainFirst = first;
+      stainQuads(first);
+      stainMesh = mesh(0xa5005, stainBatch, paintMaterial);
+    }
+    // Multiplicative paint: the receiver's colour times the paint's.
+    remixapi_InstanceInfoBlendEXT blend{};
+    blend.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_BLEND_EXT;
+    blend.alphaBlendEnabled = 1;
+    blend.srcColorBlendFactor = 4; // DST_COLOR
+    blend.dstColorBlendFactor = 0; // ZERO
+    blend.textureColorArg1Source = 1;
+    blend.textureColorArg2Source = 2;
+    blend.textureColorOperation = 3;
+    blend.textureAlphaArg1Source = 1;
+    blend.textureAlphaArg2Source = 2;
+    blend.textureAlphaOperation = 3;
+    blend.tFactor = 0xffffffffu;
+    blend.srcAlphaBlendFactor = 0;
+    blend.dstAlphaBlendFactor = 1;
+    blend.writeMask = 15;
+    remixapi_InstanceIdentityEXT identity{};
+    identity.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_IDENTITY_EXT;
+    identity.pNext = &blend;
+    identity.instanceId = 0x40000005;
+    identity.classification = REMIXAPI_INSTANCE_DYNAMIC_EXT;
+    identity.rasterVisible = 1;
+    remixapi_InstanceInfo instance{};
+    instance.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO;
+    instance.pNext = &identity;
+    instance.categoryFlags = REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_DYNAMIC;
+    instance.mesh = stainMesh;
+    instance.doubleSided = 1;
+    instance.transform.matrix[0][0] = instance.transform.matrix[1][1] = instance.transform.matrix[2][2] = 1;
+    ok(api.DrawInstance(&instance), "DrawInstance (stains)");
+  };
+
   auto submit = [&](uint32_t frame) {
     ok(api.PumpEvents(), "PumpEvents");
     remixapi_CameraInfoParameterizedEXT parameters{};
@@ -556,11 +710,12 @@ int main() {
     draw(trailMesh, trailBatch, trailMaterial, 0x40000002, !cutout);
     draw(faintMesh, faintBatch, dropMaterial, 0x40000003);
     draw(smokeMesh, smokeBatch, smokeMaterial, 0x40000004);
+    drawStains(frame);
     ok(api.Present(nullptr), "Present");
   };
 
-  std::printf("alpha frame: %s; %u sprays of %u drops (+%u faint), %u smoke billboards, %u leaves, %ux%u\n",
-              cases.c_str(), sprays, drops, faintDrops, smokeCount, leafCount, width, height);
+  std::printf("alpha frame: %s; %u sprays of %u drops (+%u faint), %u stains, %u smoke billboards, %u leaves, %ux%u\n",
+              cases.c_str(), sprays, drops, faintDrops, stainCount, smokeCount, leafCount, width, height);
   std::fflush(stdout);
   uint32_t frame = 0;
   auto prepared = remix::test::preparedFrame([&] { submit(frame); });
