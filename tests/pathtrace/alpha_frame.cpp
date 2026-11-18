@@ -27,6 +27,7 @@
 //   REMIX_BENCH_STAINS [800] blood stains, REMIX_BENCH_STAIN_EVERY [0] frames
 //     between a new stain replacing the oldest (its mesh created again; 0: never)
 //   REMIX_BENCH_PAINT_FINISH [1] 0: the stains tint only, without their wet finish
+//   REMIX_BENCH_PAINT_ROUGHNESS [15] the finish's roughness, percent
 //   REMIX_BENCH_SMOKE [120] smoke billboards, REMIX_BENCH_LEAVES [6000] leaf quads
 //   REMIX_BENCH_BLOOD_CUTOUT [0] 1: the drops alpha-tested, not blended
 //   REMIX_BENCH_FREEZE [0] 1: the particles hold still
@@ -387,7 +388,8 @@ int main() {
     opaque.pNext = &finish;
     opaque.albedoConstant = {1, 1, 1};
     opaque.opacityConstant = 1;
-    opaque.roughnessConstant = .12f;
+    // REMIX_BENCH_PAINT_ROUGHNESS (percent, [15]: UnityRTX's for blood).
+    opaque.roughnessConstant = float(env("REMIX_BENCH_PAINT_ROUGHNESS", 15)) / 100;
     opaque.alphaTestType = 6;
     opaque.alphaReferenceValue = 127;
     remixapi_MaterialInfo info{};
