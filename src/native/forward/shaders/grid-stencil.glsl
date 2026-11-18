@@ -6,6 +6,7 @@ bool localStencilValid = false;
 vec3 localStencilPosition, localStencilNormal;
 uint localStencilIndices[16];
 float localStencilWeights[16];
+float localStencilFacingWeights[16];
 uint localStencilFineNodes[8];
 uint localStencilCount = 0u;
 uint localStencilRevision = 0u;
@@ -17,6 +18,7 @@ float bakeCellStencil(vec3 position, vec3 normal, uvec3 dimensions, uvec3 start,
   for (uint corner = 0u; corner < 8u; ++corner) {
     localStencilIndices[first + corner] = 0u;
     localStencilWeights[first + corner] = 0;
+    localStencilFacingWeights[first + corner] = 1;
   }
   float ratio = 1.0 / float(divisor), spacing = bakeOriginSpacing.w * ratio;
   float minimumVariance = bakeSettings.y * ratio * ratio;
@@ -75,6 +77,7 @@ float bakeCellStencil(vec3 position, vec3 normal, uvec3 dimensions, uvec3 start,
     // direction swings across the receiver. Fade to neutral at the origin.
     float facing = dot(normal, delta) / max(distance, spacing * .25);
     float facingWeight = pow(max(.05, .5 - .5 * facing), 2);
+    localStencilFacingWeights[first + corner] = facingWeight;
     support += weight * facingWeight;
     weight *= visibility;
     weight *= facingWeight;
