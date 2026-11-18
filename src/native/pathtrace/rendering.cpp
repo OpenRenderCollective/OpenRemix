@@ -596,7 +596,11 @@ namespace remix {
     frame.woundVertices = woundAddress;
     frame.localConfig[0] = options.localLights && options.localIntensity > 0 ? lightBvh.active : 0;
     localIlluminationActive = frame.localConfig[0] != 0;
-    localFirstHitActive = localIlluminationActive && !hasBlendedGeometry;
+    // First-hit local shadow rays meet no layer to let light through:
+    // without skipBlendedSecondaryRays, none in the scene; with it, none
+    // outside the wholly blended instances those rays leave out.
+    localFirstHitActive = localIlluminationActive &&
+                          !(options.skipBlendedSecondaryRays ? flags.shadowBlended : hasBlendedGeometry);
     frame.splitLocal[0] = splitLightingActive ? options.separateLocalLighting : 0;
     frame.splitLocal[1] = localIlluminationActive && splitFamilies ? torchBvh.active : 0;
     frame.splitLocal[2] = localIlluminationActive && splitFamilies ? emissiveBvh.active : 0;
