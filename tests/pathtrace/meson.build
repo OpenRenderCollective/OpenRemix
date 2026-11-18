@@ -21,6 +21,12 @@ scene_frame_benchmark = executable('remix-scene-frame-benchmark', 'scene_frame.c
   include_directories : test_includes, dependencies : [sdl3_dep, filesystem_dep] + [runtime_test_dep])
 benchmark('Scene frame CPU cost', scene_frame_benchmark, env : ['REMIX_BENCH_SCENE=1'], timeout : 1800,
   verbose : true)
+# GPU cost of alpha by pass: blended particles (ULTRAKILL-style blood), smoke and
+# alpha-tested foliage. A benchmark: meson test --benchmark "Alpha frame GPU cost".
+alpha_frame_benchmark = executable('remix-alpha-frame-benchmark', 'alpha_frame.cpp',
+  include_directories : test_includes, dependencies : [sdl3_dep, filesystem_dep] + [runtime_test_dep])
+benchmark('Alpha frame GPU cost', alpha_frame_benchmark, env : ['REMIX_BENCH_ALPHA=blood'], timeout : 1800,
+  verbose : true)
 if get_option('gpu_tests')
   measured_sheet_test = executable('remix-measured-sheet-test', 'sheets.cpp',
     include_directories : test_includes, dependencies : [sdl3_dep, filesystem_dep] + [runtime_test_dep])
