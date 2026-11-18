@@ -680,7 +680,11 @@ float selfShare(vec3 reflecting, vec3 self) {
 }
 bool decalSurface(Surface s) { return (s.state.w&64u)!=0; }
 bool coverageBlended(Surface s) { return (s.state.w&34u)==2u; }
-bool blendedAtAlpha(Surface s,float a) { return (s.state.w&2u)!=0&&a<1; }
+// A blended draw is a layer only where it lets something through. Coverage
+// within half an 8-bit step of one covers fully: vertex alpha interpolated
+// from three 255s sums its barycentrics to just under one, which made every
+// pixel of a sprite drawn at full alpha (ULTRAKILL's blood drops) a sheet.
+bool blendedAtAlpha(Surface s,float a) { return (s.state.w&2u)!=0&&a<1-.5/255; }
 bool alphaPass(Surface s, float a) {
   float ref=uintBitsToFloat(s.state.z); uint op=s.state.y;
   return op==7 || (op==1&&a<ref) || (op==2&&a==ref) || (op==3&&a<=ref) ||
