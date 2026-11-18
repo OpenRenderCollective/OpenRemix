@@ -294,6 +294,13 @@ int main() {
   tinted.material = std::make_shared<Material>(*draw.material);
   tinted.material->translucent = true;
   require(!cache.partition(tinted, identity)->micromap, "A tinted blended surface received a micromap");
+  // Blended paint (a decal drawn with blending) is a layer as well: paint
+  // queries skip where it never shows; visibility rays skip paint anyway.
+  auto paint = blended;
+  paint.decal = true;
+  const auto painted = cache.partition(paint, identity);
+  require(painted->micromap && painted->micromap->transparent && !painted->micromap->opaque,
+          "Blended paint's micromap is missing or proves it opaque");
   auto oneSided = draw;
   oneSided.doubleSided = false;
   require(!cache.partition(oneSided, identity)->micromap, "A one-sided surface received a micromap");
