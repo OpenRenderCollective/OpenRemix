@@ -51,17 +51,25 @@ namespace remix::forward::bake {
         float visibility = 1;
         if (const auto directional = grid.depth.visibility(index, delta, minimumVariance)) visibility = *directional;
         else {
-          uint32_t axis = 0;
-          for (uint32_t c = 1; c < 3; ++c) if (std::abs(delta[c]) > std::abs(delta[axis])) axis = c;
-          const auto &moment = probe.moments[axis * 2 + uint32_t(delta[axis] < 0)];
-          if (moment[3] <= 0) continue;
-          if (distance > moment[0]) {
-            const float variance = std::max(minimumVariance, moment[1] - moment[0] * moment[0]);
-            const float difference = distance - moment[0];
-            visibility = std::pow(variance / (variance + difference * difference), 3.f);
+          const float dominant = std::max({std::abs(delta[0]), std::abs(delta[1]), std::abs(delta[2])});
+          if (dominant > 1e-8f) {
+            float weightedVisibility = 0, totalAngular = 0;
+            for (uint32_t axis = 0; axis < 3; ++axis) {
+              const float t = std::clamp((std::abs(delta[axis]) / dominant - .75f) * 4.f, 0.f, 1.f);
+              const auto &moment = probe.moments[axis * 2 + uint32_t(delta[axis] < 0)];
+              if (t <= 0 || moment[3] <= 0) continue;
+              const float angular = t * t * (3.f - 2.f * t);
+              const float variance = std::max(minimumVariance, moment[1] - moment[0] * moment[0]);
+              const float difference = std::max(distance - moment[0], 0.f);
+              weightedVisibility += angular * std::pow(variance / (variance + difference * difference), 3.f);
+              totalAngular += angular;
+            }
+            if (totalAngular <= 0) continue;
+            visibility = weightedVisibility / totalAngular;
           }
         }
-        const float facing = distance > 1e-6f ? dot(normal, delta) / distance : -1;
+        // Match the shader near the probe origin.
+        const float facing = dot(normal, delta) / std::max(distance, spacing * .25f);
         const float facingWeight = std::pow(std::max(.05f, .5f - .5f * facing), 2.f);
         support += weight * facingWeight;
         weight *= visibility;
@@ -107,6 +115,24 @@ namespace remix::forward::bake {
       const float fraction = rootPosition[axis] - parent[axis];
       if (!(faces & (1u << (axis * 2)))) edge = std::min(edge, fraction);
       if (!(faces & (1u << (axis * 2 + 1)))) edge = std::min(edge, 1 - fraction);
+    }
+    // Extend exposed edges around stitched junctions, as the shader does.
+    for (uint32_t axis = 0; axis < 3; ++axis) {
+      const float fraction = rootPosition[axis] - parent[axis];
+      const bool upper = fraction >= .5f;
+      const float across = std::max(upper ? 1 - fraction : fraction, 0.f);
+      if (across + 1e-6f >= std::min(edge, 1.f / factor) ||
+          !(faces & (1u << (2 * axis + uint32_t(upper))))) continue;
+      const uint32_t neighbor = upper ? index + strides[axis] : index - strides[axis];
+      const auto neighborFaces = patchFaces(grid.lookup.at(nodes + 4 + neighbor));
+      for (uint32_t tangent = 0; tangent < 3; ++tangent) {
+        if (tangent == axis) continue;
+        const float along = rootPosition[tangent] - parent[tangent];
+        if (!(neighborFaces & (1u << (2 * tangent))))
+          edge = std::min(edge, across + std::max(along, 0.f));
+        if (!(neighborFaces & (1u << (2 * tangent + 1))))
+          edge = std::min(edge, across + std::max(1 - along, 0.f));
+      }
     }
     float blend = std::clamp(edge * factor, 0.f, 1.f);
     blend = blend * blend * (3 - 2 * blend);

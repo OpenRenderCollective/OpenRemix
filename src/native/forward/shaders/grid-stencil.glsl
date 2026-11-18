@@ -6,6 +6,7 @@ bool localStencilValid = false;
 vec3 localStencilPosition, localStencilNormal;
 uint localStencilIndices[16];
 float localStencilWeights[16];
+float localStencilFacingWeights[16];
 uint localStencilFineNodes[8];
 uint localStencilCount = 0u;
 uint localStencilRevision = 0u;
@@ -17,6 +18,7 @@ float bakeCellStencil(vec3 position, vec3 normal, uvec3 dimensions, uvec3 start,
   for (uint corner = 0u; corner < 8u; ++corner) {
     localStencilIndices[first + corner] = 0u;
     localStencilWeights[first + corner] = 0;
+    localStencilFacingWeights[first + corner] = 1;
   }
   float ratio = 1.0 / float(divisor), spacing = bakeOriginSpacing.w * ratio;
   float minimumVariance = bakeSettings.y * ratio * ratio;
@@ -51,19 +53,31 @@ float bakeCellStencil(vec3 position, vec3 normal, uvec3 dimensions, uvec3 start,
     float distance = length(delta);
     float visibility = 1;
     if (!bakedProbeDepthVisibility(index, delta, minimumVariance, visibility)) {
-      vec3 absolute = abs(delta);
-      uint axis = absolute.x >= absolute.y && absolute.x >= absolute.z ? 0u
-                  : absolute.y >= absolute.z ? 1u : 2u;
-      vec4 moments = bakeProbeMoment(index, axis * 2u + (delta[axis] < 0 ? 1u : 0u));
-      if (moments.w <= 0) continue;
-      if (distance > moments.x) {
+      // Blend only near sector boundaries, where the signed axial moments
+      // would otherwise switch abruptly across a planar receiver.
+      vec3 magnitude = abs(delta);
+      float dominant = max(max(magnitude.x, magnitude.y), magnitude.z);
+      vec3 angular = smoothstep(vec3(.75), vec3(1), magnitude / max(dominant, 1e-8));
+      float weightedVisibility = 0, totalAngular = 0;
+      for (uint axis = 0u; axis < 3u; ++axis) {
+        if (angular[axis] <= 0) continue;
+        vec4 moments = bakeProbeMoment(index, axis * 2u + (delta[axis] < 0 ? 1u : 0u));
+        if (moments.w <= 0) continue;
         float variance = max(minimumVariance, moments.y - moments.x * moments.x);
-        float difference = distance - moments.x;
-        visibility = pow(variance / (variance + difference * difference), 3);
+        float difference = max(distance - moments.x, 0);
+        weightedVisibility += angular[axis] * pow(variance / (variance + difference * difference), 3);
+        totalAngular += angular[axis];
+      }
+      if (dominant > 1e-8) {
+        if (totalAngular <= 0) continue;
+        visibility = weightedVisibility / totalAngular;
       }
     }
-    float facing = distance > 1e-6 ? dot(normal, delta) / distance : -1;
+    // Near a probe, full angular weighting creates a small spot as the
+    // direction swings across the receiver. Fade to neutral at the origin.
+    float facing = dot(normal, delta) / max(distance, spacing * .25);
     float facingWeight = pow(max(.05, .5 - .5 * facing), 2);
+    localStencilFacingWeights[first + corner] = facingWeight;
     support += weight * facingWeight;
     weight *= visibility;
     weight *= facingWeight;
@@ -114,7 +128,25 @@ bool localProbeStencil(vec3 position, vec3 normal) {
     if ((faces & (1u << (axis * 2u))) == 0u) edge[axis] = min(edge[axis], fraction[axis]);
     if ((faces & (1u << (axis * 2u + 1u))) == 0u) edge[axis] = min(edge[axis], 1 - fraction[axis]);
   }
-  float blend = clamp(min(edge.x, min(edge.y, edge.z)) * float(factor), 0, 1);
+  // An exposed edge can end at a stitched face. Carry its fade around
+  // the corner so both patches agree at the face and recover in the interior.
+  float fadeDistance = min(edge.x, min(edge.y, edge.z));
+  for (uint axis = 0u; axis < 3u; ++axis) {
+    bool upper = fraction[axis] >= .5;
+    float across = max(upper ? 1 - fraction[axis] : fraction[axis], 0);
+    if (across + 1e-6 >= min(fadeDistance, 1.0 / float(factor)) ||
+        (faces & (1u << (2u * axis + uint(upper)))) == 0u) continue;
+    uint neighbor = upper ? cell + strides[axis] : cell - strides[axis];
+    uint neighborFaces = bakeLookupWord(nodes + 4u + neighbor) >> 26u;
+    for (uint tangent = 0u; tangent < 3u; ++tangent) {
+      if (tangent == axis) continue;
+      if ((neighborFaces & (1u << (2u * tangent))) == 0u)
+        fadeDistance = min(fadeDistance, across + max(fraction[tangent], 0));
+      if ((neighborFaces & (1u << (2u * tangent + 1u))) == 0u)
+        fadeDistance = min(fadeDistance, across + max(1 - fraction[tangent], 0));
+    }
+  }
+  float blend = clamp(fadeDistance * float(factor), 0, 1);
   blend = blend * blend * (3 - 2 * blend);
   if (block == 0u || blend <= 0) return localStencilValid;
   float fineTotal = bakeCellStencil(position, normal, uvec3(factor + 1u), parent * factor,
