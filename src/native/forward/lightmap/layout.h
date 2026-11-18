@@ -11,6 +11,7 @@ namespace remix::forward::lightmap {
     uint32_t texelStep = 1; // global spacing multiplier; authored fallback retains chart endpoints
     float luxelMetres = 0;  // zero preserves authored UVs; positive selects world-metric surface spacing
     bool fillBudget = false; // derive world density from atlas capacity, independent of requested spacing
+    float receiverInsetMetres = 0; // keep trace origins clear of intersecting faces at triangle edges
   };
   struct Allocation {
     uint32_t page = 0, x = 0, y = 0, width = 0, height = 0;
