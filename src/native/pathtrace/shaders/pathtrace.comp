@@ -3495,7 +3495,8 @@ vec3 volumeShaftGlow(vec3 origin,vec3 direction,float far,float jitter) {
       vec2 across=q.xy/half_;
       float r=ellipse?length(across):max(abs(across.x),abs(across.y));
       float side=clamp((1-r)/soft,0,1);
-      float weight=side*side*(3-2*side)*mix(1,glow.w,s);
+      // Thinner as it widens: a path across it glows alike all along it.
+      float weight=side*side*(3-2*side)*mix(1,glow.w,s)*(sideU.w+sideV.w)/(half_.x+half_.y);
       if(shadowed&&weight>0) {
         // The near cap's point at the same part of its width, in world space.
         vec3 toCap=sideU.xyz*(across.x*sideU.w-q.x)+sideV.xyz*(across.y*sideV.w-q.y)-axis*q.z;

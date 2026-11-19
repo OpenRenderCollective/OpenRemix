@@ -1281,7 +1281,9 @@ REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_SetConfigDefaultEXT(const cha
 // shaft (REMIXAPI_VOLUME_SHAFT_ELLIPSE_EXT) is the cone inscribed in that box
 // and tapers uniformly: its far scale is the mean of the two.
 // The air glows `radiance` per world unit seen through it at the near cap,
-// fading linearly to farFade times that at the far one; `softness` (0 to 1)
+// fading linearly to farFade times that at the far one, and thinning as the
+// shaft widens (by its near half extents' sum over their sum there), so a
+// path across it glows alike all along it, as a game's sheet does; `softness` (0 to 1)
 // is the part of its half width over which it fades to nothing at the sides.
 // It is seen in front of the first surface along each camera ray (a wall cuts
 // it softly, by the shorter path through it) and lights nothing. Shadowed
