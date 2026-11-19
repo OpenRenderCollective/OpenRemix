@@ -63,7 +63,9 @@ namespace {
            (texel(x0, y0 + 1) * (1 - ax) + texel(x0 + 1, y0 + 1) * ax) * ay;
   }
 
-  // scene.glsl materialAlpha + alphaPass for an alpha-tested surface.
+  // scene.glsl materialAlpha + alphaPass for an alpha-tested surface; a
+  // blended layer (Draw::blendedCoverage) shows only where alpha is above
+  // zero as well (visibleAlpha).
   bool passes(const Draw &draw, const std::array<float, 4> &uvTransform, uint32_t triangle, float b1, float b2) {
     const auto &s = *draw.surface;
     const auto &b = draw.blend;
@@ -89,6 +91,8 @@ namespace {
     alpha = std::clamp(alpha * draw.material->tint[3], 0.f, 1.f);
     const float ref = draw.material->reference;
     const uint32_t cmp = draw.material->compare;
+    if (draw.blendedCoverage() && alpha <= 0)
+      return false;
     return (cmp == 1 && alpha < ref) || (cmp == 3 && alpha <= ref) || (cmp == 4 && alpha > ref) ||
            (cmp == 6 && alpha >= ref);
   }
@@ -124,6 +128,8 @@ namespace {
       const auto &micros = microTriangles(level);
       for (uint32_t micro = 0; micro < micros.size(); ++micro) {
         const uint32_t value = state(micro);
+        if (draw.blendedCoverage() && value == OpacityMicromap::Opaque)
+          fail("A blended layer's micro-triangle is opaque");
         if (value == OpacityMicromap::UnknownOpaque || value == OpacityMicromap::UnknownTransparent)
           continue;
         const auto corners = microCorners(micros[micro], level);
@@ -212,6 +218,8 @@ int main() {
       draw.blend.alpha1 = 1;
       draw.blend.alpha2 = 2;
     }
+    // A particle's layer: texture times vertex alpha, blended.
+    draw.blend.enabled = scene % 8 == 7;
     const uint32_t size = scene % 2 ? 16 : 32;
     draw.material->texture = std::make_shared<Texture>();
     std::vector<uint8_t> pixels(size_t(size) * size * 4, 255);
@@ -273,9 +281,26 @@ int main() {
   auto decal = draw;
   decal.decal = true;
   require(!cache.partition(decal, identity)->micromap, "A decal received a micromap");
+  // A blended layer is left out only where it never shows; none of it is
+  // opaque (its other candidates stay its layer test). A tinted one keeps
+  // the test everywhere.
   auto blended = draw;
   blended.blend.enabled = true;
-  require(!cache.partition(blended, identity)->micromap, "A blended surface received a micromap");
+  const auto layer = cache.partition(blended, identity);
+  require(layer->micromap && layer->micromap->transparent && !layer->micromap->opaque &&
+              layer->reasons[OpacityPartition::Solid] == 0,
+          "A blended layer's micromap is missing or proves it opaque");
+  auto tinted = blended;
+  tinted.material = std::make_shared<Material>(*draw.material);
+  tinted.material->translucent = true;
+  require(!cache.partition(tinted, identity)->micromap, "A tinted blended surface received a micromap");
+  // Blended paint (a decal drawn with blending) is a layer as well: paint
+  // queries skip where it never shows; visibility rays skip paint anyway.
+  auto paint = blended;
+  paint.decal = true;
+  const auto painted = cache.partition(paint, identity);
+  require(painted->micromap && painted->micromap->transparent && !painted->micromap->opaque,
+          "Blended paint's micromap is missing or proves it opaque");
   auto oneSided = draw;
   oneSided.doubleSided = false;
   require(!cache.partition(oneSided, identity)->micromap, "A one-sided surface received a micromap");

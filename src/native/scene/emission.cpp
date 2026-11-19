@@ -51,13 +51,43 @@ namespace remix::scene {
     };
     // A triangle's emission; `cached`: through Material::emissionCache. The
     // caller holds the locks of the material's dynamic textures.
-    std::array<float, 3> emission(const Draw &draw, uint32_t triangle, const float *transform, bool cached = true);
+    // `textureCoverage`: each sample weighed by the albedo texture's alpha.
+    std::array<float, 3> emission(const Draw &draw, uint32_t triangle, const float *transform,
+                                  bool textureCoverage, bool cached = true);
   } // namespace
+
+  // A blended draw shows its emission times its coverage (the texture stage's
+  // alpha, as opacity.cpp's combinedAlpha reads it): an additive glow drawn
+  // as a coverage sheet covers little where it is faint, and fades by its
+  // instance's factor. Its light must be what it shows, not its emission at
+  // full coverage. The texture's alpha goes into each triangle's estimate (it
+  // is cached with it), the vertices' alpha into the surface's reduction, and
+  // the factor and tint into the draw's emitters, so a fading draw is not
+  // sampled again. A draw that does not blend covers fully.
+  EmissionCoverage emissionCoverage(const Draw &draw) {
+    EmissionCoverage c;
+    const auto &b = draw.blend;
+    if (!b.enabled)
+      return c;
+    const auto uses = [&](uint32_t source) {
+      return (b.alphaOpTexture != 2 && b.alpha1 == source) || (b.alphaOpTexture != 1 && b.alpha2 == source);
+    };
+    c.texture = uses(1);
+    c.vertex = uses(2);
+    if (uses(3))
+      c.scale *= (b.factor >> 24) / 255.f;
+    if (b.alphaOpTexture == 4 || b.alphaOpTexture == 5)
+      c.scale *= b.alphaOpTexture == 5 ? 4.f : 2.f;
+    c.scale *= std::clamp(draw.material->tint[3], 0.f, 1.f);
+    return c;
+  }
   std::shared_ptr<const SurfaceEmissionCache::Reduction> SurfaceEmissionCache::reduce(const Draw &draw,
                                                                                       const std::array<float, 4> &uv) {
     const auto &m = *draw.material;
+    const auto coverage = emissionCoverage(draw);
     // Self-illumination also reads the albedo: its texture and tint are part
-    // of the entry (the scale is positive, so zero means "off").
+    // of the entry (the scale is positive, so zero means "off"), as is the
+    // albedo when coverage weighs by its alpha.
     const Key key{{m.emission[0], m.emission[1], m.emission[2]},
                   uv,
                   m.wrapU,
@@ -67,8 +97,9 @@ namespace remix::scene {
                   m.fps,
                   m.selfIllumination,
                   {m.selfIllumination ? m.selfIlluminationScale : 0, m.selfIllumination ? m.tint[0] : 0,
-                   m.selfIllumination ? m.tint[1] : 0, m.selfIllumination ? m.tint[2] : 0}};
-    const std::shared_ptr<Texture> albedo = m.selfIllumination ? m.texture : nullptr;
+                   m.selfIllumination ? m.tint[1] : 0, m.selfIllumination ? m.tint[2] : 0},
+                  uint8_t(coverage.texture | coverage.vertex << 1)};
+    const std::shared_ptr<Texture> albedo = m.selfIllumination || coverage.texture ? m.texture : nullptr;
     // Dynamic textures: the material's estimates (Material::emissionCache)
     // belong to one image. Once the pixels changed and those estimates are old
     // enough they are dropped; the surfaces' reductions follow.
@@ -97,8 +128,16 @@ namespace remix::scene {
       }
     }
     auto result = std::make_shared<Reduction>();
-    for (uint32_t triangle = 0; triangle < draw.surface->indices.size() / 3; ++triangle) {
-      const auto radiance = emission(draw, triangle, uv.data());
+    const auto &s = *draw.surface;
+    for (uint32_t triangle = 0; triangle < s.indices.size() / 3; ++triangle) {
+      auto radiance = emission(draw, triangle, uv.data(), coverage.texture);
+      if (coverage.vertex) {
+        float alpha = 0;
+        for (unsigned v = 0; v < 3; ++v)
+          alpha += s.vertices[s.indices[triangle * 3 + v]].color[3] / 3;
+        for (auto &channel : radiance)
+          channel *= std::clamp(alpha, 0.f, 1.f);
+      }
       if (radiance[0] > 0 || radiance[1] > 0 || radiance[2] > 0)
         result->push_back({triangle, radiance, m.emissionTexture ? emissionHistoryKey(draw, triangle) : 0});
     }
@@ -130,8 +169,13 @@ namespace remix::scene {
                         std::vector<SphereLight> &out) {
     out.clear();
     out.reserve(reduction.size());
-    for (const auto &triangle : reduction)
-      out.push_back(triangleEmitter(draw, triangle.index, triangle.radiance));
+    const float scale = emissionCoverage(draw).scale;
+    for (const auto &triangle : reduction) {
+      auto radiance = triangle.radiance;
+      for (auto &channel : radiance)
+        channel *= scale;
+      out.push_back(triangleEmitter(draw, triangle.index, radiance));
+    }
     if (out.size() < 2)
       return;
     const auto &s = *draw.surface;
@@ -192,13 +236,15 @@ namespace remix::scene {
     const uint64_t identity[] = {draw.instanceId, uint64_t(draw.instanceIndex) << 32 | draw.surfaceIndex,
                                  uint64_t(reinterpret_cast<uintptr_t>(surface))};
     auto &entry = emitterEntries[hashBytes(identity, sizeof(identity))];
+    const float coverage = emissionCoverage(draw).scale;
     if (entry.reduction != reduction || entry.surface.lock().get() != surface || entry.model != draw.model ||
-        entry.instanceId != draw.instanceId || entry.instanceIndex != draw.instanceIndex ||
-        entry.surfaceIndex != draw.surfaceIndex || entry.doubleSided != draw.doubleSided ||
-        (!draw.instanceId && draw.mesh)) {
+        entry.coverage != coverage || entry.instanceId != draw.instanceId ||
+        entry.instanceIndex != draw.instanceIndex || entry.surfaceIndex != draw.surfaceIndex ||
+        entry.doubleSided != draw.doubleSided || (!draw.instanceId && draw.mesh)) {
       entry.reduction = reduction;
       entry.surface = draw.surface;
       entry.model = draw.model;
+      entry.coverage = coverage;
       entry.instanceId = draw.instanceId;
       entry.instanceIndex = draw.instanceIndex;
       entry.surfaceIndex = draw.surfaceIndex;
@@ -281,10 +327,11 @@ namespace remix::scene {
     // are kept only by SurfaceEmissionCache::reduce, which ages them.
     const auto &m = *draw.material;
     const DynamicTextures dynamic(m);
-    return emission(draw, triangle, transform, !dynamic.any);
+    return emission(draw, triangle, transform, emissionCoverage(draw).texture, !dynamic.any);
   }
   namespace {
-    std::array<float, 3> emission(const Draw &draw, uint32_t triangle, const float *transform, bool cached) {
+    std::array<float, 3> emission(const Draw &draw, uint32_t triangle, const float *transform,
+                                  bool textureCoverage, bool cached) {
       const auto &m = *draw.material;
       if (m.emission[0] == 0 && m.emission[1] == 0 && m.emission[2] == 0)
         return {};
@@ -294,7 +341,8 @@ namespace remix::scene {
       // the material's (below).
       if (m.portalRim || m.solidEnergy)
         cached = false;
-      if (!m.emissionTexture && !m.selfIllumination && !m.portalRim && !m.solidEnergy) {
+      textureCoverage &= bool(m.texture) && !m.portalRim && !m.solidEnergy;
+      if (!m.emissionTexture && !m.selfIllumination && !m.portalRim && !m.solidEnergy && !textureCoverage) {
         std::copy_n(m.emission, 3, result.begin());
         return result;
       }
@@ -303,7 +351,8 @@ namespace remix::scene {
       for (unsigned i = 0; i < 3; ++i)
         for (unsigned c = 0; c < 2; ++c)
           uv[i][c] = s.vertices[s.indices[triangle * 3 + i]].uv[c] * transform[c] + transform[c + 2];
-      const auto key = cached ? hashBytes(uv, sizeof(uv)) : 0;
+      // (One material may be drawn blended and not: the coverage is part of the key.)
+      const auto key = cached ? hashBytes(uv, sizeof(uv)) ^ (textureCoverage ? 0x9e3779b97f4a7c15ull : 0) : 0;
       if (cached)
         if (auto it = m.emissionCache.find(key); it != m.emissionCache.end())
           return it->second;
@@ -437,7 +486,8 @@ namespace remix::scene {
       const Map emissive = open(m.emissionTexture.get());
       // remixapi_MaterialInfoSelfIlluminationEXT: the albedo colour (texture and
       // constant; no vertex colours or texture stages here) and the mask.
-      const Map albedo = m.selfIllumination ? open(m.texture.get()) : Map{};
+      // A blended draw's coverage: the albedo texture's alpha.
+      const Map albedo = m.selfIllumination || textureCoverage ? open(m.texture.get()) : Map{};
       auto coord = [](float value, uint32_t size, uint8_t wrap) {
         if (wrap == 1)
           value -= std::floor(value);
@@ -473,8 +523,9 @@ namespace remix::scene {
             value[c] = (m.selfIllumination == 3 ? value[3] : value[c]) * mask * m.selfIlluminationScale *
                        std::clamp(color[c] * m.tint[c], 0.f, 1.f);
         }
+        const float coverage = textureCoverage && albedo ? texel(albedo)[3] : 1;
         for (unsigned c = 0; c < 3; ++c)
-          result[c] += value[c] * m.emission[c] / 256;
+          result[c] += value[c] * coverage * m.emission[c] / 256;
       }
       if (!cached)
         return result;

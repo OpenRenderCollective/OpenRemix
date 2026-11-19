@@ -310,6 +310,9 @@ namespace remix {
       bool drawAlpha = false, translucent = false, transmission = false;
       // Light through it draws caustics: translucent, with a normal map.
       bool caustics = false;
+      // remixapi_MaterialInfoPaintFinishEXT: as multiplicative paint, its
+      // roughness and metalness replace its receiver's where it covers.
+      bool paintFinish = false;
       // remixapi_MaterialInfoScreenCameraEXT: the screen camera slot + 1 it
       // shows (0: none).
       uint8_t screenCamera = 0;
@@ -320,6 +323,12 @@ namespace remix {
       // open): a draw of a standalone portal of the index, when there is one,
       // gives the portal its frame instead (scene/portals.h).
       bool rayPortalOverOpaque = false;
+      // remixapi_MaterialInfoViewEffectsEXT (viewEffects: given).
+      struct ViewEffects {
+        float tint[3] = {1, 1, 1};
+        float saturation = 1, contrast = 0, chromaticAberration = 0;
+      } view;
+      bool viewEffects = false;
       // Wrap modes in RTX Remix's MDL encoding: 0 clamp, 1 repeat, 2 mirrored
       // repeat, 3 clip.
       uint8_t filter = 0, wrapU = 1, wrapV = 1;
@@ -429,9 +438,10 @@ namespace remix {
       // Spheres: nothing nearer the centre than this shadows the light
       // (remixapi_LightInfoShadowClearanceEXT), in scene units.
       float shadowClearance = 0;
-      // Spheres: no stronger within holdDistance than at it, and nothing past
-      // range (remixapi_LightInfoFalloffEXT), in scene units. Zero: none.
-      float holdDistance = 0, range = 0;
+      // Spheres: no stronger within holdDistance than at it
+      // (remixapi_LightInfoFalloffEXT), in scene units. Zero: none.
+      float holdDistance = 0;
+      float range = 0;         // remixapi_LightInfoRangeEXT: path-traced reach, in scene units (0: unbounded)
       bool operator==(const SphereLight &) const = default;
     };
     struct DomeLight {
@@ -524,6 +534,18 @@ namespace remix {
       // from frame to frame (a host may give a new offset each frame), so
       // per-offset caches (opacity, emitters) take the draw as at rest.
       bool texcoordMoves() const { return scrolling() || texcoord[2] != 0 || texcoord[3] != 0; }
+      // A blended layer (a sprite, a particle, paint) that rays meet exactly
+      // where its candidate test passes: alpha above zero and passing its
+      // alpha test (pathtrace.comp visibleAlpha). No tint, wound, alpha
+      // override or alpha reshaping (blend modulation, gradient map, portal
+      // rim) changes that. Where its coverage is proved never to pass, an
+      // opacity micromap leaves it out of traversal (OpacityCache); its
+      // instance is forced non-opaque, so every other candidate still
+      // reaches the test as a blended layer.
+      bool blendedCoverage() const {
+        return blend.enabled && !wound && !ignoreAlpha && material && !material->translucent &&
+               !material->transmission && !material->blendModulation && !material->gradient && !material->portalRim;
+      }
     };
     // The UV transform (scale, offset) a draw's maps are read through at
     // `seconds`: the instance's texcoord transform, scrolled, and then the

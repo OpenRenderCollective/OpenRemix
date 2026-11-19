@@ -125,6 +125,50 @@ int main() {
   require(bvh.refits == 1 && std::abs(bvh.nodes()[0].minimumPower[3] - 6 * expected) < 1e-6f, "Scaled area/refit");
   m.emissionTexture.reset();
   require(triangleEmission(draw, 0, uv)[0] == 2, "Constant emission fallback");
+  // A blended draw lights by what it shows, its emission times its coverage:
+  // the albedo's alpha (in the estimate), the vertices' alpha (in the
+  // reduction) and the instance factor (in the emitters, without sampling again).
+  {
+    Draw glow = draw;
+    glow.model = {};
+    glow.model[0] = glow.model[5] = glow.model[10] = glow.model[15] = 1;
+    glow.instanceId = 6;
+    glow.surface = std::make_shared<Surface>(*draw.surface);
+    for (auto &vertex : glow.surface->vertices)
+      std::fill_n(vertex.color, 4, 1.f);
+    glow.material = std::make_shared<Material>();
+    std::fill_n(glow.material->emission, 3, 2.f);
+    glow.material->texture = std::make_shared<Texture>();
+    glow.material->texture->pixels = {1, 1, false, {{255, 255, 255, 64}}};
+    require(triangleEmission(glow, 0, uv)[0] == 2, "An opaque draw's emission was weighed by coverage");
+    glow.blend.enabled = true;
+    glow.blend.alphaOpTexture = 3; // modulate
+    glow.blend.alpha1 = 1;         // texture
+    glow.blend.alpha2 = 3;         // instance factor
+    glow.blend.factor = 0x80ffffffu;
+    const float texture = 64 / 255.f, factor = 128 / 255.f;
+    require(std::abs(triangleEmission(glow, 0, uv)[0] - 2 * texture) < 1e-5f, "Texture alpha did not weigh emission");
+    const auto coverage = emissionCoverage(glow);
+    require(coverage.texture && !coverage.vertex && std::abs(coverage.scale - factor) < 1e-6f,
+            "Blended coverage read the wrong inputs");
+    SurfaceEmissionCache cache;
+    const std::array<float, 4> transform{1, 1, 0, 0};
+    const auto reduction = cache.reduce(glow, transform);
+    auto lights = cache.emitters(glow, reduction);
+    require(lights->size() == 1 && std::abs((*lights)[0].radiance[0] - 2 * texture * factor) < 1e-5f,
+            "The instance factor did not scale the emitter");
+    glow.blend.factor = 0x40ffffffu; // fading
+    lights = cache.emitters(glow, reduction);
+    require(cache.reduce(glow, transform) == reduction &&
+                std::abs((*lights)[0].radiance[0] - 2 * texture * (64 / 255.f)) < 1e-5f,
+            "A fading draw was estimated again, or kept its old light");
+    glow.blend.alpha2 = 2; // vertex alpha instead of the factor
+    for (auto &vertex : glow.surface->vertices)
+      vertex.color[3] = .5f;
+    const auto vertexReduction = cache.reduce(glow, transform);
+    require(vertexReduction != reduction && std::abs((*vertexReduction)[0].radiance[0] - texture) < 1e-5f,
+            "Vertex alpha did not weigh the reduction");
+  }
   remix::NativeResources resources;
   remixapi_MaterialInfoOpaqueEXT opaque{};
   opaque.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;

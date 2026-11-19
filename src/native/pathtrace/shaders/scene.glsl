@@ -76,7 +76,7 @@ layout(set=0,binding=3,std140) uniform Frame {
   vec4 sharcPreviousCamera;
   vec4 sun;
   uint64_t lightNodes, lightEmitters;
-  uvec4 localConfig; // active lights, samples, generation low, generation high + adaptive (bit 31) + guide spheres (bit 30)
+  uvec4 localConfig; // active lights, samples, generation low, generation high + adaptive (bit 31) + guide spheres (bit 30) + soft spheres (bit 29)
   vec4 localScale; // radiance multiplier, reach, guiding requested, inverse reach squared
   uint64_t lightGuideRead, lightGuideWrite;
   uvec4 lightGuideConfig; // capacity, node count, inverse cell size (float bits), leaf remap entries this frame
@@ -108,7 +108,7 @@ layout(set=0,binding=3,std140) uniform Frame {
   uvec4 sparseConfig; // sparse rendering active, threshold levels passed of 256, reserved
   uint64_t volumeGrid; // volumetrics (volume.glsl): the cells of every level
   float animationTime, upAxis; // seconds (wrapped), for scrolling maps; the world's up axis (0 x, 1 y, 2 z)
-  uvec4 volumeConfig; // bit 0 a medium is marched, bit 1 the cells are lit for overlays alone, bit 2 they take reflected light; cells per side, levels, update interval (frames)
+  uvec4 volumeConfig; // bit 0 a medium is marched, bit 1 the cells are lit for overlays alone, bit 2 they take reflected light; cells per side, levels, update interval (frames); x 0 y 1: raster fog (volume_policy.h rasterFog)
   uvec4 volumeFrame; // update counter, history samples, march steps, reset
   vec4 volumeParams; // smallest cell (world units), march distance, scattered light scale, base height
   vec4 volumeMedium; // scattering albedo; extinction per world unit
@@ -136,7 +136,8 @@ layout(set=0,binding=3,std140) uniform Frame {
   uvec4 rayPortalConfig; // teleports per camera ray, exit offset (float bits, world units), reserved
   vec4 rayPortalPlanes[2]; // per index: dot(front normal, p) at its opening's plane (local x = 0)
   uint64_t wavefrontPaths; uint wavefrontStride,wavefrontFlags; // wavefront indirect records (pathtrace.comp WavefrontPlanes), plane stride in 16 bytes, bit 0: shadow queue
-  uint64_t primaryLocal; uvec2 primaryLocalPadding; // split primary results (pathtrace.comp PrimaryLocals; 0: one launch)
+  uint64_t primaryLocal; // split primary results (pathtrace.comp PrimaryLocals; 0: one launch)
+  uint64_t sheetTiles; // the sheet passes' tiles (pathtrace.comp SheetTiles; 0: they launch over the screen)
   vec4 previousRayPortals[32]; // rayPortals as the previous traced frame had them (zero: the pair was closed)
 } frame;
 // Instance mask bit of view models (pathtrace/tlas_policy.h).
@@ -680,7 +681,11 @@ float selfShare(vec3 reflecting, vec3 self) {
 }
 bool decalSurface(Surface s) { return (s.state.w&64u)!=0; }
 bool coverageBlended(Surface s) { return (s.state.w&34u)==2u; }
-bool blendedAtAlpha(Surface s,float a) { return (s.state.w&2u)!=0&&a<1; }
+// A blended draw is a layer only where it lets something through. Coverage
+// within half an 8-bit step of one covers fully: vertex alpha interpolated
+// from three 255s sums its barycentrics to just under one, which made every
+// pixel of a sprite drawn at full alpha (ULTRAKILL's blood drops) a sheet.
+bool blendedAtAlpha(Surface s,float a) { return (s.state.w&2u)!=0&&a<1-.5/255; }
 bool alphaPass(Surface s, float a) {
   float ref=uintBitsToFloat(s.state.z); uint op=s.state.y;
   return op==7 || (op==1&&a<ref) || (op==2&&a==ref) || (op==3&&a<=ref) ||

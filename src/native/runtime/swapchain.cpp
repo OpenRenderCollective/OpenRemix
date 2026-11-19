@@ -446,11 +446,16 @@ namespace remix {
   }
 
   PathTracer::DisplayOutput RemixNativeRuntime::displayOutput() const {
-    if (!m_hdrOutput.active())
-      return {};
     const auto &settings = m_profiles.current();
+    PathTracer::DisplayOutput display;
+    display.prism = settings.trace.prism;
+    if (!m_hdrOutput.active())
+      return display;
     const auto nits = HdrNits{settings.hdrPeakNits, settings.hdrPaperWhiteNits, settings.hdrUiNits}.clamped();
-    return {true, nits.peak, nits.paperWhite};
+    display.hdr10 = true;
+    display.peakNits = nits.peak;
+    display.paperWhiteNits = nits.paperWhite;
+    return display;
   }
 
   VkSurfaceFormatKHR RemixNativeRuntime::chooseSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &formats) {

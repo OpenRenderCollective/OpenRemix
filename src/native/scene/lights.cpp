@@ -123,6 +123,12 @@ namespace remix {
       cutoff.distance = found->second.emitters.front().forwardCutoff;
       if (cutoff.distance > 0) info.pNext = &cutoff;
     }
+    // Its range likewise, ahead of the rest of the chain.
+    remixapi_LightInfoRangeEXT reach{REMIXAPI_STRUCT_TYPE_LIGHT_INFO_RANGE_EXT, info.pNext, 0};
+    if (merged.lightType == REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT && !found->second.emitters.empty()) {
+      reach.range = found->second.emitters.front().range;
+      if (reach.range > 0) info.pNext = &reach;
+    }
     remixapi_LightHandle handle{};
     createLight(info, handle);
     if (!replaceTransform) {
@@ -168,8 +174,10 @@ namespace remix {
       throw invalid;
     const auto *falloff =
         static_cast<const remixapi_LightInfoFalloffEXT *>(ext(REMIXAPI_STRUCT_TYPE_LIGHT_INFO_FALLOFF_EXT));
-    if (falloff && (!std::isfinite(falloff->holdDistance) || falloff->holdDistance < 0 ||
-                    !std::isfinite(falloff->range) || falloff->range < 0))
+    if (falloff && (!std::isfinite(falloff->holdDistance) || falloff->holdDistance < 0))
+      throw invalid;
+    const auto *range = static_cast<const remixapi_LightInfoRangeEXT *>(ext(REMIXAPI_STRUCT_TYPE_LIGHT_INFO_RANGE_EXT));
+    if (range && (!std::isfinite(range->range) || range->range < 0))
       throw invalid;
     auto *usd = static_cast<const remixapi_LightInfoUSDEXT *>(ext(REMIXAPI_STRUCT_TYPE_LIGHT_INFO_USD_EXT));
     Vec position{}, x{1, 0, 0}, y{0, 1, 0}, z{0, 0, -1}, radiance = vec(info.radiance);
@@ -434,10 +442,10 @@ namespace remix {
         emitter.forwardCutoff = cutoff->distance;
       if (clearance && type == REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT)
         emitter.shadowClearance = clearance->distance;
-      if (falloff && type == REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT) {
+      if (falloff && type == REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT)
         emitter.holdDistance = falloff->holdDistance;
-        emitter.range = falloff->range;
-      }
+      if (range && type == REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT)
+        emitter.range = range->range;
     }
     m_lights[info.hash] = std::move(definition);
     handle = reinterpret_cast<remixapi_LightHandle>(uintptr_t(info.hash));

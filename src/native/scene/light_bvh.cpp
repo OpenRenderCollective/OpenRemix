@@ -73,11 +73,11 @@ namespace remix::scene {
       // for a profile; in shaping, the leaf's shares overwrote both slots,
       // which then lit every light with the first profile and cookie.)
       if (!light.triangle) {
+        e.corners[1][0] = light.range; // remixapi_LightInfoRangeEXT (light_bvh.glsl rangeWindow)
         e.corners[2][0] = float(light.ies);
         e.corners[2][1] = float(light.cookie);
         e.corners[2][2] = light.shadowClearance; // light_bvh.glsl clearedEndpoint
         e.corners[2][3] = light.holdDistance;    // light_bvh.glsl heldDistance2
-        e.corners[1][0] = light.range;           // light_bvh.glsl rangeFade
         if (light.cookie) {
           std::copy_n(light.cookieUp, 3, e.corners[0]);
           e.corners[0][3] = light.cookieTan;
@@ -104,6 +104,21 @@ namespace remix::scene {
     bool lit(const SphereLight &light) {
       return light.radiance[0] > 0 || light.radiance[1] > 0 || light.radiance[2] > 0;
     }
+    // significance's measures: a light's energy, and its share of the change
+    // from its snapshot light (whole when it moved, reshaped, or went on or
+    // off; else its radiance's change, at its power).
+    double lightEnergy(const SphereLight &light) {
+      return (double(light.radiance[0]) + light.radiance[1] + light.radiance[2]) * powerScale(light);
+    }
+    double lightChange(const SphereLight &now, double newEnergy, const SphereLight &then, double oldEnergy) {
+      double difference = 0;
+      for (unsigned c = 0; c < 3; ++c)
+        difference += std::abs(double(now.radiance[c]) - then.radiance[c]);
+      const bool moved = (oldEnergy == 0) != (newEnergy == 0) || !sameGeometry(now, then);
+      return moved            ? std::max(oldEnergy, newEnergy)
+             : newEnergy > 0 ? difference * newEnergy / (double(now.radiance[0]) + now.radiance[1] + now.radiance[2])
+                             : 0;
+    }
   } // namespace
 
   // The update a build is due in: once the lights waiting in the dynamic part
@@ -123,7 +138,7 @@ namespace remix::scene {
   // hold (a group in two runs, ranks that are not 0..n-1), every emitter is
   // sorted: least significant key first (identity, rank, group), a byte at a
   // time, then by type; every pass is stable.
-  void LightBvh::sortOrder(const std::vector<SphereLight> &lights) {
+  void LightBvh::sortOrder(std::span<const SphereLight> lights) {
     const size_t count = lights.size();
     m_order.resize(count);
     using Run = SortRun;
@@ -230,16 +245,23 @@ namespace remix::scene {
     }
   }
 
-  bool LightBvh::update(const std::vector<SphereLight> &input) {
+  bool LightBvh::update(std::span<const SphereLight> input, const InputChanges *changes) {
     const auto start = std::chrono::steady_clock::now();
     const uint64_t buildsBefore = builds;
     const auto finish = [&] {
+      m_inputSerial = changes ? changes->serial : 0;
       updateMilliseconds = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
       if (builds != buildsBefore)
         buildTotalMilliseconds += buildMilliseconds = updateMilliseconds;
     };
     ++m_update;
     m_changing = generation + 1;
+    ++g_lightChurn.updates;
+    if (bool result; changes && updateChanged(input, *changes, result)) {
+      ++changedOnly;
+      finish();
+      return result;
+    }
     auto phaseStart = start;
     const bool timed = sceneTimings();
     const auto mark = [&](unsigned phase) {
@@ -249,7 +271,6 @@ namespace remix::scene {
       g_lightChurn.phases[phase] += std::chrono::duration<double, std::milli>(now - phaseStart).count();
       phaseStart = now;
     };
-    ++g_lightChurn.updates;
     bool orderChanged = input.size() != m_sourceKeys.size();
     for (size_t i = 0; !orderChanged && i < input.size(); ++i)
       orderChanged = m_sourceKeys[i] != std::pair{input[i].id, input[i].triangle};
@@ -259,6 +280,9 @@ namespace remix::scene {
       for (size_t i = 0; i < input.size(); ++i)
         m_sourceKeys[i] = {input[i].id, input[i].triangle};
       sortOrder(input);
+      m_position.resize(m_order.size());
+      for (uint32_t i = 0; i < m_order.size(); ++i)
+        m_position[m_order[i]] = i;
     }
     mark(0);
     // In m_input, whose storage (like m_sorted's, swapped with it below) is
@@ -322,6 +346,9 @@ namespace remix::scene {
       ++visibilityGeneration;
       significance(lights);
       m_sorted.clear();
+      mapSlots();
+      m_retired = m_stale = 0;
+      m_nextStale = ~0ull;
       ++generation;
       finish();
       return true;
@@ -389,8 +416,11 @@ namespace remix::scene {
             m_present[slot] = 1;
           }
         } else {
-          // Gone: the slot stays, unlit, for the light's return.
+          // Gone: the slot stays, unlit, for the light's return. (Updates of
+          // only what changed match no static slot: it was last seen in the
+          // last update that matched.)
           if (m_present[slot]) {
+            m_seen[slot] = m_lastMatched;
             m_present[slot] = 0;
             std::fill_n(held.radiance, 3, 0.f);
             m_emitters[slot] = emitterOf(held);
@@ -403,6 +433,10 @@ namespace remix::scene {
             nextStale = std::min(nextStale, m_seen[slot] + kRetain);
         }
       }
+      m_lastMatched = m_update;
+      m_retired = retired;
+      m_stale = stale;
+      m_nextStale = nextStale;
       mark(3);
       for (; in < lights.size(); ++in)
         extraIndex.push_back(uint32_t(in));
@@ -576,6 +610,10 @@ namespace remix::scene {
           ++retired;
           nextStale = std::min(nextStale, m_seen[slot] + kRetain);
         }
+      m_lastMatched = m_update;
+      m_retired = retired;
+      m_stale = stale;
+      m_nextStale = nextStale;
       oldest = ~0ull, newest = 0;
       for (uint32_t i = 0; i < m_dynamicReal; ++i)
         if (!m_lights[m_staticCount + i].dynamic) {
@@ -605,10 +643,189 @@ namespace remix::scene {
     mark(8);
     significance(lights);
     m_sorted.swap(lights);
+    mapSlots();
     mark(9);
     ++generation;
     finish();
     return true;
+  }
+
+  // An update the full one would make with the same result, reading only the
+  // changed input: with the same lights in the same places nothing joins or
+  // leaves either part, so the matching, the counts and the comparison with
+  // the significance snapshot each change by the changed lights alone. What
+  // an update can do only by comparing everything (a light arriving,
+  // leaving or changing identity, a build due, slots going stale) makes it
+  // decline before changing anything.
+  bool LightBvh::updateChanged(std::span<const SphereLight> input, const InputChanges &changes, bool &result) {
+    if (!m_inputSerial || changes.previous != m_inputSerial || input.size() != m_sorted.size() ||
+        m_position.size() != input.size() || m_slotOf.size() != input.size() || m_nodes.empty() ||
+        !m_significanceValid || m_update >= m_nextStale)
+      return false;
+    auto phaseStart = std::chrono::steady_clock::now();
+    const bool timed = sceneTimings();
+    const auto mark = [&](unsigned phase) {
+      if (!timed)
+        return;
+      const auto now = std::chrono::steady_clock::now();
+      g_lightChurn.phases[phase] += std::chrono::duration<double, std::milli>(now - phaseStart).count();
+      phaseStart = now;
+    };
+    // The lights that differ, by sorted position; each must be the same light
+    // (identity, type, surface, rank, dynamic flag) in a slot.
+    m_changed.clear();
+    for (const auto &[first, end] : changes.ranges) {
+      if (first > end || end > input.size())
+        return false;
+      for (uint32_t i = first; i < end; ++i) {
+        const uint32_t p = m_position[i];
+        const auto &light = input[i], &held = m_sorted[p];
+        if (keyOf(light) != keyOf(held) || light.dynamic != held.dynamic || m_slotOf[p] == ~0u)
+          return false;
+        if (!(light == held))
+          m_changed.emplace_back(i, p);
+      }
+    }
+    std::sort(m_changed.begin(), m_changed.end(), [](const auto &a, const auto &b) { return a.second < b.second; });
+    m_changed.erase(std::unique(m_changed.begin(), m_changed.end()), m_changed.end());
+    mark(1);
+    if (m_changed.empty()) {
+      if (m_update >= m_due)
+        return false;
+      m_moved.clear();
+      result = false;
+      return true;
+    }
+    // The dynamic part as the full update weighs it: its stale slots, and
+    // when its lights (those not of dynamic instances) came to rest, their
+    // stamps as this update leaves them.
+    uint32_t staleDynamic = 0;
+    for (uint32_t d = 0; d < m_dynamicReal; ++d)
+      if (!m_dynamicPresent[d] && m_update - m_dynamicSeen[d] >= kRetain)
+        ++staleDynamic;
+    if (4 * staleDynamic > m_dynamicReal || (m_dynamicReal && !m_split))
+      return false;
+    uint64_t oldest = ~0ull, newest = 0;
+    {
+      size_t c = 0;
+      for (uint32_t d = 0; d < m_dynamicReal; ++d) {
+        const uint32_t slot = m_staticCount + d;
+        uint64_t stamp = m_stamps[slot];
+        while (c < m_changed.size() && m_slotOf[m_changed[c].second] < slot)
+          ++c;
+        // (Changed dynamic slots, in sorted order as the slots are.)
+        if (c < m_changed.size() && m_slotOf[m_changed[c].second] == slot &&
+            !sameGeometry(input[m_changed[c].first], m_lights[slot]))
+          stamp = m_update;
+        if (!m_lights[slot].dynamic) {
+          oldest = std::min(oldest, stamp);
+          newest = std::max(newest, stamp);
+        }
+      }
+    }
+    if (m_update >= due(oldest, newest, m_stale))
+      return false;
+    mark(2);
+
+    // Sphere lights that changed, now and before (in sorted order: spheres first).
+    m_moved.clear();
+    for (const auto &[i, p] : m_changed)
+      if (m_sorted[p].triangle == 0 && m_moved.size() < kMaxMoved)
+        m_moved.push_back({emitterOf(input[i]), emitterOf(m_sorted[p])});
+    // The changed lights into the sorted input and their slots.
+    bool geometryChanged = false;
+    m_replaced.clear();
+    m_refit.clear();
+    if (m_refitMarks.size() != m_nodes.size())
+      m_refitMarks.assign(m_nodes.size(), 0);
+    for (const auto &[i, p] : m_changed) {
+      m_replaced.push_back(m_sorted[p]);
+      const auto &light = m_sorted[p] = input[i];
+      const uint32_t slot = m_slotOf[p];
+      if (!sameGeometry(light, m_lights[slot])) {
+        m_stamps[slot] = m_update;
+        geometryChanged = true;
+      }
+      active += uint32_t(lit(light)) - uint32_t(lit(m_lights[slot]));
+      m_lights[slot] = light;
+      m_emitters[slot] = emitterOf(light);
+      // The leaf and its ancestors, each once.
+      for (uint32_t node = m_leaves[slot]; !m_refitMarks[node];) {
+        m_refitMarks[node] = 1;
+        m_refit.push_back(node);
+        if (!node)
+          break;
+        node = m_parents[node];
+      }
+    }
+    for (uint32_t d = 0; d < m_dynamicReal; ++d)
+      if (m_dynamicPresent[d])
+        m_dynamicSeen[d] = m_update;
+    m_lastMatched = m_update;
+    mark(5);
+    // Children follow their parents in node order.
+    std::sort(m_refit.begin(), m_refit.end(), std::greater<>());
+    for (const uint32_t node : m_refit) {
+      bounds(node);
+      m_refitMarks[node] = 0;
+    }
+    ++refits;
+    mark(6);
+    if (geometryChanged)
+      ++visibilityGeneration;
+    m_due = std::min(due(oldest, newest, m_stale), m_nextStale);
+
+    // significance: each changed light's energy and share of the change.
+    for (size_t k = 0; k < m_changed.size(); ++k) {
+      const uint32_t p = m_changed[k].second;
+      const auto &now = m_sorted[p];
+      const double newEnergy = lightEnergy(now);
+      const uint32_t s = m_snapshotOf[p];
+      const double change =
+          s != ~0u ? lightChange(now, newEnergy, m_temporalLights[s], m_temporalEnergies[s]) : newEnergy;
+      m_changedEnergy += change - m_lightChanges[p];
+      m_lightChanges[p] = change;
+      m_inputEnergy += newEnergy - m_lightEnergies[p];
+      m_lightEnergies[p] = newEnergy;
+    }
+    if (m_changedEnergy > .25 * std::max(m_snapshotEnergy, m_inputEnergy)) {
+      ++lightingGeneration;
+      ++g_lightChurn.snapshots;
+      m_temporalLights = m_sorted;
+      m_temporalEnergies = m_lightEnergies;
+      std::fill(m_lightChanges.begin(), m_lightChanges.end(), 0.);
+      std::iota(m_snapshotOf.begin(), m_snapshotOf.end(), 0u);
+      m_changedEnergy = 0;
+      m_snapshotEnergy = m_inputEnergy;
+    }
+    mark(9);
+    ++generation;
+    result = true;
+    return true;
+  }
+
+  void LightBvh::mapSlots() {
+    // Static slots and the dynamic ones are each in key order, as is the
+    // sorted input: one merge.
+    const auto count = uint32_t(m_sorted.size());
+    m_slotOf.assign(count, ~0u);
+    m_dynamicPresent.assign(m_dynamicReal, 0);
+    uint32_t s = 0, d = 0;
+    for (uint32_t p = 0; p < count; ++p) {
+      const auto key = keyOf(m_sorted[p]);
+      while (s < m_staticReal && keyOf(m_lights[s]) < key)
+        ++s;
+      if (s < m_staticReal && keyOf(m_lights[s]) == key) {
+        m_slotOf[p] = s++;
+        continue;
+      }
+      while (d < m_dynamicReal && keyOf(m_lights[m_staticCount + d]) < key)
+        ++d;
+      if (d < m_dynamicReal && keyOf(m_lights[m_staticCount + d]) == key) {
+        m_slotOf[p] = m_staticCount + d;
+        m_dynamicPresent[d++] = 1;
+      }
+    }
   }
 
   // Tiny animated-emission fluctuations still update the GPU light data, but
@@ -622,30 +839,27 @@ namespace remix::scene {
   void LightBvh::significance(const std::vector<SphereLight> &sorted) {
     const auto &before = m_temporalLights;
     double changed = 0, totalOld = 0, totalNew = 0;
-    const auto energy = [](const SphereLight &light) {
-      return (double(light.radiance[0]) + light.radiance[1] + light.radiance[2]) * powerScale(light);
-    };
     // Energies of the input (kept with it if it becomes the snapshot) and of
-    // the snapshot: one powerScale per light.
+    // the snapshot: one powerScale per light. Each light's share of the
+    // change and its snapshot light are kept for updateChanged.
     auto &energies = m_energyScratch;
     energies.resize(sorted.size());
+    m_lightChanges.assign(sorted.size(), 0);
+    m_snapshotOf.assign(sorted.size(), ~0u);
     size_t a = 0, b = 0;
     while (a < sorted.size() || b < before.size()) {
       if (a < sorted.size() && b < before.size() && keyOf(sorted[a]) == keyOf(before[b])) {
-        const auto &now = sorted[a], &then = before[b];
-        const double newEnergy = energies[a++] = energy(now), oldEnergy = m_temporalEnergies[b++];
-        double difference = 0;
-        for (unsigned c = 0; c < 3; ++c)
-          difference += std::abs(double(now.radiance[c]) - then.radiance[c]);
-        const bool moved = (oldEnergy == 0) != (newEnergy == 0) || !sameGeometry(now, then);
-        changed += moved ? std::max(oldEnergy, newEnergy)
-                   : newEnergy > 0
-                       ? difference * newEnergy / (double(now.radiance[0]) + now.radiance[1] + now.radiance[2])
-                       : 0;
+        const double newEnergy = energies[a] = lightEnergy(sorted[a]), oldEnergy = m_temporalEnergies[b];
+        const double change = lightChange(sorted[a], newEnergy, before[b], oldEnergy);
+        m_lightChanges[a] = change;
+        m_snapshotOf[a] = uint32_t(b);
+        changed += change;
         totalOld += oldEnergy;
         totalNew += newEnergy;
+        ++a, ++b;
       } else if (a < sorted.size() && (b == before.size() || keyOf(sorted[a]) < keyOf(before[b]))) {
-        const double value = energies[a] = energy(sorted[a]);
+        const double value = energies[a] = lightEnergy(sorted[a]);
+        m_lightChanges[a] = value;
         ++a;
         changed += value;
         totalNew += value;
@@ -655,11 +869,21 @@ namespace remix::scene {
         totalOld += value;
       }
     }
+    m_lightEnergies.swap(energies);
+    m_inputEnergy = totalNew;
+    m_significanceValid = true;
     if (sorted.empty() != before.empty() || changed > .25 * std::max(totalOld, totalNew)) {
       ++lightingGeneration;
       ++g_lightChurn.snapshots;
       m_temporalLights = sorted;
-      m_temporalEnergies.swap(energies);
+      m_temporalEnergies = m_lightEnergies;
+      std::fill(m_lightChanges.begin(), m_lightChanges.end(), 0.);
+      std::iota(m_snapshotOf.begin(), m_snapshotOf.end(), 0u);
+      m_changedEnergy = 0;
+      m_snapshotEnergy = totalNew;
+    } else {
+      m_changedEnergy = changed;
+      m_snapshotEnergy = totalOld;
     }
   }
 

@@ -231,7 +231,7 @@ namespace remix::denoise {
       if (i == Normal || i == PreviousNormal || i == FrontNormal)
         format = VK_FORMAT_A2B10G10R10_UNORM_PACK32;
       if (i == Depth || i == PreviousDepth || i == Confidence || i == RrHitDistance || i == FrontDepth ||
-          i == FrontConfidence || i == LocalConfidence)
+          i == FrontConfidence || i == LocalConfidence || i == OpaqueDepth)
         format = VK_FORMAT_R32_SFLOAT;
       if (i == Motion || i == FrontMotion || i == LocalMotion)
         format = VK_FORMAT_R32G32B32A32_SFLOAT;
@@ -251,6 +251,8 @@ namespace remix::denoise {
         size = {1, 1};
       if (i == LocalMotion)
         size = local ? extent : VkExtent2D{1, 1};
+      if (i == OpaqueDepth || i == SheetTransmittance)
+        size = extent;
       g.images[i] = g.texture(format, size);
     }
     g.uniform = g.buffer(sizeof(Frame));

@@ -73,6 +73,8 @@ namespace remix::metal::trace {
     // march distance, scattered light scale, base height. volumeMedium:
     // scattering albedo, extinction per world unit. volumeHeight: up axis,
     // density falloff per world unit. volumeEye/Previous: the windows' centre.
+    // Raster fog (x 0, y 1) has its own in volumeMedium and volumeParams
+    // (volume_policy.h rasterFog).
     uint64_t volumeGrid = 0;
     // Seconds of the runtime's clock (wrapped), for scrolling maps; the world's
     // up axis (0 x, 1 y, 2 z: rtx.native.pathtrace.volumetricUpAxis).
@@ -135,7 +137,7 @@ namespace remix::metal::trace {
     uint64_t wavefrontPaths = 0;
     uint32_t wavefrontStride = 0, wavefrontFlags = 0;
     uint64_t primaryLocal = 0; // the split primary's results (Vulkan only; 0 here)
-    uint32_t primaryLocalPadding[2] = {};
+    uint64_t sheetTiles = 0; // the sheet passes' tiles (Vulkan only; 0 here)
     float previousRayPortals[scene::rayPortalSlots][4][4] = {}; // (pathtrace/gpu.h) none here either
   };
   static_assert(sizeof(Frame) == 3456 && offsetof(Frame, previousRayPortals) == 2944 && offsetof(Frame, wavefrontPaths) == 2912 && offsetof(Frame, rayPortalPlanes) == 2880 &&
@@ -227,10 +229,16 @@ namespace remix::metal::denoise {
     MovingB,
     // Motion vectors of the local-light passes (see denoise/renderer.h).
     LocalMotion,
+    // The guide depth before a front sheet replaces it (host passes:
+    // REMIXAPI_HOST_TARGET_VIEW_OPAQUE_DEPTH_EXT).
+    OpaqueDepth,
+    // The transmittance of the sheets in front of it, before fog and media
+    // (REMIXAPI_HOST_TARGET_VIEW_TRANSMITTANCE_EXT).
+    SheetTransmittance,
     ImageCount
   };
   static_assert(BaseImageCount == 22 && PbrSpecularInput == 29 && FrontNormal == 37 && PbrSpecularSh1 == 49 &&
-                    MovingA == 52 && LocalMotion == 54 && ImageCount == 55,
+                    MovingA == 52 && LocalMotion == 54 && OpaqueDepth == 55 && SheetTransmittance == 56 && ImageCount == 57,
                 "Update the matching inputs.glsl bindings when changing image slots");
   // Shared std140 constants. Matrices are nonjittered, in Vulkan framebuffer coordinates.
   struct Frame {

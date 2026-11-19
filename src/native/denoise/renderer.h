@@ -74,10 +74,16 @@ namespace remix::denoise {
     // REBLUR restart those pixels. History confidence alone keeps about half
     // of a long history.
     LocalMotion,
+    // The guide depth before a front sheet replaces it (host passes:
+    // REMIXAPI_HOST_TARGET_VIEW_OPAQUE_DEPTH_EXT).
+    OpaqueDepth,
+    // The transmittance of the sheets in front of it, before fog and media
+    // (REMIXAPI_HOST_TARGET_VIEW_TRANSMITTANCE_EXT).
+    SheetTransmittance,
     ImageCount
   };
   static_assert(BaseImageCount == 22 && PbrSpecularInput == 29 && FrontNormal == 37 && PbrSpecularSh1 == 49 &&
-                    MovingA == 52 && LocalMotion == 54 && ImageCount == 55,
+                    MovingA == 52 && LocalMotion == 54 && OpaqueDepth == 55 && SheetTransmittance == 56 && ImageCount == 57,
                 "Update the matching inputs.glsl bindings when changing image slots");
   // Shared std140 constants. Matrices are nonjittered, in Vulkan framebuffer coordinates.
   struct Frame {

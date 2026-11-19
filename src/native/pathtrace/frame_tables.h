@@ -472,8 +472,12 @@ namespace remix::trace {
       // (moving; sharp ones need both).
       bool sharpReceivers = false, dynamicReceivers = false, dynamicSharpReceivers = false;
       bool subsurface = false; // a material scatters below its surface (scene::Material::subsurface)
+      // A blended layer shadow rays meet even with skipBlendedSecondaryRays
+      // (blendedShadows): its instance is not wholly blended.
+      bool shadowBlended = false;
       Flags &operator|=(const Flags &o) {
         blended |= o.blended;
+        shadowBlended |= o.shadowBlended;
         decal |= o.decal;
         subsurface |= o.subsurface;
         receivers |= o.receivers;
@@ -616,6 +620,7 @@ namespace remix::trace {
             entry->second = assign(surface.draw.material, requests, materialBytes, maps, 0, in.textureLimit, env);
           slots.push_back(&entry->second);
         }
+        flags.shadowBlended |= blendedShadows(spans[i]);
         if (in.digest)
           digest = scene::hashBytes(&views[i]->contentDigest, sizeof(views[i]->contentDigest), digest);
       }
@@ -808,6 +813,16 @@ namespace remix::trace {
       size_t surface = 0, primary = 0, bytes = 0, materials = 0; // materials: first entry in m_placementSlots
     };
 
+    // Whether shadow rays left without wholly blended instances
+    // (skipBlendedSecondaryRays, InstanceInput::blended) still meet a blended
+    // layer of this instance: one beside an opaque surface or drawing caustics.
+    template <class Instance> static bool blendedShadows(const Instance &instance) {
+      auto layer = [](const auto &surface) { return surface.draw.blend.enabled && !surface.draw.decal; };
+      return std::any_of(instance.begin(), instance.end(), layer) &&
+             !std::all_of(instance.begin(), instance.end(), [&](const auto &surface) {
+               return layer(surface) && !surface.draw.material->caustics;
+             });
+    }
     static Flags surfaceFlags(const scene::Draw &surface) {
       const auto &material = *surface.material;
       Flags f;
@@ -946,7 +961,8 @@ namespace remix::trace {
       std::copy_n(material.emission, 3, value.emission);
       value.emission[3] = decode.selfIlluminationScale;
       if (material.emissionTexture &&
-          (material.emission[0] > 0 || material.emission[1] > 0 || material.emission[2] > 0)) {
+          (material.selfIllumination || material.emission[0] > 0 || material.emission[1] > 0 ||
+           material.emission[2] > 0)) {
         if (count() >= limit)
           env.tooManyObjects();
         value.textureState[2] = uint32_t(count()) + 1;
@@ -1070,7 +1086,11 @@ namespace remix::trace {
           std::all_of(instance.begin(), instance.end(), [](const auto &surface) { return surface.draw.decal; });
       // A wound cut is tested at every candidate: never opaque in traversal.
       const bool wounded = recordOut && draw.wound;
-      input.noOpaque = wounded || backdropTested;
+      // A blended layer's micromap (scene/opacity.cpp) settles only where it
+      // never shows; every other candidate is its layer test, never opaque.
+      const bool layered = std::any_of(instance.begin(), instance.end(),
+                                       [](const auto &surface) { return surface.draw.blendedCoverage(); });
+      input.noOpaque = wounded || backdropTested || layered;
       write(sceneCursor, model.data(), sizeof(model));
       write(sceneCursor, &view.fingerprint, sizeof(view.fingerprint));
       write(sceneCursor, &draw.instanceId, sizeof(draw.instanceId));
@@ -1156,11 +1176,27 @@ namespace remix::trace {
                          // Bit 26: a ray portal over an opaque surface (its MaterialInfo
                          // chains the portal extension): what it shows takes its albedo.
                          uint32_t(material.rayPortal != 0 && material.rayPortalOverOpaque) << 26 |
+                         // Bit 29: what it shows takes view effects (gradient[1..3]).
+                         uint32_t(material.viewEffects) << 29 |
+                         // Bit 30: multiplicative paint with a finish
+                         // (remixapi_MaterialInfoPaintFinishEXT): its roughness and
+                         // metalness replace its receiver's where it covers.
+                         uint32_t(surface.decal && detail::decalMode(b) != 0 && material.paintFinish) << 30 |
                          // remixapi_InstanceInfoCameraCullingEXT (bits 9-10): camera rays
                          // skip its back faces / its parts in clusters the camera cannot see.
                          uint32_t(surface.cameraCull & 3u) << 9 |
                          // remixapi_InstanceInfoBackdropEXT role (bits 27-28).
                          uint32_t(draw.backdrop & 3u) << 27;
+
+        // remixapi_MaterialInfoViewEffectsEXT (state.w bit 29): half2(tint r, g),
+        // half2(tint b, saturation), half2(contrast, chromatic aberration in
+        // pixels of a 1920-wide output).
+        if (material.viewEffects) {
+          const auto &view = material.view;
+          value.gradient[1] = detail::halfBits(view.tint[0]) | detail::halfBits(view.tint[1]) << 16;
+          value.gradient[2] = detail::halfBits(view.tint[2]) | detail::halfBits(view.saturation) << 16;
+          value.gradient[3] = detail::halfBits(view.contrast) | detail::halfBits(view.chromaticAberration * 1920) << 16;
+        }
         if (draw.classification == 0) {
           write(staticCursor, value.tint, sizeof(value.tint));
           write(staticCursor, value.factor, sizeof(value.factor));
@@ -1255,6 +1291,7 @@ namespace remix::trace {
         surfaceMaterial.push_back(uint16_t(index));
         unit.flags |= surfaceFlags(surface.draw);
       }
+      unit.flags.shadowBlended |= blendedShadows(instance);
       // Slot fields without descriptor numbers (layout() adds those): the
       // SHARC bytes take the material's decode fields.
       std::vector<MaterialSlots> local;
@@ -1529,6 +1566,7 @@ namespace remix::trace {
         const auto instance = prepared.instances[index];
         if (p && instance[0].draw.classification == 0)
           throw std::logic_error("A static instance outside the static set follows its prefix");
+        m_flags.shadowBlended |= blendedShadows(instance);
         for (const auto &preparedSurface : instance) {
           const auto &surface = preparedSurface.draw;
           m_flags |= surfaceFlags(surface);

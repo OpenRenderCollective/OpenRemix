@@ -6,12 +6,14 @@
 #include "pathtrace/renderer.h"
 #include "pathtrace/shader_code.h"
 #include "pathtrace/tlas_policy.h"
+#include "pathtrace/volume_policy.h"
 #include "scene/portals.h"
 #include "platform/gpu_timers.h"
 #include "platform/timing.h"
 #include "platform/workers.h"
 #include "scene/emission.h"
 #include "scene/light_bvh.h"
+#include "scene/light_gather.h"
 #include "scene/opacity.h"
 #include "scene/static_scene.h"
 #include "scene/up_axis.h"
@@ -39,6 +41,8 @@ namespace remix::trace::detail {
     featureLocalGuiding = 128,
     featureSmallSet = 256,
     featureResampling = 512,
+    // The opaque pipeline over the split primary producer's list (pathtrace.comp primaryListLaunch).
+    featurePrimaryList = 1024,
   };
   // What a stage outside the lighting selection sees: decals, local lights
   // and guiding on (as their constants' defaults were), the rest off.
@@ -191,6 +195,8 @@ namespace remix::trace::detail {
     // march distance, scattered light scale, base height. volumeMedium:
     // scattering albedo, extinction per world unit. volumeHeight: up axis,
     // density falloff per world unit. volumeEye/Previous: the windows' centre.
+    // Raster fog (x 0, y 1) has its own in volumeMedium and volumeParams
+    // (volume_policy.h rasterFog).
     uint64_t volumeGrid = 0;
     // Seconds of the runtime's clock (wrapped), zero without scrolling maps or
     // during progressive reference accumulation; the world's
@@ -272,7 +278,9 @@ namespace remix::trace::detail {
     // rtx.native.pathtrace.splitPrimary: the split primary's per-pixel
     // results (pathtrace.comp PrimaryLocals; 0: the opaque pass in one launch).
     uint64_t primaryLocal = 0;
-    uint32_t primaryLocalPadding[2] = {};
+    // The sheet passes' tiles (sheet_tiles.cpp, pathtrace.comp SheetTiles; 0:
+    // they launch over the screen).
+    uint64_t sheetTiles = 0;
     // rayPortals as the previous traced frame had them (zero for a pair that
     // was closed then; this frame's after a history reset): what is seen
     // through a pair that moved is reprojected through its previous map.
@@ -391,7 +399,8 @@ namespace remix {
     bool multiSheetFailed = false; // the multi-sheet pass's compile failed: the composition pass composes layers
     std::unique_ptr<Buffer> sheetResults;
     // rtx.native.pathtrace.splitPrimary: the producer's results for the
-    // consumer, 48 bytes a pixel (pathtrace.comp PrimaryLocals).
+    // consumer, 48 bytes a pixel, then the listed launch's arguments and
+    // pixels (pathtrace.comp PrimaryLocals).
     std::unique_ptr<Buffer> primaryLocal;
     VkPipeline compute = VK_NULL_HANDLE, composite[2] = {};
     VkPipeline splitDirectCompute = VK_NULL_HANDLE;
@@ -661,6 +670,13 @@ namespace remix {
     size_t primaryCount() const { return tables.primaryCount(); }
     const PrimaryDraw &primaryDraw(size_t i) const { return tables.primary(i); }
     std::unique_ptr<Image> primary[7];
+    // Render resolution, written by the primary surface replacement pass: the
+    // effects of the view a screen or portal shows at each pixel (chromatic
+    // aberration in pixels of a 1920-wide output, saturation, contrast; w 1),
+    // 0 elsewhere. The final composite applies them
+    // (remixapi_MaterialInfoViewEffectsEXT).
+    std::unique_ptr<Image> viewEffects;
+    bool viewEffectsValid = false;
     VkRenderPass primaryPass[2] = {};
     VkFramebuffer primaryFramebuffer[2] = {};
     // 0, 1: the G-buffer's and the stable depth's; 2: the G-buffer's for
@@ -735,7 +751,11 @@ namespace remix {
     std::vector<std::shared_ptr<Arena>> arenas;
     std::unique_ptr<Buffer> scratch, table, uniform, sheetMaterials;
     scene::LightBvh lightBvh;
-    std::vector<scene::SphereLight> lightInput; // prepareScene's gathered lights (storage kept)
+    // prepareScene's light input, gathered as it changes, and its scratch: the
+    // sphere lights and what changed in it.
+    scene::LightGather lightGather;
+    std::vector<scene::SphereLight> sphereInput;
+    scene::LightBvh::InputChanges lightChanges, familyChanges;
     scene::LightVisibility lightVisibility;
     std::unique_ptr<Buffer> visibilityNodes, visibilityLeaves, visibilityTable;
     uint64_t visibilityPartitionVersion = 0, visibilityTableVersion = 0;
@@ -850,6 +870,22 @@ namespace remix {
       const char *inactiveReason = "not requested";
     } sparse;
     void configureSparse(VkCommandBuffer command, Frame &frame, const TraceOptions &options, VkExtent2D extent);
+    // Sheet tiles (sheet_tiles.cpp, TraceOptions::sheetTiles): the screen's
+    // 8x8 tiles sorted by whether they have a sheet, as indirect dispatches
+    // of the sheet passes and of the plain composition (the composition
+    // stage without the sheets' code), for its layout without and with the
+    // denoiser.
+    struct SheetTilesState {
+      VkPipeline classify = VK_NULL_HANDLE, plain = VK_NULL_HANDLE, plainTemporal = VK_NULL_HANDLE;
+      std::unique_ptr<Buffer> buffer; // SheetTiles: the two dispatches, then the tiles
+      bool active = false, pipelineFailed = false;
+      int error = 0; // what the pipelines failed with
+      const char *inactiveReason = "not requested";
+    } sheetTiles;
+    void configureSheetTiles(Frame &frame, const TraceOptions &options, VkExtent2D extent, bool temporal);
+    void recordSheetTiles(VkCommandBuffer command, VkExtent2D extent);
+    // The plain composition's pipeline for the composition's layout.
+    VkPipeline plainComposition(bool temporal) const { return temporal ? sheetTiles.plainTemporal : sheetTiles.plain; }
     // Volumetrics (volume.cpp): the medium's scattered light in nested
     // world-space grids, one buffer for every level's cells.
     struct Volume {
@@ -861,6 +897,15 @@ namespace remix {
       float cellUnits = 0, eye[3] = {};
       VkDeviceSize bytes = 0; // requested size of `cells`
       const char *inactiveReason = "not requested";
+      // Raster fog's glow (volume_policy.h rasterGlowFrame): the update
+      // pass's threads (0: the traced medium's) and the header uploaded;
+      // `cells` holds the maps. The emissive clusters are those of the light
+      // tree at glowClustersInstance / Generation.
+      uint32_t glowThreads = 0;
+      trace::RasterGlowHeader glowHeader;
+      std::vector<std::pair<float, uint32_t>> glowScratch;
+      std::vector<trace::RasterGlowCluster> glowClusters;
+      uint64_t glowClustersInstance = 0, glowClustersGeneration = ~0ull;
     } volume;
     // litOverlays: the frame draws LIT sprite overlays, which the cells light
     // whether or not a medium is marched.

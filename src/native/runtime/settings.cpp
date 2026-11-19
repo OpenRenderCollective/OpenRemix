@@ -316,6 +316,7 @@ namespace remix::config {
         TRACE(blueNoiseShadows, 0, 1);
         TRACE(blueNoiseLocalLights, 0, 1);
         TRACE(blueNoiseSky, 0, 1);
+        TRACE(prism, 0, 1);
         TRACE(autoExposure, 0, 1);
         TRACE(exposure, .05, 8);
         TRACE(autoExposureTarget, .02, .6);
@@ -376,6 +377,7 @@ namespace remix::config {
         TRACE(regir, 0, 1);
         TRACE(regirCellSize, .125f, 16);
         TRACE(sparseRendering, 0, 1);
+        TRACE(sheetTiles, 0, 1);
         TRACE(sparseAdaptiveRate, 0, 1);
         TRACE(sparseSamplingRate, .0625f, 1);
         TRACE(sparseResolutionExponent, 0, 1);
@@ -383,6 +385,24 @@ namespace remix::config {
         TRACE(sparseMaxRate, .0625f, 1);
         TRACE(volumetrics, 0, 1);
         TRACE(volumetricOverride, 0, 1);
+        TRACE(volumetricRaster, 0, 1);
+        TRACE(volumetricRasterBrightness, 0, 1000);
+        TRACE(volumetricFogDensityScale, 0, 100);
+        TRACE(volumetricRasterLights, 0, 64);
+        TRACE(volumetricRasterShadowSize, 16, 256);
+        TRACE(volumetricRasterSteps, 1, 64);
+        TRACE(volumetricRasterSoftLights, 0, 128);
+        TRACE(volumetricRasterSoftSize, 4, 256);
+        TRACE(volumetricRasterSoftSteps, 1, 64);
+        TRACE(volumetricRasterSkySize, 16, 1024);
+        TRACE(volumetricRasterGlowLights, 0, 1);
+        TRACE(volumetricRasterGlowEmissive, 0, 1);
+        TRACE(volumetricRasterGlowSun, 0, 1);
+        TRACE(volumetricRasterGlowSky, 0, 1);
+        TRACE(volumetricRasterClearSky, 0, 1);
+        TRACE(volumetricRasterSunSize, 64, 2048);
+        TRACE(volumetricRasterSunSteps, 1, 64);
+        TRACE(volumetricRasterSunExtent, 1, 10000);
         TRACE(volumetricDistance, .01f, 100000);
         TRACE(volumetricHeightFalloff, 0, 100000);
         TRACE(volumetricBaseHeight, -100000, 100000);
@@ -477,6 +497,7 @@ namespace remix::config {
         TRACE(indirectClamp, 0, 1000000);
         TRACE(relativeClamps, 0, 1);
         TRACE(localIntensity, 0, 100);
+        TRACE(softSphereLights, 0, 1);
         result.push_back(scalar("rtx.native.pathtrace.localRange", FIELD(trace.localRange), 0, 1024, .01));
         result.push_back(
             scalar("rtx.native.pathtrace.sunAngularDiameter", FIELD(trace.sunAngularDiameter), 0, 10, 0, true));

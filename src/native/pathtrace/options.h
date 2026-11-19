@@ -19,6 +19,7 @@ namespace remix {
     bool dlssRayReconstructionPresetOverride = false;
     uint32_t dlssRayReconstructionPreset = 5;
     uint32_t dlssQuality = 3;
+    bool prism = true; // prism tonemapping (scene/display.h), else clipped
     bool autoExposure = true, bloom = true;
     float exposure = .98f, autoExposureTarget = .2f, autoExposureSpeed = 2;
     float autoExposureCentre = .75f, autoExposureMinEv = -16.3f, autoExposureMaxEv = 3.1f;
@@ -94,6 +95,13 @@ namespace remix {
     uint32_t separateLocalLighting = 3;  // combined, shared rays, per-family rays, combined separate pass
     uint32_t localSamples = 1;
     float localIntensity = 1, localRange = 16;
+    // softSphereLights: a sphere light lights a surface as a raster game's
+    // point light does, its radiance times pi r^2 / (d^2 + r^2) (the cosine
+    // over the part of it above the surface), not the solid angle it fills:
+    // the same far away, but no flat, hard-edged disc where its sphere sinks
+    // into a wall. A game whose lights are points given a size (Unity's
+    // 1 / (1 + 25 d^2 / range^2) is this with r = range / 5) wants it.
+    bool softSphereLights = false;
     float localDirectClamp = 0, indirectClamp = 0;
     // The two clamps in multiples of middle grey at the current exposure
     // (the radiance that displays as 0.18): one setting works across games'
@@ -188,6 +196,11 @@ namespace remix {
     bool sparseRendering = false, sparseAdaptiveRate = true;
     float sparseSamplingRate = .1f, sparseResolutionExponent = .91f;
     float sparseQuality = .3f, sparseMaxRate = .75f;
+    // Sheet tiles (sheet_tiles.cpp): the sheet lighting and sheet composition
+    // passes launch over the 8x8 tiles that have a translucent sheet in front,
+    // and the composition of the other tiles is a stage without the sheets'
+    // code. The same image; off, every pass launches over the screen.
+    bool sheetTiles = true;
     // Volumetrics (volume.cpp, volume.glsl): a participating medium lit by
     // every light. Its density is the game's fog (remixapi_SetFogState), or
     // with volumetricOverride the one given here: volumetricDistance is how
@@ -203,6 +216,41 @@ namespace remix {
     float volumetricHeightFalloff = 0, volumetricBaseHeight = 0;
     uint32_t volumetricUpAxis = 3;
     float volumetricScattering = 1, volumetricMaxDistance = 250;
+    // volumetricRaster: the medium is no traced medium but the game's fog as
+    // a raster game draws it (volume_policy.h rasterFog): each pixel blended
+    // towards the fog colour by its view depth, the sky left clear, plus the
+    // shadowed glow of local lights in it (volumetricScattering and the
+    // source shares scale it). No grids, no history, no march through cells;
+    // the fog colour itself is unlit, so volumetricRasterBrightness gives the
+    // (display-referred) colour its radiance. volumetricFogDensityScale
+    // scales the game's exponential fog density for the traced medium (and the
+    // glow): a density tuned for raster fog reads far thicker as a lit medium.
+    // The glow: the volumetricRasterLights lights that send the most into
+    // view each get a cube of volumetricRasterShadowSize^2 texels a face, the
+    // distance to the first opaque surface, traced anew every frame; each
+    // camera ray crossing a light's reach takes volumetricRasterSteps samples
+    // of it against that cube. The next volumetricRasterSoftLights get coarse
+    // cubes (volumetricRasterSoftSize, volumetricRasterSoftSteps samples);
+    // lights past those (128 in all at most) have no glow. Emissive surfaces
+    // glow as clusters of a 2 m world grid, competing with the sphere lights
+    // for the cubes. The sun's glow: volumetricRasterSunSize^2 texels of a
+    // map volumetricRasterSunExtent meters to each side of the eye across the
+    // sun, traced every frame; camera rays take volumetricRasterSunSteps
+    // samples of it. The sky's: five maps of volumetricRasterSkySize^2 texels,
+    // as far across, one for each of five equal parts of the sky above the
+    // horizon, sampled with the sun's.
+    bool volumetricRaster = false;
+    float volumetricRasterBrightness = 1, volumetricFogDensityScale = 1;
+    uint32_t volumetricRasterLights = 16, volumetricRasterShadowSize = 64, volumetricRasterSteps = 12;
+    uint32_t volumetricRasterSoftLights = 48, volumetricRasterSoftSize = 16, volumetricRasterSoftSteps = 4;
+    uint32_t volumetricRasterSunSize = 512, volumetricRasterSunSteps = 16, volumetricRasterSkySize = 128;
+    float volumetricRasterSunExtent = 64;
+    // Which sources glow in raster fog (their volumetric*Scale applies on
+    // top): the game's lights, emissive surfaces, the sun, the sky. With
+    // volumetricRasterClearSky the sky is left clear of the sun's and the
+    // sky's glow too, as of the fog colour (a light's halo still shows).
+    bool volumetricRasterGlowLights = true, volumetricRasterGlowEmissive = true;
+    bool volumetricRasterGlowSun = true, volumetricRasterGlowSky = true, volumetricRasterClearSky = false;
     // Each source's share of the scattered light, on top of a light's own
     // volumetricRadianceScale: the sun, lights (sphere, rect, disk, cylinder),
     // emissive surfaces, the sky.

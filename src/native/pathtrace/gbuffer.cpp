@@ -38,6 +38,7 @@ namespace remix {
                                 VK_FORMAT_R16G16B16A16_SFLOAT};
     for (unsigned i = 0; i < 7; ++i)
       primary[i] = image(true, formats[i], i == 4 ? displayExtent : extent);
+    viewEffects = image(true, VK_FORMAT_R16G16B16A16_SFLOAT, extent);
     VkPushConstantRange push{VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PrimaryPush)};
     VkPipelineLayoutCreateInfo li{.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
                                   .setLayoutCount = 1,
@@ -214,18 +215,18 @@ namespace remix {
       // Ray-primary tracing still writes previous-position and metering guides.
       // Keep every descriptor valid, including write access from first use.
       if (!primaryInitialized) {
-        VkImageMemoryBarrier transitions[7] = {};
-        for (unsigned i = 0; i < 7; ++i)
+        VkImageMemoryBarrier transitions[8] = {};
+        for (unsigned i = 0; i < 8; ++i)
           transitions[i] = {.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
                             .dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
                             .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
                             .newLayout = VK_IMAGE_LAYOUT_GENERAL,
                             .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                             .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                            .image = primary[i]->handle,
+                            .image = i < 7 ? primary[i]->handle : viewEffects->handle,
                             .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}};
         vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0,
-                             nullptr, 0, nullptr, 7, transitions);
+                             nullptr, 0, nullptr, 8, transitions);
         primaryInitialized = true;
       }
       if (!upscaler)

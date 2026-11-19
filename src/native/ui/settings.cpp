@@ -797,6 +797,10 @@ namespace remix {
         options.localSamples = uint32_t(samples);
       ui::SliderFloat("Local light strength", &options.localIntensity, 0.f, 4.f);
       ui::SliderFloat("Light reach (0 = unlimited)", &options.localRange, 0.f, 64.f, "%.1f");
+      ui::Checkbox("Soft sphere lights", &options.softSphereLights);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Sphere lights fall off as a game's point lights do, 1 / (d^2 + r^2): the same far\n"
+                          "away, but no flat, hard-edged disc where a light's sphere sinks into a wall.");
       if (options.localRange > 0 && options.localRange < .01f)
         options.localRange = .01f;
       ImGui::BeginDisabled(rrActive);
@@ -1018,6 +1022,16 @@ namespace remix {
         ImGui::SetTooltip("Fog and haze lit by the sun, the sky and every local light. Uses the game's fog\n"
                           "unless the override below is on.");
       if (options.volumetrics) {
+        ui::Checkbox("Raster fog", &options.volumetricRaster);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("The fog as the game draws it: each pixel blended towards the fog colour by its depth.\n"
+                            "Unlit and nearly free; the sky stays clear.");
+        if (options.volumetricRaster) {
+          ui::SliderFloat("Fog brightness", &options.volumetricRasterBrightness, 0.f, 16.f, "%.2f",
+                          ImGuiSliderFlags_Logarithmic);
+          if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("The fog colour's radiance: the game's colour is meant for the screen.");
+        }
         ui::Checkbox("Override the game's fog", &options.volumetricOverride);
         if (options.volumetricOverride) {
           ui::SliderFloat("Sight distance (m)", &options.volumetricDistance, 1.f, 2000.f, "%.0f",
@@ -1025,6 +1039,102 @@ namespace remix {
           if (ImGui::IsItemHovered())
             ImGui::SetTooltip("How far one sees through the medium: 5%% of the light is left at this distance.");
           ui::ColorEdit3("Scattering color", options.volumetricColor);
+        }
+      }
+      if (options.volumetrics && options.volumetricRaster) {
+        ui::SliderFloat("Light glow", &options.volumetricScattering, 0.f, 8.f, "%.2f");
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("The glow of local lights in the fog, shadowed; 1 is as bright as the traced\n"
+                            "medium's. Each light's own volumetric radiance scale applies as well.");
+        if (!options.volumetricOverride) {
+          ui::SliderFloat("Game fog density (glow)", &options.volumetricFogDensityScale, .001f, 4.f, "%.3f",
+                          ImGuiSliderFlags_Logarithmic);
+          if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Scales the game's fog density for the glow, as for the traced medium.");
+        }
+        // Each source: a toggle, and its strength while on.
+        auto source = [](const char *label, const char *slider, bool &on, float &scale, const char *tooltip) {
+          ui::Checkbox(label, &on);
+          if (tooltip && ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", tooltip);
+          if (on) {
+            ImGui::Indent();
+            ui::SliderFloat(slider, &scale, 0.f, 4.f, "%.2f");
+            ImGui::Unindent();
+          }
+        };
+        source("Game lights glow", "Game lights strength", options.volumetricRasterGlowLights,
+               options.volumetricLightScale, nullptr);
+        source("Emissive surfaces glow", "Emissive strength", options.volumetricRasterGlowEmissive,
+               options.volumetricEmissiveScale,
+               "Emissive surfaces glow as clusters of a 2 m grid, competing with the game's lights for\n"
+               "the shadow cubes.");
+        source("Sun glows", "Sun strength", options.volumetricRasterGlowSun, options.volumetricSunScale, nullptr);
+        source("Sky glows", "Sky strength", options.volumetricRasterGlowSky, options.volumetricSkyScale,
+               "The sky's light in the fog, shadowed: five maps, one for each fifth of the sky,\n"
+               "as far across as the sun's.");
+        ui::Checkbox("Keep the sky clear", &options.volumetricRasterClearSky);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("No sun or sky glow over the sky, as the game's fog leaves it clear; the lights'\n"
+                            "halos still show against it.");
+        int glowLights = int(options.volumetricRasterLights), glowSize = int(options.volumetricRasterShadowSize),
+            glowSteps = int(options.volumetricRasterSteps);
+        if (ui::SliderInt("Primary lights", &glowLights, 0, 64))
+          options.volumetricRasterLights = uint32_t(glowLights);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("Lights with a detailed shadow cube: those that send the most into view.\n"
+                            "Each traces one every frame.");
+        if (ui::SliderInt("Primary shadow detail", &glowSize, 16, 256))
+          options.volumetricRasterShadowSize = uint32_t(glowSize);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("Texels a side of each light's shadow cube face: sharper shafts, more rays\n"
+                            "(6 x this^2 a light, every frame).");
+        if (ui::SliderInt("Primary samples", &glowSteps, 1, 64))
+          options.volumetricRasterSteps = uint32_t(glowSteps);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("Shadow samples per pixel along each light's reach.");
+        int softLights = int(options.volumetricRasterSoftLights), softSize = int(options.volumetricRasterSoftSize),
+            softSteps = int(options.volumetricRasterSoftSteps);
+        if (ui::SliderInt("Secondary lights", &softLights, 0, 128))
+          options.volumetricRasterSoftLights = uint32_t(softLights);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("The lights after the primary ones, with a cheaper, coarse shadow cube (128 in all at most); lights past\n"
+                            "them do not glow.");
+        if (ui::SliderInt("Secondary shadow detail", &softSize, 4, 256))
+          options.volumetricRasterSoftSize = uint32_t(softSize);
+        if (ui::SliderInt("Secondary samples", &softSteps, 1, 64))
+          options.volumetricRasterSoftSteps = uint32_t(softSteps);
+        int sunSize = int(options.volumetricRasterSunSize), sunSteps = int(options.volumetricRasterSunSteps);
+        if (ui::SliderInt("Sun shadow detail", &sunSize, 64, 2048))
+          options.volumetricRasterSunSize = uint32_t(sunSize);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("Texels a side of the sun's shadow map around the camera (this^2 rays every frame).");
+        ui::SliderFloat("Sun and sky shadow reach (m)", &options.volumetricRasterSunExtent, 8.f, 1000.f, "%.0f",
+                        ImGuiSliderFlags_Logarithmic);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("How far to each side of the camera the sun's and sky's maps reach; past them the fog\n"
+                            "keeps the last shadow a camera ray saw.");
+        if (ui::SliderInt("Sun and sky samples", &sunSteps, 1, 64))
+          options.volumetricRasterSunSteps = uint32_t(sunSteps);
+        int skySize = int(options.volumetricRasterSkySize);
+        if (ui::SliderInt("Sky shadow detail", &skySize, 16, 1024))
+          options.volumetricRasterSkySize = uint32_t(skySize);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("Texels a side of each of the sky's five shadow maps (5 x this^2 rays every frame).");
+        const auto volume = trace::g_volumeState;
+        if (volume.active)
+          ImGui::TextWrapped("Raster fog: on (%s), full at %.1f m; %u lights glow%s%s", volume.source,
+                             volume.visibilityMeters, volume.glowLights, volume.glowSun ? ", the sun" : "",
+                             volume.glowSky ? ", the sky" : "");
+        else
+          ImGui::TextWrapped("Raster fog: off (%s)", volume.reason);
+      } else if (options.volumetrics) {
+        if (!options.volumetricOverride) {
+          ui::SliderFloat("Game fog density", &options.volumetricFogDensityScale, .001f, 4.f, "%.3f",
+                          ImGuiSliderFlags_Logarithmic);
+          if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Scales the game's exponential fog density: one tuned for raster fog reads far\n"
+                              "thicker as a lit medium.");
         }
         ui::SliderFloat("Scattered light", &options.volumetricScattering, 0.f, 8.f, "%.2f");
         ui::SliderFloat("Height falloff (m)", &options.volumetricHeightFalloff, 0.f, 500.f, "%.1f");
@@ -1310,6 +1420,13 @@ namespace remix {
 #endif
     auto &options = settings.trace;
     if (ui::Panel panel{"Exposure", ImGuiTreeNodeFlags_DefaultOpen}) {
+      ui::Checkbox("Prism tonemapping", &options.prism);
+      if (!options.prism) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, .65f, .45f, 1));
+        ImGui::TextWrapped("%s", "Warning: without Prism the output is clipped at the display's peak; highlights "
+                                 "lose detail and bright colours shift in hue.");
+        ImGui::PopStyleColor();
+      }
       ui::Checkbox("Automatic exposure", &options.autoExposure);
       ui::SliderFloat("Manual exposure", &options.exposure, .05f, 8.f, "%.2f", ImGuiSliderFlags_Logarithmic);
       ui::SliderFloat("Meter target", &options.autoExposureTarget, .02f, .6f, "%.3f");

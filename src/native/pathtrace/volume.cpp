@@ -16,6 +16,113 @@ namespace remix {
     std::fill_n(frame.volumeConfig, 4, 0u);
     std::fill_n(frame.volumeFrame, 4, 0u);
     v.active = false;
+    v.glowThreads = 0;
+    // The update pass, compiled in the background: false until it is ready.
+    auto pipeline = [&] {
+      if (!v.update && !v.pipelineFailed) {
+        try {
+          createLightingPipelines({{trace::Stage::volumeUpdate, layout, &v.update, false, false, false, false}});
+        } catch (VkResult error) {
+          // Still compiling in the background: retry on a later frame.
+          if (error == VK_ERROR_DEVICE_LOST)
+            throw;
+          if (error != VK_NOT_READY)
+            v.pipelineFailed = true;
+        }
+      }
+      return v.update != VK_NULL_HANDLE;
+    };
+    // (Re)allocates `cells` to `bytes`; false if that failed.
+    auto allocate = [&](VkDeviceSize bytes) {
+      try {
+        // (Not the buffer's own size: that is rounded up, and one cell past a
+        // round size the cells were allocated and emptied anew every frame.)
+        if (!v.cells || v.bytes != bytes) {
+          auto next = buffer(bytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+          if (v.cells)
+            retiredBuffers.push_back(std::move(v.cells));
+          v.cells = std::move(next);
+          v.bytes = bytes;
+          v.valid = false;
+          // Every cell starts without samples.
+          vkCmdFillBuffer(command, v.cells->handle, 0, VK_WHOLE_SIZE, 0);
+          barrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+                  VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+        }
+        return true;
+      } catch (VkResult error) {
+        if (error == VK_ERROR_DEVICE_LOST)
+          throw;
+        v.cells.reset();
+        v.valid = false;
+        return false;
+      }
+    };
+    // Raster fog: constants (volume_policy.h rasterFog), and for its glow a
+    // shadow cube per light, traced anew by the update pass every frame.
+    if (options.volumetrics && options.volumetricRaster) {
+      if (frame.splitLocal[3] || frame.sun[3] != 0 || options.sharcDebug || options.debugView) {
+        trace::g_volumeState = {true, false, "a debug view is on", "none"};
+        trace::g_volumeState.raster = true;
+      } else if (trace::rasterFog(options, trace::gameFog(), frame.volumeConfig, frame.volumeParams,
+                                  frame.volumeMedium, frame.volumeLightScales, trace::g_volumeState) &&
+                 frame.volumeMedium[3] > 0 && pipeline()) {
+        // The camera's axis: any depth of the screen's centre lies on it.
+        const auto &m = frame.inverseCameraRelative;
+        float forward[3], length = 0;
+        for (int r = 0; r < 3; ++r) {
+          forward[r] = (m[8 + r] * .5f + m[12 + r]) / (m[11] * .5f + m[15]);
+          length += forward[r] * forward[r];
+        }
+        length = std::sqrt(length);
+        if (length > 0 && std::isfinite(length))
+          for (auto &f : forward)
+            f /= length;
+        if (frame.localConfig[0] &&
+            (v.glowClustersInstance != lightBvh.instance() || v.glowClustersGeneration != lightBvh.generation)) {
+          trace::rasterGlowClusters(options, lightBvh.emitters(), v.glowClusters);
+          v.glowClustersInstance = lightBvh.instance();
+          v.glowClustersGeneration = lightBvh.generation;
+        }
+        // Sun and sky samples reach as far as the fog leaves 5% of the light.
+        trace::RasterGlowFrame glow;
+        if (trace::rasterGlowFrame(options, lightBvh.emitters(), v.glowClusters, frame.localConfig[0] != 0,
+                                   frame.eye, forward, frame.direction, frame.radiance,
+                                   trace::g_volumeState.visibilityMeters / options.sceneScale, v.glowScratch,
+                                   v.glowHeader, glow) &&
+            allocate(glow.bytes)) {
+          // Last frame's compose read the header; this frame's update reads
+          // it after the copy. The sky's radiance is the update's to write.
+          barrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT,
+                  VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT);
+          if (glow.lights)
+            vkCmdUpdateBuffer(command, v.cells->handle, 0, sizeof(trace::RasterGlowLight) * glow.lights,
+                              v.glowHeader.lights);
+          constexpr size_t maps = offsetof(trace::RasterGlowHeader, sun),
+                           radiance = offsetof(trace::RasterGlowHeader, skyRadiance),
+                           counts = offsetof(trace::RasterGlowHeader, sharp);
+          vkCmdUpdateBuffer(command, v.cells->handle, maps, radiance - maps, &v.glowHeader.sun);
+          vkCmdUpdateBuffer(command, v.cells->handle, counts, sizeof(trace::RasterGlowHeader) - counts,
+                            &v.glowHeader.sharp);
+          barrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+                  VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+          v.valid = false; // the buffer holds no traced medium's cells now
+          v.glowThreads = glow.threads;
+          v.active = true;
+          trace::g_volumeState.glowLights = glow.lights;
+          trace::g_volumeState.glowSun = glow.sunSize != 0;
+          trace::g_volumeState.glowSky = v.glowHeader.skySize != 0;
+          frame.volumeGrid = v.cells->address;
+          frame.volumeConfig[2] = glow.lights;
+          frame.volumeConfig[3] = glow.size;
+          frame.volumeFrame[0] = glow.steps;
+          frame.volumeFrame[1] = glow.sunSize;
+          frame.volumeFrame[2] = glow.sunSteps;
+        }
+      }
+      v.inactiveReason = trace::g_volumeState.active ? "raster fog" : trace::g_volumeState.reason;
+      return;
+    }
     const auto medium = trace::volumeMedium(options, trace::gameFog());
     // Without a medium the cells are still lit while sprite overlays take
     // their light from them (REMIXAPI_SPRITE_LIT_EXT): nothing marches them.
@@ -48,50 +155,21 @@ namespace remix {
                             reachMeters};
     if (v.inactiveReason)
       return;
-    if (!v.update) {
-      try {
-        createLightingPipelines({{trace::Stage::volumeUpdate, layout, &v.update, false, false, false, false}});
-      } catch (VkResult error) {
-        // Still compiling in the background: retry on a later frame.
-        if (error == VK_ERROR_DEVICE_LOST)
-          throw;
-        if (error != VK_NOT_READY)
-          v.pipelineFailed = true;
-      }
-      if (!v.update) {
-        trace::g_volumeState.reason = v.inactiveReason =
-            v.pipelineFailed ? "its pass failed to compile" : "its pass is compiling";
-        return;
-      }
+    if (!pipeline()) {
+      trace::g_volumeState.reason = v.inactiveReason =
+          v.pipelineFailed ? "its pass failed to compile" : "its pass is compiling";
+      return;
     }
     const float cellUnits = cellMeters / options.sceneScale;
     // Every level's cells and the one for the medium beyond them, twice: what
     // they hold, and the environment's share of it (volume.glsl).
     const VkDeviceSize bytes = (VkDeviceSize(cells) * cells * cells * levels + 1) * 2 * 16;
-    bool reset = !v.valid || v.cellsPerSide != cells || v.levels != levels || v.cellUnits != cellUnits;
-    try {
-      // (Not the buffer's own size: that is rounded up, and one cell past a
-      // round size the cells were allocated and emptied anew every frame.)
-      if (!v.cells || v.bytes != bytes) {
-        auto next = buffer(bytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
-        if (v.cells)
-          retiredBuffers.push_back(std::move(v.cells));
-        v.cells = std::move(next);
-        v.bytes = bytes;
-        // Every cell starts without samples.
-        vkCmdFillBuffer(command, v.cells->handle, 0, VK_WHOLE_SIZE, 0);
-        barrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
-                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
-        reset = true;
-      }
-    } catch (VkResult error) {
-      if (error == VK_ERROR_DEVICE_LOST)
-        throw;
-      v.cells.reset();
-      v.valid = false;
+    if (!allocate(bytes)) {
       trace::g_volumeState.reason = v.inactiveReason = "its cells could not be allocated";
       return;
     }
+    // A buffer just allocated is empty (allocate clears `valid`).
+    const bool reset = !v.valid || v.cellsPerSide != cells || v.levels != levels || v.cellUnits != cellUnits;
     v.cellsPerSide = cells;
     v.levels = levels;
     v.cellUnits = cellUnits;
@@ -140,15 +218,20 @@ namespace remix {
     auto &v = volume;
     if (!v.active)
       return;
-    gpu::GpuScope scope(command, "Volumetrics: light the medium's cells");
+    gpu::GpuScope scope(command, v.glowThreads ? "Volumetrics: raster fog's shadow maps"
+                                                                : "Volumetrics: light the medium's cells");
     // Queue-ordered across frame slots: last frame's marches have read the
     // cells before this frame's update writes them.
     barrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
     vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &set, 0, nullptr);
     bindTrace(command, v.update, layout, defaultFeatures);
-    const uint32_t count = v.cellsPerSide * v.cellsPerSide * v.cellsPerSide * v.levels;
-    vkCmdDispatch(command, (count + 1 + 63) / 64, 1, 1);
+    // One thread a cell and one for the medium beyond them; or one a texel of
+    // every map of raster fog's glow (trace::rasterGlowFrame).
+    const uint32_t count =
+        v.glowThreads ? v.glowThreads : v.cellsPerSide * v.cellsPerSide * v.cellsPerSide * v.levels + 1;
+    const uint32_t groups = (count + 63) / 64;
+    vkCmdDispatch(command, std::min(groups, 32768u), (groups + 32767) / 32768, 1);
     // (The vertex stage: LIT sprite overlays read the cells.)
     barrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,

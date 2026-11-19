@@ -20,6 +20,9 @@ test('Temporal submitted-frame ownership and correspondence', temporal_test)
 light_bvh_test = executable('remix-light-bvh-test', 'light_bvh.cpp',
   include_directories : test_includes, link_with : scene_library)
 test('Analytic lights and importance hierarchy', light_bvh_test)
+light_gather_test = executable('remix-light-gather-test', 'light_gather.cpp',
+  include_directories : test_includes, link_with : scene_library)
+test('Light gather kept from frame to frame', light_gather_test)
 ies_test = executable('remix-ies-test', 'ies.cpp',
   include_directories : test_includes, link_with : scene_library)
 test('IES profiles and light cookies', ies_test)

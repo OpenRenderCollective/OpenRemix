@@ -66,6 +66,11 @@ layout(set=0,binding=12,r32f) readonly uniform image2D primaryDepth;
 layout(set=0,binding=13,rgba16f) PRIMARY_ACCESS uniform image2D primaryEmission;
 layout(set=0,binding=14,rgba16f) PRIMARY_ACCESS uniform image2D primaryPbr;
 layout(set=0,binding=15,rgba16f) uniform image2D meterMaterial;
+// What the final composite applies where a screen or portal shows another
+// view (remixapi_MaterialInfoViewEffectsEXT): x its chromatic aberration in
+// pixels of a 1920-wide output, y saturation, z contrast, w 1 (0 elsewhere).
+// Written by the primary surface replacement pass.
+layout(set=0,binding=16,rgba16f) uniform image2D viewEffects;
 
 // Per-dispatch switches, pushed with the pipeline (Gpu::bindTrace). They were
 // specialization constants: as variants each cost a 20-45 s compile, while
@@ -120,12 +125,18 @@ layout(constant_id=13) const uint sparseLaunch=0u;
 // 1, the producer: every pixel's primary surface and, where it came from the
 // raster G-buffer alone, its local light (after the subsurface draw, as the
 // opaque pass takes it), stored with the random state it leaves
-// (PrimaryLocals); a pixel whose surface needed a traced camera ray or the
-// sheet walk (decals, films, subsurface records, sheets) it shades whole and
-// marks done. 2, the consumer: the other pixels, their surface read from the
+// (PrimaryLocals); a pixel whose surface needs a traced camera ray or the
+// sheet walk (decals, films, subsurface records, sheets) it lists and marks
+// done. 2, the consumer: the other pixels, their surface read from the
 // G-buffer, their local light from the producer; everything else as the
-// opaque pass. 0: one launch.
+// opaque pass. 0: one launch; pushed with primaryListLaunch, the one launch
+// over the producer's list (the pixels it would have shaded whole).
 layout(constant_id=16) const uint primaryRole=0u;
+// The traced fallbacks and the second local light sampler they inline made
+// the producer several times larger than its usual pixel needs (instruction
+// cache misses, and the occupancy of their registers); listed, those pixels
+// take the one launch's code, the same as before.
+#define primaryListLaunch (primaryRole==0u&&sparseLaunch==0u&&(features.bits&1024u)!=0u)
 // The wavefront local light queue (rtx.native.pathtrace.wavefrontLocalQueue):
 // a deferring shade kernel leaves its vertex's local light sample to the
 // local kernel (WAVEFRONT_PASS 9), keeping the light sampler out of its
@@ -272,13 +283,29 @@ float backdropPortal=1e30;bool backdropQuery=false;
 // culling (the camera's cluster is not where they are).
 bool screenSheets=false;
 // Set when the primary surface needed a traced camera ray or the sheet walk
-// (primarySurface, rasterSurface): the split primary producer shades it whole.
+// (primarySurface, rasterSurface): the split primary producer lists it.
 bool primaryTraced=false;
 // The split primary's per-pixel results (primaryRole): three elements a
 // pixel, the local light and its distance, its specular share and the
-// emissive distance, then the random state after it and whether the
-// producer shaded the pixel whole (y).
+// emissive distance, then the random state after it and whether the pixel
+// is shaded whole by the listed launch (y). After the pixels' elements: the
+// listed launch's dispatch arguments (x groups, then 1, 1, and the count in
+// w), then the listed pixels (x | y << 16), four an element.
 layout(buffer_reference,std430,buffer_reference_align=16) buffer PrimaryLocals { uvec4 data[]; };
+uint primaryListBase() { return frame.target.x*frame.target.y*3u; }
+void primaryList(ivec2 pixel) {
+  // One atomic a subgroup; its pixels stay neighbours in the list.
+  uvec4 ballot=subgroupBallot(true);
+  uint count=subgroupBallotBitCount(ballot),rank=subgroupBallotExclusiveBitCount(ballot),base=0u;
+  PrimaryLocals list=PrimaryLocals(frame.primaryLocal);
+  uint header=primaryListBase();
+  if(subgroupElect()) {
+    base=atomicAdd(list.data[header].w,count);
+    atomicMax(list.data[header].x,(base+count+63u)/64u);
+  }
+  uint slot=subgroupBroadcastFirst(base)+rank;
+  list.data[header+1u+slot/4u][slot%4u]=uint(pixel.x)|(uint(pixel.y)<<16);
+}
 // Angle between neighbouring pixel rays at the screen centre, scaled to output
 // pixels (visibilityProbe.z: render/output size, the upscaler's mip bias).
 // Orthographic cameras give zero: finest mip.
@@ -369,6 +396,9 @@ Intersection wavefrontReceiver;
 uint peelFlags=0u;
 vec3 peelColor=vec3(0),peelNormal=vec3(0),peelEmission=vec3(0),peelSelf=vec3(0),peelThrough=vec3(1);
 vec2 peelParameters=vec2(0);float peelRemaining=1;
+// The finish multiplicative paint gives the receiver (squared roughness,
+// metalness), x negative: none.
+vec2 peelFinish=vec2(-1,0);
 Intersection peelFirst;
 #endif
 void queryScene(accelerationStructureEXT scene, vec3 origin, vec3 direction, inout Intersection x,float minimum) {
@@ -576,8 +606,16 @@ Hit closest(vec3 origin,vec3 direction,float maximum,bool motion) {
   vec2 parameters=vec2(0);
   // `through` carries color into the layers below: alpha paint covers them,
   // multiplicative paint (D3D DESTCOLOR*SRCCOLOR, mod2x) tints them and keeps
-  // the receiver's normal and roughness.
-  float remaining=1;vec3 through=vec3(1);
+  // the receiver's normal and roughness, or with a finish
+  // (remixapi_MaterialInfoPaintFinishEXT, state.w bit 30) gives the receiver
+  // its own roughness and metalness: the nearest such layer's (`finish`, x
+  // the squared roughness, negative: none).
+  float remaining=1;vec3 through=vec3(1);vec2 finish=vec2(-1,0);
+  // Overlapping triangles of one finished paint surface tint once, by their
+  // darkest: one wet film, not stacked coats (the stains a game batches into
+  // one mesh). `run` is that surface while its layers follow each other
+  // (~0u: none), runBase what reached it and runTint its tint so far.
+  uint run=~0u;vec3 runBase=vec3(1),runTint=vec3(1);
   float lastDecal=0,minimum=0,end=maximum;
   const float attach=frame.visibilityProbe.y;
   const uint mask=traceMask;
@@ -630,8 +668,14 @@ Hit closest(vec3 origin,vec3 direction,float maximum,bool motion) {
     if(layers==0u){firstT=x.t;firstNg=hit.ng;}
     if(hit.decalMode!=0u) {
       // mod2x is authored gamma-encoded (128 is neutral): scale so (128/255)^2.2 maps to one.
-      through*=hit.color.rgb*(hit.decalMode==2u?4.5554:1.);
+      vec3 tint=hit.color.rgb*(hit.decalMode==2u?4.5554:1.);
+      const bool finished=(surfaces[x.surface].state.w&(1u<<30))!=0u;
+      if(finished&&x.surface==run)runTint=min(runTint,tint);
+      else{runBase=through;runTint=tint;run=finished?x.surface:~0u;}
+      through=runBase*runTint;
+      if(finish.x<0&&finished)finish=vec2(hit.rm.x*hit.rm.x,hit.rm.y);
     } else {
+      run=~0u;
       float weight=remaining*hit.color.a;
       color+=through*hit.color.a*hit.color.rgb;normal+=weight*hit.n;emission+=through*hit.color.a*hit.emission;
       self+=through*hit.color.a*hit.self;
@@ -695,7 +739,7 @@ Hit closest(vec3 origin,vec3 direction,float maximum,bool motion) {
   }
 #if WAVEFRONT_PASS==10
   peelFlags=1u;peelColor=color;peelNormal=normal;peelEmission=emission;peelSelf=self;peelThrough=through;
-  peelParameters=parameters;peelRemaining=remaining;
+  peelParameters=parameters;peelRemaining=remaining;peelFinish=finish;
   return hit;
 #endif
   hit.color.rgb=min(color+through*hit.color.rgb,vec3(1));
@@ -703,8 +747,10 @@ Hit closest(vec3 origin,vec3 direction,float maximum,bool motion) {
   hit.self=min(self+through*hit.self,vec3(1)-hit.color.rgb);
   normal+=remaining*hit.n;
   hit.n=dot(normal,normal)>1e-12?shadingNormal(normal,hit.ng,hit.wo):hit.n;
-  parameters+=remaining*vec2(hit.rm.x*hit.rm.x,hit.rm.y);
+  parameters+=remaining*(finish.x>=0?finish:vec2(hit.rm.x*hit.rm.x,hit.rm.y));
   hit.rm=vec2(sqrt(max(parameters.x,0)),parameters.y);
+  // A finish is a reflection even on a receiver without PBR (Lambert).
+  if(finish.x>=0)hit.pbr=true;
   return hit;
 }
 Hit closest(vec3 origin,vec3 direction) { return closest(origin,direction,1e30,true); }
@@ -1021,6 +1067,7 @@ Hit primarySurface(ivec2 pixel,inout vec3 origin,inout vec3 direction,bool sheet
   front=vec3(0);layers=0;
   bool raster=frame.target.w!=0,bent=false,body=false,trace=!raster,first=true,record=false;
   vec3 traceOrigin=origin,traceDirection=direction;
+  uint portals=0u,chain=0u;
   Hit hit;
   if(raster) {
     hit=rasterSurface(pixel,origin,true);
@@ -1048,6 +1095,15 @@ Hit primarySurface(ivec2 pixel,inout vec3 origin,inout vec3 direction,bool sheet
       if(record&&traced.t==1e30)hit.film.x=0;
       else hit=traced;
       record=false;
+      // Behind sheets (a sphere around the camera in front of a portal), a
+      // ray portal's opening goes on from its partner, as replaceScreen
+      // carries the camera ray that meets it first; sheets past a portal are
+      // passed, as the composition's layer walk does not follow it.
+      if(layers!=0u&&hit.t<1e30&&!hit.blended&&hit.surface>=0&&
+         portalTeleport(uint(hit.surface),hit.p,traceOrigin,traceDirection,portals,chain,frame.rayPortalConfig.x)) {
+        origin=traceOrigin;direction=traceDirection;trace=true;continue;
+      }
+      if(portals!=0u&&hit.t<1e30&&hit.blended){traceOrigin=offsetRay(hit.p,-hit.ng);trace=true;continue;}
     }
     if(first){first=false;if(diagnose&&frame.splitLocal.w!=0)front=debugGeometry(hit,pixel);}
     if(!sheets||layers>=32u||!hit.blended)break;
@@ -1089,9 +1145,11 @@ vec3 diffuseDirection(vec3 n) {
 // the sky opens a portal the ray passes (portalTeleport), and the portal keeps
 // directions (a move and a scale, as a window onto a model of the place), the
 // shadow ray goes on from the partner: what lights the far side lights
-// through it. shadow() does this for the sun and sky rays of every vertex. A
-// portal that turns directions would show the sun elsewhere; its own
-// material blocks.
+// through it. shadow() and sunVisibility() do this for the sun and sky rays of
+// every vertex, once their own test finds the ray blocked: a ray that reaches
+// the sky met no portal over an opaque surface (those block), so only blocked
+// rays pay for the nearest-surface query. A portal that turns directions would
+// show the sun elsewhere; its own material blocks.
 bool sunThroughPortal(inout vec3 origin,vec3 direction) {
 #ifdef TEMPORAL
   uint saved=traceMask;traceMask=shadowMask();
@@ -1106,19 +1164,22 @@ bool sunThroughPortal(inout vec3 origin,vec3 direction) {
   return false;
 #endif
 }
-// Moves origin past the portals the ray toward the sun or sky meets first.
-void throughPortals(inout vec3 origin,vec3 direction) {
-  if(frame.rayPortalConfig.w!=0u)
-    for(uint i=0u;i<min(frame.rayPortalConfig.z,8u);++i)
-      if(!sunThroughPortal(origin,direction))break;
-}
+// The portals a blocked ray toward the sun or sky may still pass.
+uint sunPortalsLeft() { return frame.rayPortalConfig.w!=0u?min(frame.rayPortalConfig.z,8u):0u; }
 vec3 shadow(vec3 origin,vec3 direction) {
-  throughPortals(origin,direction);
-  vec3 transmission=vec3(1);
-  for (uint layer=0;layer<32;++layer) {
+  // One query site for the layers of every leg (each inlined copy is a set of
+  // queries): a blocked leg whose first surface opens a portal starts over
+  // from its partner.
+  vec3 start=origin,transmission=vec3(1);
+  uint portalsLeft=sunPortalsLeft();
+  for (uint layer=0;layer<32+8;++layer) {
     VisibilityHit hit=shadowEarlyOut?earlyVisibilityHit(origin,direction,1e30,8u):visibilityHit(origin,direction,true);
-    if (hit.blocked) return vec3(0);
-    if (hit.t==1e30) return transmission;
+    if (hit.t==1e30&&!hit.blocked) return transmission;
+    if (hit.blocked) {
+      if (portalsLeft==0u||!sunThroughPortal(start,direction)) return vec3(0);
+      --portalsLeft;origin=start;transmission=vec3(1);
+      continue;
+    }
     transmission*=hit.transmission;
     origin=offsetRay(hit.p,-hit.n);
   }
@@ -1141,6 +1202,24 @@ bool sparseSelected(ivec2 pixel) {
   else level=hash(uint(pixel.x)+uint(pixel.y)*frame.target.x+hash(frame.config.z^0x73707273u))>>24;
   return level<frame.sparseConfig.y;
 }
+// Sheet tiles (frame.sheetTiles; 0: the sheet passes launch over the screen).
+// The classification pass (SHEET_TILES_PASS) sorts the screen's 8x8 tiles by
+// whether any pixel has a translucent sheet in front: args[0..2] and [4..6]
+// are the indirect dispatches of the tiles with sheets, listed from the front
+// of tiles[], and of the rest, listed from its back (x | y << 16, in tiles).
+// The sheet lighting and sheet composition passes run over the first; the
+// plain composition pass (PLAIN_TILES_PASS), the composition of pixels
+// without a sheet in a stage without the sheets' code, over the second.
+layout(buffer_reference,std430,buffer_reference_align=4) buffer SheetTiles { uint args[8]; uint tiles[]; };
+uint sheetTileCount() { return ((frame.target.x+7u)/8u)*((frame.target.y+7u)/8u); }
+// The pixel a tile launch's invocation takes: its listed tile's.
+ivec2 sheetTilePixel(uint listed) {
+  uint tile=SheetTiles(frame.sheetTiles).tiles[listed];
+  return ivec2(tile&0xffffu,tile>>16)*8+ivec2(gl_LocalInvocationID.xy);
+}
+#ifdef SHEET_TILES_PASS
+shared uint sheetTileAny;
+#endif
 #ifdef SPARSE_COMPACT_PASS
 shared uint sparseMask[8];
 shared uint sparseBase;
@@ -1181,12 +1260,19 @@ vec3 sunVisibility(Hit receiver,ivec2 pixel,out float blockerDistance) {
   // product of at most 31 sheets. Early-out layers keep that result.
   if(shadowEarlyOut)return transmission*shadow(origin,direction);
 #endif
-  throughPortals(origin,direction);
-  for(uint layer=0;layer<32;++layer) {
+  // As shadow(): a blocked leg whose first surface opens a portal starts over
+  // from its partner (the blocker distances are the last leg's).
+  vec3 start=origin,cloud=transmission;
+  uint portalsLeft=sunPortalsLeft();
+  for(uint layer=0;layer<32+8;++layer) {
     VisibilityHit hit=visibilityHit(origin,direction,false);
     if(hit.t==1e30)return transmission;
     distance+=hit.t;
-    if(hit.blocked){blockerDistance=min(distance,65000);return vec3(0);}
+    if(hit.blocked) {
+      if(portalsLeft==0u||!sunThroughPortal(start,direction)){blockerDistance=min(distance,65000);return vec3(0);}
+      --portalsLeft;origin=start;transmission=cloud;distance=0;blockerDistance=65504;
+      continue;
+    }
     vec3 tint=hit.transmission;
     if(any(lessThan(tint,vec3(.999))))blockerDistance=min(blockerDistance,min(distance,65000));
     transmission*=tint;
@@ -2780,7 +2866,8 @@ void wavefrontPeel(uint id,uint index) {
   if(peelFlags==0u)return;
   records.v[stride+index]=uvec4(packHalves(peelEmission.r,peelEmission.g),packHalves(peelEmission.b,peelSelf.r),
                                 packHalves(peelSelf.g,peelSelf.b),packHalves(peelNormal.x,peelNormal.y));
-  records.v[2u*stride+index]=uvec4(packHalves(peelNormal.z,peelThrough.r),packHalves(peelThrough.g,peelThrough.b),0u,0u);
+  records.v[2u*stride+index]=uvec4(packHalves(peelNormal.z,peelThrough.r),packHalves(peelThrough.g,peelThrough.b),
+                                   packHalves(peelFinish.x,peelFinish.y),0u);
   if((peelFlags&2u)!=0u) {
     // As wavefrontTrace stores a receiver.
     const uint r=wavefrontReceiverPlanes;
@@ -2804,7 +2891,7 @@ Hit wavefrontPeeled(Hit hit) {
   uvec4 b=records.v[stride+index],c=records.v[2u*stride+index];
   vec2 a1=unpackHalf2x16(a.y),a2=unpackHalf2x16(a.z),a3=unpackHalf2x16(a.w);
   vec2 b0=unpackHalf2x16(b.x),b1=unpackHalf2x16(b.y),b2=unpackHalf2x16(b.z),b3=unpackHalf2x16(b.w);
-  vec2 c0=unpackHalf2x16(c.x),c1=unpackHalf2x16(c.y);
+  vec2 c0=unpackHalf2x16(c.x),c1=unpackHalf2x16(c.y),finish=unpackHalf2x16(c.z);
   vec3 through=vec3(c0.y,c1);
   if((a.x&2u)!=0u) {
     // The first layer, shaded as the receiver: an ordinary surface, or a tint.
@@ -2822,8 +2909,10 @@ Hit wavefrontPeeled(Hit hit) {
   hit.self=min(self+through*hit.self,vec3(1)-hit.color.rgb);
   normal+=remaining*hit.n;
   hit.n=dot(normal,normal)>1e-12?shadingNormal(normal,hit.ng,hit.wo):hit.n;
-  parameters+=remaining*vec2(hit.rm.x*hit.rm.x,hit.rm.y);
+  parameters+=remaining*(finish.x>=0?finish:vec2(hit.rm.x*hit.rm.x,hit.rm.y));
   hit.rm=vec2(sqrt(max(parameters.x,0)),parameters.y);
+  // A finish is a reflection even on a receiver without PBR (Lambert).
+  if(finish.x>=0)hit.pbr=true;
   return hit;
 }
 #endif
@@ -2894,10 +2983,9 @@ layout(buffer_reference,std430,buffer_reference_align=16) readonly buffer MovedL
 float movedLightEstimate(LightEmitter light,Hit hit) {
   vec3 delta=light.positionRadius.xyz-hit.p;float distance2=max(dot(delta,delta),1e-12);
   vec3 direction=delta*inversesqrt(distance2);
-  float radius=light.positionRadius.w,sinMax2=min(1,radius*radius/distance2);
-  float oneMinusCos=sinMax2/(1+sqrt(max(0,1-sinMax2)));
-  return localLuminance(light.radiance.rgb)*emitterShaping(light,-direction)*2*oneMinusCos
-      *max(0,dot(hit.n,direction))*localFalloff(distance2)*frame.localScale.x;
+  float oneMinusCos,measure;sphereLightCone(distance2,light.positionRadius.w,oneMinusCos,measure);
+  return localLuminance(light.radiance.rgb)*emitterShaping(light,-direction)*measure
+      *max(0,dot(hit.n,direction))*emitterFalloff(light,distance2)*frame.localScale.x;
 }
 // A surface moving on its own (a door swinging) changes the light it
 // receives; its reprojected history describes it at its old place and NRD
@@ -3075,6 +3163,14 @@ uvec4 replaceScreen(ivec2 pixel,vec3 origin,vec3 direction,float kind) {
   // A portal over an opaque surface: its albedo (the raster's, the surface
   // that marked this pixel) tints what it shows.
   vec3 tint=(s.state.w&(1u<<26))!=0u?imageLoad(primaryAlbedo,pixel).rgb:vec3(1);
+  // remixapi_MaterialInfoViewEffectsEXT (state.w bit 29, gradient.yzw): its
+  // tint joins the record's; the rest the final composite applies.
+  vec4 effects=vec4(0);
+  if((s.state.w&(1u<<29))!=0u) {
+    vec2 rg=unpackHalf2x16(s.gradient.y),bs=unpackHalf2x16(s.gradient.z),ca=unpackHalf2x16(s.gradient.w);
+    tint*=vec3(rg,bs.x);
+    effects=vec4(ca.y,bs.y,ca.x,1);
+  }
   if(code!=0u&&frame.screenCameras[(code-1u)*4u].w!=0) {
     slot=code-1u;uint tri=x.primitive*3;
   vec3 w=vec3(1-x.bary.x-x.bary.y,x.bary);
@@ -3112,9 +3208,11 @@ uvec4 replaceScreen(ivec2 pixel,vec3 origin,vec3 direction,float kind) {
   const bool sheet=hit.t<1e30&&hit.blended&&slot==0xffu;
   if(!sheet)hit.color.a=1;
   storePrimary(pixel,hit,hit.t==1e30?0:sheet&&hit.tinted?3:hit.blended?2:1);
-  return packScreen(slot,x.t,portals,chain,slot==0xffu?tint:vec3(1));
+  imageStore(viewEffects,pixel,effects);
+  return packScreen(slot,x.t,portals,chain,tint);
 }
 void replaceMirror(ivec2 pixel) {
+  imageStore(viewEffects,pixel,vec4(0));
   vec3 origin,direction;
   ray((vec2(pixel)+.5+frame.jitter.xy)/vec2(frame.target.xy)*2-1,frame.inverseCameraRelative,frame.eye.xyz,origin,direction);
   if(imageLoad(primaryNormal,pixel).w>=32) {
@@ -3195,6 +3293,133 @@ bool thickSheet(Hit hit,inout vec3 direction,inout float alpha,inout vec3 throug
   direction=bent;
   return true;
 }
+// Raster fog (volume_policy.h rasterFog): how much of a point at this view
+// depth is fog.
+float rasterFogAmount(float viewDepth) {
+  if(frame.volumeParams.w==3)return clamp((viewDepth-frame.volumeParams.x)*frame.volumeParams.y,0,1);
+  float k=frame.volumeParams.z*max(viewDepth,0);
+  return 1-exp(-(frame.volumeParams.w==2?k*k:k));
+}
+// The sun's and the sky's light scattered towards the camera by the raster
+// fog along [0, far], up to where the fog leaves 5% (rasterGlowMarch):
+// volumeFrame.z samples spaced quadratically (the near fog counts most),
+// dimmed by the fog in front. The sun's shadowed by its map (volume.glsl
+// rasterMapShadow) and the clouds: isotropic, its irradiance (pi
+// lightRadiance) over 4 pi. Each sky part's by its own map: its radiance times
+// its solid angle (2 pi / 5) over 4 pi. Past a map's edge a sample keeps the
+// last sample's light on it.
+vec3 rasterOpenGlow(vec3 origin,vec3 direction,float far,float forward,float jitter) {
+  uvec4 counts=rasterGlowCounts();
+  uint sunSize=frame.volumeFrame.y,skySize=counts.w,steps=max(frame.volumeFrame.z,1u);
+  if(sunSize==0u&&skySize==0u)return vec3(0);
+  float reach=min(far,rasterGlowMarch());
+  if(reach<=0)return vec3(0);
+  vec3 skyLight[5];float skyLit[5];
+  uint sunFirst=rasterSunFirst(),skyFirst=skySize!=0u?rasterSkyFirst(0u):0u;
+  for(uint part=0u;part<rasterSkyMaps;++part) {
+    skyLight[part]=skySize!=0u?VolumeCells(frame.volumeGrid).data[rasterSkyRadianceSlot+part].rgb*.1:vec3(0);
+    skyLit[part]=1;
+  }
+  float sun=0,sunLit=1,near=0;vec3 sky=vec3(0);
+  for(uint i=0u;i<steps;++i) {
+    float u=float(i+1u)/float(steps),next=reach*u*u;
+    float t=mix(near,next,jitter);
+    vec3 p=origin+direction*t;
+    float weight=(1-rasterFogAmount(t*forward))*(next-near);
+    if(sunSize!=0u) {
+      float shadow=rasterMapShadow(rasterSunSlot,sunFirst,sunSize,p);
+      if(shadow>=0)sunLit=shadow;
+      if(sunLit>0)sun+=sunLit*cloudShadow(p)*weight;
+    }
+    for(uint part=0u;part<rasterSkyMaps;++part) {
+      if(all(equal(skyLight[part],vec3(0))))continue;
+      float shadow=rasterMapShadow(rasterSkySlot+part*4u,skyFirst+part*skySize*skySize,skySize,p);
+      if(shadow>=0)skyLit[part]=shadow;
+      sky+=skyLight[part]*(skyLit[part]*weight);
+    }
+    near=next;
+  }
+  return sun*.25*frame.lightRadiance.rgb*frame.lightRadiance.w*frame.volumeLightScales.x+sky;
+}
+// Raster fog's glow around the lights, which a traced medium shows and a
+// flat fog colour cannot: for each light given a shadow cube this frame
+// (volume_policy.h rasterGlowLights) whose reach the camera ray crosses
+// before `far`, its single scattering towards the camera there, shadowed by
+// its cube (volume.glsl rasterShadow) and dimmed by the raster fog in front.
+// volumeFrame.x samples a light, spaced evenly in the angle the ray subtends
+// at the light (equiangular: they gather where the light is brightest, and
+// each carries an equal share of the 1 / d^2 integral); the lights past the
+// first `sharp` (coarser cubes) take softSteps. Then the sun's and the sky's
+// (rasterOpenGlow). `jitter` offsets the samples per pixel, the same every
+// frame. Tinted by the fog colour as the traced medium is.
+vec3 rasterFogGlow(vec3 origin,vec3 direction,float far,float forward,float jitter) {
+  if(frame.volumeGrid==0||frame.volumeMedium.w<=0)return vec3(0);
+  uvec4 counts=rasterGlowCounts();
+  uint lights=frame.volumeConfig.z;
+  LightEmitters emitters=LightEmitters(frame.lightEmitters);
+  bool sky=far>=1e30;
+  far=min(far,1e6);
+  vec3 glow=vec3(0);
+  for(uint slot=0u;slot<lights;++slot) {
+    vec4 originReach=rasterGlowSlot(slot,0u);
+    vec3 centre=originReach.xyz;float reach=originReach.w;
+    float along=dot(centre-origin,direction);
+    vec3 offset=centre-origin-direction*along;
+    float h2=dot(offset,offset);
+    if(h2>=reach*reach)continue;
+    float chord=sqrt(reach*reach-h2),t0=max(0.,along-chord),t1=min(far,along+chord);
+    if(t1<=t0)continue;
+    vec4 intensityKind=rasterGlowSlot(slot,1u),normalCoherence=rasterGlowSlot(slot,2u),limits=rasterGlowSlot(slot,3u);
+    bool sphere=intensityKind.w==0;
+    LightEmitter light;
+    if(sphere)light=emitters.data[floatBitsToUint(limits.x)];
+    float radius=max(limits.z,1e-4);
+    uint steps=max(slot<counts.x?frame.volumeFrame.x:counts.z,1u);
+    // 1 / (d^2 + r^2) with r the light's size, not 1 / d^2 held at r: held,
+    // the fog within the light's sphere glowed evenly, a solid orb with a hard
+    // edge wherever the sphere met a wall or the lamp around it. Softened,
+    // the glow peaks at the centre and fades smoothly, with no edge. The
+    // ray's distance to the centre takes in r^2 so the samples stay
+    // equiangular for it.
+    float h=sqrt(h2+radius*radius);
+    float a0=atan((t0-along)/h),a1=atan((t1-along)/h),angle=(a1-a0)/float(steps);
+    vec3 sum=vec3(0);
+    for(uint i=0u;i<steps;++i) {
+      float t=along+h*tan(a0+(float(i)+jitter)*angle);
+      vec3 toPoint=origin+direction*t-centre;
+      float distance2=dot(toPoint,toPoint);
+      float falloff=sphere?emitterFalloff(light,distance2):localFalloff(distance2);
+      if(falloff<=0)continue;
+      float lit=rasterShadow(slot,toPoint);
+      if(lit<=0)continue;
+      vec3 outgoing=toPoint*inversesqrt(max(distance2,1e-12));
+      // Emissive surfaces: their radiance times area towards `outgoing`, a
+      // flat panel by its cosine, surfaces facing all ways by its mean (1/4;
+      // 1/2 two-sided).
+      vec3 intensity;
+      if(sphere)intensity=emitterRadiance(light,outgoing);
+      else {
+        float cosine=dot(normalCoherence.xyz,outgoing);
+        bool twoSided=intensityKind.w>1.5;
+        float facing=twoSided?abs(cosine):max(cosine,0);
+        intensity=intensityKind.rgb*mix(twoSided?.5:.25,facing,normalCoherence.w);
+      }
+      // Each sample's share of the integral of 1 / (d^2 + r^2) is angle / h.
+      sum+=intensity*(falloff*lit*(1-rasterFogAmount(t*forward)));
+    }
+    glow+=sphere?sum*(angle/h*3.14159265359*radius*radius*light.corners[1].w*frame.volumeLightScales.y)
+                :sum*(angle/h*frame.volumeLightScales.z);
+  }
+  glow*=frame.localScale.x/(4*3.14159265359);
+  // Keep the sky clear (volumetricRasterClearSky): of the sun's and the sky's
+  // glow, which fill the fog everywhere; a light's own halo still shows
+  // against the sky.
+  if(!sky||!rasterGlowClearSky())glow+=rasterOpenGlow(origin,direction,far,forward,jitter);
+  vec3 tint=frame.volumeMedium.rgb;
+  float brightest=max(max(tint.r,tint.g),tint.b);
+  tint=brightest>0?tint/brightest:vec3(1);
+  return glow*tint*frame.volumeMedium.w;
+}
 // The colour a camera inside a translucent body (remixapi_CameraMediumEXT)
 // sees of the body over `distance`: what is absorbed becomes the body's colour
 // lit as a surface facing up would be by the sky and the sun. transmittance:
@@ -3266,6 +3491,19 @@ void main() {
     SparseList(frame.sparseList).pixels[sparseBase+rank]=uint(pixel.x)|(uint(pixel.y)<<16);
   }
   return;
+#elif defined(SHEET_TILES_PASS)
+  // Whether the tile has a pixel with a sheet in front (the opaque pass's
+  // signed sheet count in worldColor.a), and its place in the list.
+  if(gl_LocalInvocationIndex==0u)sheetTileAny=0u;
+  memoryBarrierShared();barrier();
+  if(all(lessThan(pixel,ivec2(frame.target.xy)))&&imageLoad(worldColor,pixel).a!=0)atomicOr(sheetTileAny,1u);
+  memoryBarrierShared();barrier();
+  if(gl_LocalInvocationIndex==0u) {
+    bool sheets=sheetTileAny!=0u;
+    uint slot=atomicAdd(SheetTiles(frame.sheetTiles).args[sheets?0:4],1u);
+    SheetTiles(frame.sheetTiles).tiles[sheets?slot:sheetTileCount()-1u-slot]=gl_WorkGroupID.x|(gl_WorkGroupID.y<<16);
+  }
+  return;
 #elif defined(SPARSE_ARGS_PASS)
   // One invocation, after every tile has added its count.
   if(gl_GlobalInvocationID==uvec3(0)) {
@@ -3280,7 +3518,9 @@ void main() {
   regirPresample(gl_WorkGroupID.x*64u+gl_LocalInvocationIndex);
   return;
 #elif defined(VOLUME_UPDATE_PASS)
-  volumeUpdate(gl_WorkGroupID.x*64u+gl_LocalInvocationIndex);
+  // Rows of 32768 groups (volume.cpp recordVolume): one row of 65535 at most
+  // held too few threads for the largest of raster fog's maps.
+  volumeUpdate((gl_WorkGroupID.y*32768u+gl_WorkGroupID.x)*64u+gl_LocalInvocationIndex);
   return;
 #elif defined(ORCA_SPARSE_PASS)
   // One sparse path per tile, at a pixel that changes every frame.
@@ -3313,6 +3553,8 @@ void main() {
   // light, then its paths, or the water patch's reused GI (waterIndirect, whose
   // barriers every invocation reaches). The composition pass draws the sheet,
   // the media and the layers past it with no light sampler of its own.
+  // Over sheet tiles, only the tiles with a sheet (no other pixel reads it).
+  if(frame.sheetTiles!=0){pixel=sheetTilePixel(gl_WorkGroupID.x);shadingPixel=pixel;}
   bool inBounds=all(lessThan(pixel,ivec2(frame.target.xy)));
   pixel=min(pixel,ivec2(frame.target.xy)-1);
   uint index=uint(pixel.x)+uint(pixel.y)*frame.target.x;
@@ -3619,6 +3861,13 @@ void main() {
   imageStore(gradientA,pixel,vec4(delta,encodeNormal(normal),min(z,65000)));return;
 #else
 #ifdef TRANSPARENCY_PASS
+  // Over sheet tiles: the sheet passes take the tiles with a sheet, the plain
+  // composition the rest (from the list's back).
+#ifdef PLAIN_TILES_PASS
+  pixel=sheetTilePixel(sheetTileCount()-1u-gl_WorkGroupID.x);shadingPixel=pixel;
+#else
+  if(frame.sheetTiles!=0){pixel=sheetTilePixel(gl_WorkGroupID.x);shadingPixel=pixel;}
+#endif
   // All invocations, including partial edge groups, reach the shared barriers.
   bool inBounds=all(lessThan(pixel,ivec2(frame.target.xy)));
   pixel=min(pixel,ivec2(frame.target.xy)-1);
@@ -3627,6 +3876,11 @@ void main() {
     uint index=gl_WorkGroupID.x*64u+gl_LocalInvocationIndex;
     if(index>=SparseCount(frame.sparseCount).data[1])return;
     uint listed=SparseList(frame.sparseList).pixels[index];
+    pixel=ivec2(listed&0xffffu,listed>>16);shadingPixel=pixel;
+  } else if(primaryListLaunch) {
+    uint index=gl_WorkGroupID.x*64u+gl_LocalInvocationIndex,header=primaryListBase();
+    if(index>=PrimaryLocals(frame.primaryLocal).data[header].w)return;
+    uint listed=PrimaryLocals(frame.primaryLocal).data[header+1u+index/4u][index%4u];
     pixel=ivec2(listed&0xffffu,listed>>16);shadingPixel=pixel;
   } else {
     if (any(greaterThanEqual(pixel,ivec2(frame.target.xy)))) return;
@@ -3653,24 +3907,30 @@ void main() {
     producedSpecular=PrimaryLocals(frame.primaryLocal).data[primaryIndex+1u];
     primary=rasterSurface(pixel,origin,false);
     diagnostic=frame.splitLocal.w!=0?debugGeometry(primary,pixel):vec3(0);
+  } else if(primaryProducer) {
+    // primarySurface's own conditions (as the wavefront start kernel's split)
+    // tell from the G-buffer a pixel it would trace.
+    primary=rasterSurface(pixel,origin,false);
+    if(frame.target.w==0||primaryTraced||primary.decal||primary.film.x<0||primary.blended) {
+      PrimaryLocals(frame.primaryLocal).data[primaryIndex+2u]=uvec4(0u,1u,0u,0u);
+      primaryList(pixel);
+      return;
+    }
   } else
     primary=primarySurface(pixel,origin,direction,true,sheetCount,true,diagnostic);
   if(primaryProducer) {
-    if(!primaryTraced) {
-      // The consumer's pixel: its local light where the opaque pass takes it.
-      vec3 local=vec3(0),localSpecular=vec3(0);float localDistance=0,emissiveDistance=0;
-      if(primary.t<1e30&&!primary.blended) {
-        Hit lit=primary;vec3 sssTint=vec3(1);float sssSpecular=1;bool sssMoved=false;
-        if(subsurfaceCapable&&primary.sss.w!=0&&random()<abs(primary.sss.w))sssMoved=subsurfaceMove(lit,sssTint,sssSpecular);
-        opaqueLocal(lit,sssMoved,sssTint,sssSpecular,local,localSpecular,localDistance,emissiveDistance);
-      }
-      PrimaryLocals(frame.primaryLocal).data[primaryIndex]=uvec4(floatBitsToUint(local),floatBitsToUint(localDistance));
-      PrimaryLocals(frame.primaryLocal).data[primaryIndex+1u]=
-          uvec4(floatBitsToUint(localSpecular),floatBitsToUint(emissiveDistance));
-      PrimaryLocals(frame.primaryLocal).data[primaryIndex+2u]=uvec4(rng,0u,0u,0u);
-      return;
+    // The consumer's pixel: its local light where the opaque pass takes it.
+    vec3 local=vec3(0),localSpecular=vec3(0);float localDistance=0,emissiveDistance=0;
+    if(primary.t<1e30) {
+      Hit lit=primary;vec3 sssTint=vec3(1);float sssSpecular=1;bool sssMoved=false;
+      if(subsurfaceCapable&&primary.sss.w!=0&&random()<abs(primary.sss.w))sssMoved=subsurfaceMove(lit,sssTint,sssSpecular);
+      opaqueLocal(lit,sssMoved,sssTint,sssSpecular,local,localSpecular,localDistance,emissiveDistance);
     }
-    PrimaryLocals(frame.primaryLocal).data[primaryIndex+2u]=uvec4(0u,1u,0u,0u);
+    PrimaryLocals(frame.primaryLocal).data[primaryIndex]=uvec4(floatBitsToUint(local),floatBitsToUint(localDistance));
+    PrimaryLocals(frame.primaryLocal).data[primaryIndex+1u]=
+        uvec4(floatBitsToUint(localSpecular),floatBitsToUint(emissiveDistance));
+    PrimaryLocals(frame.primaryLocal).data[primaryIndex+2u]=uvec4(rng,0u,0u,0u);
+    return;
   }
 #ifdef TEMPORAL
   if(temporal.translucency.x!=0&&sheetCount!=1) {
@@ -3932,8 +4192,15 @@ void main() {
 #ifdef TEMPORAL
   vec3 transparentDiffuse=vec3(0),transparentSpecular=vec3(0);
 #endif
+#ifdef PLAIN_TILES_PASS
+  // No pixel of a plain tile has a sheet: the composition without the sheets'
+  // code (their walk, lighting and front guides), and so without their registers.
+  const float signedCount=0;
+  const uint sheetCount=0u;
+#else
   float signedCount=imageLoad(worldColor,pixel).a;
   uint sheetCount=uint(abs(signedCount));
+#endif
 #ifndef SINGLE_SHEET_PASS
   if(sheetCount<=1)return;
 #endif
@@ -4082,7 +4349,8 @@ void main() {
   // The sky is not at its geometry: the raster depth of a sky box's faces
   // drew the box into the medium, edges, corners and all.
   float far=1e30;
-  if((frame.volumeConfig.x&1u)!=0u||frame.cameraMedium.w>0) {
+  bool rasterFog=frame.volumeConfig.x==0u&&frame.volumeConfig.y==1u;
+  if((frame.volumeConfig.x&1u)!=0u||rasterFog||frame.cameraMedium.w>0) {
     float kind=frame.target.w!=0?imageLoad(primaryNormal,pixel).w:-1;
     if(kind>=32)kind-=32; // a screen camera's surface
     if(kind>=16)kind-=16; // a thin film
@@ -4095,6 +4363,23 @@ void main() {
   }
   if((frame.volumeConfig.x&1u)!=0u) {
     volumeMarch(origin,direction,far,fogLight,fogTransmittance);
+    transparent=fogLight+fogTransmittance*transparent;tint*=fogTransmittance;
+  } else if(rasterFog) {
+    // Raster fog (volume_policy.h rasterFog): as a raster game blends it, by
+    // view depth (along the camera's axis, from the eye-relative matrix: the
+    // absolute one loses directions to rounding far from the origin), the sky
+    // left clear; and the glow of the local lights in it (rasterFogGlow), the
+    // sky's included. Laid over everything composed here as the march's
+    // result is.
+    vec4 axisNear=frame.inverseCameraRelative*vec4(0,0,0,1),axisFar=frame.inverseCameraRelative*vec4(0,0,.99999,1);
+    float forward=max(dot(direction,normalize(axisFar.xyz/axisFar.w-axisNear.xyz/axisNear.w)),0);
+    if(far<1e30) {
+      float amount=rasterFogAmount(far*forward);
+      fogTransmittance=1-amount;fogLight=frame.volumeMedium.rgb*amount;
+    }
+    // Interleaved gradient noise: a fixed fine pattern, nothing to trail.
+    float jitter=fract(52.9829189*fract(dot(vec2(pixel),vec2(.06711056,.00583715))));
+    fogLight+=rasterFogGlow(origin,direction,far,forward,jitter);
     transparent=fogLight+fogTransmittance*transparent;tint*=fogTransmittance;
   }
   // A camera inside a translucent body (under water): its medium up to the
@@ -4127,6 +4412,33 @@ void main() {
   }
   imageStore(transparentLight,pixel,vec4(safeRadiance(foreground+tint*imageLoad(primaryPrevious,pixel).rgb),1));
   imageStore(transmittance,pixel,vec4(signedCount<0?vec3(0):tint,opacityProduct));
+  // For host passes: the sheets' transmittance before the media, and the
+  // view depth of the first surface that is not a sheet. Without sheets that is
+  // the guide's (what a ray portal or a mirror shows); the guides and the raster
+  // depth are the front sheet's otherwise, so the centre ray is followed past
+  // the sheets to the surface behind them.
+  imageStore(sheetTransmittance,pixel,vec4(signedCount<0?vec3(0):guideTint,1));
+  float opaqueZ=imageLoad(guideDepth,pixel).x;
+  if(sheetCount!=0) {
+    opaqueZ=1e10;
+    vec2 centerNdc=(vec2(pixel)+vec2(0.5))/vec2(frame.target.xy)*2-1;
+    vec4 centerNear=frame.inverseCamera*vec4(centerNdc,0,1);
+    vec4 centerFar=frame.inverseCamera*vec4(centerNdc,0.99999,1);
+    vec3 behindOrigin=centerNear.xyz/centerNear.w;
+    vec3 behindDirection=normalize(centerFar.xyz/centerFar.w-behindOrigin);
+    for(uint layer=0;layer<32;++layer) {
+      cameraRay=frame.cameraCull.x!=0u;
+      Hit hit=closestGeometry(behindOrigin,behindDirection,1e30,false);
+      cameraRay=false;
+      if(hit.t==1e30)break;
+      if(!hit.blended) {
+        opaqueZ=abs((temporal.view*vec4(hit.p,1)).z);
+        break;
+      }
+      behindOrigin=offsetRay(hit.p,-hit.ng);
+    }
+  }
+  imageStore(opaqueDepth,pixel,vec4(opaqueZ));
 #endif
   float count=float(frame.config.w);
   if (count>0) {

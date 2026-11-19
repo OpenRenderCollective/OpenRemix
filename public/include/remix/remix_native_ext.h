@@ -40,19 +40,32 @@ typedef struct remixapi_LightInfoShadowClearanceEXT {
   float distance;
 } remixapi_LightInfoShadowClearanceEXT;
 
-// Optional pNext on a sphere LightInfo: a game light's falloff, where the game
-// does not light by the inverse square alone. Within `holdDistance` of its
-// centre the light is no stronger than at that distance (shadows are as
-// without it), and it fades to nothing at `range` by 1 - d^2 / range^2 (d no
-// less than holdDistance). Source's dynamic lights light the world so. Zero:
-// none of that part. Path traced lighting only.
+// Optional pNext on a sphere LightInfo: a game light's falloff near it, where
+// the game does not light by the inverse square alone. Within `holdDistance`
+// of its centre the light is no stronger than at that distance (shadows are
+// as without it): Source's dynamic lights light the world no more than twice
+// their colour. Zero: none. Where it ends is remixapi_LightInfoRangeEXT's.
+// Path traced lighting only.
 #define REMIXAPI_STRUCT_TYPE_LIGHT_INFO_FALLOFF_EXT ((remixapi_StructType)0x7fff107a)
 typedef struct remixapi_LightInfoFalloffEXT {
   remixapi_StructType sType;
   const void* pNext;
   float holdDistance;
-  float range;
 } remixapi_LightInfoFalloffEXT;
+
+// Optional sphere light pNext: the distance from its centre beyond which it
+// lights nothing in the path tracer, in scene units (a game light's range, as
+// rasterizers give their lights). Its light fades out smoothly towards it, by
+// (1 - (d / range)^4)^2: 88% kept at half the range, 12% at 90%, none at it.
+// Zero leaves its reach unbounded. Forward+ keeps its own
+// (remixapi_LightInfoForwardCutoffEXT). A negative or non-finite range is an
+// invalid argument.
+#define REMIXAPI_STRUCT_TYPE_LIGHT_INFO_RANGE_EXT ((remixapi_StructType)0x7fff107B)
+typedef struct remixapi_LightInfoRangeEXT {
+  remixapi_StructType sType;
+  const void* pNext;
+  float range;
+} remixapi_LightInfoRangeEXT;
 
 // Optional pNext on opaque MaterialInfo. Nonzero roughness/metalness constants
 // or a roughness/metalness/normal map automatically select EON + GGX. Completely
@@ -73,6 +86,22 @@ typedef struct remixapi_MaterialDirectSpecularEXT {
   const void *pNext;
   remixapi_Bool enabled;
 } remixapi_MaterialDirectSpecularEXT;
+
+// Optional pNext on an opaque MaterialInfo drawn as multiplicative paint (an
+// instance in a decal category whose remixapi_InstanceInfoBlendEXT blends
+// DST_COLOR * ZERO or ZERO * SRC_COLOR): where the paint covers its receiver,
+// the receiver takes the paint's roughness and metalness (its constants and
+// maps) in place of its own, as under a wet film (blood, oil); the paint still
+// only tints its colour, and its normal is kept. Of stacked paint, the nearest
+// with a finish gives it. Where triangles of one such instance overlap, they
+// tint once, by the darkest of them per channel (one film, not stacked coats:
+// stains batched into one mesh). Without effect on other materials.
+#define REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_PAINT_FINISH_EXT ((remixapi_StructType)0x7fff1079)
+typedef struct remixapi_MaterialInfoPaintFinishEXT {
+  remixapi_StructType sType;
+  const void *pNext;
+  remixapi_Bool enabled;
+} remixapi_MaterialInfoPaintFinishEXT;
 
 // Optional MaterialInfo pNext. Keep the visible emissive color/map while
 // suppressing generated area lights, e.g. when an explicit analytic light
@@ -352,6 +381,32 @@ typedef struct remixapi_InstanceInfoBackdropEXT {
   const void *pNext;
   uint32_t role; // REMIXAPI_INSTANCE_BACKDROP_*_EXT
 } remixapi_InstanceInfoBackdropEXT;
+
+// Optional MaterialInfo pNext (after its Opaque struct) on a material that
+// shows another view: a screen (remixapi_MaterialInfoScreenCameraEXT) or a
+// ray portal over an opaque surface. What it shows takes the effects of a
+// game's screen shader (Source's MonitorScreen, a Unity screen material):
+//  tint: multiplies the view, each channel 0..1 ({1, 1, 1}: none).
+//  saturation: mix(mean(c), c, saturation), the mean of the three channels
+//   (1: none, 0: grey; MonitorScreen's $saturation).
+//  contrast: mix(c, c * c, contrast) (0: none; MonitorScreen's $contrast).
+//  chromaticAberration: the red channel displaced right and the blue channel
+//   left of the green by this fraction of the output's width (0: none, at
+//   most 1/240); a neighbouring pixel lends its channel only where it shows
+//   such a view too.
+// Saturation and contrast apply to the displayed (SDR-encoded) colour, as a
+// game's shader sees its camera's image; with an HDR output, to the exposed
+// linear colour. Tint applies in the view's lighting, saturation, contrast and
+// the aberration to the final image (after upscaling).
+#define REMIXAPI_STRUCT_TYPE_MATERIAL_VIEW_EFFECTS_EXT ((remixapi_StructType)0x7fff107A)
+typedef struct remixapi_MaterialInfoViewEffectsEXT {
+  remixapi_StructType sType;
+  const void *pNext;
+  remixapi_Float3D tint;
+  float saturation;
+  float contrast;
+  float chromaticAberration;
+} remixapi_MaterialInfoViewEffectsEXT;
 
 // Optional TextureInfo pNext. With `generate` set and a single supplied level
 // (mipLevels = 1), the runtime completes the texture with a box-filtered mip
@@ -993,6 +1048,19 @@ typedef uint64_t remixapi_HostTargetHandleEXT;
 // fill: a draw targeting it writes depth only (gl_FragDepth), a clear sets it
 // to clearColor[0]. Draws on the frame test and write it as their `depth` says.
 #define REMIXAPI_HOST_TARGET_FRAME_DEPTH_EXT ((remixapi_HostTargetHandleEXT)0xffffffff00000002ull)
+// What the frame's sheets (glass, water, blended surfaces) let through, for a
+// pass that changes what lies behind them: RGBA16 float at the tracer's render
+// resolution, rgb the transmittance of the sheets in front of each pixel's
+// first surface that is not a sheet (the frame there is the sheets' own light
+// plus rgb times what is behind them, before fog and a camera's medium; 1
+// where there are none). With REMIXAPI_HOST_TARGET_VIEW_OPAQUE_DEPTH_EXT, a
+// host that draws over a surface behind glass replaces what the glass shows of
+// it: frame + rgb x (new - old). Skipped as VIEW_DEPTH is.
+#define REMIXAPI_HOST_TARGET_VIEW_TRANSMITTANCE_EXT ((remixapi_HostTargetHandleEXT)0xffffffff00000003ull)
+// VIEW_DEPTH's, of each pixel's first surface that is not a sheet (the
+// farther of that surface and what it shows through a ray portal or mirror).
+// VIEW_DEPTH is the front sheet's where one covers the pixel by half or more.
+#define REMIXAPI_HOST_TARGET_VIEW_OPAQUE_DEPTH_EXT ((remixapi_HostTargetHandleEXT)0xffffffff00000004ull)
 #define REMIXAPI_HOST_DEPTH_WRITE_EXT 0x100u
 
 #define REMIXAPI_HOST_SHADER_VERTEX_EXT 1u

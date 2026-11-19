@@ -60,6 +60,9 @@ namespace remix {
     for (auto &[handle, target] : m_targets)
       destroyTarget(target);
     m_targets.clear();
+    for (auto &[frame, target] : m_retired)
+      destroyTarget(target);
+    m_retired.clear();
     for (auto &slot : m_slots) {
       if (slot.pool)
         vkDestroyDescriptorPool(m_device, slot.pool, nullptr);
@@ -227,7 +230,9 @@ namespace remix {
             return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
         for (const auto &s : pass.samplers)
           if (s.addressU > 2 || s.addressV > 2 ||
-              (s.target >= REMIXAPI_HOST_TARGET_RESERVED_EXT && s.target != REMIXAPI_HOST_TARGET_VIEW_DEPTH_EXT))
+              (s.target >= REMIXAPI_HOST_TARGET_RESERVED_EXT && s.target != REMIXAPI_HOST_TARGET_VIEW_DEPTH_EXT &&
+               s.target != REMIXAPI_HOST_TARGET_VIEW_OPAQUE_DEPTH_EXT &&
+               s.target != REMIXAPI_HOST_TARGET_VIEW_TRANSMITTANCE_EXT))
             return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
         // One copy of every byte, in a known order (see record).
         pass.data.reserve(bytes);
@@ -295,7 +300,7 @@ namespace remix {
       return t; // a volume stays one: a pass naming it as its target is skipped
     if (t.image && (t.format != format || t.extent.width != extent.width || t.extent.height != extent.height ||
                     t.channels != channels || t.depth != depth))
-      destroyTarget(t);
+      retireTarget(t);
     if (!t.image) {
       t.format = format;
       t.extent = extent;
@@ -390,7 +395,7 @@ namespace remix {
   HostPasses::Target &HostPasses::frameDepth(VkCommandBuffer command, VkExtent2D extent) {
     auto &t = m_targets[REMIXAPI_HOST_TARGET_FRAME_DEPTH_EXT];
     if (t.image && (t.extent.width != extent.width || t.extent.height != extent.height)) {
-      destroyTarget(t);
+      retireTarget(t);
       // The frame's pass with it attached went with it.
       auto frame = m_targets.find(0);
       if (frame != m_targets.end()) {
@@ -531,6 +536,11 @@ namespace remix {
                                               .height = frame.extent.height,
                                               .layers = 1};
     check(vkCreateFramebuffer(m_device, &framebuffer, nullptr, &frame.depthFramebuffer));
+  }
+
+  void HostPasses::retireTarget(Target &t) {
+    m_retired.emplace_back(m_frame, t);
+    t = {};
   }
 
   void HostPasses::destroyTarget(Target &t) {
@@ -758,7 +768,7 @@ namespace remix {
   }
 
   void HostPasses::record(VkCommandBuffer command, uint32_t slotIndex, VkImage image, VkFormat format,
-                          VkExtent2D extent, VkImageLayout imageLayout, VkImageView viewDepth) {
+                          VkExtent2D extent, VkImageLayout imageLayout, const ViewImages &view) {
     std::vector<Pass> passes;
     std::vector<Upload> uploads;
     {
@@ -987,14 +997,18 @@ namespace remix {
           VkImageView sampled = VK_NULL_HANDLE;
           if (image) {
             sampled = frame.sampled;
-            if (found->target == REMIXAPI_HOST_TARGET_VIEW_DEPTH_EXT) {
-              // The runtime's own image, when the frame has it.
-              if (!viewDepth) {
+            if (found->target >= REMIXAPI_HOST_TARGET_RESERVED_EXT) {
+              // The runtime's own images, when the frame has them.
+              const VkImageView own = found->target == REMIXAPI_HOST_TARGET_VIEW_DEPTH_EXT ? view.depth
+                                      : found->target == REMIXAPI_HOST_TARGET_VIEW_OPAQUE_DEPTH_EXT
+                                          ? view.opaqueDepth
+                                          : view.transmittance;
+              if (!own) {
                 complete = false;
                 incomplete = &m_stats.skippedViewDepth;
                 break;
               }
-              sampled = viewDepth;
+              sampled = own;
             } else if (found->target) {
               auto it = m_targets.find(found->target);
               if (it == m_targets.end() || !it->second.initialized) {
@@ -1090,6 +1104,15 @@ namespace remix {
     } else {
       barrier(command, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, imageLayout, VK_ACCESS_TRANSFER_READ_BIT, all,
               VK_PIPELINE_STAGE_TRANSFER_BIT, everything);
+    }
+    // Replaced targets once no frame in flight can use them (each recorded
+    // frame waits for its slot's previous one).
+    for (auto it = m_retired.begin(); it != m_retired.end();) {
+      if (it->first + gpuFrameCount + 1 <= m_frame) {
+        destroyTarget(it->second);
+        it = m_retired.erase(it);
+      } else
+        ++it;
     }
     // Targets the host stopped using go after a while.
     for (auto it = m_targets.begin(); it != m_targets.end();) {

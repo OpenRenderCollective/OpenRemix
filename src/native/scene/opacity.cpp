@@ -209,8 +209,11 @@ namespace remix::scene {
     // Double-sided coverage does not depend on oneSidedOpaque: those entries
     // stay shared between both settings.
     const bool scrolling = draw.texcoordMoves();
+    // A blended layer's micromap holds where it never shows; a tinted sheet
+    // shows (its tint) at zero alpha.
     const uint32_t flags = uint32_t(draw.doubleSided) | uint32_t(b.enabled) << 1 | uint32_t(m.transmission) << 2 |
-                           uint32_t(oneSidedOpaque && !draw.doubleSided) << 3 | uint32_t(scrolling) << 4;
+                           uint32_t(oneSidedOpaque && !draw.doubleSided) << 3 | uint32_t(scrolling) << 4 |
+                           uint32_t(draw.blendedCoverage()) << 5;
     const auto &texture = m.texture;
     dimensions = {};
     if (texture) {
@@ -235,7 +238,7 @@ namespace remix::scene {
               b.factor >> 24,
               flags,
               uint32_t(m.filter) | uint32_t(m.wrapU) << 8 | uint32_t(m.wrapV) << 16,
-              draw.decal || draw.wound ? 0u : micromapLevel};
+              (draw.decal && !draw.blendedCoverage()) || draw.wound ? 0u : micromapLevel};
     return true;
   }
 
@@ -326,7 +329,10 @@ namespace remix::scene {
                         : b.enabled                          ? P::Blended
                         : m.transmission                     ? P::Transmission
                                                              : P::Solid;
-    if (uniform != P::Solid || compare == 7 || compare == 0 || compare == 2 || compare == 5) {
+    // A blended layer's coverage (Draw::blendedCoverage): no triangle is ever
+    // opaque in traversal, but a micromap can leave out where it never shows.
+    const bool layer = uniform == P::Blended && draw.blendedCoverage();
+    if (!layer && (uniform != P::Solid || compare == 7 || compare == 0 || compare == 2 || compare == 5)) {
       if (uniform == P::Solid && compare != 7)
         uniform = P::AlphaTest;
       result->key.assign(1, uniform == P::Solid ? 1 : 0);
@@ -347,11 +353,12 @@ namespace remix::scene {
           vertex[0] = std::min(vertex[0], alpha);
           vertex[1] = std::max(vertex[1], alpha);
         }
-        auto reason = !usesTexture           ? P::Solid
+        auto reason = layer                  ? P::Blended
+                      : !usesTexture         ? P::Solid
                       : draw.texcoordMoves() ? P::Scrolling
                                              : opaqueTexels(draw, uv, triangle, pixels, regions);
         const Range texture = usesTexture && reason == P::Solid ? Range{1, 1} : Range{0, 1};
-        const bool solid = valid && alwaysPasses(compare, combinedAlpha(draw, texture, vertex), reference);
+        const bool solid = !layer && valid && alwaysPasses(compare, combinedAlpha(draw, texture, vertex), reference);
         if (!valid)
           reason = P::Invalid;
         else if (solid)
@@ -364,11 +371,24 @@ namespace remix::scene {
       }
       if (!result->reasons[P::Solid] || result->reasons[P::Solid] == result->triangles)
         result->key.assign(1, result->reasons[P::Solid] ? 1 : 0);
-      // Decals are skipped by visibility rays before their alpha test. A wound
-      // cut holes the surface in the candidate test alone: no micromap may
-      // settle its micro-triangles (two-state shadow rays would close it).
-      if (micromapLevel && !draw.decal && !draw.wound && result->key[0] != 1) {
+      // Decals are skipped by visibility rays before their alpha test: only a
+      // layer's micromap (never opaque) may settle paint. A wound cut holes
+      // the surface in the candidate test alone: no micromap may settle its
+      // micro-triangles (two-state shadow rays would close it).
+      if (micromapLevel && (!draw.decal || layer) && !draw.wound && result->key[0] != 1) {
         const TextureEntries *proof = usesTexture ? pixels : nullptr;
+        if (layer) {
+          if (layers.size() >= 256)
+            layers.clear();
+          auto &memo = layers[key];
+          if (!sameOwner(memo.texture, texture) || memo.level != micromapLevel || memo.triangles.size() >= 65536)
+            memo = {texture, micromapLevel, {}};
+          result->micromap = bakeMicromap(texelMargin, micromapLevel, draw, uv, *result, proof, usesTexture, &memo);
+          if (cache.entries.size() >= 8)
+            cache.entries.clear();
+          cache.entries.insert_or_assign(key, Entry{texture, result, std::move(regions), 0});
+          return result;
+        }
         const uint64_t hash = contentHash(*draw.surface);
         auto *shared = content(hash, texture, key, *result);
         if (shared && shared->ready)
@@ -469,8 +489,14 @@ namespace remix::scene {
   std::shared_ptr<const OpacityMicromap> OpacityCache::bakeMicromap(float texelMargin, uint32_t micromapLevel,
                                                                     const Draw &draw, const std::array<float, 4> &uv,
                                                                     const OpacityPartition &partition,
-                                                                    const TextureEntries *texture, bool usesTexture) {
+                                                                    const TextureEntries *texture, bool usesTexture,
+                                                                    LayerMemo *memo) {
     using M = OpacityMicromap;
+    // A blended layer is never proved opaque: its instance is forced
+    // non-opaque, and every ray that meets it treats it as a layer (shadow
+    // rays its transmission), not as a blocker. Where its alpha is zero, or
+    // fails its alpha test, no ray meets it (visibleAlpha).
+    const bool layer = draw.blendedCoverage();
     const auto &m = *draw.material;
     const auto compare = draw.alphaOverride ? draw.compare : m.compare;
     const float reference = draw.alphaOverride ? draw.reference : m.reference;
@@ -487,8 +513,25 @@ namespace remix::scene {
     // Identical micro-triangle arrays share one stored triangle.
     std::map<std::pair<uint32_t, std::string>, int32_t> stored;
     std::vector<uint8_t> states;
-    std::string packed;
+    std::string signature;
     bool proved = false;
+    auto apply = [&](const BakedTriangle &baked, uint32_t triangle) {
+      micromap->opaque += baked.counts[M::Opaque];
+      micromap->transparent += baked.counts[M::Transparent];
+      micromap->unknown += baked.counts[M::UnknownOpaque] + baked.counts[M::UnknownTransparent];
+      proved |= baked.counts[M::Opaque] + baked.counts[M::Transparent] != 0;
+      if (baked.special) {
+        micromap->indices[triangle] = baked.special;
+        return;
+      }
+      auto [found, inserted] = stored.try_emplace({baked.level, baked.packed}, int32_t(micromap->triangles.size()));
+      if (inserted) {
+        micromap->triangles.push_back({uint32_t(micromap->data.size()), uint16_t(baked.level), M::Format4State});
+        micromap->data.insert(micromap->data.end(), baked.packed.begin(), baked.packed.end());
+        ++micromap->levels[baked.level];
+      }
+      micromap->indices[triangle] = found->second;
+    };
     for (uint32_t triangle = 0; triangle < partition.triangles; ++triangle) {
       if (partition.opaque(triangle))
         continue;
@@ -504,6 +547,15 @@ namespace remix::scene {
       if (!valid) {
         micromap->indices[triangle] = M::FullyUnknownOpaque;
         continue;
+      }
+      // All the bake reads of the triangle itself; the rest is the memo's key.
+      if (memo) {
+        signature.assign(reinterpret_cast<const char *>(uvs.data()), sizeof(uvs));
+        signature.append(reinterpret_cast<const char *>(alphas.data()), sizeof(alphas));
+        if (const auto found = memo->triangles.find(signature); found != memo->triangles.end()) {
+          apply(found->second, triangle);
+          continue;
+        }
       }
       // About two micro-triangles per texel, up to the level setting: finer
       // than the texels, as each footprint adds half a texel of filtering.
@@ -542,10 +594,13 @@ namespace remix::scene {
         } else if (!usesTexture)
           sampled = {1, 1}; // Not read by the combiner.
         const auto alpha = combinedAlpha(draw, sampled, vertex);
-        uint8_t state = alwaysPasses(compare, alpha, reference)  ? M::Opaque
-                        : alwaysFails(compare, alpha, reference) ? M::Transparent
-                                                                 : M::UnknownOpaque;
-        if (state == M::UnknownOpaque && at == level) {
+        uint8_t state = !layer && alwaysPasses(compare, alpha, reference)                    ? M::Opaque
+                        : alwaysFails(compare, alpha, reference) || (layer && alpha[1] <= 0) ? M::Transparent
+                                                                                             : M::UnknownOpaque;
+        // A layer's unproved micro-triangles stay unknown-opaque: a ray that
+        // forces two states takes them as opaque, which the instance's
+        // FORCE_NO_OPAQUE still hands to the candidate test.
+        if (state == M::UnknownOpaque && at == level && !layer) {
           // Unproved at the finest level: the shader decides for a 4-state
           // ray. A ray that forces two states (shadow rays,
           // rtx.native.pathtrace.shadowMicromap2State) takes the test's likely
@@ -597,39 +652,24 @@ namespace remix::scene {
           self(self, at + 1, index * 4 + child);
       };
       prove(prove, 0, 0);
-      uint64_t counts[4] = {};
+      BakedTriangle baked;
       for (uint8_t state : states)
-        ++counts[state];
-      micromap->opaque += counts[M::Opaque];
-      micromap->transparent += counts[M::Transparent];
-      micromap->unknown += counts[M::UnknownOpaque] + counts[M::UnknownTransparent];
-      proved |= counts[M::Opaque] + counts[M::Transparent] != 0;
-      if (counts[M::Opaque] == states.size()) {
-        micromap->indices[triangle] = M::FullyOpaque;
-        continue;
+        ++baked.counts[state];
+      const auto all = states.size();
+      baked.special = baked.counts[M::Opaque] == all               ? M::FullyOpaque
+                      : baked.counts[M::Transparent] == all        ? M::FullyTransparent
+                      : baked.counts[M::UnknownOpaque] == all      ? M::FullyUnknownOpaque
+                      : baked.counts[M::UnknownTransparent] == all ? M::FullyUnknownTransparent
+                                                                   : 0;
+      if (!baked.special) {
+        baked.level = level;
+        baked.packed.assign(states.size() / 4, 0);
+        for (size_t i = 0; i < states.size(); ++i)
+          baked.packed[i / 4] = char(uint8_t(baked.packed[i / 4]) | states[i] << (2 * (i % 4)));
       }
-      if (counts[M::Transparent] == states.size()) {
-        micromap->indices[triangle] = M::FullyTransparent;
-        continue;
-      }
-      if (counts[M::UnknownOpaque] == states.size()) {
-        micromap->indices[triangle] = M::FullyUnknownOpaque;
-        continue;
-      }
-      if (counts[M::UnknownTransparent] == states.size()) {
-        micromap->indices[triangle] = M::FullyUnknownTransparent;
-        continue;
-      }
-      packed.assign(states.size() / 4, 0);
-      for (size_t i = 0; i < states.size(); ++i)
-        packed[i / 4] = char(uint8_t(packed[i / 4]) | states[i] << (2 * (i % 4)));
-      auto [found, inserted] = stored.try_emplace({level, packed}, int32_t(micromap->triangles.size()));
-      if (inserted) {
-        micromap->triangles.push_back({uint32_t(micromap->data.size()), uint16_t(level), M::Format4State});
-        micromap->data.insert(micromap->data.end(), packed.begin(), packed.end());
-        ++micromap->levels[level];
-      }
-      micromap->indices[triangle] = found->second;
+      apply(baked, triangle);
+      if (memo)
+        memo->triangles.emplace(signature, std::move(baked));
     }
     // Nothing proved: traversal would run every alpha test anyway.
     if (!proved)
@@ -837,6 +877,7 @@ namespace remix::scene {
     std::erase_if(surfaces, [](const auto &item) { return item.second.owner.expired(); });
     std::erase_if(textures, [](const auto &item) { return !item.second || item.second->owner.expired(); });
     std::erase_if(contents, [](const auto &item) { return item.second.textured && item.second.texture.expired(); });
+    std::erase_if(layers, [](const auto &item) { return item.second.texture.expired(); });
     // Bounded: finished entries go first (a later copy bakes again).
     if (contents.size() > 16384)
       std::erase_if(contents, [](const auto &item) { return item.second.ready; });

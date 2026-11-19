@@ -180,6 +180,11 @@ namespace remix {
     if (sheetTemporalCompute)
       pipeline::destroyPipeline(device, sheetTemporalCompute, nullptr);
     sheetTemporalCompute = VK_NULL_HANDLE;
+    // The plain composition of sheet tiles is built on the temporal layout too.
+    forgetLightingPipeline(sheetTiles.plainTemporal);
+    if (sheetTiles.plainTemporal)
+      pipeline::destroyPipeline(device, sheetTiles.plainTemporal, nullptr);
+    sheetTiles.plainTemporal = VK_NULL_HANDLE;
     forgetLightingPipeline(temporalTransparencyCompute);
     forgetLightingPipeline(temporalCompute);
     forgetLightingPipeline(confidenceCompute);

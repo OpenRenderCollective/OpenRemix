@@ -36,18 +36,9 @@ float heldDistance2(LightEmitter light,float distance2) {
   float clearance=max(light.corners[2].z,light.corners[2].w);
   return clearance>0&&distance2<clearance*clearance?clearance*clearance:0;
 }
-// A sphere light's range (corners[1].x; remixapi_LightInfoFalloffEXT): it
-// fades to nothing there, by 1 - d^2 / range^2, d no less than its hold
-// distance (within that it is as at that distance).
-float rangeFade(LightEmitter light,float distance2) {
-  float range=light.radiance.w==0?light.corners[1].x:0;
-  if(range<=0)return 1;
-  float hold=light.corners[2].w;
-  return max(0,1-max(distance2,hold*hold)/(range*range));
-}
 float clearanceFade(LightEmitter light,float distance2) {
   float clearance=light.radiance.w==0?max(light.corners[2].z,light.corners[2].w):0;
-  return (clearance>0?min(1,distance2/(clearance*clearance)):1)*rangeFade(light,distance2);
+  return clearance>0?min(1,distance2/(clearance*clearance)):1;
 }
 float lightRandom(inout uint state) {
   state=hash(state+0x9e3779b9u);return float(state>>8)*(1.0/16777216.0);
@@ -75,6 +66,17 @@ float localFalloff(float distance2) {
   float t=clamp((distance2*frame.localScale.w-.5625)*(16.0/7.0),0,1);
   return reach<=0?1:(1-t)*(1-t)*(1+2*t);
 }
+// A sphere light's own range (remixapi_LightInfoRangeEXT, corners[1].x; 0:
+// none): (1 - (d/range)^4)^2, zero at and beyond it.
+float rangeWindow(LightEmitter light,float distance2) {
+  float range=light.radiance.w==0?light.corners[1].x:0;
+  if(range<=0)return 1;
+  float x=distance2/(range*range);
+  float w=clamp(1-x*x,0,1);
+  return w*w;
+}
+// The frame's falloff (localFalloff) and the emitter's range together.
+float emitterFalloff(LightEmitter light,float distance2) { return localFalloff(distance2)*rangeWindow(light,distance2); }
 float lightWeight(LightNode node,vec3 p,vec3 n) {
   vec3 halfSize=.5*(node.maximum.xyz-node.minimumPower.xyz);
   vec3 delta=.5*(node.maximum.xyz+node.minimumPower.xyz)-p;
@@ -200,8 +202,9 @@ struct LightOccluder { float t; vec3 p; vec3 n; vec3 transmission; };
 bool localOccluder(accelerationStructureEXT scene,vec3 origin,vec3 direction,inout LightOccluder hit) {
   rayQueryEXT query;
   profileRay(16);
-  // With no blended geometry, any hardware-opaque hit blocks the segment.
-  // Scenes containing transmitting layers keep ordered closest-hit traversal.
+  // With no blended layer these rays can meet (none, or only wholly blended
+  // instances, which skipBlendedSecondaryRays leaves out), any hit blocks the
+  // segment. Transmitting layers in reach keep ordered closest-hit traversal.
   uint flags=(firstOpaqueHit?gl_RayFlagsTerminateOnFirstHitEXT:gl_RayFlagsNoneEXT)|shadowFlags();
   rayQueryInitializeEXT(query,scene,flags,shadowMask(),origin,contactGap(hit.t),direction,hit.t);
   while(rayQueryProceedEXT(query)) {
@@ -362,18 +365,34 @@ LocalCandidate triangleCandidate(LightEmitter light,Hit hit,inout uint state,boo
   result.distance=sqrt(distance2);
   return result;
 }
+// A sphere light's sampled cone (1 - cos of its half angle; the whole
+// sphere from inside it) and the measure its radiance is scaled by (twice
+// that: its solid angle over pi). With soft sphere lights
+// (TraceOptions::softSphereLights) the measure is r^2 / (d^2 + r^2), the
+// solid angle's far-field value, and a point inside the sphere samples the
+// half towards its centre as one on its surface would: the light then falls
+// off smoothly through the sphere's surface. Solid, a surface inside the
+// sphere sees it in every direction above it, so where the sphere sank into a
+// wall the wall showed a flat disc of the brightest light, its edge where the
+// sphere left the wall.
+void sphereLightCone(float distance2,float radius,out float oneMinusCos,out float measure) {
+  bool soft=(frame.localConfig.w&0x20000000u)!=0u;
+  float sinMax2=min(1,radius*radius/max(distance2,1e-20));
+  // Stable for small, distant lights: 1-sqrt(1-x) = x/(1+sqrt(1-x)).
+  oneMinusCos=distance2<=radius*radius?(soft?1:2):sinMax2/(1+sqrt(max(0,1-sinMax2)));
+  measure=soft?radius*radius/(distance2+radius*radius):2*oneMinusCos;
+}
 LocalCandidate localCandidate(LightEmitter light,Hit hit,inout uint state,bool angular,vec2 blue,uint stream) {
   if(light.radiance.w!=0)return triangleCandidate(light,hit,state,angular,blue,stream);
   LocalCandidate result;result.physical=result.specular=vec3(0);result.endpoint=hit.p;result.distance=0;
   vec3 delta=light.positionRadius.xyz-hit.p;
   float distance2=dot(delta,delta),radius=light.positionRadius.w;
-  float attenuation=localFalloff(distance2)*rangeFade(light,distance2);
+  float attenuation=emitterFalloff(light,distance2);
   if(attenuation==0)return result;
   float held2=heldDistance2(light,distance2);bool held=held2>0,inside=!held&&distance2<=radius*radius;
   vec3 axis=distance2>1e-20?delta*inversesqrt(distance2):hit.n;
-  float sinMax2=min(1,radius*radius/max(held?held2:distance2,1e-20));
-  // Stable for small, distant lights: 1-sqrt(1-x) = x/(1+sqrt(1-x)).
-  float oneMinusCos=inside?2:sinMax2/(1+sqrt(max(0,1-sinMax2)));
+  // (Held: as from the hold's distance, and never from within the sphere.)
+  float oneMinusCos,measure;sphereLightCone(held?max(held2,radius*radius*1.0001):distance2,radius,oneMinusCos,measure);
   vec2 sampleU=localEmitterSample(vec2(lightRandom(state),lightRandom(state)),blue,stream);
   float cosTheta=held?1:1-sampleU.x*oneMinusCos;
   float sinTheta=sqrt(max(0,(1-cosTheta)*(1+cosTheta)));
@@ -386,7 +405,7 @@ LocalCandidate localCandidate(LightEmitter light,Hit hit,inout uint state,bool a
   vec3 perpendicular=delta-direction*projected;
   float root=sqrt(max(0,radius*radius-dot(perpendicular,perpendicular)));
   float distance=max(0,inside?projected+root:projected-root);
-  vec3 scale=emitterRadiance(light,-direction)*(2*oneMinusCos*cosine*attenuation)*frame.localScale.x;
+  vec3 scale=emitterRadiance(light,-direction)*(measure*cosine*attenuation)*frame.localScale.x;
   result.physical=materialResponse(hit,direction,result.specular)*scale;
   result.specular*=scale;
   result.endpoint=clearedEndpoint(light,hit.p,hit.p+direction*distance);result.distance=distance;
@@ -772,13 +791,11 @@ vec3 localLighting(Hit hit,uint state,uint samples,out float lightDistance,bool 
     } else {
       vec3 delta=light.positionRadius.xyz-hit.p;
       float distance2=dot(delta,delta),radius=light.positionRadius.w;
-      float attenuation=localFalloff(distance2)*rangeFade(light,distance2);
+      float attenuation=emitterFalloff(light,distance2);
       if(attenuation==0)continue;
       float held2=heldDistance2(light,distance2);bool held=held2>0,inside=!held&&distance2<=radius*radius;
       vec3 axis=distance2>1e-20?delta*inversesqrt(distance2):hit.n;
-      float sinMax2=min(1,radius*radius/max(held?held2:distance2,1e-20));
-      // Stable for small, distant lights: 1-sqrt(1-x) = x/(1+sqrt(1-x)).
-      float oneMinusCos=inside?2:sinMax2/(1+sqrt(max(0,1-sinMax2)));
+      float oneMinusCos,measure;sphereLightCone(held?max(held2,radius*radius*1.0001):distance2,radius,oneMinusCos,measure);
       vec2 sampleU=localEmitterSample(vec2(lightRandom(state),lightRandom(state)),blue,sampleIndex*8u);
       float cosTheta=held?1:1-sampleU.x*oneMinusCos;
       float sinTheta=sqrt(max(0,(1-cosTheta)*(1+cosTheta)));
@@ -791,7 +808,7 @@ vec3 localLighting(Hit hit,uint state,uint samples,out float lightDistance,bool 
       vec3 perpendicular=delta-direction*projected;
       float root=sqrt(max(0,radius*radius-dot(perpendicular,perpendicular)));
       distance=max(0,inside?projected+root:projected-root);
-      vec3 scale=emitterRadiance(light,-direction)*(2*oneMinusCos*cosine*attenuation)*frame.localScale.x;
+      vec3 scale=emitterRadiance(light,-direction)*(measure*cosine*attenuation)*frame.localScale.x;
       physical=materialResponse(hit,direction,physicalSpecular)*scale;physicalSpecular*=scale;
       endpoint=clearedEndpoint(light,hit.p,hit.p+direction*distance);
     }

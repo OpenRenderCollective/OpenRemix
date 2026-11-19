@@ -17,6 +17,21 @@ nothing until there is a medium.
 | `volumetricBaseHeight` | 0 | Height (meters) below which the density is whole. |
 | `volumetricUpAxis` | 3 | The world's up axis, for the height falloff and the NUMOS sky: 0 X, 1 Y, 2 Z, 3 Auto (Y or Z, from the camera: game cameras do not roll). |
 | `volumetricMaxDistance` | 250 | The medium fills at most this many meters of a camera ray, the sky's included. |
+| `volumetricFogDensityScale` | 1 | Scales the game's exponential fog density for the traced medium (raster fog takes it as given). |
+| `volumetricRaster` | 0 | Raster fog (below). |
+| `volumetricRasterBrightness` | 1 | Raster fog: the fog colour's radiance. |
+| `volumetricRasterLights` | 16 | Raster fog: how many lights glow (0-64). |
+| `volumetricRasterShadowSize` | 64 | Raster fog: texels a side of a glowing light's shadow cube face (16-256). |
+| `volumetricRasterSteps` | 12 | Raster fog: samples of each glowing light along a camera ray (1-64). |
+| `volumetricRasterSunSize` | 512 | Raster fog: texels a side of the sun's shadow map (64-2048). |
+| `volumetricRasterSunExtent` | 64 | Raster fog: meters the sun's and the sky's maps reach to each side of the camera. |
+| `volumetricRasterSunSteps` | 16 | Raster fog: samples of the sun and the sky along a camera ray (1-64). |
+| `volumetricRasterSoftLights` | 48 | Raster fog: lights after the first `volumetricRasterLights` that glow with a coarse cube (0-128; 128 in all). |
+| `volumetricRasterSoftSize` | 16 | Raster fog: texels a side of a coarse cube's face (4-256). |
+| `volumetricRasterSoftSteps` | 4 | Raster fog: samples of a coarse-cube light along a camera ray (1-64). |
+| `volumetricRasterSkySize` | 128 | Raster fog: texels a side of each of the sky's five maps (16-1024). |
+| `volumetricRasterGlowLights`, `volumetricRasterGlowEmissive`, `volumetricRasterGlowSun`, `volumetricRasterGlowSky` | 1 | Raster fog: whether the game's lights, emissive surfaces, the sun and the sky glow. |
+| `volumetricRasterClearSky` | 0 | Raster fog: no sun or sky glow over the sky, as the game's fog leaves it clear (lights' halos still show). |
 
 The game's fog is what `remixapi_SetFogState` last gave: exponential fog's
 density is the extinction; squared-exponential and linear fog get the
@@ -24,6 +39,59 @@ exponential that leaves 5% of the light at the distance where theirs does.
 The fog colour, normalized, tints what the medium scatters: how bright the
 fog is comes from the lights. A game that sets no fog has no medium unless the
 override is on.
+
+## Raster fog
+
+`volumetricRaster` (0/1, default 0; **Raster fog**) draws the medium as a
+raster game draws its fog instead of tracing it: each pixel is blended towards
+the fog colour by its view depth, up to the first surface that is not a
+blended sheet; the sky stays clear. The game's mode is kept as it is (linear
+from its start to its end, `remixapi_FogInfo::scale` being 1 / (end - start)
+as in D3D; exponential and squared exponential by its density); the override
+is exponential fog leaving 5% at `volumetricDistance`. The fog colour is
+unlit: `volumetricRasterBrightness` (1) is its radiance.
+
+Lights, the sun and the sky glow in it, shadowed, with no history to settle
+or trail:
+
+1. Each frame the `volumetricRasterLights` (16) lights that send the most into
+   view (intensity over squared distance, among those whose reach comes within
+   `volumetricMaxDistance` in front of the camera) each get a shadow cube:
+   `volumetricRasterShadowSize` (64) texels a side a face, the distance from
+   the light to the first opaque surface, traced anew by the volume update
+   pass (6 x 64^2 rays a light). Blended sheets let the light through. Sphere
+   lights compete with emissive surfaces, which are summed into clusters, one
+   per cell of a 2 m world grid: their area-weighted centre, their summed
+   radiance times area, and their mean normal (a flat panel glows by the
+   cosine, surfaces facing all ways evenly). A panel's cube starts just in
+   front of it. The next `volumetricRasterSoftLights` (48) get coarse cubes of
+   `volumetricRasterSoftSize` (16) texels a face, sampled
+   `volumetricRasterSoftSteps` (4) times a camera ray; 128 lights at most.
+2. Each camera ray that crosses a light's reach before its first surface takes
+   `volumetricRasterSteps` (12) samples of it, spaced evenly in the angle the
+   ray subtends at the light, so they gather where the glow is brightest. Each
+   compares its distance with the four nearest texels of the cube.
+3. The sun: a map of `volumetricRasterSunSize`^2 (512^2) rays down the sun's
+   direction, `volumetricRasterSunExtent` (64) meters to each side of the
+   camera, its texels fixed in the world so shadow edges hold still as the
+   camera moves. Camera rays take `volumetricRasterSunSteps` (16) samples up
+   to where the fog leaves 5% of the light, closer together near the camera;
+   past the map's edge a ray keeps the last shadow it saw.
+4. The sky: five equal parts of it above the horizon (a cap about the zenith
+   and the band's four quarters), each a map of `volumetricRasterSkySize`^2
+   (128^2) rays along the part's mean direction, as far across as the sun's,
+   and its mean radiance (an 8 x 8 grid of the environment, the same every
+   frame). The sun's samples take them too: under a roof the sky's light is
+   gone, at a window the parts it faces come in.
+
+The samples are offset per pixel by a fixed noise pattern, the same every
+frame. A light's glow is its single scattering towards the camera within its
+reach (its range, `localRange`, at most `volumetricMaxDistance`), dimmed by
+the raster fog in front of it. Its scattering is the traced medium's
+(`volumetricFogDensityScale` included) times `volumetricScattering`;
+`volumetricLightScale`, `volumetricEmissiveScale`, `volumetricSunScale`,
+`volumetricSkyScale` and each light's own volumetric radiance scale apply.
+Lights past both tiers do not glow.
 
 ## How it runs
 

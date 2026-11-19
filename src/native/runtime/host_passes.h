@@ -50,16 +50,19 @@ namespace remix {
     }
     bool asked() const { return m_asked; }
     // Executes the submitted passes between the frame's render passes: the
-    // swapchain `image` is in `layout` before and after. `viewDepth`: the
-    // frame's REMIXAPI_HOST_TARGET_VIEW_DEPTH_EXT image (GENERAL layout), or
-    // none (passes sampling it are skipped).
+    // swapchain `image` is in `layout` before and after. `view`: the frame's
+    // REMIXAPI_HOST_TARGET_VIEW_*_EXT images (GENERAL layout); passes sampling
+    // one it lacks are skipped.
 #if defined(REMIX_METAL)
     // Metal: `command` an id<MTLCommandBuffer>, `frame` the frame's texture
     // (an id<MTLTexture>, read and written), `viewDepth` an id<MTLTexture> or null.
     void record(void *command, uint32_t slot, void *frame, void *viewDepth);
 #else
+    struct ViewImages {
+      VkImageView depth = VK_NULL_HANDLE, opaqueDepth = VK_NULL_HANDLE, transmittance = VK_NULL_HANDLE;
+    };
     void record(VkCommandBuffer command, uint32_t slot, VkImage image, VkFormat format, VkExtent2D extent,
-                VkImageLayout imageLayout, VkImageView viewDepth);
+                VkImageLayout imageLayout, const ViewImages &view);
 #endif
     remixapi_HostPassStatisticsEXT statistics() const;
 
@@ -142,6 +145,9 @@ namespace remix {
     // The frame's pass and framebuffer with that depth attached.
     void attachDepth(Target &frame, const Target &depth);
     void destroyTarget(Target &target);
+    // A target replaced (resized, reformatted) while frames in flight may
+    // still sample or write it: destroyed once they have finished.
+    void retireTarget(Target &target);
     const Layout &layout(const Shader &vertex, const Shader &fragment);
     VkPipeline pipeline(const Pass &pass, const Shader &vertex, const Shader &fragment, const Layout &layout,
                         VkRenderPass renderPass, bool depthOnly);
@@ -160,6 +166,7 @@ namespace remix {
     std::map<std::pair<remixapi_HostShaderHandleEXT, remixapi_HostShaderHandleEXT>, Layout> m_layouts;
     std::map<std::string, VkPipeline> m_pipelines;
     Slot m_slots[gpuFrameCount];
+    std::vector<std::pair<uint64_t, Target>> m_retired; // the frame each was replaced in
 #endif
     bool ready() const; // initialized, until destroy()
     uint64_t m_nextShader = 1;
