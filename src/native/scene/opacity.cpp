@@ -380,7 +380,7 @@ namespace remix::scene {
         if (layer) {
           if (layers.size() >= 256)
             layers.clear();
-          auto &memo = layers[key];
+          auto &memo = layers[{key, texture.get()}];
           if (!sameOwner(memo.texture, texture) || memo.level != micromapLevel || memo.triangles.size() >= 65536)
             memo = {texture, micromapLevel, {}};
           result->micromap = bakeMicromap(texelMargin, micromapLevel, draw, uv, *result, proof, usesTexture, &memo);

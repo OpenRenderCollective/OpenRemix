@@ -172,7 +172,10 @@ namespace remix::scene {
       uint32_t level = 0;
       std::unordered_map<std::string, BakedTriangle> triangles;
     };
-    std::map<Key, LayerMemo> layers;
+    // By texture as well: the key holds a texture's size, not which it is, and
+    // decals of several textures of one size each emptied the others' memo,
+    // every one of them baked anew each time it was drawn.
+    std::map<std::pair<Key, const Texture *>, LayerMemo> layers;
     // Reads only its arguments (and memo, given only on the frame's thread),
     // so background threads can run it.
     static std::shared_ptr<const OpacityMicromap> bakeMicromap(float texelMargin, uint32_t micromapLevel,
