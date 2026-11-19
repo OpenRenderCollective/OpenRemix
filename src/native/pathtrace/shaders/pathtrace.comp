@@ -611,6 +611,11 @@ Hit closest(vec3 origin,vec3 direction,float maximum,bool motion) {
   // its own roughness and metalness: the nearest such layer's (`finish`, x
   // the squared roughness, negative: none).
   float remaining=1;vec3 through=vec3(1);vec2 finish=vec2(-1,0);
+  // Overlapping triangles of one finished paint surface tint once, by their
+  // darkest: one wet film, not stacked coats (the stains a game batches into
+  // one mesh). `run` is that surface while its layers follow each other
+  // (~0u: none), runBase what reached it and runTint its tint so far.
+  uint run=~0u;vec3 runBase=vec3(1),runTint=vec3(1);
   float lastDecal=0,minimum=0,end=maximum;
   const float attach=frame.visibilityProbe.y;
   const uint mask=traceMask;
@@ -663,9 +668,14 @@ Hit closest(vec3 origin,vec3 direction,float maximum,bool motion) {
     if(layers==0u){firstT=x.t;firstNg=hit.ng;}
     if(hit.decalMode!=0u) {
       // mod2x is authored gamma-encoded (128 is neutral): scale so (128/255)^2.2 maps to one.
-      through*=hit.color.rgb*(hit.decalMode==2u?4.5554:1.);
-      if(finish.x<0&&(surfaces[x.surface].state.w&(1u<<30))!=0u)finish=vec2(hit.rm.x*hit.rm.x,hit.rm.y);
+      vec3 tint=hit.color.rgb*(hit.decalMode==2u?4.5554:1.);
+      const bool finished=(surfaces[x.surface].state.w&(1u<<30))!=0u;
+      if(finished&&x.surface==run)runTint=min(runTint,tint);
+      else{runBase=through;runTint=tint;run=finished?x.surface:~0u;}
+      through=runBase*runTint;
+      if(finish.x<0&&finished)finish=vec2(hit.rm.x*hit.rm.x,hit.rm.y);
     } else {
+      run=~0u;
       float weight=remaining*hit.color.a;
       color+=through*hit.color.a*hit.color.rgb;normal+=weight*hit.n;emission+=through*hit.color.a*hit.emission;
       self+=through*hit.color.a*hit.self;
