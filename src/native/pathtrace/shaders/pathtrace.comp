@@ -3459,8 +3459,10 @@ bool volumeShaftBlocked(vec3 origin,vec3 direction,float maximum) {
 // (REMIXAPI_VOLUME_SHAFT_SHADOWED_EXT) glows at a point only when nothing
 // opaque stands between it and the near cap, along the shaft's lines: to the
 // place on the cap at the same part of its width (at the point its sides meet,
-// for a taper). That ray stops short of the cap: the window or lamp it starts
-// at does not shadow it.
+// for a taper). That ray covers only the 65% of the way nearest the point: the
+// window or lamp a shaft starts at, and the roof a game's shaft mesh often
+// begins above (Source maps' vol_light cones reach in through the roof), do
+// not shadow it; what stands in the room does.
 vec3 volumeShaftGlow(vec3 origin,vec3 direction,float far,float jitter) {
   vec3 sum=vec3(0);
   uint count=min(frame.volumeShaftConfig.x,32u);
@@ -3501,7 +3503,7 @@ vec3 volumeShaftGlow(vec3 origin,vec3 direction,float far,float jitter) {
         // The near cap's point at the same part of its width, in world space.
         vec3 toCap=sideU.xyz*(across.x*sideU.w-q.x)+sideV.xyz*(across.y*sideV.w-q.y)-axis*q.z;
         float reach=length(toCap);
-        if(reach>1e-4&&volumeShaftBlocked(origin+direction*t,toCap/reach,reach*.98))weight=0;
+        if(reach>1e-4&&volumeShaftBlocked(origin+direction*t,toCap/reach,reach*.65))weight=0;
       }
       along+=weight;
     }

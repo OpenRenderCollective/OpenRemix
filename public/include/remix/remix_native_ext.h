@@ -1288,10 +1288,11 @@ REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_SetConfigDefaultEXT(const cha
 // It is seen in front of the first surface along each camera ray (a wall cuts
 // it softly, by the shorter path through it) and lights nothing. Shadowed
 // (REMIXAPI_VOLUME_SHAFT_SHADOWED_EXT), what stands in it casts a shadow down
-// its length: the glow at a point shows only where nothing opaque lies between
-// it and the near cap, along the shaft's own lines (from the point to the
-// place on the near cap at the same part of its width; for a tapered shaft,
-// toward the point its sides meet).
+// its length: the glow at a point shows only where nothing opaque lies within
+// the 65% of the way toward the near cap nearest the point, along the shaft's
+// own lines (from the point to the place on the near cap at the same part of
+// its width; for a tapered shaft, toward the point its sides meet). The rest,
+// by the cap, is the window, lamp or roof the shaft comes in through.
 #define REMIXAPI_STRUCT_TYPE_VOLUME_SHAFT_EXT ((remixapi_StructType)0x7fff107C)
 #define REMIXAPI_VOLUME_SHAFT_BOX_EXT 0u
 #define REMIXAPI_VOLUME_SHAFT_ELLIPSE_EXT 1u
