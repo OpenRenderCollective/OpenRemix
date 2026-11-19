@@ -6,6 +6,7 @@
 #include <memory>
 #include <mutex>
 #include <tuple>
+#include <chrono>
 #include <unordered_map>
 
 namespace remix::scene {
@@ -171,7 +172,20 @@ namespace remix::scene {
       std::weak_ptr<Texture> texture;
       uint32_t level = 0;
       std::unordered_map<std::string, BakedTriangle> triangles;
+      // The bake at hand: when it stops baking triangles the memo does not
+      // hold (they stay unknown: every ray's test still runs there), and
+      // whether it did.
+      std::chrono::steady_clock::time_point deadline{};
+      bool cut = false;
     };
+    // The frame's time for baking layers (layerBudgetMs a frame, from
+    // collectMicromaps()). A triangle of a layer takes milliseconds at the
+    // finer levels, and decals and particles with triangles of their own came
+    // by the hundred as the player walked: frames of a second and more. A
+    // layer cut short is not kept, and is baked on from the memo the next
+    // time it is drawn.
+    static constexpr double layerBudgetMs = 1.5;
+    double layerBudgetLeft = layerBudgetMs;
     // By texture as well: the key holds a texture's size, not which it is, and
     // decals of several textures of one size each emptied the others' memo,
     // every one of them baked anew each time it was drawn.

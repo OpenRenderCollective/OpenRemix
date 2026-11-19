@@ -378,12 +378,21 @@ namespace remix::scene {
       if (micromapLevel && (!draw.decal || layer) && !draw.wound && result->key[0] != 1) {
         const TextureEntries *proof = usesTexture ? pixels : nullptr;
         if (layer) {
-          if (layers.size() >= 256)
+          if (layers.size() >= 4096)
             layers.clear();
           auto &memo = layers[{key, texture.get()}];
           if (!sameOwner(memo.texture, texture) || memo.level != micromapLevel || memo.triangles.size() >= 65536)
             memo = {texture, micromapLevel, {}};
+          using Clock = std::chrono::steady_clock;
+          const auto began = Clock::now();
+          memo.deadline = began + std::chrono::duration_cast<Clock::duration>(
+                                      std::chrono::duration<double, std::milli>(std::max(layerBudgetLeft, 0.)));
+          memo.cut = false;
           result->micromap = bakeMicromap(texelMargin, micromapLevel, draw, uv, *result, proof, usesTexture, &memo);
+          layerBudgetLeft -= std::chrono::duration<double, std::milli>(Clock::now() - began).count();
+          // (Cut short: found again by no one, and baked on when next drawn.)
+          if (memo.cut)
+            return result;
           if (cache.entries.size() >= 8)
             cache.entries.clear();
           cache.entries.insert_or_assign(key, Entry{texture, result, std::move(regions), 0});
@@ -554,6 +563,12 @@ namespace remix::scene {
         signature.append(reinterpret_cast<const char *>(alphas.data()), sizeof(alphas));
         if (const auto found = memo->triangles.find(signature); found != memo->triangles.end()) {
           apply(found->second, triangle);
+          continue;
+        }
+        // Out of the frame's time (LayerMemo::deadline): unknown for now.
+        if (std::chrono::steady_clock::now() >= memo->deadline) {
+          micromap->indices[triangle] = M::FullyUnknownOpaque;
+          memo->cut = true;
           continue;
         }
       }
@@ -801,6 +816,7 @@ namespace remix::scene {
   }
 
   size_t OpacityCache::collectMicromaps() {
+    layerBudgetLeft = layerBudgetMs;
     if (!baker)
       return 0;
     std::vector<Baker::Done> finished;
