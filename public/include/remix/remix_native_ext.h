@@ -1284,11 +1284,16 @@ REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_SetConfigDefaultEXT(const cha
 // fading linearly to farFade times that at the far one; `softness` (0 to 1)
 // is the part of its half width over which it fades to nothing at the sides.
 // It is seen in front of the first surface along each camera ray (a wall cuts
-// it softly, by the shorter path through it), lights nothing, and casts or
-// receives no shadow.
+// it softly, by the shorter path through it) and lights nothing. Shadowed
+// (REMIXAPI_VOLUME_SHAFT_SHADOWED_EXT), what stands in it casts a shadow down
+// its length: the glow at a point shows only where nothing opaque lies between
+// it and the near cap, along the shaft's own lines (from the point to the
+// place on the near cap at the same part of its width; for a tapered shaft,
+// toward the point its sides meet).
 #define REMIXAPI_STRUCT_TYPE_VOLUME_SHAFT_EXT ((remixapi_StructType)0x7fff107C)
 #define REMIXAPI_VOLUME_SHAFT_BOX_EXT 0u
 #define REMIXAPI_VOLUME_SHAFT_ELLIPSE_EXT 1u
+#define REMIXAPI_VOLUME_SHAFT_SHADOWED_EXT 1u
 typedef struct remixapi_VolumeShaftEXT {
   remixapi_StructType sType;
   const void *pNext;
@@ -1300,6 +1305,7 @@ typedef struct remixapi_VolumeShaftEXT {
   float farFade;
   float softness;
   uint32_t shape;
+  uint32_t flags; // REMIXAPI_VOLUME_SHAFT_SHADOWED_EXT
 } remixapi_VolumeShaftEXT;
 // The frame's light shafts, replacing any set earlier this frame (count 0: none);
 // they last until the next Present. The traced view draws up to 32, the

@@ -81,6 +81,15 @@ int main() {
     refused = true;
   }
   require(refused, "A negative fade is refused");
+  refused = false;
+  auto unknown = shaft(0);
+  unknown.flags = 2;
+  try {
+    api.drawVolumeShafts(&unknown, 1);
+  } catch (...) {
+    refused = true;
+  }
+  require(refused, "Unknown flags are refused");
 
   // Published with the frame, gone from the next one.
   api.drawVolumeShafts(shafts, 3);
@@ -113,8 +122,11 @@ int main() {
   // Packing: v is flipped so that cross(u, v) is the axis.
   VolumeShaft packed = many[0];
   packed.v = {0, -1, 0};
+  packed.shape = REMIXAPI_VOLUME_SHAFT_ELLIPSE_EXT;
+  packed.flags = REMIXAPI_VOLUME_SHAFT_SHADOWED_EXT;
   float out[5][4];
   trace::packVolumeShaft(packed, out);
   require(close(out[0][3], 1) && close(out[2][1], 1) && close(out[1][3], .5f), "Packed with cross(u, v) the axis");
+  require(close(out[4][3], 3), "Shape and flags packed as shape + 2 x flags");
   return 0;
 }

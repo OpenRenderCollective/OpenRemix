@@ -334,7 +334,8 @@ namespace remix {
     auto dot = [](const float *a, const float *b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; };
     for (uint32_t i = 0; i < count && accepted.size() < maxShafts; ++i) {
       const auto &in = shafts[i];
-      if (in.sType != REMIXAPI_STRUCT_TYPE_VOLUME_SHAFT_EXT || in.shape > REMIXAPI_VOLUME_SHAFT_ELLIPSE_EXT)
+      if (in.sType != REMIXAPI_STRUCT_TYPE_VOLUME_SHAFT_EXT || in.shape > REMIXAPI_VOLUME_SHAFT_ELLIPSE_EXT ||
+          (in.flags & ~REMIXAPI_VOLUME_SHAFT_SHADOWED_EXT))
         throw invalid;
       const float values[] = {in.origin.x,   in.origin.y,   in.origin.z,  in.axis.x,    in.axis.y,
                               in.axis.z,     in.halfU.x,    in.halfU.y,   in.halfU.z,   in.halfV.x,
@@ -372,6 +373,7 @@ namespace remix {
       for (int c = 0; c < 3; ++c)
         s.v[c] = v[c] / s.nearHalf[1];
       s.shape = in.shape;
+      s.flags = in.flags;
       float scaleU = in.farScaleU, scaleV = in.farScaleV;
       if (s.shape == REMIXAPI_VOLUME_SHAFT_ELLIPSE_EXT)
         scaleU = scaleV = (scaleU + scaleV) * .5f;

@@ -18,7 +18,7 @@ namespace remix::trace {
   // A shaft as the compose pass reads it (pathtrace.comp volumeShaftGlow), 5
   // vec4: origin and length; u and the near half extent along it; v and the
   // near half extent along it (oriented so cross(u, v) is the axis); radiance
-  // and the far fade; the far half extents, softness and shape.
+  // and the far fade; the far half extents, softness, and shape + 2 x flags.
   inline void packVolumeShaft(const VolumeShaft &s, float (&out)[5][4]) {
     const auto &u = s.u, &a = s.axis;
     std::array<float, 3> v = s.v;
@@ -29,7 +29,7 @@ namespace remix::trace {
                               {u[0], u[1], u[2], s.nearHalf[0]},
                               {v[0], v[1], v[2], s.nearHalf[1]},
                               {s.radiance[0], s.radiance[1], s.radiance[2], s.farFade},
-                              {s.farHalf[0], s.farHalf[1], s.softness, float(s.shape)}};
+                              {s.farHalf[0], s.farHalf[1], s.softness, float(s.shape + 2 * s.flags)}};
     std::copy(&rows[0][0], &rows[0][0] + 20, &out[0][0]);
   }
 

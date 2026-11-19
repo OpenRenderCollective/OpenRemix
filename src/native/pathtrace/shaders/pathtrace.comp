@@ -3429,12 +3429,38 @@ vec3 rasterFogGlow(vec3 origin,vec3 direction,float far,float forward,float jitt
   tint=brightest>0?tint/brightest:vec3(1);
   return glow*tint*frame.volumeMedium.w;
 }
+// Whether an opaque surface lies within `maximum` along a shaft's shadow ray
+// (volumeShaftGlow): blended sheets let the light through, as raster fog's
+// shadow rays do (rasterShadowLayer); the first opaque hit ends the query.
+bool volumeShaftBlockedIn(accelerationStructureEXT scene,vec3 origin,vec3 direction,float maximum) {
+  rayQueryEXT query;
+  rayQueryInitializeEXT(query,scene,shadowFlags()|gl_RayFlagsTerminateOnFirstHitEXT,shadowMask(),origin,0,direction,maximum);
+  while(rayQueryProceedEXT(query)) {
+    if(rayQueryGetIntersectionTypeEXT(query,false)!=gl_RayQueryCandidateIntersectionTriangleEXT)continue;
+    Surface s=surfaces[rayQueryGetIntersectionInstanceCustomIndexEXT(query,false)+rayQueryGetIntersectionGeometryIndexEXT(query,false)];
+    s.indices=s.traceIndices;
+    if(enableDecals&&decalSurface(s))continue;
+    if((s.state.w&2)!=0)continue;
+    if(!acceptCandidate(s,rayQueryGetIntersectionPrimitiveIndexEXT(query,false),rayQueryGetIntersectionBarycentricsEXT(query,false)))continue;
+    rayQueryConfirmIntersectionEXT(query);
+  }
+  return rayQueryGetIntersectionTypeEXT(query,true)!=gl_RayQueryCommittedIntersectionNoneEXT;
+}
+bool volumeShaftBlocked(vec3 origin,vec3 direction,float maximum) {
+  return ((frame.target.z&1)!=0&&volumeShaftBlockedIn(staticScene,origin,direction,maximum))||
+         ((frame.target.z&2)!=0&&volumeShaftBlockedIn(dynamicScene,origin,direction,maximum));
+}
 // remixapi_DrawVolumeShaftsEXT: the light shafts' glow along a camera ray up to
 // `far` (the first surface that is not a sheet). Each shaft is clipped to its
 // tapered box (both caps, four sides), then its glow is summed at 8 points of
 // that stretch, offset by `jitter`: the sides' soft fade and the fade along the
 // axis. A wall inside a shaft cuts the stretch, so the glow fades with the
-// path left through it instead of ending at an edge.
+// path left through it instead of ending at an edge. A shadowed shaft
+// (REMIXAPI_VOLUME_SHAFT_SHADOWED_EXT) glows at a point only when nothing
+// opaque stands between it and the near cap, along the shaft's lines: to the
+// place on the cap at the same part of its width (at the point its sides meet,
+// for a taper). That ray stops short of the cap: the window or lamp it starts
+// at does not shadow it.
 vec3 volumeShaftGlow(vec3 origin,vec3 direction,float far,float jitter) {
   vec3 sum=vec3(0);
   uint count=min(frame.volumeShaftConfig.x,32u);
@@ -3460,14 +3486,23 @@ vec3 volumeShaftGlow(vec3 origin,vec3 direction,float far,float jitter) {
     }
     if(!(t1>t0))continue;
     float stretch=t1-t0,soft=max(farCap.z,1e-4),along=0;
+    bool ellipse=mod(farCap.w,2.)>.5,shadowed=farCap.w>1.5;
     for(int k=0;k<8;++k) {
-      vec3 q=o+d*(t0+stretch*(float(k)+jitter)*.125);
+      float t=t0+stretch*(float(k)+jitter)*.125;
+      vec3 q=o+d*t;
       float s=clamp(q.z/len,0,1);
       vec2 half_=max(vec2(sideU.w+(farCap.x-sideU.w)*s,sideV.w+(farCap.y-sideV.w)*s),vec2(1e-5));
-      vec2 across=abs(q.xy)/half_;
-      float r=farCap.w>.5?length(across):max(across.x,across.y);
+      vec2 across=q.xy/half_;
+      float r=ellipse?length(across):max(abs(across.x),abs(across.y));
       float side=clamp((1-r)/soft,0,1);
-      along+=side*side*(3-2*side)*mix(1,glow.w,s);
+      float weight=side*side*(3-2*side)*mix(1,glow.w,s);
+      if(shadowed&&weight>0) {
+        // The near cap's point at the same part of its width, in world space.
+        vec3 toCap=sideU.xyz*(across.x*sideU.w-q.x)+sideV.xyz*(across.y*sideV.w-q.y)-axis*q.z;
+        float reach=length(toCap);
+        if(reach>1e-4&&volumeShaftBlocked(origin+direction*t,toCap/reach,reach*.98))weight=0;
+      }
+      along+=weight;
     }
     sum+=glow.rgb*(along*stretch*.125);
   }
