@@ -262,6 +262,13 @@ namespace {
               std::snprintf(line, sizeof(line), "# sparse rendering: off (%s)\n", sparse.reason);
             text += line;
           }
+          if (const auto tiles = remix::trace::g_sheetTileState; tiles.requested) {
+            if (tiles.active)
+              std::snprintf(line, sizeof(line), "# sheet tiles: on\n");
+            else
+              std::snprintf(line, sizeof(line), "# sheet tiles: off (%s, error %d)\n", tiles.reason, tiles.error);
+            text += line;
+          }
           if (const auto portals = remix::trace::g_rayPortalState; portals.surfaces) {
             std::snprintf(line, sizeof(line),
                           "# ray portals: %u surfaces, %u open pairs, %u duplicate indices, %u teleports per camera "

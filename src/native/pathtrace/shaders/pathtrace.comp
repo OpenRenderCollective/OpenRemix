@@ -1202,6 +1202,24 @@ bool sparseSelected(ivec2 pixel) {
   else level=hash(uint(pixel.x)+uint(pixel.y)*frame.target.x+hash(frame.config.z^0x73707273u))>>24;
   return level<frame.sparseConfig.y;
 }
+// Sheet tiles (frame.sheetTiles; 0: the sheet passes launch over the screen).
+// The classification pass (SHEET_TILES_PASS) sorts the screen's 8x8 tiles by
+// whether any pixel has a translucent sheet in front: args[0..2] and [4..6]
+// are the indirect dispatches of the tiles with sheets, listed from the front
+// of tiles[], and of the rest, listed from its back (x | y << 16, in tiles).
+// The sheet lighting and sheet composition passes run over the first; the
+// plain composition pass (PLAIN_TILES_PASS), the composition of pixels
+// without a sheet in a stage without the sheets' code, over the second.
+layout(buffer_reference,std430,buffer_reference_align=4) buffer SheetTiles { uint args[8]; uint tiles[]; };
+uint sheetTileCount() { return ((frame.target.x+7u)/8u)*((frame.target.y+7u)/8u); }
+// The pixel a tile launch's invocation takes: its listed tile's.
+ivec2 sheetTilePixel(uint listed) {
+  uint tile=SheetTiles(frame.sheetTiles).tiles[listed];
+  return ivec2(tile&0xffffu,tile>>16)*8+ivec2(gl_LocalInvocationID.xy);
+}
+#ifdef SHEET_TILES_PASS
+shared uint sheetTileAny;
+#endif
 #ifdef SPARSE_COMPACT_PASS
 shared uint sparseMask[8];
 shared uint sparseBase;
@@ -3473,6 +3491,19 @@ void main() {
     SparseList(frame.sparseList).pixels[sparseBase+rank]=uint(pixel.x)|(uint(pixel.y)<<16);
   }
   return;
+#elif defined(SHEET_TILES_PASS)
+  // Whether the tile has a pixel with a sheet in front (the opaque pass's
+  // signed sheet count in worldColor.a), and its place in the list.
+  if(gl_LocalInvocationIndex==0u)sheetTileAny=0u;
+  memoryBarrierShared();barrier();
+  if(all(lessThan(pixel,ivec2(frame.target.xy)))&&imageLoad(worldColor,pixel).a!=0)atomicOr(sheetTileAny,1u);
+  memoryBarrierShared();barrier();
+  if(gl_LocalInvocationIndex==0u) {
+    bool sheets=sheetTileAny!=0u;
+    uint slot=atomicAdd(SheetTiles(frame.sheetTiles).args[sheets?0:4],1u);
+    SheetTiles(frame.sheetTiles).tiles[sheets?slot:sheetTileCount()-1u-slot]=gl_WorkGroupID.x|(gl_WorkGroupID.y<<16);
+  }
+  return;
 #elif defined(SPARSE_ARGS_PASS)
   // One invocation, after every tile has added its count.
   if(gl_GlobalInvocationID==uvec3(0)) {
@@ -3522,6 +3553,8 @@ void main() {
   // light, then its paths, or the water patch's reused GI (waterIndirect, whose
   // barriers every invocation reaches). The composition pass draws the sheet,
   // the media and the layers past it with no light sampler of its own.
+  // Over sheet tiles, only the tiles with a sheet (no other pixel reads it).
+  if(frame.sheetTiles!=0){pixel=sheetTilePixel(gl_WorkGroupID.x);shadingPixel=pixel;}
   bool inBounds=all(lessThan(pixel,ivec2(frame.target.xy)));
   pixel=min(pixel,ivec2(frame.target.xy)-1);
   uint index=uint(pixel.x)+uint(pixel.y)*frame.target.x;
@@ -3828,6 +3861,13 @@ void main() {
   imageStore(gradientA,pixel,vec4(delta,encodeNormal(normal),min(z,65000)));return;
 #else
 #ifdef TRANSPARENCY_PASS
+  // Over sheet tiles: the sheet passes take the tiles with a sheet, the plain
+  // composition the rest (from the list's back).
+#ifdef PLAIN_TILES_PASS
+  pixel=sheetTilePixel(sheetTileCount()-1u-gl_WorkGroupID.x);shadingPixel=pixel;
+#else
+  if(frame.sheetTiles!=0){pixel=sheetTilePixel(gl_WorkGroupID.x);shadingPixel=pixel;}
+#endif
   // All invocations, including partial edge groups, reach the shared barriers.
   bool inBounds=all(lessThan(pixel,ivec2(frame.target.xy)));
   pixel=min(pixel,ivec2(frame.target.xy)-1);
@@ -4146,8 +4186,15 @@ void main() {
 #ifdef TEMPORAL
   vec3 transparentDiffuse=vec3(0),transparentSpecular=vec3(0);
 #endif
+#ifdef PLAIN_TILES_PASS
+  // No pixel of a plain tile has a sheet: the composition without the sheets'
+  // code (their walk, lighting and front guides), and so without their registers.
+  const float signedCount=0;
+  const uint sheetCount=0u;
+#else
   float signedCount=imageLoad(worldColor,pixel).a;
   uint sheetCount=uint(abs(signedCount));
+#endif
 #ifndef SINGLE_SHEET_PASS
   if(sheetCount<=1)return;
 #endif

@@ -196,6 +196,11 @@ namespace remix {
     bool sparseRendering = false, sparseAdaptiveRate = true;
     float sparseSamplingRate = .1f, sparseResolutionExponent = .91f;
     float sparseQuality = .3f, sparseMaxRate = .75f;
+    // Sheet tiles (sheet_tiles.cpp): the sheet lighting and sheet composition
+    // passes launch over the 8x8 tiles that have a translucent sheet in front,
+    // and the composition of the other tiles is a stage without the sheets'
+    // code. The same image; off, every pass launches over the screen.
+    bool sheetTiles = true;
     // Volumetrics (volume.cpp, volume.glsl): a participating medium lit by
     // every light. Its density is the game's fog (remixapi_SetFogState), or
     // with volumetricOverride the one given here: volumetricDistance is how

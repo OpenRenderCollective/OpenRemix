@@ -1271,6 +1271,7 @@ namespace remix {
       frame.sheetResults = sheetResults->address;
     }
     configureSparse(command, frame, options, extent);
+    configureSheetTiles(frame, options, extent, denoiser != nullptr);
     configureVolume(command, frame, options);
     beginRayProfile(command, frame);
     beginPathInspector(command, frame);
@@ -1856,6 +1857,23 @@ namespace remix {
     const auto multiSheetPipeline = forceFallback ? VK_NULL_HANDLE
                                     : denoiser    ? temporalTransparencyCompute
                                                   : transparencyCompute;
+    // Sheet tiles (sheet_tiles.cpp): the sheet passes launch over the tiles
+    // with a sheet, the plain composition over the rest.
+    const bool tiled = sheetTiles.active;
+    if (tiled) {
+      recordSheetTiles(command, extent);
+      if (denoiser) {
+        vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, temporalLayout, 0, 1, &set, 0, nullptr);
+        auto inputs = denoiser->inputs();
+        vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, temporalLayout, 1, 1, &inputs, 0, nullptr);
+      }
+    }
+    const auto launchSheets = [&](VkDeviceSize dispatch) {
+      if (tiled)
+        vkCmdDispatchIndirect(command, sheetTiles.buffer->handle, dispatch);
+      else
+        vkCmdDispatch(command, (extent.width + 7) / 8, (extent.height + 7) / 8, 1);
+    };
     {
       // The front sheet's light (direct, paths, reused GI), for the
       // composition below; this frame's opaque radiance and NRD outputs are
@@ -1867,7 +1885,7 @@ namespace remix {
       if (!multiSheetPipeline)
         selectedFeatures |= featureMultiSheetFallback;
       bindSelected(command, sheetPipeline);
-      vkCmdDispatch(command, (extent.width + 7) / 8, (extent.height + 7) / 8, 1);
+      launchSheets(0);
     }
     barrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
@@ -1878,7 +1896,13 @@ namespace remix {
     {
       gpu::GpuScope scope(command, "Trace transparency (single sheet)", extent);
       bindSelected(command, singleTransparencyPipeline);
-      vkCmdDispatch(command, (extent.width + 7) / 8, (extent.height + 7) / 8, 1);
+      launchSheets(0);
+    }
+    if (tiled) {
+      // The tiles without a sheet (disjoint from the launch above).
+      gpu::GpuScope scope(command, "Trace transparency (plain tiles)", extent);
+      bindTrace(command, plainComposition(denoiser != nullptr), selectedLayout, selectedFeatures);
+      launchSheets(16);
     }
     // Single-sheet composition replaces its scratch count with stable depth (0..1).
     // The batch shader only visits counts > 1, so these pixels remain untouched.
@@ -1889,7 +1913,7 @@ namespace remix {
     if (transparencyPipeline) {
       gpu::GpuScope scope(command, "Trace transparency (multi-sheet)", extent);
       bindSelected(command, transparencyPipeline);
-      vkCmdDispatch(command, (extent.width + 7) / 8, (extent.height + 7) / 8, 1);
+      launchSheets(0);
     }
     if (prewarmPending) {
       // Behind this frame's own requests: those get the workers first.
