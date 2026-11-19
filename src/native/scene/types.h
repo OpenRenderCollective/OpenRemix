@@ -528,6 +528,18 @@ namespace remix {
       // from frame to frame (a host may give a new offset each frame), so
       // per-offset caches (opacity, emitters) take the draw as at rest.
       bool texcoordMoves() const { return scrolling() || texcoord[2] != 0 || texcoord[3] != 0; }
+      // A blended layer (a sprite, a particle, paint) that rays meet exactly
+      // where its candidate test passes: alpha above zero and passing its
+      // alpha test (pathtrace.comp visibleAlpha). No tint, wound, alpha
+      // override or alpha reshaping (blend modulation, gradient map, portal
+      // rim) changes that. Where its coverage is proved never to pass, an
+      // opacity micromap leaves it out of traversal (OpacityCache); its
+      // instance is forced non-opaque, so every other candidate still
+      // reaches the test as a blended layer.
+      bool blendedCoverage() const {
+        return blend.enabled && !wound && !ignoreAlpha && material && !material->translucent &&
+               !material->transmission && !material->blendModulation && !material->gradient && !material->portalRim;
+      }
     };
     // The UV transform (scale, offset) a draw's maps are read through at
     // `seconds`: the instance's texcoord transform, scrolled, and then the

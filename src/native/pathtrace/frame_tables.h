@@ -472,8 +472,12 @@ namespace remix::trace {
       // (moving; sharp ones need both).
       bool sharpReceivers = false, dynamicReceivers = false, dynamicSharpReceivers = false;
       bool subsurface = false; // a material scatters below its surface (scene::Material::subsurface)
+      // A blended layer shadow rays meet even with skipBlendedSecondaryRays
+      // (blendedShadows): its instance is not wholly blended.
+      bool shadowBlended = false;
       Flags &operator|=(const Flags &o) {
         blended |= o.blended;
+        shadowBlended |= o.shadowBlended;
         decal |= o.decal;
         subsurface |= o.subsurface;
         receivers |= o.receivers;
@@ -616,6 +620,7 @@ namespace remix::trace {
             entry->second = assign(surface.draw.material, requests, materialBytes, maps, 0, in.textureLimit, env);
           slots.push_back(&entry->second);
         }
+        flags.shadowBlended |= blendedShadows(spans[i]);
         if (in.digest)
           digest = scene::hashBytes(&views[i]->contentDigest, sizeof(views[i]->contentDigest), digest);
       }
@@ -808,6 +813,16 @@ namespace remix::trace {
       size_t surface = 0, primary = 0, bytes = 0, materials = 0; // materials: first entry in m_placementSlots
     };
 
+    // Whether shadow rays left without wholly blended instances
+    // (skipBlendedSecondaryRays, InstanceInput::blended) still meet a blended
+    // layer of this instance: one beside an opaque surface or drawing caustics.
+    template <class Instance> static bool blendedShadows(const Instance &instance) {
+      auto layer = [](const auto &surface) { return surface.draw.blend.enabled && !surface.draw.decal; };
+      return std::any_of(instance.begin(), instance.end(), layer) &&
+             !std::all_of(instance.begin(), instance.end(), [&](const auto &surface) {
+               return layer(surface) && !surface.draw.material->caustics;
+             });
+    }
     static Flags surfaceFlags(const scene::Draw &surface) {
       const auto &material = *surface.material;
       Flags f;
@@ -1071,7 +1086,11 @@ namespace remix::trace {
           std::all_of(instance.begin(), instance.end(), [](const auto &surface) { return surface.draw.decal; });
       // A wound cut is tested at every candidate: never opaque in traversal.
       const bool wounded = recordOut && draw.wound;
-      input.noOpaque = wounded || backdropTested;
+      // A blended layer's micromap (scene/opacity.cpp) settles only where it
+      // never shows; every other candidate is its layer test, never opaque.
+      const bool layered = std::any_of(instance.begin(), instance.end(),
+                                       [](const auto &surface) { return surface.draw.blendedCoverage(); });
+      input.noOpaque = wounded || backdropTested || layered;
       write(sceneCursor, model.data(), sizeof(model));
       write(sceneCursor, &view.fingerprint, sizeof(view.fingerprint));
       write(sceneCursor, &draw.instanceId, sizeof(draw.instanceId));
@@ -1272,6 +1291,7 @@ namespace remix::trace {
         surfaceMaterial.push_back(uint16_t(index));
         unit.flags |= surfaceFlags(surface.draw);
       }
+      unit.flags.shadowBlended |= blendedShadows(instance);
       // Slot fields without descriptor numbers (layout() adds those): the
       // SHARC bytes take the material's decode fields.
       std::vector<MaterialSlots> local;
@@ -1546,6 +1566,7 @@ namespace remix::trace {
         const auto instance = prepared.instances[index];
         if (p && instance[0].draw.classification == 0)
           throw std::logic_error("A static instance outside the static set follows its prefix");
+        m_flags.shadowBlended |= blendedShadows(instance);
         for (const auto &preparedSurface : instance) {
           const auto &surface = preparedSurface.draw;
           m_flags |= surfaceFlags(surface);
