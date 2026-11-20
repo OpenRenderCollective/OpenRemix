@@ -599,7 +599,10 @@ typedef struct remixapi_InstanceIdentityEXT {
 // the fire inside it): the centres of their per-frame meshes say little, and
 // sorting by them swaps layers as the camera moves. Instances with a nonzero
 // `order` are drawn after their layer's depth-sorted blended draws, in
-// ascending order (equal values: in submission order). Zero, an opaque or a
+// ascending order (equal values: in submission order). Blended decals
+// (paint on an opaque surface) are drawn before the layer's other blended
+// draws instead: those with an `order` first, in ascending order, then the
+// rest by depth. Zero, an opaque or a
 // traced instance: ignored. Masked overlays (remixapi_InstanceInfoMaskEXT) keep
 // their depth-sorted place.
 #define REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_RASTER_ORDER_EXT ((remixapi_StructType)0x7fff1013)

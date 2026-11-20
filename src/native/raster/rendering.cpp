@@ -117,12 +117,19 @@ namespace remix {
     // Sort references with keys evaluated once; draws themselves hold shared owners.
     // `order` (remixapi_InstanceInfoRasterOrderEXT): a blended draw the host
     // placed itself, after the layer's depth-sorted ones.
+    // `paint`: a blended decal, which lies on an opaque surface: drawn before
+    // the layer's other blended draws (it is under whatever stands before the
+    // surface), those the host placed first and in its order, then the rest by
+    // depth. By the depth of their centres alone, paint on paint (a
+    // displacement's second texture, an overlay on it) changed places as the
+    // camera turned.
     struct Entry {
       int layer;
       bool blended;
       float distance;
       const Draw *draw;
       uint32_t order = 0;
+      bool paint = false;
     };
     std::vector<Entry> ordered;
     ordered.reserve(m_draws.size() + m_overlay.size() + m_uiDraws.size() + 1);
@@ -144,7 +151,8 @@ namespace remix {
         // is a rasterized CUT instance, drawn outside its group's coverage.
         const bool late = draw.blend.enabled || draw.maskGroup || draw.cutGroup;
         const uint32_t order = draw.blend.enabled && !draw.maskGroup && !draw.cutGroup ? draw.rasterOrder : 0;
-        ordered.push_back({layer(draw), late, late && !order ? distance(draw) : 0.f, source, order});
+        ordered.push_back({layer(draw), late, late && !order ? distance(draw) : 0.f, source, order,
+                           draw.blend.enabled && draw.decal && !draw.maskGroup && !draw.cutGroup});
       }
     }
     std::stable_sort(ordered.begin(), ordered.end(), [](const Entry &a, const Entry &b) {
@@ -153,6 +161,12 @@ namespace remix {
       }
       if (a.blended != b.blended) {
         return !a.blended;
+      }
+      if (a.paint != b.paint) {
+        return a.paint;
+      }
+      if (a.paint && (a.order || b.order)) {
+        return a.order && b.order ? a.order < b.order : a.order != 0;
       }
       if (a.order || b.order) {
         return a.order && b.order ? a.order < b.order : !a.order;
