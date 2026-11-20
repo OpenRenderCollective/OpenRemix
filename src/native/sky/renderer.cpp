@@ -87,6 +87,17 @@ namespace remix::sky {
       geometry.magnification = lens.magnification;
       return geometry;
     }
+
+    // A world direction as NUMOS's elevation and azimuth (degrees): its Y-up
+    // frame, as NUMOS turns its own lights back into the world, inverted.
+    void skyAngles(const float *direction, bool zUp, bool flipUp, float &elevation, float &azimuth) {
+      const float x = direction[0], z = zUp ? direction[1] : direction[2];
+      const float y = (zUp ? direction[2] : direction[1]) * (flipUp ? -1.f : 1.f);
+      const float length = std::max(std::sqrt(x * x + y * y + z * z), 1e-12f);
+      constexpr float degrees = 57.29577951f;
+      elevation = std::asin(std::clamp(y / length, -1.f, 1.f)) * degrees;
+      azimuth = std::atan2(x, z) * degrees;
+    }
   } // namespace
 
   struct Renderer::State {
@@ -97,6 +108,29 @@ namespace remix::sky {
     // The game's control (remix_sky_ext.h) and what of it is applied.
     config::SkyControl control;
     bool game = true, timeOverride = false;
+    // The profile's settings with the game's time; the game's sun and moon go
+    // over them for the world's up axis (lightsZUp).
+    numos::Settings values;
+    bool lightsOverride = false, lightsZUp = true;
+    uint64_t lightsGeneration = 0;
+
+    void applySettings() {
+      auto applied = values;
+      if (lightsOverride && control.sun) {
+        // The game places the sun; the clock still turns the stars.
+        applied.timeCycleEnable = false;
+        skyAngles(control.sunDirection, zUp, applied.flipUpAxis, applied.sunElevation, applied.sunRotation);
+      }
+      if (lightsOverride && control.moon) {
+        applied.realMoonEnabled = false;
+        auto &moon = applied.moons[0];
+        moon.enabled = true;
+        moon.phase = control.moonPhase;
+        skyAngles(control.moonDirection, zUp, applied.flipUpAxis, moon.elevation, moon.rotation);
+      }
+      numos.setSettings(applied);
+      lightsZUp = zUp;
+    }
     uint64_t timeGeneration = 0, weatherGeneration = 0, lightningGeneration = 0;
     numos::WeatherBlender weather;
     bool weatherActive = false, weatherWanted = false;
@@ -203,8 +237,10 @@ namespace remix::sky {
     // The game's time of day replaces the profile's; a new one moves the
     // running clock (timeCycleEnable) to it.
     const bool time = m->game && control.time;
+    const bool lights = m->game && (control.sun || control.moon);
     if (m->configured && settings.atmosphere == m->atmosphere && time == m->timeOverride &&
-        (!time || control.timeGeneration == m->timeGeneration))
+        (!time || control.timeGeneration == m->timeGeneration) && lights == m->lightsOverride &&
+        (!lights || control.lightsGeneration == m->lightsGeneration))
       return;
     numos::Settings values;
     for (const auto &[key, value] : settings.atmosphere)
@@ -217,7 +253,10 @@ namespace remix::sky {
       if (values.timeCycleEnable)
         values.dayLengthMinutes = std::max(control.dayLengthMinutes, .01f);
     }
-    m->numos.setSettings(values);
+    m->values = values;
+    m->lightsOverride = lights;
+    m->lightsGeneration = control.lightsGeneration;
+    m->applySettings();
     m->atmosphere = settings.atmosphere;
     m->timeOverride = time;
     m->timeGeneration = control.timeGeneration;
@@ -281,6 +320,10 @@ namespace remix::sky {
     }
     m_status.clear();
     const bool zUp = frame.upAxis == 2;
+    if (m->lightsOverride && zUp != m->lightsZUp) {
+      m->zUp = zUp;
+      m->applySettings();
+    }
     const auto now = std::chrono::steady_clock::now();
     const float delta = m->frameIndex ? std::chrono::duration<float>(now - m->last).count() : 0.f;
     m->last = now;
