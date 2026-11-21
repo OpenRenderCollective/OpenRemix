@@ -38,6 +38,29 @@ INLINED = {'bake'}
 # for iterating on shaders: the path tracer's then build in about a minute instead of about ten,
 # and the driver takes about twice as long to compile them. Releases keep it on.
 OPTIMIZE = True
+# spirv-opt -O's passes (SPIRV-Tools' RegisterPerformancePasses), for the pinned revision only:
+# run as segments, one process each, they write -O's output byte for byte, and a stage holds its
+# memory only while a segment needs it. In one process a large path-tracing stage keeps its 10 GB
+# peak (the first redundancy elimination, 13 of its 86 s) for its whole run, which let two such
+# stages run at once; in segments the scheduler runs as many as the segments' peaks allow.
+O_PASSES_REVISION = '0539c81f69a3daeb706fd3477dca61435b475156'
+O_PASSES = ['--wrap-opkill', '--eliminate-dead-branches', '--merge-return', '--inline-entry-points-exhaustive',
+            '--eliminate-dead-functions', '--eliminate-dead-code-aggressive', '--private-to-local',
+            '--eliminate-local-single-block', '--eliminate-local-single-store', '--eliminate-dead-code-aggressive',
+            '--scalar-replacement=0', '--convert-local-access-chains', '--eliminate-local-single-block',
+            '--eliminate-local-single-store', '--eliminate-dead-code-aggressive', '--eliminate-local-multi-store',
+            '--eliminate-dead-code-aggressive', '--ccp', '--eliminate-dead-code-aggressive', '--loop-unroll',
+            '--eliminate-dead-branches', '--redundancy-elimination', '--combine-access-chains',
+            '--simplify-instructions', '--scalar-replacement=0', '--convert-local-access-chains',
+            '--eliminate-local-single-block', '--eliminate-local-single-store', '--eliminate-dead-code-aggressive',
+            '--ssa-rewrite', '--eliminate-dead-code-aggressive', '--vector-dce', '--eliminate-dead-inserts',
+            '--eliminate-dead-branches', '--simplify-instructions', '--if-conversion', '--copy-propagate-arrays',
+            '--reduce-load-size', '--eliminate-dead-code-aggressive', '--merge-blocks', '--redundancy-elimination',
+            '--eliminate-dead-branches', '--merge-blocks', '--simplify-instructions']
+# Split at the two redundancy eliminations, the peaks (10 and 6 GB against 3 GB for the rest).
+O_SEGMENTS = [O_PASSES[:21], O_PASSES[21:22], O_PASSES[22:40], O_PASSES[40:41], O_PASSES[41:]]
+# Whether the tools' spirv-opt is the revision O_PASSES was read from (main()).
+SEGMENTED = False
 INLINED_STAGES = {('forward', 'prepassedFrag'), ('forward', 'prepassedSsrFrag'), ('forward', 'inlinePrepassedFrag'), ('forward', 'inlinePrepassedFragCube')}
 BACKENDS = {
     'styled_lighting': ('forward::styled_lighting', 'vulkan1.1', ('compose',)),
@@ -375,7 +398,21 @@ def word_lines(data):
     return ''.join('  ' + ', '.join(hexes[i:i + 8]) + ',\n' for i in range(0, len(hexes), 8))
 
 
-def compile_stage(backend, stage, temporary, cache, identity, statistics):
+def optimization_runs(backend, optimization):
+    """The spirv-opt invocations of an optimization: the path tracer's -O as its segments where
+    the passes are known, the first validating the input as -O does; else one. Only the path
+    tracer's: its --compact-ids makes the segments' output -O's byte for byte (without it the
+    forward and bake stages' ids come out otherwise)."""
+    if not SEGMENTED or backend not in OPTIMIZED or '-O' not in optimization:
+        return [optimization]
+    before = optimization[:optimization.index('-O')]
+    after = optimization[optimization.index('-O') + 1:]
+    runs = [before + (['--skip-validation'] if i else []) + segment for i, segment in enumerate(O_SEGMENTS)]
+    runs[-1] = runs[-1] + after
+    return runs
+
+
+def compile_stage(backend, stage, temporary, cache, identity, statistics, pool):
     """SPIR-V of one stage (bytes), compiled and validated; for an optimized
     backend, the optimized module and its XZ stream. The finished stage is
     cached by its unoptimized SPIR-V (stage_cache.py)."""
@@ -401,13 +438,17 @@ def compile_stage(backend, stage, temporary, cache, identity, statistics):
         if backend in OPTIMIZED:
             return lzma.decompress(cached), cached
         return cached
+    segments = []
     if optimization:
-        optimized = binary.with_suffix('.opt.spv')
-        peak = max(peak, stage_cache.run(['spirv-opt', *optimization, '--target-env=' + environment,
-                                          str(binary), '-o', str(optimized)]))
-        binary = optimized
-    peak = max(peak, stage_cache.run(['spirv-val', '--target-env', environment, str(binary)]))
-    statistics.set(stage, time.monotonic() - started, peak)
+        runs = optimization_runs(backend, optimization)
+        for i, flags in enumerate(runs):
+            optimized = binary.with_suffix(f'.opt{i}.spv')
+            used = pool.run(estimate_segment(backend, stage, statistics, i, len(runs)),
+                            ['spirv-opt', *flags, '--target-env=' + environment, str(binary), '-o', str(optimized)])
+            segments.append(used)
+            binary = optimized
+    peak = max([peak, *segments, pool.run(256 * 2**20, ['spirv-val', '--target-env', environment, str(binary)])])
+    statistics.set(stage, time.monotonic() - started, peak, segments)
     data = binary.read_bytes()
     if backend in OPTIMIZED:
         packed = compress(data)
@@ -418,22 +459,34 @@ def compile_stage(backend, stage, temporary, cache, identity, statistics):
 
 
 def estimate(backend, stage, statistics):
-    """(seconds, peak bytes) a stage's compile is expected to take: its last, with a margin
-    on the memory, or, never measured, the backend's heaviest (the largest path-tracing
-    stages take about 11 GB)."""
+    """Seconds a stage's compile is expected to take, for the order they start in: its last or,
+    never measured, the backend's longest."""
     known = statistics.get(stage)
     if known:
-        return known[0], known[1] * 1.15 + 64 * 2**20
+        return known[0]
     if not OPTIMIZE:
-        return 1.0, 512 * 2**20
+        return 1.0
     heaviest = statistics.heaviest()
     if heaviest:
-        return heaviest[0], heaviest[1] * 1.15 + 64 * 2**20
+        return heaviest[0]
+    return 120.0 if backend in OPTIMIZED else 30.0 if backend in INLINED else 1.0
+
+
+def estimate_segment(backend, stage, statistics, index, count):
+    """The peak memory a stage's spirv-opt run `index` (of `count`) is expected to reach: its last
+    with a margin or, never measured, the backend's largest for that run (the largest
+    path-tracing stages take 10 GB in one)."""
+    margin = lambda size: size * 1.15 + 64 * 2**20
+    known = statistics.segments(stage)
+    if known and len(known) == count:
+        return margin(known[index])
+    largest = statistics.largest_segments(count)
+    if largest:
+        return margin(largest[index])
     if backend in OPTIMIZED:
-        return 120.0, 12 * 2**30
-    if backend in INLINED or (backend, stage) in INLINED_STAGES:
-        return 30.0, 3 * 2**30
-    return 1.0, 256 * 2**20
+        # The largest stage's (temporal): its segments' peaks, or 11 GB in one run.
+        return (4, 11, 1, 7, 1)[index] * 2**30 if count == len(O_SEGMENTS) else 12 * 2**30
+    return 3 * 2**30
 
 
 def compress(data):
@@ -508,18 +561,18 @@ def embedded_data(generator, namespace):
 
 def process(backends, jobs=None):
     """Compiles every stage of the backends concurrently, one task per stage: the
-    longest first, as many at once as memory holds (stage_cache.schedule), at most
-    `jobs` (none or 0: one per CPU)."""
+    longest first, at most `jobs` at once (none or 0: one per CPU), their processes as many at
+    once as memory holds (stage_cache.Pool)."""
     cache = stage_cache.Cache(ROOT)
     identity = stage_cache.tool_identity(['glslangValidator', 'spirv-opt', 'spirv-val'])
     statistics = {b: stage_cache.Statistics(cache, b) for b in backends}
+    pool = stage_cache.Pool()
     with tempfile.TemporaryDirectory() as temporary:
         work = []
         for b in backends:
             for stage in BACKENDS[b][2]:
-                seconds, peak = estimate(b, stage, statistics[b])
                 work.append(((b, stage), functools.partial(compile_stage, b, stage, temporary, cache, identity,
-                                                           statistics[b]), seconds, peak))
+                                                           statistics[b], pool), estimate(b, stage, statistics[b])))
         try:
             tasks = stage_cache.schedule(work, jobs or os.cpu_count() or 1)
         finally:
@@ -581,12 +634,18 @@ def main():
     args = parser.parse_args()
     if args.jobs is not None and args.jobs < 0:
         parser.error('--jobs must not be negative')
-    global OUTPUT, OPTIMIZE
+    global OUTPUT, OPTIMIZE, SEGMENTED
     OPTIMIZE = not args.no_optimize
     if args.output:
         OUTPUT = args.output.resolve()
     if args.tools:
         use_tools(args.tools)
+    try:
+        result = subprocess.run(['spirv-opt', '--version'], capture_output=True, text=True)
+        version = result.stdout + result.stderr  # SPIRV-Tools prints its version to stderr.
+    except OSError:
+        version = ''
+    SEGMENTED = O_PASSES_REVISION in version
     selected = [*BACKENDS, 'nrd', 'fsr31'] if args.backend == 'all' else [args.backend]
     glsl = [backend for backend in selected if backend in BACKENDS]
     if (args.check or args.validate) and (glsl or 'metal' in selected or 'sky' in selected):

@@ -3,8 +3,9 @@
 A stage's optimized SPIR-V depends only on its unoptimized SPIR-V (glslang's, fast), the
 tools and the optimization: the cache keys the finished stage by those, so a stage whose
 source change compiles to the same SPIR-V (a comment, code under another stage's #if,
-a branch switch) skips spirv-opt, the slow step. Each stage's time and peak memory are kept
-too, for the scheduler: the longest stages start first, as many at once as memory holds.
+a branch switch) skips spirv-opt, the slow step. Each stage's time and the peak memory of each of
+its processes are kept too, for the scheduler: the longest stages start first, and their processes
+run as many at once as memory holds.
 
 The cache lives in _work/shader-cache (REMIX_SHADER_CACHE moves it, empty turns it off),
 pruned to REMIX_SHADER_CACHE_MB (default 2048) by least recent use."""
@@ -19,7 +20,7 @@ import threading
 import time
 
 # Bump when what a cached stage holds changes.
-FORMAT = 1
+FORMAT = 2
 _lock = threading.Lock()
 
 
@@ -35,8 +36,9 @@ def tool_identity(tools):
     lines = []
     for tool in tools:
         try:
+            # spirv-opt and spirv-val print their version to stderr.
             result = subprocess.run([tool, '--version'], capture_output=True, text=True)
-            lines.append(tool + ': ' + result.stdout.strip())
+            lines.append(tool + ': ' + (result.stdout + result.stderr).strip())
         except OSError:
             lines.append(tool + ': missing')
     return '\n'.join(lines)
@@ -123,6 +125,16 @@ class Statistics:
         value = self.values.get(stage)
         return (value['seconds'], value['bytes']) if value else None
 
+    def segments(self, stage):
+        """The peak memory of each of a stage's spirv-opt runs, or None."""
+        value = self.values.get(stage)
+        return value.get('segments') if value else None
+
+    def largest_segments(self, count):
+        """The largest peak of each spirv-opt run among stages measured with `count` runs, or None."""
+        rows = [value['segments'] for value in self.values.values() if len(value.get('segments') or []) == count]
+        return [max(row[i] for row in rows) for i in range(count)] if rows else None
+
     def heaviest(self):
         """(seconds, bytes) of the longest and the largest stage measured, or None."""
         if not self.values:
@@ -130,9 +142,10 @@ class Statistics:
         return (max(value['seconds'] for value in self.values.values()),
                 max(value['bytes'] for value in self.values.values()))
 
-    def set(self, stage, seconds, peak):
+    def set(self, stage, seconds, peak, segments=()):
         with _lock:
-            self.values[stage] = {'seconds': round(seconds, 2), 'bytes': int(peak)}
+            self.values[stage] = {'seconds': round(seconds, 2), 'bytes': int(peak),
+                                  'segments': [int(size) for size in segments]}
             self.changed = True
 
     def save(self):
@@ -205,54 +218,78 @@ def memory():
         return None
 
 
-def schedule(tasks, workers):
-    """Runs tasks [(name, function, seconds, bytes)], the longest first, at most `workers` at
-    once and as many as memory holds: a task starts while the estimated peaks of those running
-    and its own fit in most of the machine's memory and in what is free now. One runs alone
-    whatever its estimate. Returns {name: result}; the first failure is raised."""
-    pending = sorted(tasks, key=lambda task: -task[2])
-    machine = memory()
-    budget = machine[0] * 0.8 if machine else float('inf')
-    # Free memory a start leaves for everything else.
-    reserve = 2 * 2**30
-    results, failures = {}, []
-    state = {'running': 0, 'bytes': 0}
-    condition = threading.Condition()
 
-    def fits(task):
-        if state['running'] == 0:
+
+class Pool:
+    """The memory the processes running at once may take: a process reserves its estimated peak
+    and waits, first come first served, until it fits in most of the machine's memory and in what
+    is free now. One runs alone whatever its estimate."""
+
+    def __init__(self):
+        machine = memory()
+        self.budget = machine[0] * 0.8 if machine else float('inf')
+        # Free memory a start leaves for everything else.
+        self.reserve = 2 * 2**30
+        self.used = 0
+        self.holders = 0
+        self.queue = []
+        self.condition = threading.Condition()
+
+    def _fits(self, size):
+        if self.holders == 0:
             return True
-        if state['running'] >= workers or state['bytes'] + task[3] > budget:
+        if self.used + size > self.budget:
             return False
         now = memory()
-        return now is None or task[3] + reserve <= now[1]
+        return now is None or size + self.reserve <= now[1]
+
+    def acquire(self, size):
+        ticket = object()
+        with self.condition:
+            self.queue.append(ticket)
+            while self.queue[0] is not ticket or not self._fits(size):
+                self.condition.wait(0.5)
+            self.queue.pop(0)
+            self.used += size
+            self.holders += 1
+            self.condition.notify_all()
+
+    def release(self, size):
+        with self.condition:
+            self.used -= size
+            self.holders -= 1
+            self.condition.notify_all()
+
+    def run(self, size, command, **arguments):
+        """run(command) within a reservation of `size` bytes; returns its peak memory."""
+        self.acquire(size)
+        try:
+            return run(command, **arguments)
+        finally:
+            self.release(size)
+
+
+def schedule(tasks, workers):
+    """Runs tasks [(name, function, seconds)], the longest first, at most `workers` at once (their
+    processes share a Pool for memory). Returns {name: result}; the first failure is raised."""
+    pending = sorted(tasks, key=lambda task: -task[2])
+    results, failures = {}, []
+    lock = threading.Lock()
 
     def worker():
         while True:
-            with condition:
-                while True:
-                    if failures or not pending:
-                        return
-                    task = next((task for task in pending if fits(task)), None)
-                    if task:
-                        pending.remove(task)
-                        state['running'] += 1
-                        state['bytes'] += task[3]
-                        break
-                    condition.wait(0.5)
+            with lock:
+                if failures or not pending:
+                    return
+                task = pending.pop(0)
             try:
                 result = task[1]()
             except BaseException as error:
-                with condition:
+                with lock:
                     failures.append(error)
             else:
-                with condition:
+                with lock:
                     results[task[0]] = result
-            finally:
-                with condition:
-                    state['running'] -= 1
-                    state['bytes'] -= task[3]
-                    condition.notify_all()
 
     threads = [threading.Thread(target=worker, daemon=True) for _ in range(max(1, min(workers, len(pending))))]
     for thread in threads:
