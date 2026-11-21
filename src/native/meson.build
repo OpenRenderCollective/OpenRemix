@@ -16,6 +16,7 @@ shader_tools = custom_target('shader-tools',
                        '../../scripts/shaders/allocator/CMakeLists.txt', '../../scripts/shaders/allocator/new_delete.cpp'),
   env : shader_env, console : true)
 shader_generate = [shader_python, shader_scripts / 'generate.py', '--jobs', get_option('shader_jobs').to_string(), '--tools', shader_tools,
+                   ] + (get_option('shader_optimize') ? [] : ['--no-optimize']) + [
                    '--output', meson.current_build_dir(), '--depfile', '@DEPFILE@', '--depfile-target', '@OUTPUT0@']
 shader_generator_files = files('../../scripts/shaders/generate.py', '../../scripts/shaders/metal.py',
                                '../../scripts/shaders/stage_cache.py')

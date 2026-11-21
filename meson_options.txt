@@ -8,6 +8,8 @@ option('gpu_tests', type : 'boolean', value : false, description : 'Run SDL/Vulk
 option('oidn_root', type : 'string', value : '', description : 'Optional Open Image Denoise 2.5 installation prefix for offline lightmap denoising.')
 option('shader_jobs', type : 'integer', min : 0, value : 0,
   description : 'Maximum parallel shader compilation workers per generator (0: one per CPU, as many as memory holds).')
+option('shader_optimize', type : 'boolean', value : true,
+  description : 'Optimize the generated SPIR-V (spirv-opt). Off builds the path tracer\'s shaders in about a minute instead of about ten, for iterating on them; the driver compiles them about twice as slowly.')
 option('shader_tools', type : 'string', value : '',
   description : 'Cache of the pinned shader tools the build generates the shaders with (default: _work/tools/shader-toolchain).')
 

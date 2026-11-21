@@ -57,7 +57,10 @@ first use (vendored XZ Embedded).
 `scripts/shaders/stage_cache.py` keeps each finished stage in `_work/shader-cache`, keyed by its
 unoptimized SPIR-V and the tools: a stage whose SPIR-V did not change is not optimized again
 (`REMIX_SHADER_CACHE=` with no value turns the cache off). Stages run longest first, as many at
-once as memory holds (`-Dshader_jobs=` caps them; 0, the default, is one per CPU).
+once as memory holds (`-Dshader_jobs=` caps them; 0, the default, is one per CPU). The NUMOS sky
+is cached whole by its inputs. For iterating on shaders, `-Dshader_optimize=false` skips
+`spirv-opt` (the path tracer's shaders in seconds instead of about ten minutes; the driver then
+compiles them about twice as slowly): never for a release.
 Standalone driver probes in `tools/vulkan-probes` require `-Dvulkan_probes=true` and shader tools.
 macOS builds the native Metal backend in `src/native/metal` instead of the Vulkan runtime
 (see `docs/features/metal-backend.md`). The build generates its libraries from the

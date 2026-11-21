@@ -9,6 +9,8 @@ The night sky's stars and diffuse galaxy are NUMOS's procedural ones (tools/buil
 which needs numpy), not the catalogue files in assets/nightsky, whose Milky Way data is CC BY-SA.
 The moon's surface is assets/nightsky/moon.bin (NASA media, not copyrighted).
 """
+import hashlib
+import inspect
 import os
 from pathlib import Path
 import re
@@ -125,17 +127,57 @@ def write(numos_dir, adapters, adapter_table, night_sky_assets):
     generate.write_output(target.with_name('adapter_passes.inc'), adapter_table)
 
 
+OUTPUTS = ('embedded.h', 'embedded.bin', 'embedded_data.cpp', 'adapter_passes.inc')
+
+
+def inputs():
+    return [PASS_TABLE, LAYOUT_CHECKS, NUMOS / 'assets/nightsky/moon.bin', *sorted((NUMOS / 'tools').glob('*.py')),
+            *sorted(path for path in (NUMOS / 'shaders').rglob('*') if path.is_file()),
+            *sorted(path for path in ADAPTERS.rglob('*') if path.is_file() and path.name != 'meson.build')]
+
+
+def cache_key():
+    """Everything the generated sky depends on: its sources, this script and the compression,
+    slangc, and the interpreter that builds the night sky (and whether it has numpy)."""
+    digest = hashlib.sha256()
+    for path in inputs():
+        digest.update(str(path.relative_to(generate.ROOT)).replace('\\', '/').encode() + b'\0')
+        digest.update(path.read_bytes())
+    digest.update(Path(__file__).read_bytes())
+    digest.update(inspect.getsource(generate.compress).encode())
+    version = subprocess.run([slangc(), '-version'], capture_output=True)
+    digest.update(version.stdout + version.stderr)
+    try:
+        import numpy
+        numpy_version = numpy.__version__
+    except ImportError:
+        numpy_version = None
+    digest.update(f'{sys.version} {numpy_version}'.encode())
+    return digest.hexdigest()
+
+
 def process():
-    build_shaders, gen_pass_table, gen_layout_checks = tools()
-    with tempfile.TemporaryDirectory() as temporary:
-        numos_dir, adapter_dir = Path(temporary) / 'numos', Path(temporary) / 'adapters'
-        adapter_dir.mkdir()
-        compile_numos(build_shaders, numos_dir)
-        check_layout(gen_pass_table, gen_layout_checks, numos_dir)
-        adapters = compile_adapters(build_shaders, adapter_dir)
-        write(numos_dir, adapters, gen_pass_table.generate(adapter_dir), night_sky(Path(temporary) / 'night_sky'))
+    # The whole sky is cached by its inputs (stage_cache.py's directory): it takes a minute or
+    # two and its inputs change rarely, while the generators rerun it on any change of theirs.
+    import stage_cache
+    cache = stage_cache.Cache(generate.ROOT)
+    key = 'sky-' + cache_key()
+    target = generate.OUTPUT / 'sky/shaders/embedded.h'
+    cached = [cache.get(f'{key}-{name}') for name in OUTPUTS]
+    if all(data is not None for data in cached):
+        target.parent.mkdir(parents=True, exist_ok=True)
+        for name, data in zip(OUTPUTS, cached):
+            generate.write_output(target.with_name(name), data)
+    else:
+        build_shaders, gen_pass_table, gen_layout_checks = tools()
+        with tempfile.TemporaryDirectory() as temporary:
+            numos_dir, adapter_dir = Path(temporary) / 'numos', Path(temporary) / 'adapters'
+            adapter_dir.mkdir()
+            compile_numos(build_shaders, numos_dir)
+            check_layout(gen_pass_table, gen_layout_checks, numos_dir)
+            adapters = compile_adapters(build_shaders, adapter_dir)
+            write(numos_dir, adapters, gen_pass_table.generate(adapter_dir), night_sky(Path(temporary) / 'night_sky'))
+        for name in OUTPUTS:
+            cache.put(f'{key}-{name}', target.with_name(name).read_bytes())
     # The adapter folder itself: adding an adapter changes its time stamp.
-    generate.depend(PASS_TABLE, LAYOUT_CHECKS, ADAPTERS, NUMOS / 'assets/nightsky/moon.bin',
-                    *(NUMOS / 'tools').glob('*.py'),
-                    *(path for path in (NUMOS / 'shaders').rglob('*') if path.is_file()),
-                    *(path for path in ADAPTERS.rglob('*') if path.is_file() and path.name != 'meson.build'))
+    generate.depend(ADAPTERS, *inputs())
