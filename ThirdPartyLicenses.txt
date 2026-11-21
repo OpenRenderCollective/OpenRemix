@@ -44,6 +44,11 @@ NRD 4.18.0, MathLib v11, ShaderMake headers, and sse2neon v1.8.0
 NVIDIA SHARC 1.8.3.0 (optional): third_party/sharc/License.md.
 This software contains source code provided by NVIDIA Corporation.
 
+TinyBVH 1.9.1 (acceleration structures for devices without ray queries), commit c9be3103cc9693b456b0a0353927c11cac7d710f
+Copyright (c) 2024 Jacco Bikker
+MIT license: third_party/tinybvh/LICENSE; distributed as TinyBVH.txt.
+Pin and checksums: third_party/tinybvh/upstream.json, sources.sha256.
+
 jxrlib 1.1 (JPEG XR encoder for HDR screenshots), commit f7521879862b9085318e814c6157490dd9dbbdb4
 Copyright (c) Microsoft Corp.
 BSD 2-Clause license: third_party/jxrlib/LICENSE; distributed as jxrlib.txt.

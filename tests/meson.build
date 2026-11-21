@@ -46,8 +46,11 @@ subdir('sky')
 subdir('ui')
 subdir('platform')
 subdir('runtime')
-subdir('raster')
-subdir('forward')
+# Both exercise the Forward+ backend.
+if get_option('forward')
+  subdir('raster')
+  subdir('forward')
+endif
 subdir('pathtrace')
 subdir('denoise')
 subdir('postfx')

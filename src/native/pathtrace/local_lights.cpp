@@ -57,12 +57,13 @@ namespace remix {
     // variant once it has compiled, and the full one until then.
     if (leanLighting) {
       auto &[variant, attempted] = source.specialized[key | leanLighting];
-      if (!attempted) {
+      if (!attempted && sequence >= source.retryAt[key | leanLighting]) {
         attempted = true;
         const auto result = requestLightingVariant(source, key | leanLighting, &variant, false);
-        if (result == VK_NOT_READY)
+        if (result == VK_NOT_READY) {
           attempted = false;
-        else if (result == VK_ERROR_DEVICE_LOST)
+          source.retryAt[key | leanLighting] = sequence + LightingPipeline::retryFrames;
+        } else if (result == VK_ERROR_DEVICE_LOST)
           throw result;
       }
       if (variant) {
@@ -75,11 +76,12 @@ namespace remix {
         ((source.baseEarlyOut ? variantEarlyOut : 0u) | (source.baseSeparateIndirect ? variantSeparateIndirect : 0u)))
       return pipeline;
     auto &[variant, attempted] = source.specialized[key];
-    if (!attempted) {
+    if (!attempted && sequence >= source.retryAt[key]) {
       attempted = true;
       const auto result = requestLightingVariant(source, key, &variant, false);
       if (result == VK_NOT_READY) {
         attempted = false;
+        source.retryAt[key] = sequence + LightingPipeline::retryFrames;
         // A consumer source stands in for its own variants (plain sampling);
         // a producer-dependent role without one has no fallback.
         return roleOnly ? VK_NULL_HANDLE : pipeline;

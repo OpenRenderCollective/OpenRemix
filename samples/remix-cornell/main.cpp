@@ -139,6 +139,9 @@ int main(int argc, char **argv) {
 #if !defined(_WIN32)
   startup.windowTitle = "Remix Cornell Box";
   startup.windowWidth = startup.windowHeight = 900;
+  // WINDOW=WxH: the window size in points (a scaled display's drawable is larger).
+  if (const char *window = std::getenv("WINDOW"))
+    std::sscanf(window, "%ux%u", &startup.windowWidth, &startup.windowHeight);
 #endif
   check(api.Startup(&startup), "Startup");
   if (!status) {

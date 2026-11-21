@@ -301,6 +301,7 @@ namespace remix {
         const auto device = m_device;
         const auto family = m_queueFamily;
         const bool micromaps = m_opacityMicromaps;
+        const bool softwareRays = m_softwareRayQuery;
         const auto pass = m_renderPass;
         const auto extent = m_swapchainExtent;
         const auto depthFormat = renderer().depthFormat();
@@ -322,7 +323,8 @@ namespace remix {
           if (sdkGuard)
             ngx->initializeDevice();
           auto tracer = std::make_unique<PathTracer>();
-          tracer->initialize(physical, device, family, true, options.rasterPrimary, exposureState, micromaps);
+          tracer->initialize(physical, device, family, true, options.rasterPrimary, exposureState, micromaps,
+                             softwareRays);
           tracer->setNgx(ngx);
           tracer->configureTarget(pass, extent, depthFormat, depth);
           tracer->prepareConfiguration(options, perspective, local, emissive, failedBackends, reconstructionFailure);

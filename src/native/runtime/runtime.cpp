@@ -37,9 +37,11 @@ namespace remix {
   RemixNativeRuntime::RemixNativeRuntime() {
     // Establish destruction order before this runtime can launch persistence.
     // The service itself starts no thread until a completed map is submitted.
+#if REMIX_HAS_FORWARD
     forward::bake::cache::persistence();
     forward::probes::capture_cache::persistence();
     forward::probes::capture_cache::sharedPersistence();
+#endif
   }
   RemixNativeRuntime::~RemixNativeRuntime() {
     // Without a Shutdown: the render thread's frame completes first.
@@ -49,9 +51,11 @@ namespace remix {
     if (m_asyncActive)
       switchPresentation(false);
     m_renderThread.stop();
+#if REMIX_HAS_FORWARD
     forward::bake::cache::persistence().stop();
     forward::probes::capture_cache::persistence().stop();
     forward::probes::capture_cache::sharedPersistence().stop();
+#endif
     if (m_device && !m_deviceLost) {
       vkDeviceWaitIdle(m_device);
     }
@@ -176,9 +180,11 @@ namespace remix {
       switchPresentation(false);
     m_renderThread.stop();
     // Join CPU-only persistence during explicit Shutdown, before DLL unload.
+#if REMIX_HAS_FORWARD
     forward::bake::cache::persistence().stop();
     forward::probes::capture_cache::persistence().stop();
     forward::probes::capture_cache::sharedPersistence().stop();
+#endif
     m_frameScene.reset();
     m_asyncCaller = m_previousAsyncCaller = m_asyncRender = {};
     m_renderedMemory = {};
@@ -209,6 +215,7 @@ namespace remix {
     std::copy(defaults.clearColor.begin(), defaults.clearColor.end(), m_clearColor);
     m_input[0] = 0;
     m_traceSupported = false;
+    m_softwareRayQuery = m_rayQueries = false;
     m_denoiseCapabilities = {.structSize = sizeof(remixapi_DenoisingCapabilitiesEXT)};
     m_uiState = REMIXAPI_UI_STATE_NONE;
     return REMIXAPI_ERROR_CODE_SUCCESS;

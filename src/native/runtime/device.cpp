@@ -199,12 +199,12 @@ namespace remix {
     missing(version12, "Vulkan 1.2");
     const char *traceExtensions[] = {VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME, VK_KHR_RAY_QUERY_EXTENSION_NAME,
                                      VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME};
+    // Without them (or the features below) the path tracer traverses
+    // structures built on the CPU: hardwareRays stays false.
     bool extensionsSupported = true;
-    for (const char *extension : traceExtensions) {
-      const bool supported = supportsDeviceExtension(selection.physicalDevice, extension);
-      missing(supported, extension);
-      extensionsSupported &= supported;
-    }
+    for (const char *extension : traceExtensions)
+      extensionsSupported &= supportsDeviceExtension(selection.physicalDevice, extension);
+    bool hardwareRays = false;
     uint32_t queueCount = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(selection.physicalDevice, &queueCount, nullptr);
     std::vector<VkQueueFamilyProperties> queues(queueCount);
@@ -215,7 +215,8 @@ namespace remix {
       vkGetPhysicalDeviceFormatProperties(selection.physicalDevice, VK_FORMAT_D32_SFLOAT, &depth);
       const auto colorFeatures = VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
       const auto depthFeatures = VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
-      m_forwardSupported = (queues[selection.family].queueFlags & VK_QUEUE_COMPUTE_BIT) &&
+      // Never in a build without the backend (-Dforward=false).
+      m_forwardSupported = REMIX_HAS_FORWARD && (queues[selection.family].queueFlags & VK_QUEUE_COMPUTE_BIT) &&
                            (color.optimalTilingFeatures & colorFeatures) == colorFeatures &&
                            (depth.optimalTilingFeatures & depthFeatures) == depthFeatures &&
                            properties.limits.maxPerStageDescriptorStorageBuffers >= 4 &&
@@ -224,10 +225,11 @@ namespace remix {
                            properties.limits.maxComputeWorkGroupInvocations >= 64;
     }
     missing((queues[selection.family].queueFlags & VK_QUEUE_COMPUTE_BIT) != 0, "graphics/compute/present queue");
-    if (version12 && extensionsSupported) {
+    if (version12) {
+      if (!extensionsSupported)
+        vulkan12.pNext = nullptr;
       vkGetPhysicalDeviceFeatures2(selection.physicalDevice, &features);
-      missing(acceleration.accelerationStructure, "accelerationStructure");
-      missing(ray.rayQuery, "rayQuery");
+      hardwareRays = extensionsSupported && acceleration.accelerationStructure && ray.rayQuery;
       missing(vulkan12.bufferDeviceAddress, "bufferDeviceAddress");
       missing(features.features.shaderInt64, "shaderInt64");
       missing(vulkan12.shaderSampledImageArrayNonUniformIndexing, "nonuniform sampled-image indexing");
@@ -253,14 +255,15 @@ namespace remix {
       vkGetPhysicalDeviceFormatProperties(selection.physicalDevice, VK_FORMAT_R32G32B32A32_UINT, &stateFormat);
       missing((stateFormat.optimalTilingFeatures & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) != 0,
               "RGBA32UI tracing state storage");
-      VkPhysicalDeviceAccelerationStructurePropertiesKHR accelerationProperties = {
-          .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR};
-      VkPhysicalDeviceProperties2 tracingProperties = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
-                                                       .pNext = &accelerationProperties};
-      vkGetPhysicalDeviceProperties2(selection.physicalDevice, &tracingProperties);
-      missing(accelerationProperties.maxPerStageDescriptorAccelerationStructures >= 2 &&
-                  accelerationProperties.maxDescriptorSetAccelerationStructures >= 2,
-              "two acceleration-structure descriptors");
+      if (hardwareRays) {
+        VkPhysicalDeviceAccelerationStructurePropertiesKHR accelerationProperties = {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR};
+        VkPhysicalDeviceProperties2 tracingProperties = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+                                                         .pNext = &accelerationProperties};
+        vkGetPhysicalDeviceProperties2(selection.physicalDevice, &tracingProperties);
+        hardwareRays = accelerationProperties.maxPerStageDescriptorAccelerationStructures >= 2 &&
+                       accelerationProperties.maxDescriptorSetAccelerationStructures >= 2;
+      }
       VkFormatProperties format;
       vkGetPhysicalDeviceFormatProperties(selection.physicalDevice, VK_FORMAT_R32G32B32A32_SFLOAT, &format);
       missing((format.optimalTilingFeatures & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) != 0, "RGBA32F storage images");
@@ -269,9 +272,26 @@ namespace remix {
                   (VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT),
               "RGBA32F sky attachment blending");
     }
+    // REMIX_SOFTWARE_RAY_QUERY: 0 never traces without ray queries; 1 traces
+    // in software on a device that has them too (comparison and diagnosis).
+    const char *softwareChoice = std::getenv("REMIX_SOFTWARE_RAY_QUERY");
+    if (!hardwareRays && softwareChoice && !std::strcmp(softwareChoice, "0"))
+      missing(false, "ray queries (VK_KHR_acceleration_structure, VK_KHR_ray_query)");
     m_traceSupported = m_traceUnavailable.empty();
-    m_forwardRaySupported = m_forwardSupported && version12 && extensionsSupported &&
-                            acceleration.accelerationStructure && ray.rayQuery && vulkan12.bufferDeviceAddress;
+    m_softwareRayQuery = m_traceSupported && (!hardwareRays || (softwareChoice && !std::strcmp(softwareChoice, "1")));
+    if (m_softwareRayQuery) {
+      SDL_Log("Path tracing without ray queries: acceleration structures built on the CPU");
+      // A device without ray-tracing hardware has no matrix hardware for the
+      // DLSS networks either: Ray Reconstruction and Super Resolution took 81
+      // and 26 ms of a 116 ms frame on a Quadro T1000 where NRD and FSR 3.1
+      // take 1.3 and 0.7. Defaults only: a profile or the game still chooses.
+      m_profiles.setDefault("rtx.native.pathtrace.dlssRayReconstruction", "0");
+      m_profiles.setDefault("rtx.native.pathtrace.upscaler", "fsr31");
+      // Its driver takes minutes for each of the unoptimized software stages:
+      // the other configurations' pipelines compile when they are asked for.
+      m_profiles.setDefault("rtx.native.pathtrace.precompileConfigurations", "0");
+    }
+    m_forwardRaySupported = m_forwardSupported && hardwareRays && vulkan12.bufferDeviceAddress;
     m_denoiseCapabilities = denoise::capabilities(selection.physicalDevice);
     const bool sharcSupported = REMIX_HAS_SHARC && m_traceSupported && vulkan11.storageBuffer16BitAccess &&
                                 vulkan12.shaderFloat16 && vulkan12.shaderBufferInt64Atomics;
@@ -280,6 +300,7 @@ namespace remix {
     VkPhysicalDeviceFeatures skyFeatures{};
     vkGetPhysicalDeviceFeatures(selection.physicalDevice, &skyFeatures);
     m_skyUnavailable = !m_traceSupported                                   ? m_traceUnavailable
+                       : m_softwareRayQuery                                ? "ray queries"
                        : !vulkan12.scalarBlockLayout                       ? "scalar block layout"
                        : !skyFeatures.shaderStorageImageExtendedFormats    ? "extended storage image formats"
                        : !skyFeatures.shaderStorageImageReadWithoutFormat  ? "storage image reads without format"
@@ -287,13 +308,17 @@ namespace remix {
                                                                            : "";
     features.features = {};
     vulkan11 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES, .pNext = &vulkan12};
-    vulkan12 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, .pNext = &acceleration};
+    vulkan12 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
+                .pNext = hardwareRays ? &acceleration : nullptr};
     acceleration = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR, .pNext = &ray};
     ray = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR};
+    m_rayQueries = hardwareRays && (m_traceSupported || m_forwardRaySupported);
     if (m_traceSupported || m_forwardRaySupported) {
-      extensions.insert(extensions.end(), std::begin(traceExtensions), std::end(traceExtensions));
+      if (hardwareRays) {
+        extensions.insert(extensions.end(), std::begin(traceExtensions), std::end(traceExtensions));
+        acceleration.accelerationStructure = ray.rayQuery = VK_TRUE;
+      }
       vulkan12.bufferDeviceAddress = VK_TRUE;
-      acceleration.accelerationStructure = ray.rayQuery = VK_TRUE;
       if (m_traceSupported) {
         features.features.shaderInt64 = VK_TRUE;
         vulkan12.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
@@ -469,7 +494,8 @@ namespace remix {
     VkPhysicalDeviceSynchronization2Features synchronization2 = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES, .pNext = &micromap};
     m_opacityMicromaps = false;
-    if (m_traceSupported && supportsDeviceExtension(selection.physicalDevice, VK_EXT_OPACITY_MICROMAP_EXTENSION_NAME) &&
+    if (m_traceSupported && !m_softwareRayQuery &&
+        supportsDeviceExtension(selection.physicalDevice, VK_EXT_OPACITY_MICROMAP_EXTENSION_NAME) &&
         supportsDeviceExtension(selection.physicalDevice, VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME)) {
       VkPhysicalDeviceFeatures2 available = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
                                              .pNext = &synchronization2};
@@ -551,7 +577,7 @@ namespace remix {
     m_pipelines = std::make_unique<pipeline::Service>(m_device, m_properties, pipelineFeedback, pipelineStatistics);
     m_hostPasses.initialize(m_physicalDevice, m_device);
     // Ray queries are enabled with tracing.
-    m_particles = std::make_unique<particles::Renderer>(m_physicalDevice, m_device, m_traceSupported);
+    m_particles = std::make_unique<particles::Renderer>(m_physicalDevice, m_device, m_rayQueries);
     return REMIXAPI_ERROR_CODE_SUCCESS;
   }
 

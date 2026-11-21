@@ -17,6 +17,10 @@ namespace remix {
     auto out = std::make_unique<Buffer>();
     out->device = device;
     out->size = align(std::max(size, VkDeviceSize(16)), 4096);
+    // Without the acceleration structure extension its usages are not valid.
+    if (software)
+      usage &= ~VkBufferUsageFlags(VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
+                                   VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR);
     out->usage = usage | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
     out->host = host;
     if (reusable) {
@@ -304,6 +308,28 @@ namespace remix {
     auto out = buffer(size, usage | VK_BUFFER_USAGE_TRANSFER_DST_BIT, false, true);
     VkBufferCopy copy = {.srcOffset = offset, .size = size};
     vkCmdCopyBuffer(command, staging.buffer->handle, out->handle, 1, &copy);
+    return out;
+  }
+
+  std::shared_ptr<Accel> PathTracer::Gpu::softwareAcceleration(VkCommandBuffer command,
+                                                               trace::software::Structure &structure, bool bottom) {
+    auto out = std::make_shared<Accel>();
+    out->device = device;
+    out->destroy = nullptr;
+    out->software =
+        buffer(structure.bytes(), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, false, true);
+    out->size = out->software->size;
+    out->address = out->software->address;
+    structure.setAddress(out->address);
+    const VkBufferCopy copy = {.srcOffset = stage(structure.words.data(), structure.bytes()),
+                               .size = structure.bytes()};
+    vkCmdCopyBuffer(command, staging.buffer->handle, out->software->handle, 1, &copy);
+    if (bottom) {
+      auto &bounds = (*softwareBounds)[out->address];
+      std::copy_n(structure.low, 3, bounds.low);
+      std::copy_n(structure.high, 3, bounds.high);
+      out->softwareBounds = softwareBounds;
+    }
     return out;
   }
 

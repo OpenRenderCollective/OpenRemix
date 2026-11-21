@@ -5,6 +5,8 @@
 #include "pathtrace/frame_tables.h"
 #include "pathtrace/renderer.h"
 #include "pathtrace/shader_code.h"
+#include "pathtrace/software_bvh.h"
+#include <unordered_map>
 #include "pathtrace/tlas_policy.h"
 #include "scene/portals.h"
 #include "platform/gpu_timers.h"
@@ -104,9 +106,19 @@ namespace remix::trace::detail {
         destroy(device, handle, nullptr);
     }
   };
+  // Bounds of the software bottom levels by address, for the top level build.
+  struct SoftwareBounds {
+    float low[3], high[3];
+  };
+  using SoftwareBoundsTable = std::unordered_map<VkDeviceAddress, SoftwareBounds>;
   struct Accel {
     VkDevice device;
     PFN_vkDestroyAccelerationStructureKHR destroy;
+    // Without ray queries (PathTracer::Gpu::software): no handle; the words
+    // of a software structure (pathtrace/software_bvh.h), which address is
+    // of, and the table its bounds are listed in (bottom levels).
+    std::shared_ptr<Buffer> software;
+    std::shared_ptr<SoftwareBoundsTable> softwareBounds;
     std::shared_ptr<Arena> arena;
     std::shared_ptr<const Micromap> micromap; // Referenced by this BLAS's geometries.
     VkDeviceSize offset = 0, size = 0;
@@ -115,6 +127,8 @@ namespace remix::trace::detail {
     ~Accel() {
       if (handle)
         destroy(device, handle, nullptr);
+      if (softwareBounds)
+        softwareBounds->erase(address);
       if (arena)
         arena->release(offset, size);
     }
@@ -358,6 +372,20 @@ namespace remix {
 
     VkPhysicalDevice physical = VK_NULL_HANDLE;
     VkDevice device = VK_NULL_HANDLE;
+    // The device has no ray queries: acceleration structures are built on the
+    // CPU (pathtrace/software_bvh.h) and the shaders traverse them
+    // (trace::setSoftwareRayQuery). None of the acceleration structure
+    // entry points below are loaded.
+    bool software = false;
+    std::shared_ptr<trace::detail::SoftwareBoundsTable> softwareBounds =
+        std::make_shared<trace::detail::SoftwareBoundsTable>();
+    // A software structure's words in device memory, as an Accel.
+    std::shared_ptr<Accel> softwareAcceleration(VkCommandBuffer command, trace::software::Structure &structure,
+                                                bool bottom);
+    // refit: the instances of the last build, moved (the TLAS policy's update).
+    struct Tlas;
+    void buildSoftwareTop(VkCommandBuffer command, Tlas &top,
+                          const std::vector<VkAccelerationStructureInstanceKHR> &instances, bool refit);
     VkPhysicalDeviceMemoryProperties memory = {};
     VkPhysicalDeviceProperties properties = {};
     VkPhysicalDeviceAccelerationStructurePropertiesKHR asProperties = {
@@ -459,6 +487,12 @@ namespace remix {
       size_t bytes = 0;
       VkPipelineLayout layout = VK_NULL_HANDLE;
       std::map<uint32_t, std::pair<VkPipeline, bool>> specialized;
+      // A variant still compiling is asked for again only from this frame
+      // (Gpu::sequence): each request builds its whole key, shader code
+      // included, and a driver that takes minutes a pipeline (the software
+      // ray query stages) otherwise costs every frame that for each variant.
+      std::map<uint32_t, uint64_t> retryAt;
+      static constexpr uint64_t retryFrames = 16;
       bool supportsGuiding = true;
       bool supportsRoulette = true;
       bool preferFirstHit = true;
@@ -936,6 +970,8 @@ namespace remix {
       std::vector<scene::Matrix> bones;
       std::vector<uint64_t> attributeHashes; // GeometryScratch::attributeHashes of vertices
       std::vector<uint64_t> normalHashes;    // GeometryScratch::normalHashes of vertices
+      // Software: a deforming view's BLAS tree, kept for refits (convertMesh).
+      std::shared_ptr<trace::software::BottomBuilder> softwareBuilder;
       uint64_t fingerprint = 0, lastUse = 0;
       uint64_t contentDigest = 0; // REMIX_FRAME_DIGEST only: hash of the uploaded data.
       // GPU skinning (commitSkin), per surface: the bind pose as shading
@@ -972,6 +1008,10 @@ namespace remix {
       std::vector<uint8_t> micromapData;
       std::vector<scene::OpacityMicromap::Triangle> micromapTriangles;
       uint64_t micromapHash = 0;
+      // MeshConversion::software: the BLAS, built by the conversion, and
+      // whether that was a refit.
+      trace::software::Structure bottom;
+      bool bottomRefitted = false;
       size_t bytes() const {
         size_t size = content.capacity() + shading.capacity() * sizeof(std::vector<TraceVertex>) +
                       (vertexOffsets.capacity() + indexOffsets.capacity()) * sizeof(VkDeviceSize) +
@@ -998,6 +1038,8 @@ namespace remix {
       // Only the bones moved and the bind pose is uploaded: skinned on the
       // GPU (commitSkin), with no CPU geometry.
       bool gpuSkin = false;
+      // PathTracer::Gpu::software: convertMesh also builds data.bottom.
+      bool software = false;
       // The view's mesh, unchanged since its last conversion, with other bones.
       bool bonesOnly = false;
       std::shared_ptr<Geometry> previousGeometry;
@@ -1029,6 +1071,8 @@ namespace remix {
       std::shared_ptr<Accel> accel;
       std::unique_ptr<Buffer> instances;
       trace::TlasPolicy policy;
+      // Software: the top level's tree, kept for refits.
+      std::unique_ptr<trace::software::TopBuilder> softwareBuilder;
       // Combined TLAS only: the combinedStaticStamp whose static instances
       // this slot's instance buffer already holds (0: none).
       uint64_t prefix = 0;

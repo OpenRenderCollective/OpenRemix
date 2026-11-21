@@ -22,7 +22,7 @@ namespace remix {
     }
     try {
       if (!m_rasterSky)
-        m_rasterSky = std::make_shared<sky::Renderer>(m_physicalDevice, m_device, m_traceSupported);
+        m_rasterSky = std::make_shared<sky::Renderer>(m_physicalDevice, m_device, m_rayQueries);
       // This slot's last frame has completed.
       m_rasterSky->selectFrame(m_frameIndex);
       m_rasterSky->setSettings(settings.sky, m_skyControl);

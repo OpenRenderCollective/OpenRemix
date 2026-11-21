@@ -124,6 +124,9 @@ def defines_for(backend, stage, stages):
     if stage.endswith('Cube') and stage[:-4] in CUBE_VARIANTS.get(backend, ()):
         defines, source = defines_for(backend, stage[:-4], stages)
         return defines + ['-DNATIVE_PROBE_CUBE=1'], source
+    if backend == 'pathtrace' and stage in SOFTWARE_STAGES:
+        defines, source = defines_for(backend, SOFTWARE_STAGES[stage], stages)
+        return defines + ['-DSOFTWARE_RAY_QUERY=1'], source
     directory = shader_directory(backend)
     if backend in ('shadow_test', 'cluster_test', 'sun_depth_test', 'probe_batch_test'):
         return [], directory / 'query.comp'
@@ -321,6 +324,22 @@ def defines_for(backend, stage, stages):
     return defines, source
 
 
+# Devices without ray queries trace the same path tracer stages over CPU-built
+# structures (pathtrace/shaders/software_ray_query.glsl): a "software" twin of
+# every stage built from pathtrace.comp, which trace::shader() selects.
+SOFTWARE_STAGES = {}
+
+
+def _software_stages():
+    namespace, target, stages = BACKENDS['pathtrace']
+    traced = [stage for stage in stages if defines_for('pathtrace', stage, stages)[1].name == 'pathtrace.comp']
+    SOFTWARE_STAGES.update({'software' + stage[0].upper() + stage[1:]: stage for stage in traced})
+    BACKENDS['pathtrace'] = namespace, target, stages + tuple(SOFTWARE_STAGES)
+
+
+_software_stages()
+
+
 def depfile_inputs(text):
     """Decode glslang's Make paths before resolving Windows drive letters."""
     dependencies = re.split(r':\s', text, maxsplit=1)[1].replace('\\\n', ' ')
@@ -349,10 +368,19 @@ def compile_stage(backend, stage, temporary):
     _, environment, stages = BACKENDS[backend]
     environment = STAGE_ENVIRONMENTS.get((backend, stage), environment)
     defines, source = defines_for(backend, stage, stages)
+    # -Dpathtrace_hardware_shaders=false: the ray-query stages as empty stubs,
+    # for builds only run on devices without ray queries (each costs minutes
+    # and gigabytes of spirv-opt).
+    if os.environ.get('REMIX_PATHTRACE_HARDWARE_SHADERS') == '0' and backend == 'pathtrace' \
+            and stage in SOFTWARE_STAGES.values():
+        defines = defines + ['-DSOFTWARE_RAY_QUERY=1', '-DHARDWARE_STAGE_STUB=1']
     binary = Path(temporary) / (backend + '-' + stage + '.spv')
     glslang(['--target-env', environment, *defines, '-I' + str(ROOT/'third_party/nrd/Shaders'),
              '-I' + str(ROOT/'third_party/sharc/include'), str(source)], binary)
-    if backend in OPTIMIZED or backend in INLINED or (backend, stage) in INLINED_STAGES:
+    # The software twins are not optimized: with the traversal inlined at each
+    # of the megakernel's query sites, spirv-opt -O runs out of IDs and memory.
+    software = backend == 'pathtrace' and stage in SOFTWARE_STAGES
+    if not software and (backend in OPTIMIZED or backend in INLINED or (backend, stage) in INLINED_STAGES):
 
         optimized = binary.with_suffix('.opt.spv')
         optimization = ['-O']

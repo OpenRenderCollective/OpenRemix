@@ -112,7 +112,7 @@ namespace remix {
     // there (commitSkin), with no CPU geometry; otherwise converted on the CPU,
     // which uploads the bind pose for the next frames.
     conversion.bonesOnly = skinned && !streaming && view.geometry && view.owner.lock() == draw.mesh;
-    conversion.gpuSkin = conversion.bonesOnly && skin && view.skinMesh.lock() == draw.mesh &&
+    conversion.gpuSkin = !software && conversion.bonesOnly && skin && view.skinMesh.lock() == draw.mesh &&
                          view.skinSource.size() == draw.mesh->surfaces.size() && view.skinInputBytes;
     // A replaced CPU mesh may reuse an address. Keep its geometry alive through
     // the canonical lookup, but never mistake its view for the new mesh.
@@ -131,6 +131,7 @@ namespace remix {
     conversion.skinned = skinned;
     conversion.streaming = streaming;
     conversion.deform = deform;
+    conversion.software = software;
     convert = true;
     return view;
   }
@@ -344,6 +345,29 @@ namespace remix {
       data.shadingHashes.push_back(
           chainFingerprint(data.normalHashes[i], chainFingerprint(data.attributeHashes[i], data.positionHashes[i])));
     }
+    if (conversion.software) {
+      // The BLAS, from the positions and indices a hardware build is given.
+      // Here rather than in commitMesh: conversions run on the workers.
+      std::vector<trace::software::Geometry> parts;
+      parts.reserve(data.groups.size());
+      for (const auto &group : data.groups)
+        parts.push_back({.positions = reinterpret_cast<const float *>(content.data() + vertexOffsets[group.surface]),
+                         .indices = reinterpret_cast<const uint32_t *>(content.data() + group.indices),
+                         .triangles = group.count,
+                         .opaque = group.opaque});
+      data.bottomRefitted = false;
+      if (conversion.deform) {
+        // The view's own tree: refitted while the topology stays, a skin
+        // without limit (its bones move the whole bound, as its hardware
+        // refits), other deformations as far as the hardware policy's 60.
+        auto &builder = conversion.view->softwareBuilder;
+        if (!builder)
+          builder = std::make_shared<trace::software::BottomBuilder>();
+        data.bottom = builder->update(parts.data(), parts.size(), data.topologyHash, conversion.skinned ? 0 : 60);
+        data.bottomRefitted = builder->refitted();
+      } else
+        data.bottom = trace::software::buildBottom(parts.data(), parts.size());
+    }
   }
 
   void PathTracer::Gpu::createAssemblePipeline() {
@@ -515,7 +539,8 @@ namespace remix {
 
   void PathTracer::Gpu::uploadSkinSource(VkCommandBuffer command, MeshConversion &conversion) {
     // A wound cut needs the bind pose whether the GPU skins or not.
-    const bool skinning = gpuSkinning() && !skinFailed;
+    // Software structures are built from CPU positions: no GPU skinning.
+    const bool skinning = gpuSkinning() && !skinFailed && !software;
     if (!skinning && !conversion.draw->wound)
       return;
     if (skinning && !skin)
@@ -784,7 +809,7 @@ namespace remix {
       }
       g.geometries.clear();
       g.ranges.clear();
-      if (data.groups.size() > asProperties.maxGeometryCount)
+      if (!software && data.groups.size() > asProperties.maxGeometryCount)
         throw VK_ERROR_TOO_MANY_OBJECTS;
       // Stable addresses: the geometries' pNext chains point into these.
       g.micromapGeometries.clear();
@@ -830,7 +855,17 @@ namespace remix {
           .flags = flags(deform),
           .geometryCount = uint32_t(g.geometries.size()),
           .pGeometries = g.geometries.data()};
-      if (!g.accel)
+      if (software) {
+        // Built by the conversion (convertMesh); a deformation replaces it.
+        const bool replaced = g.accel != nullptr;
+        if (replaced)
+          retired.push_back(std::move(g.accel));
+        g.accel = softwareAcceleration(command, conversion.data.bottom, true);
+        conversion.data.bottom = {};
+        g.update = conversion.data.bottomRefitted;
+        if (replaced)
+          tables.compacted(&g); // Kept TLAS inputs follow the new address.
+      } else if (!g.accel)
         buildSizes(device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &build, data.counts.data(), &g.sizes);
       if (!g.accel) {
         g.accel = acceleration(g.sizes.accelerationStructureSize, VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR);

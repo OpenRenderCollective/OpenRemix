@@ -538,9 +538,12 @@ namespace remix {
   PathTracer::~PathTracer() = default;
 
   void PathTracer::initialize(VkPhysicalDevice physical, VkDevice device, uint32_t queueFamily, bool preparing,
-                              bool rasterPrimary, std::shared_ptr<postfx::State> exposureState, bool opacityMicromaps) {
+                              bool rasterPrimary, std::shared_ptr<postfx::State> exposureState, bool opacityMicromaps,
+                              bool softwareRayQuery) {
     m_gpu = std::make_unique<Gpu>();
     auto &g = *m_gpu;
+    g.software = softwareRayQuery;
+    trace::setSoftwareRayQuery(softwareRayQuery);
     g.physical = physical;
     g.device = device;
     g.querySharcSupport();
@@ -563,22 +566,26 @@ namespace remix {
     // within the frame that proves their partitions (deterministic tests).
     g.opacityCache.setAsyncMicromaps(std::getenv("REMIX_SYNC_MICROMAPS") == nullptr);
     VkPhysicalDeviceProperties2 properties = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
-                                              .pNext = &g.asProperties};
+                                              .pNext = g.software ? nullptr : &g.asProperties};
     vkGetPhysicalDeviceProperties2(physical, &properties);
 #define LOAD(member, name)                                                                                   \
   g.member = reinterpret_cast<PFN_##name>(vkGetDeviceProcAddr(device, #name));                               \
   if (!g.member)                                                                                             \
   throw VK_ERROR_EXTENSION_NOT_PRESENT
-    LOAD(createAs, vkCreateAccelerationStructureKHR);
-    LOAD(destroyAs, vkDestroyAccelerationStructureKHR);
-    LOAD(getAsAddress, vkGetAccelerationStructureDeviceAddressKHR);
+    if (!g.software) {
+      LOAD(createAs, vkCreateAccelerationStructureKHR);
+      LOAD(destroyAs, vkDestroyAccelerationStructureKHR);
+      LOAD(getAsAddress, vkGetAccelerationStructureDeviceAddressKHR);
+    }
     // Resolve 1.2 entry points only when tracing is selected, so loading the
     // raster runtime still works with a Vulkan 1.1 loader.
     LOAD(getBufferAddress, vkGetBufferDeviceAddress);
-    LOAD(buildSizes, vkGetAccelerationStructureBuildSizesKHR);
-    LOAD(buildAs, vkCmdBuildAccelerationStructuresKHR);
-    LOAD(copyAs, vkCmdCopyAccelerationStructureKHR);
-    LOAD(writeAsProperties, vkCmdWriteAccelerationStructuresPropertiesKHR);
+    if (!g.software) {
+      LOAD(buildSizes, vkGetAccelerationStructureBuildSizesKHR);
+      LOAD(buildAs, vkCmdBuildAccelerationStructuresKHR);
+      LOAD(copyAs, vkCmdCopyAccelerationStructureKHR);
+      LOAD(writeAsProperties, vkCmdWriteAccelerationStructuresPropertiesKHR);
+    }
     if (opacityMicromaps) {
       LOAD(createMicromap, vkCreateMicromapEXT);
       LOAD(destroyMicromap, vkDestroyMicromapEXT);
@@ -601,20 +608,22 @@ namespace remix {
                          ((i == 2 || i == 3) ? VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT
                           : (i == 4 || i == 5 || i == 6) ? VK_SHADER_STAGE_FRAGMENT_BIT
                                                          : 0u)};
-      bindings[i].descriptorType = i < 2    ? VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR
-                                   : i == 2 ? VK_DESCRIPTOR_TYPE_STORAGE_BUFFER
-                                   : i == 3 ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER
-                                   : i != 6 ? VK_DESCRIPTOR_TYPE_STORAGE_IMAGE
-                                            : VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+      bindings[i].descriptorType =
+          i < 2    ? (g.software ? VK_DESCRIPTOR_TYPE_STORAGE_BUFFER : VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR)
+          : i == 2 ? VK_DESCRIPTOR_TYPE_STORAGE_BUFFER
+          : i == 3 ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER
+          : i != 6 ? VK_DESCRIPTOR_TYPE_STORAGE_IMAGE
+                   : VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     }
     VkDescriptorSetLayoutCreateInfo setLayout = {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, .bindingCount = 17, .pBindings = bindings};
     check(pipeline::createDescriptorSetLayout(device, &setLayout, nullptr, &g.setLayout));
-    VkDescriptorPoolSize poolSizes[] = {{VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 2},
-                                        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1},
-                                        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1},
-                                        {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 12},
-                                        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, textureLimit}};
+    VkDescriptorPoolSize poolSizes[] = {
+        {g.software ? VK_DESCRIPTOR_TYPE_STORAGE_BUFFER : VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 2},
+        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1},
+        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1},
+        {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 12},
+        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, textureLimit}};
     for (auto &size : poolSizes)
       size.descriptorCount *= gpuFrameCount;
     VkDescriptorPoolCreateInfo pool = {.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,

@@ -70,8 +70,12 @@ bool subsurfaceMove(inout Hit hit,out vec3 tint,out float specular) {
   float h=sqrt(rmax*rmax-r*r);
   vec3 origin=hit.p+r*(cos(angle)*t+sin(angle)*b)+h*n;
   uint count=0u,primitive=0u;float chosen=0,nearest=2*h;int surface=hit.surface;mat4x3 model;
+#ifdef SOFTWARE_RAY_QUERY
+  SOFTWARE_SCENES probeScene(softwareScene,origin,-n,2*h,count,chosen,nearest,primitive,surface,model);
+#else
   if((frame.target.z&1)!=0)probeScene(staticScene,origin,-n,2*h,count,chosen,nearest,primitive,surface,model);
   if((frame.target.z&2)!=0)probeScene(dynamicScene,origin,-n,2*h,count,chosen,nearest,primitive,surface,model);
+#endif
   if(count==0u)return false;
   // A crossing behind the nearest is the far side of a thin object.
   bool through=chosen>nearest+1e-3*rmax;

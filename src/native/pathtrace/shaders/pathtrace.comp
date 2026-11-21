@@ -1,5 +1,8 @@
 #version 460
+// SOFTWARE_RAY_QUERY: a device without ray queries (software_ray_query.glsl).
+#ifndef SOFTWARE_RAY_QUERY
 #extension GL_EXT_ray_query : require
+#endif
 #extension GL_EXT_buffer_reference2 : require
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
 #extension GL_EXT_nonuniform_qualifier : require
@@ -44,8 +47,23 @@ layout(local_size_x=8, local_size_y=8) in;
 #if defined(SHARC_QUERY) || defined(SHARC_UPDATE_PASS)
 #include "sharc.glsl"
 #endif
+#ifdef SOFTWARE_RAY_QUERY
+#include "software_ray_query.glsl"
+// The top levels' first word: root, first instance word and their address.
+layout(set=0,binding=0,std430) readonly buffer SoftwareStaticScene { uvec4 softwareStaticScene; };
+layout(set=0,binding=1,std430) readonly buffer SoftwareDynamicScene { uvec4 softwareDynamicScene; };
+#define staticScene packUint2x32(softwareStaticScene.zw)
+#define dynamicScene packUint2x32(softwareDynamicScene.zw)
+// Both scenes through one query call site: the traversal is inlined at every
+// site, and the driver's compile time grows faster than the code does (the
+// stages compile for minutes). The trip count is the structure mask's
+// (frame.target.z), so the loop is not unrolled into two sites again.
+#define SOFTWARE_SCENES for(uint softwareScenes=frame.target.z&3u;softwareScenes!=0u;softwareScenes&=softwareScenes-1u)
+#define softwareScene ((softwareScenes&1u)!=0u?staticScene:dynamicScene)
+#else
 layout(set=0,binding=0) uniform accelerationStructureEXT staticScene;
 layout(set=0,binding=1) uniform accelerationStructureEXT dynamicScene;
+#endif
 layout(set=0,binding=4,rgba32f) uniform image2D worldColor;
 // Between lighting dispatches: background RGB bits and the opaque sample RNG.
 // After composition: zero transmission for the retained raster multiply pass.
@@ -538,8 +556,12 @@ void surfaceHit(Intersection x,vec3 direction,inout Hit hit,bool motion) {
 }
 Intersection nearest(vec3 origin,vec3 direction,float maximum,float minimum) {
   Intersection x;x.t=maximum;x.surface=~0u;x.primitive=0u;x.bary=vec2(0);x.model=mat4x3(1);x.wound=0;
+#ifdef SOFTWARE_RAY_QUERY
+  SOFTWARE_SCENES queryScene(softwareScene,origin,direction,x,minimum);
+#else
   if ((frame.target.z&1)!=0) queryScene(staticScene,origin,direction,x,minimum);
   if ((frame.target.z&2)!=0) queryScene(dynamicScene,origin,direction,x,minimum);
+#endif
   return x;
 }
 Hit missedHit(vec3 direction,float maximum) {
@@ -571,14 +593,18 @@ Hit closestGeometry(vec3 origin,vec3 direction,float maximum,bool motion) {
 // paint, and covering paint ends the peel at once. The receiver's Hit is
 // built after the peel (Intersection); where the first layer shows as an
 // ordinary surface it is queried again, as only its distance is kept.
-// The peel is one query call site and the receiver and first layer one each:
-// every query (two inlined scene queries) is inlined wherever closest() is.
+// The receiver's query, the peel's and the first layer's are one call site,
+// and so are the Hits built of them: both are inlined wherever closest() is
+// (seven times in the single-sheet stage, where three sites of each were 60%
+// of its code; docs/features/software-ray-query.md). The loop below runs as
+// phases: 0 finds the receiver, 1 peels a layer of paint, 2 builds the
+// receiver's Hit and 3 queries the first layer again and builds its Hit.
 #if WAVEFRONT_PASS==3 && !defined(WAVEFRONT_PLAIN)
 Hit wavefrontPeeled(Hit hit);
 #endif
 Hit closest(vec3 origin,vec3 direction,float maximum,bool motion) {
   Hit hit;
-  Intersection receiver;
+  Intersection receiver,x;
   vec3 firstNg=vec3(0);float firstT=0;
   vec3 color=vec3(0),normal=vec3(0),emission=vec3(0),self=vec3(0);
   vec2 parameters=vec2(0);
@@ -599,111 +625,127 @@ Hit closest(vec3 origin,vec3 direction,float maximum,bool motion) {
 #else
   const bool paint=enableDecals&&(mask&decalInstanceMask)!=0u;
 #endif
-  uint layers=0u;
-  // Step 0 finds the receiver; the steps after it, up to 32 layers of paint.
-  for(uint step=0;step<33;++step) {
-    traceMask=step==0u?(paint?mask&~decalInstanceMask:mask):decalInstanceMask;
-    if(step==0u) {
+  uint layers=0u,peels=0u,phase=0u;
+  bool tint=false;
+  // At most the receiver's query, 32 peels and the two Hits.
+  for(uint iteration=0u;iteration<36u;++iteration) {
+    if(phase!=2u) {
+      traceMask=phase==0u?(paint?mask&~decalInstanceMask:mask):decalInstanceMask;
+      if(phase!=0u)originPaint=passOriginPaint?attach:0;
 #if WAVEFRONT_PASS==3 || WAVEFRONT_PASS==10
       // A shade kernel's one closest() (it stops at a blended layer): its
       // bounce ray's receiver, found by the trace kernel. (The peel kernel's too.)
-      receiver=wavefrontReceiver;
-#else
-      receiver=nearest(origin,direction,maximum,0);
+      if(phase==0u)x=wavefrontReceiver;
+      else
 #endif
-      if(!paint)break;
+      x=nearest(origin,direction,phase==0u?maximum:phase==1u?end:uintBitsToFloat(floatBitsToUint(firstT)+1u),
+        phase==1u?minimum:0);
+      if(phase!=0u)originPaint=0;
+    }
+    if(phase==0u) {
+      receiver=x;phase=2u;
+      bool peel=paint;
 #if WAVEFRONT_PASS==3 && !defined(WAVEFRONT_PLAIN)
       // The paint peel queue: the peel kernel peeled (wavefrontPeeled below).
-      if(wavefrontPeelQueue)break;
+      if(wavefrontPeelQueue)peel=false;
 #endif
-      end=receiver.t;
-      // Floored like the attachment test below (at most 20 x attach).
-      if(!motion&&dot(leavingNormal,leavingNormal)>0)
-        minimum=attach/max(abs(dot(direction,leavingNormal)),.05);
-      if(minimum>=end)break;
+      if(peel) {
+        end=receiver.t;
+        // Floored like the attachment test below (at most 20 x attach).
+        if(!motion&&dot(leavingNormal,leavingNormal)>0)
+          minimum=attach/max(abs(dot(direction,leavingNormal)),.05);
+        if(minimum<end)phase=1u;
+      }
       continue;
     }
-    originPaint=passOriginPaint?attach:0;
-    Intersection x=nearest(origin,direction,end,minimum);
-    originPaint=0;
-    if(x.surface==~0u)break;
-    // Reflection-only paint (what only a screen camera sees: an eye's iris)
-    // coats only a reflection-only receiver: no other ray shows it.
-    if((surfaces[x.surface].state.w&32768u)!=0u&&
-       (receiver.surface==~0u||(surfaces[receiver.surface].state.w&32768u)==0u)) {
-      minimum=uintBitsToFloat(floatBitsToUint(x.t)+1u);
-      continue;
-    }
-    hit=missedHit(direction,end);surfaceHit(x,direction,hit,motion);
-    // Keep the ray origin fixed. The normal-offset used for lighting rays can
-    // jump through a decal's close receiver at large world coordinates.
-    minimum=uintBitsToFloat(floatBitsToUint(hit.t)+1u);
-    if(layers==0u){firstT=x.t;firstNg=hit.ng;}
-    if(hit.decalMode!=0u) {
-      // mod2x is authored gamma-encoded (128 is neutral): scale so (128/255)^2.2 maps to one.
-      through*=hit.color.rgb*(hit.decalMode==2u?4.5554:1.);
-      if(finish.x<0&&(surfaces[x.surface].state.w&(1u<<30))!=0u)finish=vec2(hit.rm.x*hit.rm.x,hit.rm.y);
+    if(phase==1u) {
+      if(x.surface==~0u){phase=2u;continue;}
+      // Reflection-only paint (what only a screen camera sees: an eye's iris)
+      // coats only a reflection-only receiver: no other ray shows it.
+      if((surfaces[x.surface].state.w&32768u)!=0u&&
+         (receiver.surface==~0u||(surfaces[receiver.surface].state.w&32768u)==0u)) {
+        minimum=uintBitsToFloat(floatBitsToUint(x.t)+1u);
+        if(++peels>=32u)phase=2u;
+        continue;
+      }
     } else {
-      float weight=remaining*hit.color.a;
-      color+=through*hit.color.a*hit.color.rgb;normal+=weight*hit.n;emission+=through*hit.color.a*hit.emission;
-      self+=through*hit.color.a*hit.self;
-      // A sheet without PBR is diffuse (rough, not metal): its material's
-      // roughness and metallic constants are unset (0), and a displacement's
-      // second texture (a sheet at vertex alpha) turned the rough rock under
-      // it into a mirror where it covered (GMod d2_coast_03's gravel).
-      parameters+=weight*(hit.pbr?vec2(hit.rm.x*hit.rm.x,hit.rm.y):vec2(1,0));
-      remaining*=1-hit.color.a;through*=1-hit.color.a;
-    }
-    lastDecal=hit.t;
-    // Little shows past paint that covers nearly all: the peel ends once
-    // under 1/32 of the layers below would show (a wall under dozens of
-    // translucent blood layers: ~2.5 ms less than 1/1024).
-    if(++layers>=32u||all(lessThan(through,vec3(1./32))))break;
-  }
-  traceMask=mask;
-  hit=missedHit(direction,maximum);
-  if(receiver.surface!=~0u)surfaceHit(receiver,direction,hit,motion);
-  if(hit.t==maximum)hit.t=1e30;
-#if WAVEFRONT_PASS==3 && !defined(WAVEFRONT_PLAIN)
-  if(wavefrontPeelQueue)return paint?wavefrontPeeled(hit):hit;
-#endif
-  if(layers==0u)return hit;
-  // Paint coats the surface right behind it. The gap is measured across the
-  // paint, not along the ray: a grazing ray travels 1/cos further between the
-  // paint and its receiver, and paint lifted an inch stopped being attached
-  // from 60 degrees off the normal (mod2x paint then stood as an opaque grey
-  // quad). The facing term is floored so a ray skimming past the paint's edge
-  // cannot attach it to a surface far behind (at most 20 x attach along the ray).
-  const float facing=max(abs(dot(direction,firstNg)),.05);
-  const bool attached=hit.t<1e30&&!hit.decal&&(hit.t-lastDecal)*facing<=attach;
-  // Multiplicative paint alone (remaining 1: no alpha paint) with nothing
-  // under it has nothing to tint: the ray passes it. Engine-skinned model
-  // decals stand off a curved or flexed surface (a bullet hole past a
-  // barrel's silhouette, blood a face's rest pose ahead of the flexed face;
-  // GMod issue #104), and stood there as grey or skin-coloured surfaces.
-  if(!attached&&remaining==1)return hit;
-  // Unattached decals and layers above translucent receivers retain ordinary
-  // source-over transport. Do not project paint onto the sky or change glass.
-  if(!attached||hit.blended) {
-    const bool tint=attached&&remaining==1;
-    traceMask=decalInstanceMask;originPaint=passOriginPaint?attach:0;
-    Intersection first=nearest(origin,direction,uintBitsToFloat(floatBitsToUint(firstT)+1u),0);
-    traceMask=mask;originPaint=0;
+      traceMask=mask;
 #if WAVEFRONT_PASS==10
-    // The shade kernel shades this layer as the path's receiver.
-    peelFirst=first;peelFlags=2u|(tint?4u:0u);peelThrough=through;
-    return hit;
+      if(phase==3u) {
+        // The shade kernel shades this layer as the path's receiver.
+        peelFirst=x;peelFlags=2u|(tint?4u:0u);peelThrough=through;
+        return hit;
+      }
 #endif
-    hit=missedHit(direction,maximum);
-    if(first.surface!=~0u)surfaceHit(first,direction,hit,motion);
-    hit.decal=false;
-    // Multiplicative paint over glass tints what is seen through it (a sheet
-    // without coverage of its own) instead of standing as an opaque quad.
-    if(tint) {
-      hit.blended=true;hit.blendedDraw=true;hit.tinted=true;
-      hit.color=vec4(through,0);hit.emission=vec3(0);hit.self=vec3(0);
+      if(phase==2u)x=receiver;
     }
-    return hit;
+    hit=missedHit(direction,phase==1u?end:maximum);
+    if(x.surface!=~0u)surfaceHit(x,direction,hit,motion);
+    if(phase==1u) {
+      // Keep the ray origin fixed. The normal-offset used for lighting rays can
+      // jump through a decal's close receiver at large world coordinates.
+      minimum=uintBitsToFloat(floatBitsToUint(hit.t)+1u);
+      if(layers==0u){firstT=x.t;firstNg=hit.ng;}
+      if(hit.decalMode!=0u) {
+        // mod2x is authored gamma-encoded (128 is neutral): scale so (128/255)^2.2 maps to one.
+        through*=hit.color.rgb*(hit.decalMode==2u?4.5554:1.);
+        if(finish.x<0&&(surfaces[x.surface].state.w&(1u<<30))!=0u)finish=vec2(hit.rm.x*hit.rm.x,hit.rm.y);
+      } else {
+        float weight=remaining*hit.color.a;
+        color+=through*hit.color.a*hit.color.rgb;normal+=weight*hit.n;emission+=through*hit.color.a*hit.emission;
+        self+=through*hit.color.a*hit.self;
+        // A sheet without PBR is diffuse (rough, not metal): its material's
+        // roughness and metallic constants are unset (0), and a displacement's
+        // second texture (a sheet at vertex alpha) turned the rough rock under
+        // it into a mirror where it covered (GMod d2_coast_03's gravel).
+        parameters+=weight*(hit.pbr?vec2(hit.rm.x*hit.rm.x,hit.rm.y):vec2(1,0));
+        remaining*=1-hit.color.a;through*=1-hit.color.a;
+      }
+      lastDecal=hit.t;
+      // Little shows past paint that covers nearly all: the peel ends once
+      // under 1/32 of the layers below would show (a wall under dozens of
+      // translucent blood layers: ~2.5 ms less than 1/1024).
+      if(++layers>=32u||all(lessThan(through,vec3(1./32))))phase=2u;
+      else if(++peels>=32u)phase=2u;
+      continue;
+    }
+    if(phase==3u) {
+      hit.decal=false;
+      // Multiplicative paint over glass tints what is seen through it (a sheet
+      // without coverage of its own) instead of standing as an opaque quad.
+      if(tint) {
+        hit.blended=true;hit.blendedDraw=true;hit.tinted=true;
+        hit.color=vec4(through,0);hit.emission=vec3(0);hit.self=vec3(0);
+      }
+      return hit;
+    }
+    if(hit.t==maximum)hit.t=1e30;
+#if WAVEFRONT_PASS==3 && !defined(WAVEFRONT_PLAIN)
+    if(wavefrontPeelQueue)return paint?wavefrontPeeled(hit):hit;
+#endif
+    if(layers==0u)return hit;
+    // Paint coats the surface right behind it. The gap is measured across the
+    // paint, not along the ray: a grazing ray travels 1/cos further between the
+    // paint and its receiver, and paint lifted an inch stopped being attached
+    // from 60 degrees off the normal (mod2x paint then stood as an opaque grey
+    // quad). The facing term is floored so a ray skimming past the paint's edge
+    // cannot attach it to a surface far behind (at most 20 x attach along the ray).
+    const float facing=max(abs(dot(direction,firstNg)),.05);
+    const bool attached=hit.t<1e30&&!hit.decal&&(hit.t-lastDecal)*facing<=attach;
+    // Multiplicative paint alone (remaining 1: no alpha paint) with nothing
+    // under it has nothing to tint: the ray passes it. Engine-skinned model
+    // decals stand off a curved or flexed surface (a bullet hole past a
+    // barrel's silhouette, blood a face's rest pose ahead of the flexed face;
+    // GMod issue #104), and stood there as grey or skin-coloured surfaces.
+    if(!attached&&remaining==1)return hit;
+    // Unattached decals and layers above translucent receivers retain ordinary
+    // source-over transport. Do not project paint onto the sky or change glass.
+    if(!attached||hit.blended) {
+      tint=attached&&remaining==1;
+      phase=3u;
+      continue;
+    }
+    break;
   }
 #if WAVEFRONT_PASS==10
   peelFlags=1u;peelColor=color;peelNormal=normal;peelEmission=emission;peelSelf=self;peelThrough=through;
@@ -3281,6 +3323,11 @@ void opaqueLocal(Hit lit,bool sssMoved,vec3 sssTint,float sssSpecular,out vec3 l
 }
 #endif
 void main() {
+#ifdef HARDWARE_STAGE_STUB
+  // -Dpathtrace_hardware_shaders=false: this stage stands in for one a build
+  // for devices without ray queries never runs.
+  return;
+#endif
   ivec2 pixel=ivec2(gl_GlobalInvocationID.xy);
   shadingPixel=pixel;
 #ifdef SPARSE_COMPACT_PASS

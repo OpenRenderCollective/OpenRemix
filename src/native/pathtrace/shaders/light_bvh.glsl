@@ -221,8 +221,12 @@ vec3 localVisibility(vec3 origin,vec3 endpoint) {
       continue;
     }
     LightOccluder hit;hit.t=distance;
+#ifdef SOFTWARE_RAY_QUERY
+    SOFTWARE_SCENES if(localOccluder(softwareScene,origin,direction,hit))return vec3(0);
+#else
     if((frame.target.z&1)!=0&&localOccluder(staticScene,origin,direction,hit))return vec3(0);
     if((frame.target.z&2)!=0&&localOccluder(dynamicScene,origin,direction,hit))return vec3(0);
+#endif
     if(hit.t==distance)return transmission;
     transmission*=hit.transmission;
     origin=offsetRay(hit.p,-hit.n);

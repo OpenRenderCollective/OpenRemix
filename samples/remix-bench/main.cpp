@@ -30,6 +30,7 @@ namespace {
 
   struct Options {
     unsigned grid = 48, foliage = 4000, textures = 64, size = 512;
+    unsigned windowWidth = 0, windowHeight = 0; // 0: the runtime's default
     bool compressed = true;
     // Statistics getters wait for asynchronous rendering; stats=0 stops polling
     // them once the backend is ready so presentation can overlap.
@@ -189,7 +190,7 @@ int main(int argc, char **argv) {
     std::fprintf(stderr,
                  "usage: %s LIBRARY FRAMES BACKEND [grid=N] [foliage=N] [textures=N] [size=N] [format=bc|rgba] "
                  "[stats=0|1] [work=MS] [async=0|1] [churn=N] [churnTris=N] [still=0|1] [shot=PATH] [lights=N] "
-                 "[glass=N] [paint=N]\n",
+                 "[glass=N] [paint=N] [window=WxH]\n",
                  argv[0]);
     return 2;
   }
@@ -235,6 +236,8 @@ int main(int argc, char **argv) {
       options.glass = number;
     else if (key == "paint")
       options.paint = number;
+    else if (key == "window")
+      std::sscanf(value.c_str(), "%ux%u", &options.windowWidth, &options.windowHeight);
     else {
       std::fprintf(stderr, "unknown option %s\n", arg.c_str());
       return 2;
@@ -255,6 +258,8 @@ int main(int argc, char **argv) {
   startup.sType = REMIXAPI_STRUCT_TYPE_STARTUP_INFO;
 #if !defined(_WIN32) // On Windows the runtime creates its own window (hwnd stays null).
   startup.windowTitle = "Remix Bench";
+  startup.windowWidth = options.windowWidth;
+  startup.windowHeight = options.windowHeight;
 #endif
   status = api.Startup(&startup);
   auto check = [&](remixapi_ErrorCode result, const char *what) {
@@ -268,6 +273,19 @@ int main(int argc, char **argv) {
   check(api.SetConfigVariable("rtx.native.backend", argv[3]), "backend");
   check(api.SetConfigVariable("rtx.native.asyncPresent", options.async ? "1" : "0"), "async");
   const bool tracing = std::strcmp(argv[3], "pathtrace") == 0;
+  // SETTINGS=name=value,...: configuration variables for the run.
+  if (const char *settings = std::getenv("SETTINGS")) {
+    const std::string list = settings;
+    for (size_t begin = 0; begin < list.size();) {
+      const size_t end = std::min(list.find(',', begin), list.size());
+      const std::string pair = list.substr(begin, end - begin);
+      if (const size_t equals = pair.find('=');
+          equals == std::string::npos ||
+          api.SetConfigVariable(pair.substr(0, equals).c_str(), pair.substr(equals + 1).c_str()))
+        std::fprintf(stderr, "Setting rejected: %s\n", pair.c_str());
+      begin = end + 1;
+    }
+  }
 #if defined(_WIN32)
   auto symbol = [&](const char *name) { return GetProcAddress(library, name); };
 #else
@@ -281,6 +299,18 @@ int main(int argc, char **argv) {
   const auto passTimings = reinterpret_cast<PassTimings>(symbol("remixapi_GetGpuPassTimingsEXT"));
   if (passTimings)
     check(api.SetConfigVariable("rtx.native.gpuPassTimers", "1"), "gpuPassTimers");
+  // The CPU phases of recording a frame (remixapi_FrameBreakdownEXT), summed over the measured frames.
+  using Breakdown = remixapi_ErrorCode(REMIXAPI_CALL *)(remixapi_FrameBreakdownEXT *);
+  const auto frameBreakdown = reinterpret_cast<Breakdown>(symbol("remixapi_GetFrameBreakdownEXT"));
+  static const char *const breakdownNames[] = {
+      "rasterPrepare", "rasterSkinning", "traceBegin",    "traceSetup",   "traceSurfaces",
+      "material",      "temporal",       "retire",        "acceleration", "table",
+      "lighting",      "sharc",          "signature",     "descriptor",   "primary",
+      "passes",        "post",           "composite",     "ui",           "snapshot",
+      "other",         "presentSetup",   "presentRelease"};
+  constexpr size_t breakdownCount = sizeof(breakdownNames) / sizeof(breakdownNames[0]);
+  double breakdownTotals[breakdownCount] = {};
+  unsigned breakdownFrames = 0;
   if (!tracingStatistics || !framePerformance)
     check(REMIXAPI_ERROR_CODE_GENERAL_FAILURE, "statistics exports");
 
@@ -727,6 +757,15 @@ int main(int argc, char **argv) {
                                perf.acquireMilliseconds, perf.submitMilliseconds,       perf.queuePresentMilliseconds};
       for (unsigned i = 0; i < 9; ++i)
         phases[i].push_back(values[i]);
+      remixapi_FrameBreakdownEXT breakdown = {};
+      breakdown.structSize = sizeof(breakdown);
+      if (options.stats && frameBreakdown && frameBreakdown(&breakdown) == REMIXAPI_ERROR_CODE_SUCCESS) {
+        // The phases are the struct's doubles, in order, from rasterPrepareMilliseconds.
+        const double *values = &breakdown.rasterPrepareMilliseconds;
+        for (size_t i = 0; i < breakdownCount; ++i)
+          breakdownTotals[i] += values[i];
+        ++breakdownFrames;
+      }
       static remixapi_GpuPassTimingsEXT passes;
       passes = {};
       passes.structSize = sizeof(passes);
@@ -775,6 +814,13 @@ int main(int argc, char **argv) {
     std::printf("gpu_pass_ms frame=%.3f uploads=%.3f assembly=%.3f (churn=%u x %zu triangles)\n",
                 summarize(gpuFrame).mean, summarize(uploadPass).mean, summarize(assemblyPass).mean, options.churn,
                 churnIndices.size() / 3);
+  if (breakdownFrames) {
+    std::printf("record_phases_ms");
+    for (size_t i = 0; i < breakdownCount; ++i)
+      if (breakdownTotals[i] / breakdownFrames >= .05)
+        std::printf(" %s=%.3f", breakdownNames[i], breakdownTotals[i] / breakdownFrames);
+    std::printf("\n");
+  }
   for (const auto &[name, total] : passTotals)
     std::printf("pass_ms %.4f %s\n", total / double(gpuFrame.size()), name.c_str());
   return 0;

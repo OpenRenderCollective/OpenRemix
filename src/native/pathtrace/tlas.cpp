@@ -1,4 +1,5 @@
 #include "pathtrace/gpu.h"
+#include <cstring>
 
 namespace remix {
   using namespace scene;
@@ -30,6 +31,33 @@ namespace remix {
     }
   } // namespace
 
+  void PathTracer::Gpu::buildSoftwareTop(VkCommandBuffer command, Tlas &top,
+                                         const std::vector<VkAccelerationStructureInstanceKHR> &instances, bool refit) {
+    auto &accel = top.accel;
+    std::vector<trace::software::Instance> inputs(instances.size());
+    for (size_t i = 0; i < instances.size(); ++i) {
+      const auto &from = instances[i];
+      auto &to = inputs[i];
+      std::memcpy(to.transform, from.transform.matrix, sizeof to.transform);
+      to.customIndex = from.instanceCustomIndex;
+      to.mask = from.mask;
+      to.flags = from.flags;
+      const auto bounds = softwareBounds->find(from.accelerationStructureReference);
+      if (bounds == softwareBounds->end())
+        continue; // No bottom level: left out.
+      to.bottom = from.accelerationStructureReference;
+      std::copy_n(bounds->second.low, 3, to.low);
+      std::copy_n(bounds->second.high, 3, to.high);
+    }
+    if (!top.softwareBuilder)
+      top.softwareBuilder = std::make_unique<trace::software::TopBuilder>();
+    auto built = top.softwareBuilder->update(inputs.data(), inputs.size(), refit);
+    // The one in use may still be read by a frame in flight.
+    if (accel)
+      retired.push_back(std::move(accel));
+    accel = softwareAcceleration(command, built, false);
+  }
+
   void PathTracer::Gpu::buildTop(VkCommandBuffer command, const std::vector<trace::InstanceInput> &staticInputs,
                                  const std::vector<trace::InstanceInput> &dynamicInputs, bool force,
                                  uint64_t staticGeneration, bool faceCulling, bool combined) {
@@ -59,7 +87,7 @@ namespace remix {
     VkAccelerationStructureBuildGeometryInfoKHR builds[2] = {};
     VkAccelerationStructureBuildSizesInfoKHR sizes[2] = {};
     uint32_t reasons[2] = {}, count[2] = {};
-    bool changed[2] = {};
+    bool changed[2] = {}, softwareRefit[2] = {};
     VkDeviceSize scratchBytes = 0;
     for (unsigned i = 0; i < 2; ++i) {
       auto &top = tlas[i];
@@ -75,7 +103,7 @@ namespace remix {
       if (!changed[i])
         continue;
       count[i] = uint32_t(inputs[i]->size());
-      if (count[i] > asProperties.maxInstanceCount)
+      if (!software && count[i] > asProperties.maxInstanceCount)
         throw VK_ERROR_TOO_MANY_OBJECTS;
       std::vector<VkAccelerationStructureInstanceKHR> data;
       data.reserve(inputs[i]->size());
@@ -84,7 +112,14 @@ namespace remix {
         trace::g_accelNow.topInstances += uint32_t(inputs[i]->size());
         for (const auto &input : *inputs[i])
           data.push_back(instanceData(input, faceCulling));
-        hostBuffer(top.instances, data.data(), data.size() * sizeof(data[0]), inputUsage);
+        if (!software)
+          hostBuffer(top.instances, data.data(), data.size() * sizeof(data[0]), inputUsage);
+      }
+      if (software) {
+        softwareRefit[i] = i == 1 && !reasons[i];
+        buildSoftwareTop(command, top, data, softwareRefit[i]);
+        softwareRefit[i] = softwareRefit[i] && top.softwareBuilder->refitted();
+        continue;
       }
       geometry[i] = {.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR,
                      .geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR};
@@ -113,6 +148,22 @@ namespace remix {
     }
     if (!changed[0] && !changed[1])
       return;
+    if (software) {
+      for (unsigned i = 0; i < 2; ++i) {
+        if (!changed[i])
+          continue;
+        tlas[i].policy.commit(*inputs[i], reasons[i]);
+        if (!i) {
+          tlasStaticGeneration = staticGeneration;
+          ++stats.staticTlasBuilds;
+        } else if (softwareRefit[i])
+          ++stats.dynamicTlasRefits;
+        else
+          ++stats.dynamicTlasBuilds;
+      }
+      stats.dynamicRefitCount = tlas[1].policy.refits;
+      return;
+    }
     if (!topScratch || topScratch->size < scratchBytes + asProperties.minAccelerationStructureScratchOffsetAlignment)
       topScratch = buffer(scratchBytes + asProperties.minAccelerationStructureScratchOffsetAlignment,
                           VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
@@ -165,7 +216,7 @@ namespace remix {
       return;
     }
     const size_t total = staticInputs.size() + dynamicInputs.size();
-    if (total > asProperties.maxInstanceCount)
+    if (!software && total > asProperties.maxInstanceCount)
       throw VK_ERROR_TOO_MANY_OBJECTS;
     const auto count = uint32_t(total);
     costs.topInstances += count;
@@ -183,6 +234,28 @@ namespace remix {
     combinedDynamic.reserve(dynamicInputs.size());
     for (const auto &input : dynamicInputs)
       combinedDynamic.push_back(instanceData(input, topFaceCulling, trace::instanceMask(true, true)));
+    if (software) {
+      // Both parts in one tree, refitted for the policy's updates.
+      std::vector<VkAccelerationStructureInstanceKHR> all(combinedStatic);
+      all.insert(all.end(), combinedDynamic.begin(), combinedDynamic.end());
+      buildSoftwareTop(command, top, all, decision.action == Policy::Update);
+      const bool refitted = decision.action == Policy::Update && top.softwareBuilder->refitted();
+      // A refit that had to build commits as one, restarting the refit count.
+      auto committed = decision;
+      if (!refitted && committed.action == Policy::Update) {
+        committed.action = Policy::Build;
+        committed.reason = REMIXAPI_REBUILD_MEMBERSHIP_EXT;
+      }
+      combinedPolicy.commit(staticInputs, staticGeneration, dynamicInputs, committed);
+      if (decision.staticChanged)
+        ++stats.staticTlasBuilds;
+      if (refitted)
+        ++stats.dynamicTlasRefits;
+      else
+        ++stats.dynamicTlasBuilds;
+      stats.dynamicRefitCount = combinedPolicy.dynamicPart.refits;
+      return;
+    }
     const size_t staticBytes = combinedStatic.size() * sizeof(combinedStatic[0]);
     const size_t bytes = staticBytes + combinedDynamic.size() * sizeof(combinedDynamic[0]);
     bool kept = top.prefix == combinedStaticStamp;

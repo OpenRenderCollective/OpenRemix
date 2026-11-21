@@ -90,9 +90,16 @@ void queryVisibility(accelerationStructureEXT scene,vec3 origin,vec3 direction,i
 }
 VisibilityHit visibilityHit(vec3 origin,vec3 direction,bool anyOpaque) {
   VisibilityHit hit;hit.t=1e30;hit.blocked=false;
+#ifdef SOFTWARE_RAY_QUERY
+  SOFTWARE_SCENES {
+    queryVisibility(softwareScene,origin,direction,hit,anyOpaque);
+    if(anyOpaque&&hit.blocked)return hit;
+  }
+#else
   if((frame.target.z&1)!=0)queryVisibility(staticScene,origin,direction,hit,anyOpaque);
   if(anyOpaque&&hit.blocked)return hit;
   if((frame.target.z&2)!=0)queryVisibility(dynamicScene,origin,direction,hit,anyOpaque);
+#endif
   return hit;
 }
 // rtx.native.pathtrace.shadowEarlyOut (specialization constant
@@ -144,8 +151,13 @@ bool firstBlocker(accelerationStructureEXT scene,vec3 origin,vec3 direction,floa
 VisibilityHit earlyVisibilityHit(vec3 origin,vec3 direction,float maximum,uint profile) {
   VisibilityHit hit;hit.t=maximum;hit.blocked=false;
   NearestSheet sheet;sheet.t=maximum;sheet.surface=~0u;
+#ifdef SOFTWARE_RAY_QUERY
+  // sheet.t is still `maximum` for the first scene.
+  SOFTWARE_SCENES if(firstBlocker(softwareScene,origin,direction,sheet.t,sheet,profile)){hit.blocked=true;return hit;}
+#else
   if((frame.target.z&1)!=0&&firstBlocker(staticScene,origin,direction,maximum,sheet,profile)){hit.blocked=true;return hit;}
   if((frame.target.z&2)!=0&&firstBlocker(dynamicScene,origin,direction,sheet.t,sheet,profile)){hit.blocked=true;return hit;}
+#endif
   if(sheet.surface==~0u)return hit;
   profileRay(profile+5);
   hit.t=sheet.t;

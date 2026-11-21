@@ -192,6 +192,25 @@ namespace remix {
       }
     if (work.empty())
       return;
+    if (software) {
+      // commitMesh built and uploaded them.
+      for (auto &g : work) {
+        uint64_t triangles = 0;
+        for (const auto &range : g->ranges)
+          triangles += range.primitiveCount;
+        if (g->update) {
+          ++stats.blasRefits;
+          ++trace::g_accelNow.bottomRefits;
+          trace::g_accelNow.refitTriangles += triangles;
+        } else {
+          ++stats.blasBuilds;
+          trace::g_accelNow.builtTriangles += triangles;
+        }
+        g->pending = false;
+      }
+      trace::g_accelNow.bottomBuilds += uint32_t(work.size());
+      return;
+    }
     for (const auto &geometry : work)
       scratchBytes += align(geometry->update ? geometry->sizes.updateScratchSize : geometry->sizes.buildScratchSize,
                             asProperties.minAccelerationStructureScratchOffsetAlignment);

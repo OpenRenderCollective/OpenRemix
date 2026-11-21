@@ -548,6 +548,9 @@ namespace remix {
     bool m_backendFailed = false;
     uint32_t m_backend = 0, m_requestedBackend = 0, m_instanceApiVersion = VK_API_VERSION_1_1;
     bool m_traceSupported = false;
+    // The path tracer traverses CPU-built structures (no ray queries, or
+    // REMIX_SOFTWARE_RAY_QUERY=1); m_rayQueries: enabled on m_device.
+    bool m_softwareRayQuery = false, m_rayQueries = false;
     bool m_forwardSupported = false;
     bool m_forwardRaySupported = false;
     bool m_textureCompression = false; // textureCompressionBC enabled on m_device.

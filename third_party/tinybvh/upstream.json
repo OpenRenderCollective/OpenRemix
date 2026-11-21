@@ -1,0 +1,6 @@
+{
+  "repository": "https://github.com/jbikker/tinybvh",
+  "revision": "c9be3103cc9693b456b0a0353927c11cac7d710f",
+  "version": "1.9.1",
+  "path": "third_party/tinybvh/include"
+}

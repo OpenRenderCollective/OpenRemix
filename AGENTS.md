@@ -22,6 +22,9 @@ FSR on Windows loads AMD's signed ffx-api DLLs from the FidelityFX SDK 2.4.0 sub
 `third_party/fidelityfx/FidelityFX-SDK`, pinned in `third_party/fidelityfx/upstream.json` and
 required by Windows builds (`git submodule update --init third_party/fidelityfx/FidelityFX-SDK`);
 Linux links FSR 3.1.4 from `third_party/fsr31` (`upscale/fsr.h`).
+TinyBVH (`third_party/tinybvh`, pinned in its `upstream.json`) builds the path tracer's acceleration
+structures on devices without ray queries (`docs/features/software-ray-query.md`); `-Dforward=false` and
+`-Dpathtrace_hardware_shaders=false` leave Forward+ and the ray-query shader stages out of a build.
 XeSS Super Resolution is Windows only, like FSR 4: it loads Intel's signed `libxess.dll` from the
 XeSS SDK 3.0.2 submodule `third_party/xess/xess`, pinned in `third_party/xess/upstream.json` and
 required by Windows builds (`git submodule update --init third_party/xess/xess`; `upscale/xess.h`).

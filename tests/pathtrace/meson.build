@@ -1,6 +1,9 @@
 policy_test = executable('remix-tlas-policy-test', 'tlas_policy.cpp',
   include_directories : test_includes, link_with : pathtrace_library)
 test('Tracing scene and TLAS policy', policy_test)
+software_bvh_test = executable('remix-software-bvh-test', 'software_bvh.cpp',
+  include_directories : test_includes, link_with : software_bvh_library)
+test('Software acceleration structures against direct intersection', software_bvh_test)
 sparse_policy_test = executable('remix-sparse-policy-test', 'sparse_policy.cpp',
   include_directories : test_includes)
 test('Sparse rendering sampling rate', sparse_policy_test)

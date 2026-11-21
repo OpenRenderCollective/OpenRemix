@@ -1,8 +1,10 @@
 #include "pathtrace/shader_code.h"
 #include "runtime/pipelines.h"
 #include <xz.h>
+#include <cctype>
 #include <mutex>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 namespace remix::trace {
@@ -16,7 +18,32 @@ namespace remix::trace {
     Decoded decoded[size_t(Stage::Count)];
   } // namespace
 
+  namespace {
+    bool software = false;
+    // The stage named "software" + the stage's capitalized name, or the stage.
+    Stage softwareTwin(Stage stage) {
+      static const std::vector<Stage> twins = [] {
+        std::vector<Stage> out(static_cast<size_t>(Stage::Count));
+        for (size_t i = 0; i < out.size(); ++i) {
+          out[i] = Stage(i);
+          std::string name = std::string("software") + stageNames[i];
+          name[8] = char(std::toupper(static_cast<unsigned char>(name[8])));
+          for (size_t j = 0; j < out.size(); ++j)
+            if (name == stageNames[j])
+              out[i] = Stage(j);
+        }
+        return out;
+      }();
+      return twins[size_t(stage)];
+    }
+  } // namespace
+
+  void setSoftwareRayQuery(bool enabled) { software = enabled; }
+  bool softwareRayQuery() { return software; }
+
   ShaderCode shader(Stage stage) {
+    if (software)
+      stage = softwareTwin(stage);
     static std::once_flag crc;
     std::call_once(crc, [] { xz_crc32_init(); });
     auto &entry = decoded[size_t(stage)];

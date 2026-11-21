@@ -6,7 +6,8 @@ native_include = include_directories('.')
 shader_python = find_program('python3')
 shader_scripts = meson.project_source_root() / 'scripts/shaders'
 # Generation imports these modules; bytecode would land in the source tree.
-shader_env = {'PYTHONDONTWRITEBYTECODE' : '1'}
+shader_env = {'PYTHONDONTWRITEBYTECODE' : '1',
+  'REMIX_PATHTRACE_HARDWARE_SHADERS' : get_option('pathtrace_hardware_shaders') ? '1' : '0'}
 shader_tools = custom_target('shader-tools',
   output : 'shader-tools.json',
   command : [shader_python, shader_scripts / 'toolchain.py', '--output', '@OUTPUT@',
@@ -64,7 +65,7 @@ if metal_backend
   subdir_done()
 endif
 shell_deps = [sdl3_dep, vulkan_dep, threads_dep, imgui_dep, nrd_dep, fsr_dep, dlss_dep, xess_dep, numos_dep]
-shell_args = ['-DREMIX_LIBRARY_EXPORTS=1'] + cpp.get_supported_arguments('-Wno-missing-field-initializers', '-Wno-unused-parameter')
+shell_args = ['-DREMIX_LIBRARY_EXPORTS=1', '-DREMIX_HAS_FORWARD=' + (get_option('forward') ? '1' : '0')] + cpp.get_supported_arguments('-Wno-missing-field-initializers', '-Wno-unused-parameter')
 subdir('platform')
 subdir('api')
 subdir('runtime')
@@ -82,7 +83,17 @@ if get_option('usd')
 endif
 subdir('raster')
 subdir('postfx')
-subdir('forward')
+if get_option('forward')
+  subdir('forward')
+else
+  # No Forward+ backend: the runtime finds it unsupported (runtime/device.cpp)
+  # and these definitions stand in for what it still links against.
+  forward_library = static_library('remix_forward', 'forward/disabled.cpp',
+    link_with : [scene_library, raster_library, postfx_library],
+    dependencies : vulkan_dep, include_directories : [remix_public_include, native_include],
+    cpp_args : cpp.get_supported_arguments('-Wno-missing-field-initializers', '-Wno-unused-parameter'),
+    gnu_symbol_visibility : 'hidden', pic : true)
+endif
 subdir('denoise')
 subdir('upscale')
 sky_libraries = []

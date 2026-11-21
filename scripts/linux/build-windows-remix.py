@@ -51,6 +51,11 @@ def main():
     parser.add_argument('--cmake', default='cmake')
     parser.add_argument('--jobs', type=int, default=8, help='Build job limit, also used to bound shader workers')
     parser.add_argument('--tests', action='store_true', help='run the test suite under Wine after building')
+    parser.add_argument('--lean', action='store_true',
+                        help='leave out OpenUSD, the Forward+ backend and the NUMOS sky')
+    parser.add_argument('--software-rays-only', action='store_true',
+                        help="the path tracer's ray-query stages as stubs: a build for devices without ray queries "
+                             '(docs/features/software-ray-query.md), which traces only through the software fallback')
     parser.add_argument('--accept-msvc-license', action='store_true',
                         help="accept Microsoft's license for the CRT and Windows SDK xwin downloads (first run)")
     args = parser.parse_args()
@@ -130,7 +135,7 @@ def main():
         subprocess.run([args.cmake, '--build', str(deps / 'build-sdl3'), '--parallel', str(args.jobs)], check=True)
         subprocess.run([args.cmake, '--install', str(deps / 'build-sdl3')], check=True)
     tbb = deps / 'tbb'
-    if not (tbb / 'lib/cmake/TBB/TBBConfig.cmake').exists():
+    if not args.lean and not (tbb / 'lib/cmake/TBB/TBBConfig.cmake').exists():
         source = fetch(deps, 'onetbb', PINS['onetbb'])
         subprocess.run(cmake + ['-S', str(source), '-B', str(deps / 'build-tbb'), '-DCMAKE_INSTALL_PREFIX=' + str(tbb),
             '-DTBB_TEST=OFF', '-DTBB_EXAMPLES=OFF', '-DTBB_STRICT=OFF', '-DTBB_DISABLE_HWLOC_AUTOMATIC_SEARCH=ON'],
@@ -138,7 +143,7 @@ def main():
         subprocess.run([args.cmake, '--build', str(deps / 'build-tbb'), '--parallel', str(args.jobs)], check=True)
         subprocess.run([args.cmake, '--install', str(deps / 'build-tbb')], check=True)
     usd = deps / 'usd'
-    if not (usd / 'pxrConfig.cmake').exists():
+    if not args.lean and not (usd / 'pxrConfig.cmake').exists():
         source = fetch(deps, 'openusd', PINS['openusd'])
         patched = source / '.remix-clang-cl'
         if not patched.exists():
@@ -156,7 +161,8 @@ def main():
             '-DPXR_ENABLE_PTEX_SUPPORT=OFF', '-DPXR_ENABLE_OSL_SUPPORT=OFF'], check=True)
         subprocess.run([args.cmake, '--build', str(deps / 'build-usd'), '--parallel', str(args.jobs)], check=True)
         subprocess.run([args.cmake, '--install', str(deps / 'build-usd')], check=True)
-    download(PINS['json']['url'], PINS['json']['sha256'], deps / 'json/nlohmann/json.hpp')
+    if not args.lean:
+        download(PINS['json']['url'], PINS['json']['sha256'], deps / 'json/nlohmann/json.hpp')
     # Lightmap denoising: Intel's prebuilt SDK (MSVC ABI, C API).
     oidn = dependency_builder.fetch_oidn(deps)
 
@@ -205,12 +211,17 @@ pkg_config_libdir = '{prefix}/lib/pkgconfig'
     shader_jobs = max(1, min(4, args.jobs - 1))
     setup = ['meson', 'setup', str(build), str(root), '--cross-file', str(cross),
              '-Dbuildtype=release', '-Dwerror=true', '-Ddeps_root=' + str(prefix),
-             '-Dusd=true', '-Dusd_root=' + str(usd), '-Dusd_tbb_root=' + str(tbb),
-             '-Djson_include=' + str(deps / 'json'), '-Doidn_root=' + str(oidn),
+             '-Doidn_root=' + str(oidn),
              '-Ddlss=true', '-Dgpu_tests=false',
              '-Dshader_jobs=' + str(shader_jobs),
              '-Denable_tests=' + ('true' if args.tests else 'false'),
              '-Dc_args=/Z7', '-Dcpp_args=/Z7', '-Dc_link_args=/DEBUG', '-Dcpp_link_args=/DEBUG']
+    if args.lean:
+        setup += ['-Dusd=false', '-Dforward=false', '-Dsky=disabled']
+    else:
+        setup += ['-Dusd=true', '-Dusd_root=' + str(usd), '-Dusd_tbb_root=' + str(tbb),
+                  '-Djson_include=' + str(deps / 'json'), '-Dforward=true', '-Dsky=auto']
+    setup += ['-Dpathtrace_hardware_shaders=' + ('false' if args.software_rays_only else 'true')]
     if (build / 'meson-private/coredata.dat').exists():
         setup += ['--reconfigure']
     subprocess.run(setup, check=True, env=env)
@@ -227,13 +238,15 @@ pkg_config_libdir = '{prefix}/lib/pkgconfig'
     output.mkdir(parents=True, exist_ok=True)
     native = build / 'src/native'
     files = [native / 'remix.dll', native / 'remix.pdb', prefix / 'bin/SDL3.dll']
-    files += sorted((usd / 'lib').glob('usd_*.dll'))
+    if not args.lean:
+        files += sorted((usd / 'lib').glob('usd_*.dll'))
     # OIDN's DLLs, its device plugins (loaded at run time) included. Its
     # oneTBB is the newer one, so it also serves OpenUSD (package-runtime.py).
     files += sorted((oidn / 'bin').glob('*.dll'))
     for path in files:
         shutil.copy2(path, output / path.name)
-    shutil.copytree(usd / 'lib/usd', output / 'usd', dirs_exist_ok=True)
+    if not args.lean:
+        shutil.copytree(usd / 'lib/usd', output / 'usd', dirs_exist_ok=True)
     notices = output / 'licenses/OIDN'
     notices.mkdir(parents=True, exist_ok=True)
     for path in sorted((oidn / 'doc').glob('*.txt')):

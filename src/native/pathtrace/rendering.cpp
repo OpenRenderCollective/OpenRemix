@@ -168,8 +168,11 @@ namespace remix {
     subsurfaceActive = flags.subsurface && options.subsurface;
     // Without paint or subsurface scattering in the scene, the lighting
     // stages compile those out (selectLightingPipeline): prewarmed on a change.
-    if (const uint32_t lean = (decalMaterialsActive ? 0u : uint32_t(variantNoPaint)) |
-                              (subsurfaceActive ? 0u : uint32_t(variantNoSubsurface));
+    // With software ray queries the full stages stay: a lean variant compiles
+    // for as long as the full one there (minutes) and traces no faster.
+    if (const uint32_t lean = software ? 0u
+                                       : (decalMaterialsActive ? 0u : uint32_t(variantNoPaint)) |
+                                             (subsurfaceActive ? 0u : uint32_t(variantNoSubsurface));
         lean != leanLighting) {
       leanLighting = lean;
       prewarmPending = true;
@@ -269,25 +272,33 @@ namespace remix {
     }
     // Geometry uploads (and delta-assembled shading vertices) feed both AS
     // construction and BDA reads in the compute shader.
+    // (Software structures are uploads themselves: no build stage or access.)
     barrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
             VK_ACCESS_TRANSFER_WRITE_BIT | VK_ACCESS_SHADER_WRITE_BIT,
-            buildStage | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
+            (software ? 0u : buildStage) | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-            asRead | VK_ACCESS_SHADER_READ_BIT);
+            (software ? 0u : asRead) | VK_ACCESS_SHADER_READ_BIT);
     {
       gpu::GpuScope scope(command, "BLAS builds, refits, compaction");
       buildBottom(command);
       // Compaction is also an AS write, including on a frame with no new BLAS work.
-      barrier(command, buildStage, asWrite, buildStage, asRead);
+      if (!software)
+        barrier(command, buildStage, asWrite, buildStage, asRead);
     }
     {
       gpu::GpuScope scope(command, "TLAS builds");
       buildTop(command, tables.staticInputs(), tables.dynamicInputs(), options.forceRebuild, tables.staticGeneration(),
                faceCulling, options.combinedTlas);
-      barrier(command, buildStage, asWrite, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, asRead);
+      if (software)
+        barrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
+      else
+        barrier(command, buildStage, asWrite, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, asRead);
     }
     if (timestamps)
-      vkCmdWriteTimestamp(command, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, timestamps, 1);
+      vkCmdWriteTimestamp(
+          command, software ? VK_PIPELINE_STAGE_TRANSFER_BIT : VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+          timestamps, 1);
     lap(breakdown.traceAccelerationMilliseconds);
     trace::g_accelNow.total = trace::g_accelNow.bottom + trace::g_accelNow.top;
     if (trace::g_accelNow.total > trace::g_accelCosts.total)
@@ -1328,11 +1339,17 @@ namespace remix {
          VK_IMAGE_LAYOUT_GENERAL},
         {VK_NULL_HANDLE, viewEffects->view, VK_IMAGE_LAYOUT_GENERAL}};
     VkWriteDescriptorSetAccelerationStructureKHR structures[2] = {};
+    // Software: the first word of each top level (pathtrace.comp).
+    VkDescriptorBufferInfo softwareScenes[2] = {};
     VkWriteDescriptorSet writes[17] = {};
     for (unsigned i = 0; i < 17; ++i) {
       writes[i] = {
           .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = i, .descriptorCount = 1};
-      if (i < 2) {
+      if (i < 2 && software) {
+        softwareScenes[i] = {tlas[topCombined ? 2 : i].accel->software->handle, 0, 16};
+        writes[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        writes[i].pBufferInfo = &softwareScenes[i];
+      } else if (i < 2) {
         structures[i] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR,
                          .accelerationStructureCount = 1,
                          .pAccelerationStructures = &tlas[topCombined ? 2 : i].accel->handle};

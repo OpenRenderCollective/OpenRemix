@@ -90,10 +90,12 @@ namespace remix {
     PathTracer();
     ~PathTracer();
     // opacityMicromaps: VK_EXT_opacity_micromap and synchronization2 are
-    // enabled on the device.
+    // enabled on the device. softwareRayQuery: the device has no ray
+    // queries; acceleration structures are built on the CPU and traversed by
+    // the shaders (pathtrace/software_bvh.h).
     void initialize(VkPhysicalDevice physical, VkDevice device, uint32_t queueFamily, bool preparing = false,
                     bool rasterPrimary = true, std::shared_ptr<postfx::State> exposureState = {},
-                    bool opacityMicromaps = false);
+                    bool opacityMicromaps = false, bool softwareRayQuery = false);
     std::shared_ptr<postfx::State> exposureState() const;
     VkExtent2D renderExtent() const;
     void setPostProcessing(postfx::Renderer *renderer, bool retainExposure = false);

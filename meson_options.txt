@@ -4,6 +4,8 @@ option('enable_tests', type : 'boolean', value : true)
 option('sharc', type : 'boolean', value : true, description : 'Build optional NVIDIA SHARC diffuse radiance caching.')
 option('nrd', type : 'boolean', value : true, description : 'Build the pinned diffuse REBLUR SH CPU library and Vulkan adapter.')
 option('sky', type : 'feature', value : 'auto', description : 'Build the NUMOS sky core library (needs the third_party/numos/numos-sky submodule).')
+option('forward', type : 'boolean', value : true, description : 'Build the Forward+ backend. false leaves it out (the backend then reports itself unsupported), for faster builds.')
+option('pathtrace_hardware_shaders', type : 'boolean', value : true, description : 'Build the path tracer\'s ray-query shader stages. false builds stubs in their place: only for devices without ray queries, which trace in software.')
 option('gpu_tests', type : 'boolean', value : false, description : 'Run SDL/Vulkan lifecycle tests on a display and Vulkan device.')
 option('oidn_root', type : 'string', value : '', description : 'Optional Open Image Denoise 2.5 installation prefix for offline lightmap denoising.')
 option('shader_jobs', type : 'integer', min : 1, value : 4,
