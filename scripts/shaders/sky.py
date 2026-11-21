@@ -47,8 +47,18 @@ def slangc():
     return path
 
 
+def python():
+    """A Python interpreter for NUMOS's tools: meson's runpython is a frozen interpreter, not one
+    that runs scripts by path or has numpy, so the installed one."""
+    py = sys.executable
+    if not (py.lower().endswith('python.exe') or py.lower().endswith('python')):
+        import shutil
+        py = shutil.which('python3') or shutil.which('python') or py
+    return py
+
+
 def compile_numos(build_shaders, directory):
-    subprocess.run([sys.executable, '-I', str(NUMOS / 'tools/build_shaders.py'), '--slangc', slangc(), '--out',
+    subprocess.run([python(), '-I', str(NUMOS / 'tools/build_shaders.py'), '--slangc', slangc(), '--out',
                     str(directory), '--jobs', str(os.cpu_count() or 4)], check=True, stdout=subprocess.DEVNULL)
 
 
@@ -78,12 +88,11 @@ def compile_adapters(build_shaders, directory):
 def night_sky(directory):
     """{asset: bytes} of the night sky; without numpy the sky has the moon and no stars."""
     assets = {'moon': (NUMOS / 'assets/nightsky/moon.bin').read_bytes()}
-    try:
-        import numpy  # noqa: F401
-    except ImportError:
+    py = python()
+    if subprocess.run([py, '-I', '-c', 'import numpy'], capture_output=True).returncode:
         print('sky: numpy is not installed; the night sky is built without stars', file=sys.stderr)
         return assets
-    subprocess.run([sys.executable, str(NUMOS / 'tools/build_custom_sky.py'), '--out', str(directory), '--seed',
+    subprocess.run([py, '-I', str(NUMOS / 'tools/build_custom_sky.py'), '--out', str(directory), '--seed',
                     NIGHT_SKY_SEED], check=True, stdout=subprocess.DEVNULL)
     files = {'stars': 'stars.bin', 'milkyWay': 'milkyway.bin', 'starlightLow': 'starlight_low.bin'}
     return assets | {asset: (directory / name).read_bytes() for asset, name in files.items()}
@@ -147,12 +156,10 @@ def cache_key():
     digest.update(inspect.getsource(generate.compress).encode())
     version = subprocess.run([slangc(), '-version'], capture_output=True)
     digest.update(version.stdout + version.stderr)
-    try:
-        import numpy
-        numpy_version = numpy.__version__
-    except ImportError:
-        numpy_version = None
-    digest.update(f'{sys.version} {numpy_version}'.encode())
+    py = python()
+    digest.update(subprocess.run([py, '-I', '-c', 'import sys, lzma\ntry:\n import numpy; n = numpy.__version__\n'
+                                  'except ImportError:\n n = None\nprint(sys.version, n)'],
+                                 capture_output=True).stdout)
     return digest.hexdigest()
 
 
