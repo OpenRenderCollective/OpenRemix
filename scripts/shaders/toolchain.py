@@ -48,6 +48,30 @@ def executable(directory, name):
     return matches[0]
 
 
+# Windows: spirv-opt's and spirv-val's C++ allocations go to mimalloc (allocator/), which serves
+# spirv-opt's millions of small ones about 1.7x faster than the Windows heap; the output is the same.
+ALLOCATOR = Path(__file__).parent / 'allocator'
+WINDOWS_ALLOCATOR = os.name == 'nt'
+
+
+def allocator(work):
+    """Linker options that give an executable mimalloc's operator new and delete."""
+    fetch(LOCK['mimalloc'], work / 'mimalloc')
+    build(ALLOCATOR, work / 'allocator-build', ['-DMIMALLOC_SOURCE=' + str(work / 'mimalloc')],
+          ['remix_shader_allocator', 'mimalloc-static'])
+    shim = executable_library(work / 'allocator-build', 'remix_shader_allocator')
+    library = executable_library(work / 'allocator-build', 'mimalloc-static')
+    # The shim's objects are wanted for what they define, not what they resolve: link them whole.
+    return [f'-DCMAKE_EXE_LINKER_FLAGS=/WHOLEARCHIVE:"{shim}" "{library}" advapi32.lib']
+
+
+def executable_library(directory, name):
+    matches = [path for path in directory.rglob(name + '.lib') if path.is_file()]
+    if len(matches) != 1:
+        raise SystemExit(f'{directory}: expected one {name}.lib, found {len(matches)}')
+    return matches[0]
+
+
 def khronos(work, bin_dir):
     """glslangValidator, spirv-opt and spirv-val."""
     fetch(LOCK['glslang'], work / 'glslang')
@@ -56,8 +80,8 @@ def khronos(work, bin_dir):
                                                      '-DGLSLANG_ENABLE_INSTALL=OFF'], ['glslang-standalone'])
     fetch(LOCK['spirv-tools'], work / 'spirv-tools')
     fetch(LOCK['spirv-headers'], work / 'spirv-tools/external/spirv-headers')
-    build(work / 'spirv-tools', work / 'spirv-tools-build', ['-DSPIRV_SKIP_TESTS=ON', '-DSPIRV_WERROR=OFF'],
-          ['spirv-opt', 'spirv-val'])
+    build(work / 'spirv-tools', work / 'spirv-tools-build', ['-DSPIRV_SKIP_TESTS=ON', '-DSPIRV_WERROR=OFF'] +
+          (allocator(work) if WINDOWS_ALLOCATOR else []), ['spirv-opt', 'spirv-val'])
     # glslang-standalone builds 'glslang'; glslangValidator is the name every script calls.
     shutil.copy2(executable(work / 'glslang-build', 'glslang'), bin_dir / ('glslangValidator' + EXE))
     for name in ('spirv-opt', 'spirv-val'):
@@ -124,6 +148,8 @@ def toolset(cache, name, entries, make):
     # An entry's patch is part of the toolset: editing it rebuilds the toolset.
     patches = [(Path(__file__).parent / LOCK[e]['patch']).read_text() for e in entries if 'patch' in LOCK[e]]
     keyed = [LAYOUT, [LOCK[e] for e in entries]] + ([patches] if patches else [])
+    if name == 'khronos' and WINDOWS_ALLOCATOR:
+        keyed.append([LOCK['mimalloc']] + [(ALLOCATOR / f).read_text() for f in ('CMakeLists.txt', 'new_delete.cpp')])
     key = hashlib.sha256(json.dumps(keyed, sort_keys=True).encode()).hexdigest()[:16]
     final = cache / f'{name}-{key}'
     if (final / 'complete').exists():

@@ -12,7 +12,8 @@ shader_tools = custom_target('shader-tools',
   command : [shader_python, shader_scripts / 'toolchain.py', '--output', '@OUTPUT@',
              '--cache', get_option('shader_tools')] + (metal_backend ? ['--metal'] : []) +
              (numos_enabled ? ['--slang'] : []),
-  depend_files : files('../../scripts/shaders/toolchain.py', '../../scripts/shaders/toolchain.lock.json'),
+  depend_files : files('../../scripts/shaders/toolchain.py', '../../scripts/shaders/toolchain.lock.json',
+                       '../../scripts/shaders/allocator/CMakeLists.txt', '../../scripts/shaders/allocator/new_delete.cpp'),
   env : shader_env, console : true)
 shader_generate = [shader_python, shader_scripts / 'generate.py', '--jobs', get_option('shader_jobs').to_string(), '--tools', shader_tools,
                    '--output', meson.current_build_dir(), '--depfile', '@DEPFILE@', '--depfile-target', '@OUTPUT0@']

@@ -14,6 +14,11 @@
     "tag": "vulkan-sdk-1.4.350.0",
     "revision": "ad9184e76a66b1001c29db9b0a3e87f646c64de0"
   },
+  "mimalloc": {
+    "repository": "https://github.com/microsoft/mimalloc.git",
+    "tag": "v2.1.7",
+    "revision": "8c532c32c3c96e5ba1f2283e032f69ead8add00f"
+  },
   "dxc": {
     "release": "v1.9.2602.24",
     "version": "1.9.0.5191",
