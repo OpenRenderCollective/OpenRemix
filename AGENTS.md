@@ -53,6 +53,11 @@ Path-tracing SPIR-V is optimized with `spirv-opt -O` (inlined modules compile ab
 fast on NVIDIA) and stored as XZ streams in `pathtrace/shaders/embedded.bin`; `embedded.h`
 indexes them, `embedded_data.cpp` embeds the blob and `trace::shader()` decompresses a stage on
 first use (vendored XZ Embedded).
+`spirv-opt` is most of the build's time (minutes and several GB for the largest stages), so
+`scripts/shaders/stage_cache.py` keeps each finished stage in `_work/shader-cache`, keyed by its
+unoptimized SPIR-V and the tools: a stage whose SPIR-V did not change is not optimized again
+(`REMIX_SHADER_CACHE=` with no value turns the cache off). Stages run longest first, as many at
+once as memory holds (`-Dshader_jobs=` caps them; 0, the default, is one per CPU).
 Standalone driver probes in `tools/vulkan-probes` require `-Dvulkan_probes=true` and shader tools.
 macOS builds the native Metal backend in `src/native/metal` instead of the Vulkan runtime
 (see `docs/features/metal-backend.md`). The build generates its libraries from the

@@ -5,7 +5,7 @@ The build (src/native/meson.build) runs it with the pinned tools of toolchain.py
 import argparse
 import json
 import lzma
-from concurrent.futures import ThreadPoolExecutor
+import functools
 import os
 from pathlib import Path
 import re
@@ -14,7 +14,9 @@ import sys
 import subprocess
 import tempfile
 import threading
+import time
 import nrd
+import stage_cache
 import fsr31
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -334,11 +336,12 @@ def depfile_inputs(text):
 
 
 def glslang(arguments, output):
-    """glslangValidator -V, recording the files it read."""
+    """glslangValidator -V, recording the files it read; returns its peak memory."""
     depfile = output.with_suffix('.d')
-    subprocess.run(['glslangValidator', '-V', *arguments, '--depfile', str(depfile), '-o', str(output)],
-                   check=True, stdout=subprocess.DEVNULL)
+    peak = stage_cache.run(['glslangValidator', '-V', *arguments, '--depfile', str(depfile), '-o', str(output)],
+                           stdout=subprocess.DEVNULL)
     depend(*depfile_inputs(depfile.read_text()))
+    return peak
 
 
 def depend(*paths):
@@ -348,32 +351,63 @@ def depend(*paths):
         DEPENDENCIES.update(str(path) for path in resolved if path.is_relative_to(ROOT))
 
 
-def compile_stage(backend, stage, temporary):
+def compile_stage(backend, stage, temporary, cache, identity, statistics):
     """SPIR-V words of one stage, compiled and validated; for an optimized
-    backend, the optimized module and its XZ stream."""
+    backend, the optimized module and its XZ stream. The finished stage is
+    cached by its unoptimized SPIR-V (stage_cache.py)."""
     _, environment, stages = BACKENDS[backend]
     environment = STAGE_ENVIRONMENTS.get((backend, stage), environment)
     defines, source = defines_for(backend, stage, stages)
     binary = Path(temporary) / (backend + '-' + stage + '.spv')
-    glslang(['--target-env', environment, *defines, '-I' + str(ROOT/'third_party/nrd/Shaders'),
-             '-I' + str(ROOT/'third_party/sharc/include'), str(source)], binary)
+    started = time.monotonic()
+    peak = glslang(['--target-env', environment, *defines, '-I' + str(ROOT/'third_party/nrd/Shaders'),
+                    '-I' + str(ROOT/'third_party/sharc/include'), str(source)], binary)
+    optimization = None
     if backend in OPTIMIZED or backend in INLINED or (backend, stage) in INLINED_STAGES:
-
-        optimized = binary.with_suffix('.opt.spv')
         optimization = ['-O']
         if backend == 'pathtrace':
             # Inlining combined material paths can exhaust temporary IDs even
             # when dead-code removal leaves a small final module. Compact the
             # result before validating it against the normal SPIR-V limits.
             optimization = ['--max-id-bound=16777216', '-O', '--compact-ids']
-        subprocess.run(['spirv-opt', *optimization, '--target-env=' + environment,
-                        str(binary), '-o', str(optimized)], check=True)
+    recipe = f'{environment} {optimization} {"xz" if backend in OPTIMIZED else "words"}'
+    name = stage_cache.key(identity, recipe, binary.read_bytes())
+    cached = cache.get(name)
+    if cached is not None:
+        if backend in OPTIMIZED:
+            return lzma.decompress(cached), cached
+        return struct.unpack('<' + 'I' * (len(cached) // 4), cached)
+    if optimization:
+        optimized = binary.with_suffix('.opt.spv')
+        peak = max(peak, stage_cache.run(['spirv-opt', *optimization, '--target-env=' + environment,
+                                          str(binary), '-o', str(optimized)]))
         binary = optimized
-    subprocess.run(['spirv-val', '--target-env', environment, str(binary)], check=True)
+    peak = max(peak, stage_cache.run(['spirv-val', '--target-env', environment, str(binary)]))
+    statistics.set(stage, time.monotonic() - started, peak)
     data = binary.read_bytes()
     if backend in OPTIMIZED:
-        return data, compress(data)
+        packed = compress(data)
+        cache.put(name, packed)
+        return data, packed
+    cache.put(name, data)
     return struct.unpack('<' + 'I' * (len(data) // 4), data)
+
+
+def estimate(backend, stage, statistics):
+    """(seconds, peak bytes) a stage's compile is expected to take: its last, with a margin
+    on the memory, or, never measured, the backend's heaviest (the largest path-tracing
+    stages take about 11 GB)."""
+    known = statistics.get(stage)
+    if known:
+        return known[0], known[1] * 1.15 + 64 * 2**20
+    heaviest = statistics.heaviest()
+    if heaviest:
+        return heaviest[0], heaviest[1] * 1.15 + 64 * 2**20
+    if backend in OPTIMIZED:
+        return 120.0, 12 * 2**30
+    if backend in INLINED or (backend, stage) in INLINED_STAGES:
+        return 30.0, 3 * 2**30
+    return 1.0, 256 * 2**20
 
 
 def compress(data):
@@ -419,6 +453,19 @@ def compressed_output(backend, stages, results):
     return header, bytes(blob)
 
 
+def write_output(path, content):
+    """Writes a generated file only when its content changes: the build restats the generator's
+    outputs, so the sources that include an unchanged one are not compiled again."""
+    # Text as Path.write_text writes it (the platform's line endings).
+    data = content if isinstance(content, bytes) else content.replace('\n', os.linesep).encode()
+    try:
+        if path.read_bytes() == data:
+            return
+    except OSError:
+        pass
+    path.write_bytes(data)
+
+
 def embedded_data(generator, namespace):
     """embedded_data.cpp: the blob beside it, by #embed (found next to the including file)."""
     return ('// Generated by scripts/shaders/' + generator + '; do not edit.\n'
@@ -434,33 +481,46 @@ def embedded_data(generator, namespace):
 
 
 def process(backends, jobs=None):
-    """Compiles every stage of the backends concurrently, one task per stage."""
-    with tempfile.TemporaryDirectory() as temporary, \
-            ThreadPoolExecutor(max_workers=jobs or os.cpu_count() or 1) as pool:
-
-        tasks = {(b, stage): pool.submit(compile_stage, b, stage, temporary)
-                 for b in backends for stage in BACKENDS[b][2]}
+    """Compiles every stage of the backends concurrently, one task per stage: the
+    longest first, as many at once as memory holds (stage_cache.schedule), at most
+    `jobs` (none or 0: one per CPU)."""
+    cache = stage_cache.Cache(ROOT)
+    identity = stage_cache.tool_identity(['glslangValidator', 'spirv-opt', 'spirv-val'])
+    statistics = {b: stage_cache.Statistics(cache, b) for b in backends}
+    with tempfile.TemporaryDirectory() as temporary:
+        work = []
+        for b in backends:
+            for stage in BACKENDS[b][2]:
+                seconds, peak = estimate(b, stage, statistics[b])
+                work.append(((b, stage), functools.partial(compile_stage, b, stage, temporary, cache, identity,
+                                                           statistics[b]), seconds, peak))
+        try:
+            tasks = stage_cache.schedule(work, jobs or os.cpu_count() or 1)
+        finally:
+            for values in statistics.values():
+                values.save()
+        cache.prune()
         for backend in backends:
             namespace, _, stages = BACKENDS[backend]
             target = generated_directory(backend) / 'embedded.h'
             target.parent.mkdir(parents=True, exist_ok=True)
 
             if backend in OPTIMIZED:
-                header, blob = compressed_output(backend, stages, {s: tasks[backend, s].result() for s in stages})
-                target.write_text(header)
-                target.with_suffix('.bin').write_bytes(blob)
-                target.with_name('embedded_data.cpp').write_text(embedded_data('generate.py ' + backend, namespace))
+                header, blob = compressed_output(backend, stages, {s: tasks[backend, s] for s in stages})
+                write_output(target, header)
+                write_output(target.with_suffix('.bin'), blob)
+                write_output(target.with_name('embedded_data.cpp'), embedded_data('generate.py ' + backend, namespace))
                 continue
             output = ('// Generated by scripts/shaders/generate.py ' + backend + '; do not edit.\n'
                       '#pragma once\n#include <cstdint>\nnamespace remix::' + namespace + ' {\n')
             for stage in stages:
-                words = tasks[backend, stage].result()
+                words = tasks[backend, stage]
                 output += 'inline constexpr uint32_t ' + stage + 'Shader[] = {\n'
                 for i in range(0, len(words), 8):
                     output += '  ' + ', '.join(f'0x{x:08x}' for x in words[i:i+8]) + ',\n'
                 output += '};\n'
             output += '}\n'
-            target.write_text(output)
+            write_output(target, output)
 
 
 def use_tools(record):
@@ -483,7 +543,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     # metal translates the other backends' SPIR-V; 'all' leaves it out (it needs macOS and Xcode).
     parser.add_argument('backend', choices=[*BACKENDS, 'nrd', 'fsr31', 'metal', 'sky', 'all'])
-    parser.add_argument('--jobs', type=int, help='Maximum concurrent GLSL compilation tasks')
+    parser.add_argument('--jobs', type=int, help='Maximum concurrent GLSL compilation tasks (0: one per CPU, as many as memory holds)')
     parser.add_argument('--output', type=Path, help='Generated src/native tree (the build\'s); default _work/shaders/src/native')
     parser.add_argument('--tools', type=Path, help='Pinned tools recorded by toolchain.py --output')
     parser.add_argument('--depfile', type=Path, help='Make-style dependencies of the generated files')
@@ -494,8 +554,8 @@ def main():
     mode.add_argument('--check', action='store_true', help='nrd, fsr31: compare generated output without modifying files')
     mode.add_argument('--validate', action='store_true', help='nrd, fsr31: validate committed SPIR-V using only spirv-val')
     args = parser.parse_args()
-    if args.jobs is not None and args.jobs < 1:
-        parser.error('--jobs must be positive')
+    if args.jobs is not None and args.jobs < 0:
+        parser.error('--jobs must not be negative')
     global OUTPUT
     if args.output:
         OUTPUT = args.output.resolve()

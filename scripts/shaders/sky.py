@@ -118,11 +118,11 @@ def write(numos_dir, adapters, adapter_table, night_sky_assets):
     header += '// embedded.bin (embedded_data.cpp).\nextern const unsigned char embeddedData[];\nextern const size_t embeddedDataBytes;\n}\n'
     target = generate.OUTPUT / 'sky/shaders/embedded.h'
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(header)
-    target.with_suffix('.bin').write_bytes(bytes(blob))
-    target.with_name('embedded_data.cpp').write_text(generate.embedded_data('generate.py sky', 'sky'))
+    generate.write_output(target, header)
+    generate.write_output(target.with_suffix('.bin'), bytes(blob))
+    generate.write_output(target.with_name('embedded_data.cpp'), generate.embedded_data('generate.py sky', 'sky'))
     # The adapters' binding table, in NUMOS's format (numos::PassInfo per Stage).
-    target.with_name('adapter_passes.inc').write_text(adapter_table)
+    generate.write_output(target.with_name('adapter_passes.inc'), adapter_table)
 
 
 def process():
