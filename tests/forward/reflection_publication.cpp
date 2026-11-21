@@ -70,12 +70,14 @@ void releaseGate() {
 } // namespace
 // Test double only: pause diffuse finishing without changing any production
 // scheduling code. Actual denoiser correctness has separate GPU/CPU tests.
+// Diffuse finishing filters through DenoisePlan, so it stands in for all of
+// lightmap/denoise.cpp, which then does not link beside it.
 namespace remix::forward::lightmap {
 uint32_t denoiserVersion() { return 0x7fffffffu; }
-DenoiseStatistics denoise(const Layout &, std::span<bake::Result>,
-                          std::stop_token cancelled,
-                          std::function<void(uint32_t, uint32_t)>,
-                          HostTransfers, FilterDispatch) {
+DenoisePlan::DenoisePlan(const Layout &layout, std::stop_token) : m_layout(layout) {}
+DenoiseStatistics DenoisePlan::filter(std::span<bake::Result>, std::stop_token cancelled,
+                                      std::function<void(uint32_t, uint32_t)>, HostTransfers,
+                                      FilterDispatch) const {
   ++denoiseCalls;
   std::unique_lock lock(mutex);
   entered = true;
