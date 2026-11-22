@@ -232,7 +232,8 @@ namespace remix {
           if (s.addressU > 2 || s.addressV > 2 ||
               (s.target >= REMIXAPI_HOST_TARGET_RESERVED_EXT && s.target != REMIXAPI_HOST_TARGET_VIEW_DEPTH_EXT &&
                s.target != REMIXAPI_HOST_TARGET_VIEW_OPAQUE_DEPTH_EXT &&
-               s.target != REMIXAPI_HOST_TARGET_VIEW_TRANSMITTANCE_EXT))
+               s.target != REMIXAPI_HOST_TARGET_VIEW_TRANSMITTANCE_EXT &&
+               s.target != REMIXAPI_HOST_TARGET_SCENE_DEPTH_EXT))
             return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
         // One copy of every byte, in a known order (see record).
         pass.data.reserve(bytes);
@@ -767,8 +768,18 @@ namespace remix {
                    linear ? VK_FILTER_LINEAR : VK_FILTER_NEAREST);
   }
 
+  bool HostPasses::wantsSceneDepth() {
+    std::lock_guard lock(m_mutex);
+    for (const auto &pass : m_pending)
+      for (const auto &s : pass.samplers)
+        if (s.target == REMIXAPI_HOST_TARGET_SCENE_DEPTH_EXT)
+          return true;
+    return false;
+  }
+
   void HostPasses::record(VkCommandBuffer command, uint32_t slotIndex, VkImage image, VkFormat format,
-                          VkExtent2D extent, VkImageLayout imageLayout, const ViewImages &view) {
+                          VkExtent2D extent, VkImageLayout imageLayout, const ViewImages &view,
+                          VkDescriptorImageInfo sceneDepth) {
     std::vector<Pass> passes;
     std::vector<Upload> uploads;
     {
@@ -995,9 +1006,19 @@ namespace remix {
           const bool image = binding.type != REMIXAPI_HOST_BINDING_SAMPLER_STATE_EXT;
           const bool filtering = binding.type != REMIXAPI_HOST_BINDING_SAMPLED_IMAGE_EXT;
           VkImageView sampled = VK_NULL_HANDLE;
+          VkImageLayout sampledLayout = VK_IMAGE_LAYOUT_GENERAL;
           if (image) {
             sampled = frame.sampled;
-            if (found->target >= REMIXAPI_HOST_TARGET_RESERVED_EXT) {
+            if (found->target == REMIXAPI_HOST_TARGET_SCENE_DEPTH_EXT) {
+              // The renderer's copy of the frame's depth, in its own layout.
+              if (!sceneDepth.imageView) {
+                complete = false;
+                incomplete = &m_stats.skippedViewDepth;
+                break;
+              }
+              sampled = sceneDepth.imageView;
+              sampledLayout = sceneDepth.imageLayout;
+            } else if (found->target >= REMIXAPI_HOST_TARGET_RESERVED_EXT) {
               // The runtime's own images, when the frame has them.
               const VkImageView own = found->target == REMIXAPI_HOST_TARGET_VIEW_DEPTH_EXT ? view.depth
                                       : found->target == REMIXAPI_HOST_TARGET_VIEW_OPAQUE_DEPTH_EXT
@@ -1046,7 +1067,7 @@ namespace remix {
           VkSampler sampler = VK_NULL_HANDLE;
           if (filtering)
             check(pipeline::createSampler(m_device, &samplerInfo, nullptr, &sampler));
-          imageInfos.push_back({sampler, sampled, image ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_UNDEFINED});
+          imageInfos.push_back({sampler, sampled, image ? sampledLayout : VK_IMAGE_LAYOUT_UNDEFINED});
           write.descriptorType = descriptorType(binding.type);
           write.pImageInfo = &imageInfos.back();
         }

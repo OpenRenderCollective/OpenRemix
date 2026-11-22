@@ -1643,7 +1643,15 @@ namespace remix {
         HostPasses::ViewImages view;
         if (m_pathTracer)
           view = {m_pathTracer->viewDepth(), m_pathTracer->viewOpaqueDepth(), m_pathTracer->viewTransmittance()};
-        m_hostPasses.record(buffer, m_frameIndex, target, targetFormat, m_swapchainExtent, layout, view);
+        VkDescriptorImageInfo sceneDepth = {};
+        if (m_hostPasses.wantsSceneDepth()) {
+          // REMIXAPI_HOST_TARGET_SCENE_DEPTH_EXT: the copy soft overlays sample.
+          raster.requestSceneDepth();
+          if (!raster.sceneDepth().imageView)
+            raster.captureSceneDepth(buffer);
+          sceneDepth = raster.sceneDepth();
+        }
+        m_hostPasses.record(buffer, m_frameIndex, target, targetFormat, m_swapchainExtent, layout, view, sceneDepth);
         pass.renderPass = m_resumePass;
         vkCmdBeginRenderPass(buffer, &pass, VK_SUBPASS_CONTENTS_INLINE);
       };

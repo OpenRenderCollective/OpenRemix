@@ -62,7 +62,10 @@ namespace remix {
       VkImageView depth = VK_NULL_HANDLE, opaqueDepth = VK_NULL_HANDLE, transmittance = VK_NULL_HANDLE;
     };
     void record(VkCommandBuffer command, uint32_t slot, VkImage image, VkFormat format, VkExtent2D extent,
-                VkImageLayout imageLayout, const ViewImages &view);
+                VkImageLayout imageLayout, const ViewImages &view, VkDescriptorImageInfo sceneDepth = {});
+    // A pending pass samples REMIXAPI_HOST_TARGET_SCENE_DEPTH_EXT: the frame
+    // captures the scene's depth for record's `sceneDepth` (its view and layout).
+    bool wantsSceneDepth();
 #endif
     remixapi_HostPassStatisticsEXT statistics() const;
 

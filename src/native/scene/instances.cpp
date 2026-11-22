@@ -827,9 +827,9 @@ namespace remix::scene {
     }
     if (const auto *order = static_cast<const remixapi_InstanceInfoRasterOrderEXT *>(
             extension(info.pNext, REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_RASTER_ORDER_EXT))) {
-      // Raster-only overlays that are not masked: a traced instance has no
-      // place in the raster order, a masked one keeps its depth-sorted place.
-      if (d.classification == REMIXAPI_INSTANCE_RASTER_ONLY_EXT && !d.halo && !d.maskSource && !d.maskGroup)
+      // Not masked ones, which keep their depth-sorted place. A traced
+      // instance has its order where it is rasterized (the raster backend).
+      if (!d.halo && !d.maskSource && !d.maskGroup)
         d.rasterOrder = order->order;
     }
     if (const auto *sprite = static_cast<const remixapi_InstanceInfoSpriteEXT *>(

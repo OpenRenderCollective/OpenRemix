@@ -594,9 +594,9 @@ typedef struct remixapi_InstanceIdentityEXT {
   remixapi_Bool rasterVisible;
 } remixapi_InstanceIdentityEXT;
 
-// Optional InstanceInfo pNext on a blended raster-only instance
-// (classification REMIXAPI_INSTANCE_RASTER_ONLY_EXT): its place among the
-// blended raster-only draws of its layer is the host's, not its depth. A
+// Optional InstanceInfo pNext on a blended instance: where it is rasterized
+// (a raster-only instance always; any instance in the raster backend), its
+// place among the blended draws of its layer is the host's, not its depth. A
 // rasterizing host already drew its translucent effects in the order that
 // composes them (particles: back to front per system, a system's smoke before
 // the fire inside it): the centres of their per-frame meshes say little, and
@@ -605,8 +605,8 @@ typedef struct remixapi_InstanceIdentityEXT {
 // ascending order (equal values: in submission order). Blended decals
 // (paint on an opaque surface) are drawn before the layer's other blended
 // draws instead: those with an `order` first, in ascending order, then the
-// rest by depth. Zero, an opaque or a
-// traced instance: ignored. Masked overlays (remixapi_InstanceInfoMaskEXT) keep
+// rest by depth. Zero or an opaque instance: ignored; so is the order of an
+// instance a frame traces. Masked overlays (remixapi_InstanceInfoMaskEXT) keep
 // their depth-sorted place.
 #define REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_RASTER_ORDER_EXT ((remixapi_StructType)0x7fff1013)
 typedef struct remixapi_InstanceInfoRasterOrderEXT {
@@ -1067,6 +1067,12 @@ typedef uint64_t remixapi_HostTargetHandleEXT;
 // farther of that surface and what it shows through a ray portal or mirror).
 // VIEW_DEPTH is the front sheet's where one covers the pixel by half or more.
 #define REMIXAPI_HOST_TARGET_VIEW_OPAQUE_DEPTH_EXT ((remixapi_HostTargetHandleEXT)0xffffffff00000004ull)
+// The scene's depth as the frame's renderer left it, whichever backend drew
+// the frame: a copy of the frame's own depth buffer (the frame's size), red
+// the depth-buffer value of the camera's projection (0 near, 1 far, as the
+// host's own draws with that projection would write it). A pass sampling it
+// is skipped on a frame that has none.
+#define REMIXAPI_HOST_TARGET_SCENE_DEPTH_EXT ((remixapi_HostTargetHandleEXT)0xffffffff00000005ull)
 #define REMIXAPI_HOST_DEPTH_WRITE_EXT 0x100u
 
 #define REMIXAPI_HOST_SHADER_VERTEX_EXT 1u
