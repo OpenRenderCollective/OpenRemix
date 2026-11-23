@@ -54,7 +54,7 @@ namespace remix::ui {
         return 7;
       if (any({"aerialPerspective", "fog"}))
         return 8;
-      if (any({"night", "star", "realMoon"}))
+      if (any({"night", "star", "realMoon", "moonlight", "moonDisc"}))
         return 9;
       if (any({"cloudLayer2"}))
         return 4;
@@ -62,7 +62,8 @@ namespace remix::ui {
         return 5;
       if (any({"cloudTemporal", "cloudHistory", "cloudSpatial", "cloudMarch", "cloudPerformance", "cloudViewSamples",
                "cloudViewStep", "cloudSecondary", "cloudDetailLod", "cloudLightingLod", "nvdfStepScale",
-               "nubis3AdaptiveStep", "nubis3Jitter", "cloudRenderRT"}))
+               "nubis3AdaptiveStep", "nubis3Jitter", "cloudRenderRT", "cloudWeatherJump", "cloudFullRate",
+               "cloudQuarterMarch", "cloudCrossTile", "cloudEmptyPixel", "qualityLevel"}))
         return 6;
       if (any({"cloud", "nvdf", "nubis3"}))
         return 3;
@@ -299,7 +300,8 @@ namespace remix::ui {
           sky.atmosphere[std::string(v.key)] = std::string(v.value);
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Cloud march rate and steps, the cloud shadow shortcut and the near haze's grid.\n"
-                          "High is NUMOS's defaults; Custom means the profile sets other values.");
+                          "High is NUMOS's defaults; Custom means the profile sets other values.\n"
+                          "NUMOS's own quality level (Cloud quality, below) scales the cost on top of these.");
     }
 
     void drawWeather(config::SkySettings &sky, numos::Settings &values) {
@@ -345,11 +347,16 @@ namespace remix::ui {
         numos::SeedContents contents;
         std::string error;
         if (numos::decodeSeed(seed, contents, &error)) {
-          // A seed replaces the configuration: every setting not in it is a default.
-          sky.atmosphere.clear();
+          // A seed replaces the configuration: every setting not in it is a
+          // default. The machine's settings (the quality level) are not part
+          // of a seed and stay as they are.
+          std::erase_if(sky.atmosphere, [](const auto &entry) {
+            const auto *info = numos::findSetting(entry.first);
+            return !info || !(info->flags & numos::NUMOS_SETTING_NO_SEED);
+          });
           static const numos::Settings defaults;
           for (const auto &info : numos::settingInfos())
-            if (!numos::isDeprecated(info) &&
+            if (!numos::isDeprecated(info) && !(info.flags & numos::NUMOS_SETTING_NO_SEED) &&
                 numos::formatSetting(contents.settings, info) != numos::formatSetting(defaults, info))
               store(sky, contents.settings, info);
           message = contents.unknownEntries ? std::to_string(contents.unknownEntries) +

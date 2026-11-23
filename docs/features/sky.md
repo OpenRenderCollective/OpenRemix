@@ -21,7 +21,9 @@ Metal backend does not draw it yet.
   passes through the clouds: NUMOS's cloud shadow map, resampled into a 4 km
   box around the camera in 8 m texels.
 - **Haze.** Aerial perspective and NUMOS's height fog cover the scene before
-  upscaling. The opaque world (`trace::skyOccluderInstanceMask`, instance mask
+  upscaling; the near haze, computed on a coarse grid, is upsampled against
+  the scene's depth so it does not bleed across silhouettes
+  (`rtx.atmosphere.aerialPerspectiveUpsampleDepthTolerance`). The opaque world (`trace::skyOccluderInstanceMask`, instance mask
   bit 3) shadows them, and NUMOS measures the ground level from it.
 - **Game sky.** `rtx.native.sky.gameSky`: `hide` (default) draws NUMOS in place
   of the game's sky, `under` keeps the game's sky behind the clouds and haze,
@@ -55,6 +57,9 @@ NUMOS's own names, saved in the profile and settable with
 | `rtx.atmosphere.hazeWorldScale` | 1 | The haze's world relative to the game's. Below 1 hazes small worlds (0.2 makes a block of 1 m count as 5 m of air). |
 | `rtx.atmosphere.timeOfDayHours` | 12 | The time of day; `timeCycleEnable` runs it, a day in `dayLengthMinutes`. |
 | `rtx.atmosphere.nightGainStops` | 0 | Brightens the night (moonlight, starlight, airglow) for a display. |
+| `rtx.atmosphere.starGainStops`, `moonlightGainStops`, `moonDiscGainStops` | 0 | The night's balance on top of the night gain: the stars and Milky Way, the moons' light, and the drawn moon discs alone. |
+| `rtx.atmosphere.qualityLevel` | 0 | NUMOS's GPU cost level on top of the quality settings: 0 high, 1 medium, 2 low. A setting of the machine: seeds neither carry nor change it. |
+| `rtx.atmosphere.aerialPerspectiveDebugView` | 0 | Shows one measurement of the haze per pixel (sun or sky visibility, brightness, transmittance) with a scale strip; 0 is off. |
 
 The scale of the world comes from `rtx.native.pathtrace.sceneScale` (meters per
 game unit). The stars and Milky Way are NUMOS's procedural galaxy, generated
@@ -74,6 +79,7 @@ lightning, never saved, applied over the profile unless it sets
 | `remixapi_SetSkyWeatherFieldEXT` | One NUMOS weather field (cloud coverage, type, density, base, wind, fog, lightning rate…) over the preset. |
 | `remixapi_ClearSkyWeatherEXT` | Eases back to the profile's weather. |
 | `remixapi_TriggerSkyLightningEXT` | A strike, at a position or placed automatically. |
+| `remixapi_SetSkyLensEXT` | A magnifier lens (a telescopic sight) in one of 4 slots: eyepiece, objective, axis and magnification, set each frame it moves; null removes it. The sky seen through it (clouds, sun, moons, stars) is magnified; the game supplies the magnified scene. |
 | `remixapi_GetSkyStateEXT` | Last frame: active, the distant light's kind and direction, time of day, weather transition, cloud coverage, precipitation. |
 
 ## How it runs

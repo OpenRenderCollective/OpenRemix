@@ -24,6 +24,25 @@ namespace {
   }
 
   bool finite(float value) { return std::isfinite(value); }
+  bool finite(const float *v) { return finite(v[0]) && finite(v[1]) && finite(v[2]); }
+
+  static_assert(REMIXAPI_SKY_LENS_COUNT_EXT == remix::config::skyLensCount);
+
+  // v scaled to unit length; false for a vector too short to have a direction.
+  bool normalize(float *v) {
+    const float length = std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+    if (!(length > 1e-12f))
+      return false;
+    for (int i = 0; i < 3; ++i)
+      v[i] /= length;
+    return true;
+  }
+
+  void cross(const float *a, const float *b, float *out) {
+    out[0] = a[1] * b[2] - a[2] * b[1];
+    out[1] = a[2] * b[0] - a[0] * b[2];
+    out[2] = a[0] * b[1] - a[1] * b[0];
+  }
 } // namespace
 
 extern "C" {
@@ -105,6 +124,43 @@ REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_TriggerSkyLightningEXT(const 
     control.lightningAtPosition = position != nullptr;
     if (position)
       std::copy_n(position, 3, control.lightningPosition);
+    return REMIXAPI_ERROR_CODE_SUCCESS;
+  });
+}
+
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_SetSkyLensEXT(uint32_t slot, const remixapi_SkyLensEXT *lens) {
+  if (slot >= remix::config::skyLensCount)
+    return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
+  remix::config::SkyLens next;
+  bool cut = false;
+  if (lens) {
+    if (lens->structSize != sizeof(*lens) || (lens->flags & ~REMIXAPI_SKY_LENS_FLAG_CUT_EXT) ||
+        !finite(lens->eyepieceCenter) || !finite(lens->objectiveCenter) || !finite(lens->axis) || !finite(lens->up) ||
+        !finite(lens->magnification) || !finite(lens->eyepieceRadius) || !finite(lens->apertureAspect) ||
+        !(lens->magnification > 0) || !(lens->eyepieceRadius > 0) || lens->apertureAspect < 0)
+      return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
+    next.active = true;
+    cut = (lens->flags & REMIXAPI_SKY_LENS_FLAG_CUT_EXT) != 0;
+    std::copy_n(lens->eyepieceCenter, 3, next.eyepieceCenter);
+    std::copy_n(lens->objectiveCenter, 3, next.objectiveCenter);
+    std::copy_n(lens->axis, 3, next.axis);
+    next.eyepieceRadius = lens->eyepieceRadius;
+    next.apertureAspect = lens->apertureAspect;
+    next.magnification = lens->magnification;
+    if (!normalize(next.axis))
+      return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
+    if (next.apertureAspect > 0) {
+      // The rectangle's frame: its height direction made perpendicular to the axis.
+      cross(lens->up, next.axis, next.right);
+      if (!normalize(next.right))
+        return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
+      cross(next.axis, next.right, next.up);
+    }
+  }
+  return withControl([&](remix::config::SkyControl &control) {
+    auto &stored = control.lenses[slot];
+    next.cutGeneration = stored.cutGeneration + (cut || next.active != stored.active);
+    stored = next;
     return REMIXAPI_ERROR_CODE_SUCCESS;
   });
 }
