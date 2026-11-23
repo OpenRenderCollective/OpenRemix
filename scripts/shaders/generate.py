@@ -3,18 +3,20 @@
 
 The build (src/native/meson.build) runs it with the pinned tools of toolchain.py; its output is not committed."""
 import argparse
+import array
 import json
 import lzma
-from concurrent.futures import ThreadPoolExecutor
+import functools
 import os
 from pathlib import Path
 import re
-import struct
 import sys
 import subprocess
 import tempfile
 import threading
+import time
 import nrd
+import stage_cache
 import fsr31
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -32,6 +34,33 @@ OPTIMIZED = {'pathtrace'}
 INLINED = {'bake'}
 # Optimize the expensive depth-primed world shaders without expanding every
 # auxiliary pass. Keep their readable GLSL and the existing word-array ABI.
+# False (generate.py --no-optimize, -Dshader_optimize=false): no stage goes through spirv-opt,
+# for iterating on shaders: the path tracer's then build in about a minute instead of about ten,
+# and the driver takes about twice as long to compile them. Releases keep it on.
+OPTIMIZE = True
+# spirv-opt -O's passes (SPIRV-Tools' RegisterPerformancePasses), for the pinned revision only:
+# run as segments, one process each, they write -O's output byte for byte, and a stage holds its
+# memory only while a segment needs it. In one process a large path-tracing stage keeps its 10 GB
+# peak (the first redundancy elimination, 13 of its 86 s) for its whole run, which let two such
+# stages run at once; in segments the scheduler runs as many as the segments' peaks allow.
+O_PASSES_REVISION = '0539c81f69a3daeb706fd3477dca61435b475156'
+O_PASSES = ['--wrap-opkill', '--eliminate-dead-branches', '--merge-return', '--inline-entry-points-exhaustive',
+            '--eliminate-dead-functions', '--eliminate-dead-code-aggressive', '--private-to-local',
+            '--eliminate-local-single-block', '--eliminate-local-single-store', '--eliminate-dead-code-aggressive',
+            '--scalar-replacement=0', '--convert-local-access-chains', '--eliminate-local-single-block',
+            '--eliminate-local-single-store', '--eliminate-dead-code-aggressive', '--eliminate-local-multi-store',
+            '--eliminate-dead-code-aggressive', '--ccp', '--eliminate-dead-code-aggressive', '--loop-unroll',
+            '--eliminate-dead-branches', '--redundancy-elimination', '--combine-access-chains',
+            '--simplify-instructions', '--scalar-replacement=0', '--convert-local-access-chains',
+            '--eliminate-local-single-block', '--eliminate-local-single-store', '--eliminate-dead-code-aggressive',
+            '--ssa-rewrite', '--eliminate-dead-code-aggressive', '--vector-dce', '--eliminate-dead-inserts',
+            '--eliminate-dead-branches', '--simplify-instructions', '--if-conversion', '--copy-propagate-arrays',
+            '--reduce-load-size', '--eliminate-dead-code-aggressive', '--merge-blocks', '--redundancy-elimination',
+            '--eliminate-dead-branches', '--merge-blocks', '--simplify-instructions']
+# Split at the two redundancy eliminations, the peaks (10 and 6 GB against 3 GB for the rest).
+O_SEGMENTS = [O_PASSES[:21], O_PASSES[21:22], O_PASSES[22:40], O_PASSES[40:41], O_PASSES[41:]]
+# Whether the tools' spirv-opt is the revision O_PASSES was read from (main()).
+SEGMENTED = False
 INLINED_STAGES = {('forward', 'prepassedFrag'), ('forward', 'prepassedSsrFrag'), ('forward', 'inlinePrepassedFrag'), ('forward', 'inlinePrepassedFragCube')}
 BACKENDS = {
     'styled_lighting': ('forward::styled_lighting', 'vulkan1.1', ('compose',)),
@@ -334,46 +363,130 @@ def depfile_inputs(text):
 
 
 def glslang(arguments, output):
-    """glslangValidator -V, recording the files it read."""
+    """glslangValidator -V, recording the files it read; returns its peak memory."""
     depfile = output.with_suffix('.d')
-    subprocess.run(['glslangValidator', '-V', *arguments, '--depfile', str(depfile), '-o', str(output)],
-                   check=True, stdout=subprocess.DEVNULL)
+    peak = stage_cache.run(['glslangValidator', '-V', *arguments, '--depfile', str(depfile), '-o', str(output)],
+                           stdout=subprocess.DEVNULL)
     depend(*depfile_inputs(depfile.read_text()))
+    return peak
+
+
+_resolved = {}
 
 
 def depend(*paths):
-    """Record inputs of the generated files; a scratch copy (metal.py's mode variants) is not one."""
-    resolved = [Path(path).resolve() for path in paths]
+    """Record inputs of the generated files; a scratch copy (metal.py's mode variants) is not one.
+    Each path is resolved once: every stage names the same headers."""
+    resolved = []
+    for path in paths:
+        known = _resolved.get(path)
+        if known is None:
+            known = _resolved[path] = Path(path).resolve()
+        resolved.append(known)
     with _dependencies_lock:
         DEPENDENCIES.update(str(path) for path in resolved if path.is_relative_to(ROOT))
 
 
-def compile_stage(backend, stage, temporary):
-    """SPIR-V words of one stage, compiled and validated; for an optimized
-    backend, the optimized module and its XZ stream."""
+def word_lines(data):
+    """A SPIR-V module (little-endian bytes) as the C array body of its 32-bit words, eight
+    to a line ("  0x07230203, 0x..., ...,\\n"): from the bytes' hex, not word by word."""
+    words = array.array('I', data)
+    if sys.byteorder == 'little':
+        words.byteswap()  # Big-endian bytes: each word's hex digits in printing order.
+    digits = words.tobytes().hex()
+    hexes = ['0x' + digits[i:i + 8] for i in range(0, len(digits), 8)]
+    return ''.join('  ' + ', '.join(hexes[i:i + 8]) + ',\n' for i in range(0, len(hexes), 8))
+
+
+def optimization_runs(backend, optimization):
+    """The spirv-opt invocations of an optimization: the path tracer's -O as its segments where
+    the passes are known, the first validating the input as -O does; else one. Only the path
+    tracer's: its --compact-ids makes the segments' output -O's byte for byte (without it the
+    forward and bake stages' ids come out otherwise)."""
+    if not SEGMENTED or backend not in OPTIMIZED or '-O' not in optimization:
+        return [optimization]
+    before = optimization[:optimization.index('-O')]
+    after = optimization[optimization.index('-O') + 1:]
+    runs = [before + (['--skip-validation'] if i else []) + segment for i, segment in enumerate(O_SEGMENTS)]
+    runs[-1] = runs[-1] + after
+    return runs
+
+
+def compile_stage(backend, stage, temporary, cache, identity, statistics, pool):
+    """SPIR-V of one stage (bytes), compiled and validated; for an optimized
+    backend, the optimized module and its XZ stream. The finished stage is
+    cached by its unoptimized SPIR-V (stage_cache.py)."""
     _, environment, stages = BACKENDS[backend]
     environment = STAGE_ENVIRONMENTS.get((backend, stage), environment)
     defines, source = defines_for(backend, stage, stages)
     binary = Path(temporary) / (backend + '-' + stage + '.spv')
-    glslang(['--target-env', environment, *defines, '-I' + str(ROOT/'third_party/nrd/Shaders'),
-             '-I' + str(ROOT/'third_party/sharc/include'), str(source)], binary)
-    if backend in OPTIMIZED or backend in INLINED or (backend, stage) in INLINED_STAGES:
-
-        optimized = binary.with_suffix('.opt.spv')
+    started = time.monotonic()
+    peak = glslang(['--target-env', environment, *defines, '-I' + str(ROOT/'third_party/nrd/Shaders'),
+                    '-I' + str(ROOT/'third_party/sharc/include'), str(source)], binary)
+    optimization = None
+    if OPTIMIZE and (backend in OPTIMIZED or backend in INLINED or (backend, stage) in INLINED_STAGES):
         optimization = ['-O']
         if backend == 'pathtrace':
             # Inlining combined material paths can exhaust temporary IDs even
             # when dead-code removal leaves a small final module. Compact the
             # result before validating it against the normal SPIR-V limits.
             optimization = ['--max-id-bound=16777216', '-O', '--compact-ids']
-        subprocess.run(['spirv-opt', *optimization, '--target-env=' + environment,
-                        str(binary), '-o', str(optimized)], check=True)
-        binary = optimized
-    subprocess.run(['spirv-val', '--target-env', environment, str(binary)], check=True)
+    recipe = f'{environment} {optimization} {"xz" if backend in OPTIMIZED else "words"}'
+    name = stage_cache.key(identity, recipe, binary.read_bytes())
+    cached = cache.get(name)
+    if cached is not None:
+        if backend in OPTIMIZED:
+            return lzma.decompress(cached), cached
+        return cached
+    segments = []
+    if optimization:
+        runs = optimization_runs(backend, optimization)
+        for i, flags in enumerate(runs):
+            optimized = binary.with_suffix(f'.opt{i}.spv')
+            used = pool.run(estimate_segment(backend, stage, statistics, i, len(runs)),
+                            ['spirv-opt', *flags, '--target-env=' + environment, str(binary), '-o', str(optimized)])
+            segments.append(used)
+            binary = optimized
+    peak = max([peak, *segments, pool.run(256 * 2**20, ['spirv-val', '--target-env', environment, str(binary)])])
+    statistics.set(stage, time.monotonic() - started, peak, segments)
     data = binary.read_bytes()
     if backend in OPTIMIZED:
-        return data, compress(data)
-    return struct.unpack('<' + 'I' * (len(data) // 4), data)
+        packed = compress(data)
+        cache.put(name, packed)
+        return data, packed
+    cache.put(name, data)
+    return data
+
+
+def estimate(backend, stage, statistics):
+    """Seconds a stage's compile is expected to take, for the order they start in: its last or,
+    never measured, the backend's longest."""
+    known = statistics.get(stage)
+    if known:
+        return known[0]
+    if not OPTIMIZE:
+        return 1.0
+    heaviest = statistics.heaviest()
+    if heaviest:
+        return heaviest[0]
+    return 120.0 if backend in OPTIMIZED else 30.0 if backend in INLINED else 1.0
+
+
+def estimate_segment(backend, stage, statistics, index, count):
+    """The peak memory a stage's spirv-opt run `index` (of `count`) is expected to reach: its last
+    with a margin or, never measured, the backend's largest for that run (the largest
+    path-tracing stages take 10 GB in one)."""
+    margin = lambda size: size * 1.15 + 64 * 2**20
+    known = statistics.segments(stage)
+    if known and len(known) == count:
+        return margin(known[index])
+    largest = statistics.largest_segments(count)
+    if largest:
+        return margin(largest[index])
+    if backend in OPTIMIZED:
+        # The largest stage's (temporal): its segments' peaks, or 11 GB in one run.
+        return (4, 11, 1, 7, 1)[index] * 2**30 if count == len(O_SEGMENTS) else 12 * 2**30
+    return 3 * 2**30
 
 
 def compress(data):
@@ -419,6 +532,19 @@ def compressed_output(backend, stages, results):
     return header, bytes(blob)
 
 
+def write_output(path, content):
+    """Writes a generated file only when its content changes: the build restats the generator's
+    outputs, so the sources that include an unchanged one are not compiled again."""
+    # Text as Path.write_text writes it (the platform's line endings).
+    data = content if isinstance(content, bytes) else content.replace('\n', os.linesep).encode()
+    try:
+        if path.read_bytes() == data:
+            return
+    except OSError:
+        pass
+    path.write_bytes(data)
+
+
 def embedded_data(generator, namespace):
     """embedded_data.cpp: the blob beside it, by #embed (found next to the including file)."""
     return ('// Generated by scripts/shaders/' + generator + '; do not edit.\n'
@@ -434,33 +560,43 @@ def embedded_data(generator, namespace):
 
 
 def process(backends, jobs=None):
-    """Compiles every stage of the backends concurrently, one task per stage."""
-    with tempfile.TemporaryDirectory() as temporary, \
-            ThreadPoolExecutor(max_workers=jobs or os.cpu_count() or 1) as pool:
-
-        tasks = {(b, stage): pool.submit(compile_stage, b, stage, temporary)
-                 for b in backends for stage in BACKENDS[b][2]}
+    """Compiles every stage of the backends concurrently, one task per stage: the
+    longest first, at most `jobs` at once (none or 0: one per CPU), their processes as many at
+    once as memory holds (stage_cache.Pool)."""
+    cache = stage_cache.Cache(ROOT)
+    identity = stage_cache.tool_identity(['glslangValidator', 'spirv-opt', 'spirv-val'])
+    statistics = {b: stage_cache.Statistics(cache, b) for b in backends}
+    pool = stage_cache.Pool()
+    with tempfile.TemporaryDirectory() as temporary:
+        work = []
+        for b in backends:
+            for stage in BACKENDS[b][2]:
+                work.append(((b, stage), functools.partial(compile_stage, b, stage, temporary, cache, identity,
+                                                           statistics[b], pool), estimate(b, stage, statistics[b])))
+        try:
+            tasks = stage_cache.schedule(work, jobs or os.cpu_count() or 1)
+        finally:
+            for values in statistics.values():
+                values.save()
+        cache.prune()
         for backend in backends:
             namespace, _, stages = BACKENDS[backend]
             target = generated_directory(backend) / 'embedded.h'
             target.parent.mkdir(parents=True, exist_ok=True)
 
             if backend in OPTIMIZED:
-                header, blob = compressed_output(backend, stages, {s: tasks[backend, s].result() for s in stages})
-                target.write_text(header)
-                target.with_suffix('.bin').write_bytes(blob)
-                target.with_name('embedded_data.cpp').write_text(embedded_data('generate.py ' + backend, namespace))
+                header, blob = compressed_output(backend, stages, {s: tasks[backend, s] for s in stages})
+                write_output(target, header)
+                write_output(target.with_suffix('.bin'), blob)
+                write_output(target.with_name('embedded_data.cpp'), embedded_data('generate.py ' + backend, namespace))
                 continue
-            output = ('// Generated by scripts/shaders/generate.py ' + backend + '; do not edit.\n'
-                      '#pragma once\n#include <cstdint>\nnamespace remix::' + namespace + ' {\n')
+            parts = ['// Generated by scripts/shaders/generate.py ' + backend + '; do not edit.\n'
+                     '#pragma once\n#include <cstdint>\nnamespace remix::' + namespace + ' {\n']
             for stage in stages:
-                words = tasks[backend, stage].result()
-                output += 'inline constexpr uint32_t ' + stage + 'Shader[] = {\n'
-                for i in range(0, len(words), 8):
-                    output += '  ' + ', '.join(f'0x{x:08x}' for x in words[i:i+8]) + ',\n'
-                output += '};\n'
-            output += '}\n'
-            target.write_text(output)
+                parts += ['inline constexpr uint32_t ' + stage + 'Shader[] = {\n', word_lines(tasks[backend, stage]),
+                          '};\n']
+            parts.append('}\n')
+            write_output(target, ''.join(parts))
 
 
 def use_tools(record):
@@ -483,7 +619,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     # metal translates the other backends' SPIR-V; 'all' leaves it out (it needs macOS and Xcode).
     parser.add_argument('backend', choices=[*BACKENDS, 'nrd', 'fsr31', 'metal', 'sky', 'all'])
-    parser.add_argument('--jobs', type=int, help='Maximum concurrent GLSL compilation tasks')
+    parser.add_argument('--no-optimize', action='store_true',
+                        help='Skip spirv-opt, for iterating on shaders (slower driver compiles)')
+    parser.add_argument('--jobs', type=int, help='Maximum concurrent GLSL compilation tasks (0: one per CPU, as many as memory holds)')
     parser.add_argument('--output', type=Path, help='Generated src/native tree (the build\'s); default _work/shaders/src/native')
     parser.add_argument('--tools', type=Path, help='Pinned tools recorded by toolchain.py --output')
     parser.add_argument('--depfile', type=Path, help='Make-style dependencies of the generated files')
@@ -494,13 +632,20 @@ def main():
     mode.add_argument('--check', action='store_true', help='nrd, fsr31: compare generated output without modifying files')
     mode.add_argument('--validate', action='store_true', help='nrd, fsr31: validate committed SPIR-V using only spirv-val')
     args = parser.parse_args()
-    if args.jobs is not None and args.jobs < 1:
-        parser.error('--jobs must be positive')
-    global OUTPUT
+    if args.jobs is not None and args.jobs < 0:
+        parser.error('--jobs must not be negative')
+    global OUTPUT, OPTIMIZE, SEGMENTED
+    OPTIMIZE = not args.no_optimize
     if args.output:
         OUTPUT = args.output.resolve()
     if args.tools:
         use_tools(args.tools)
+    try:
+        result = subprocess.run(['spirv-opt', '--version'], capture_output=True, text=True)
+        version = result.stdout + result.stderr  # SPIRV-Tools prints its version to stderr.
+    except OSError:
+        version = ''
+    SEGMENTED = O_PASSES_REVISION in version
     selected = [*BACKENDS, 'nrd', 'fsr31'] if args.backend == 'all' else [args.backend]
     glsl = [backend for backend in selected if backend in BACKENDS]
     if (args.check or args.validate) and (glsl or 'metal' in selected or 'sky' in selected):

@@ -9,6 +9,8 @@ The night sky's stars and diffuse galaxy are NUMOS's procedural ones (tools/buil
 which needs numpy), not the catalogue files in assets/nightsky, whose Milky Way data is CC BY-SA.
 The moon's surface is assets/nightsky/moon.bin (NASA media, not copyrighted).
 """
+import hashlib
+import inspect
 import os
 from pathlib import Path
 import re
@@ -45,8 +47,18 @@ def slangc():
     return path
 
 
+def python():
+    """A Python interpreter for NUMOS's tools: meson's runpython is a frozen interpreter, not one
+    that runs scripts by path or has numpy, so the installed one."""
+    py = sys.executable
+    if not (py.lower().endswith('python.exe') or py.lower().endswith('python')):
+        import shutil
+        py = shutil.which('python3') or shutil.which('python') or py
+    return py
+
+
 def compile_numos(build_shaders, directory):
-    subprocess.run([sys.executable, '-I', str(NUMOS / 'tools/build_shaders.py'), '--slangc', slangc(), '--out',
+    subprocess.run([python(), '-I', str(NUMOS / 'tools/build_shaders.py'), '--slangc', slangc(), '--out',
                     str(directory), '--jobs', str(os.cpu_count() or 4)], check=True, stdout=subprocess.DEVNULL)
 
 
@@ -76,12 +88,11 @@ def compile_adapters(build_shaders, directory):
 def night_sky(directory):
     """{asset: bytes} of the night sky; without numpy the sky has the moon and no stars."""
     assets = {'moon': (NUMOS / 'assets/nightsky/moon.bin').read_bytes()}
-    try:
-        import numpy  # noqa: F401
-    except ImportError:
+    py = python()
+    if subprocess.run([py, '-I', '-c', 'import numpy'], capture_output=True).returncode:
         print('sky: numpy is not installed; the night sky is built without stars', file=sys.stderr)
         return assets
-    subprocess.run([sys.executable, str(NUMOS / 'tools/build_custom_sky.py'), '--out', str(directory), '--seed',
+    subprocess.run([py, '-I', str(NUMOS / 'tools/build_custom_sky.py'), '--out', str(directory), '--seed',
                     NIGHT_SKY_SEED], check=True, stdout=subprocess.DEVNULL)
     files = {'stars': 'stars.bin', 'milkyWay': 'milkyway.bin', 'starlightLow': 'starlight_low.bin'}
     return assets | {asset: (directory / name).read_bytes() for asset, name in files.items()}
@@ -118,24 +129,62 @@ def write(numos_dir, adapters, adapter_table, night_sky_assets):
     header += '// embedded.bin (embedded_data.cpp).\nextern const unsigned char embeddedData[];\nextern const size_t embeddedDataBytes;\n}\n'
     target = generate.OUTPUT / 'sky/shaders/embedded.h'
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(header)
-    target.with_suffix('.bin').write_bytes(bytes(blob))
-    target.with_name('embedded_data.cpp').write_text(generate.embedded_data('generate.py sky', 'sky'))
+    generate.write_output(target, header)
+    generate.write_output(target.with_suffix('.bin'), bytes(blob))
+    generate.write_output(target.with_name('embedded_data.cpp'), generate.embedded_data('generate.py sky', 'sky'))
     # The adapters' binding table, in NUMOS's format (numos::PassInfo per Stage).
-    target.with_name('adapter_passes.inc').write_text(adapter_table)
+    generate.write_output(target.with_name('adapter_passes.inc'), adapter_table)
+
+
+OUTPUTS = ('embedded.h', 'embedded.bin', 'embedded_data.cpp', 'adapter_passes.inc')
+
+
+def inputs():
+    return [PASS_TABLE, LAYOUT_CHECKS, NUMOS / 'assets/nightsky/moon.bin', *sorted((NUMOS / 'tools').glob('*.py')),
+            *sorted(path for path in (NUMOS / 'shaders').rglob('*') if path.is_file()),
+            *sorted(path for path in ADAPTERS.rglob('*') if path.is_file() and path.name != 'meson.build')]
+
+
+def cache_key():
+    """Everything the generated sky depends on: its sources, this script and the compression,
+    slangc, and the interpreter that builds the night sky (and whether it has numpy)."""
+    digest = hashlib.sha256()
+    for path in inputs():
+        digest.update(str(path.relative_to(generate.ROOT)).replace('\\', '/').encode() + b'\0')
+        digest.update(path.read_bytes())
+    digest.update(Path(__file__).read_bytes())
+    digest.update(inspect.getsource(generate.compress).encode())
+    version = subprocess.run([slangc(), '-version'], capture_output=True)
+    digest.update(version.stdout + version.stderr)
+    py = python()
+    digest.update(subprocess.run([py, '-I', '-c', 'import sys, lzma\ntry:\n import numpy; n = numpy.__version__\n'
+                                  'except ImportError:\n n = None\nprint(sys.version, n)'],
+                                 capture_output=True).stdout)
+    return digest.hexdigest()
 
 
 def process():
-    build_shaders, gen_pass_table, gen_layout_checks = tools()
-    with tempfile.TemporaryDirectory() as temporary:
-        numos_dir, adapter_dir = Path(temporary) / 'numos', Path(temporary) / 'adapters'
-        adapter_dir.mkdir()
-        compile_numos(build_shaders, numos_dir)
-        check_layout(gen_pass_table, gen_layout_checks, numos_dir)
-        adapters = compile_adapters(build_shaders, adapter_dir)
-        write(numos_dir, adapters, gen_pass_table.generate(adapter_dir), night_sky(Path(temporary) / 'night_sky'))
+    # The whole sky is cached by its inputs (stage_cache.py's directory): it takes a minute or
+    # two and its inputs change rarely, while the generators rerun it on any change of theirs.
+    import stage_cache
+    cache = stage_cache.Cache(generate.ROOT)
+    key = 'sky-' + cache_key()
+    target = generate.OUTPUT / 'sky/shaders/embedded.h'
+    cached = [cache.get(f'{key}-{name}') for name in OUTPUTS]
+    if all(data is not None for data in cached):
+        target.parent.mkdir(parents=True, exist_ok=True)
+        for name, data in zip(OUTPUTS, cached):
+            generate.write_output(target.with_name(name), data)
+    else:
+        build_shaders, gen_pass_table, gen_layout_checks = tools()
+        with tempfile.TemporaryDirectory() as temporary:
+            numos_dir, adapter_dir = Path(temporary) / 'numos', Path(temporary) / 'adapters'
+            adapter_dir.mkdir()
+            compile_numos(build_shaders, numos_dir)
+            check_layout(gen_pass_table, gen_layout_checks, numos_dir)
+            adapters = compile_adapters(build_shaders, adapter_dir)
+            write(numos_dir, adapters, gen_pass_table.generate(adapter_dir), night_sky(Path(temporary) / 'night_sky'))
+        for name in OUTPUTS:
+            cache.put(f'{key}-{name}', target.with_name(name).read_bytes())
     # The adapter folder itself: adding an adapter changes its time stamp.
-    generate.depend(PASS_TABLE, LAYOUT_CHECKS, ADAPTERS, NUMOS / 'assets/nightsky/moon.bin',
-                    *(NUMOS / 'tools').glob('*.py'),
-                    *(path for path in (NUMOS / 'shaders').rglob('*') if path.is_file()),
-                    *(path for path in ADAPTERS.rglob('*') if path.is_file() and path.name != 'meson.build'))
+    generate.depend(ADAPTERS, *inputs())

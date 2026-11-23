@@ -4,4 +4,5 @@ raster_library = static_library('remix_raster',
   link_with : [scene_library, pipeline_library],
   dependencies : [vulkan_dep], include_directories : [remix_public_include, native_include, image_include],
   cpp_args : cpp.get_supported_arguments('-Wno-missing-field-initializers'),
+  cpp_pch : '../pch/native_pch.h',
   gnu_symbol_visibility : 'hidden', pic : true)

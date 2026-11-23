@@ -327,8 +327,8 @@ def process():
         blob += results[name][2]
     target = generate.OUTPUT / 'metal/shaders/embedded.h'
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(header(results, offsets))
-    target.with_suffix('.bin').write_bytes(bytes(blob))
-    target.with_name('embedded_data.cpp').write_text(generate.embedded_data('generate.py metal', 'metal::shaders'))
+    generate.write_output(target, header(results, offsets))
+    generate.write_output(target.with_suffix('.bin'), bytes(blob))
+    generate.write_output(target.with_name('embedded_data.cpp'), generate.embedded_data('generate.py metal', 'metal::shaders'))
     # The committed NRD SPIR-V is translated too.
     generate.depend(ROOT / 'src/native/denoise/shaders/nrd_embedded.h')
