@@ -71,6 +71,22 @@ namespace remix::sky {
     }
 
     numos::Vector3 vector(const float *v) { return {v[0], v[1], v[2]}; }
+    numos::vec3 shaderVector(const numos::Vector3 &v) { return {v.x, v.y, v.z}; }
+
+    static_assert(config::skyLensCount == numos::kMaxLenses);
+
+    numos::LensGeometry lensGeometry(const config::SkyLens &lens) {
+      numos::LensGeometry geometry;
+      geometry.eyepieceCenter = vector(lens.eyepieceCenter);
+      geometry.eyepieceRadius = lens.eyepieceRadius;
+      geometry.apertureAspect = lens.apertureAspect;
+      geometry.axis = vector(lens.axis);
+      geometry.right = vector(lens.right);
+      geometry.up = vector(lens.up);
+      geometry.objectiveCenter = vector(lens.objectiveCenter);
+      geometry.magnification = lens.magnification;
+      return geometry;
+    }
   } // namespace
 
   struct Renderer::State {
@@ -98,6 +114,14 @@ namespace remix::sky {
     bool zUp = true, clouds = false, rayQuery = true;
     std::chrono::steady_clock::time_point last{};
     bool begun = false;
+    // The magnifier lenses of the last recorded frame, by slot, and this
+    // frame's as the composites read them (NUMOS's own table, its current half).
+    struct Lens {
+      bool active = false;
+      uint64_t cutGeneration = 0;
+      numos::LensGeometry geometry;
+    } lenses[numos::kMaxLenses];
+    numos::CloudLensArgs lensArgs{};
     State(PhysicalDevice physical, Device device) : bridge(physical, device, hostPasses()) {}
 
     // Dispatches an adapter, binding NUMOS outputs and the host's resources by
@@ -139,6 +163,12 @@ namespace remix::sky {
               {"NightSkyStarlightLow", texture(out.nightSkyStarlightLow)},
               {"NightSkyMoon", texture(out.nightSkyMoon)},
               {"atmosphereArgs", {.resource = args.buffer, .offset = args.offset, .size = args.size}}};
+    }
+
+    // The composites' lens table.
+    numos::Binding lensBinding() {
+      const auto region = bridge.uploadConstants(&lensArgs, sizeof(lensArgs));
+      return {.resource = region.buffer, .offset = region.offset, .size = region.size};
     }
   };
 
@@ -201,11 +231,39 @@ namespace remix::sky {
       return false;
     }
     uint32_t ready = 0, total = 0;
-    // Of the screen cloud pass's variants, only the one the settings select.
+    // Of the screen cloud pass's variants, only those the settings select:
+    // the reference tracer alone, or the march with the sun shadows of the
+    // performance preset, which NUMOS's low quality level (2) also turns on.
+    // The march rate picks among the rest per frame.
     const auto &settings = m->numos.settings();
-    const auto cloud = settings.cloudProfilingMode == 9       ? numos::PassId::cloud_render_reference
-                       : settings.cloudPerformancePreset == 1 ? numos::PassId::cloud_render_fast
-                                                              : numos::PassId::cloud_render;
+    const bool reference = settings.cloudProfilingMode == 9;
+    const bool fast = settings.cloudPerformancePreset == 1 || settings.qualityLevel >= 2;
+    const auto cloudNeeded = [&](numos::PassId id) {
+      using enum numos::PassId;
+      switch (id) {
+      case cloud_render_reference:
+        return reference;
+      case cloud_render:
+      case cloud_render_march:
+      case cloud_render_fallback:
+        return !reference && !fast;
+      case cloud_render_fast:
+      case cloud_render_march_fast:
+      case cloud_render_fallback_fast:
+        return !reference && fast;
+      // Full-precision samples: the split quarter march's schedules 2 and 3.
+      case cloud_render_march_full:
+        return !reference && !fast && settings.cloudQuarterMarchSchedule >= 2;
+      case cloud_render_march_full_fast:
+        return !reference && fast && settings.cloudQuarterMarchSchedule >= 2;
+      case cloud_render_rebuild_full:
+        return !reference && settings.cloudQuarterMarchSchedule >= 2;
+      case cloud_render_rebuild:
+        return !reference;
+      default:
+        return true;
+      }
+    };
     const auto needed = [&](uint32_t pass) {
       const auto id = numos::PassId(pass);
       if (pass < numos::passCount() && !m->rayQuery) {
@@ -215,10 +273,7 @@ namespace remix::sky {
           if (info.bindings[i].kind == numos::BindingKind::AccelerationStructure)
             return false;
       }
-      return pass >= numos::passCount() ||
-             (id != numos::PassId::cloud_render && id != numos::PassId::cloud_render_fast &&
-              id != numos::PassId::cloud_render_reference) ||
-             id == cloud;
+      return pass >= numos::passCount() || cloudNeeded(id);
     };
     if (!m->bridge.preparePipelines(needed, ready, total)) {
       m_status = "Compiling sky shaders (" + std::to_string(ready) + " of " + std::to_string(total) + ")";
@@ -315,6 +370,33 @@ namespace remix::sky {
       inputs.lightningStrikeAtPosition = control.lightningAtPosition;
       inputs.lightningStrikePosition = {control.lightningPosition[0], control.lightningPosition[1],
                                         control.lightningPosition[2]};
+    }
+
+    // The game's lenses. A slot keeps its history while the same lens stays
+    // in it; a lens that left is still the previous frame's for this one.
+    m->lensArgs = {};
+    for (uint32_t slot = 0; slot < numos::kMaxLenses; ++slot) {
+      const auto &set = control.lenses[slot];
+      auto &lens = inputs.lenses[slot];
+      auto &previous = m->lenses[slot];
+      lens.active = set.active;
+      lens.previousActive = previous.active;
+      lens.previous = previous.geometry;
+      if (set.active) {
+        lens.current = lensGeometry(set);
+        lens.historyValid = previous.active && previous.cutGeneration == set.cutGeneration;
+        m->lensArgs.lensMask |= 1u << slot;
+        auto &shader = m->lensArgs.lenses[slot];
+        shader.eyepieceCenter = shaderVector(lens.current.eyepieceCenter);
+        shader.eyepieceRadius = lens.current.eyepieceRadius;
+        shader.axis = shaderVector(lens.current.axis);
+        shader.magnification = lens.current.magnification;
+        shader.right = shaderVector(lens.current.right);
+        shader.apertureAspect = lens.current.apertureAspect;
+        shader.up = shaderVector(lens.current.up);
+        shader.objectiveCenter = shaderVector(lens.current.objectiveCenter);
+      }
+      previous = {set.active, set.cutGeneration, lens.current};
     }
 
     m->bridge.begin(command);
@@ -508,9 +590,11 @@ namespace remix::sky {
     const auto camera = m->bridge.uploadConstants(&m->camera, sizeof(m->camera));
     const auto texture = [](numos::GpuHandle handle) { return numos::Binding{.resource = handle}; };
     named["camera"] = {.resource = camera.buffer, .offset = camera.offset, .size = camera.size};
+    named["cloudLens"] = m->lensBinding();
     named["cloudRender"] = texture(out.cloudRender);
     named["cloudDepth"] = texture(out.cloudDepth);
     named["apNearScatter"] = texture(out.apNearScatter);
+    named["apTileDepth"] = texture(out.apTileDepth);
     named["apFarScatter"] = texture(out.apFarScatter);
     named["apFarTransmittance"] = texture(out.apFarTransmittance);
     named["apFroxelAux"] = texture(out.apFroxelAux);
@@ -586,9 +670,11 @@ namespace remix::sky {
     const auto camera = m->bridge.uploadConstants(&m->camera, sizeof(m->camera));
     const auto texture = [](numos::GpuHandle handle) { return numos::Binding{.resource = handle}; };
     named["camera"] = {.resource = camera.buffer, .offset = camera.offset, .size = camera.size};
+    named["cloudLens"] = m->lensBinding();
     named["cloudRender"] = texture(out.cloudRender);
     named["cloudDepth"] = texture(out.cloudDepth);
     named["apNearScatter"] = texture(out.apNearScatter);
+    named["apTileDepth"] = texture(out.apTileDepth);
     named["apFarScatter"] = texture(out.apFarScatter);
     named["apFarTransmittance"] = texture(out.apFarTransmittance);
     named["apFroxelAux"] = texture(out.apFroxelAux);

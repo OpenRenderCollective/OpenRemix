@@ -4,6 +4,18 @@
 #include <string>
 
 namespace remix::config {
+  // A magnifier lens in front of the camera (remixapi_SkyLensEXT), in render
+  // space: axis, right and up are orthonormal.
+  struct SkyLens {
+    bool active = false;
+    // Counts the times the slot's image lost its history (a new lens, a zoom step).
+    uint64_t cutGeneration = 0;
+    float eyepieceCenter[3] = {}, objectiveCenter[3] = {};
+    float axis[3] = {0, 0, 1}, right[3] = {1, 0, 0}, up[3] = {0, 1, 0};
+    float eyepieceRadius = 0, apertureAspect = 0, magnification = 1;
+  };
+  inline constexpr uint32_t skyLensCount = 4;
+
   // What the game sets on the sky through remix_sky_ext.h: runtime state,
   // never saved, applied over the profile's sky settings unless the profile
   // ignores game control (SkySettings::ignoreGameControl). Each part counts
@@ -34,6 +46,10 @@ namespace remix::config {
     uint64_t lightningGeneration = 0;
     bool lightningAtPosition = false;
     float lightningPosition[3] = {};
+
+    // The magnifier lenses, by slot. They are the game's geometry rather than
+    // the sky's look, so they apply even while the profile ignores game control.
+    SkyLens lenses[skyLensCount];
   };
 
   // What the sky did last frame, for remix_sky_ext.h and the Sky tab.

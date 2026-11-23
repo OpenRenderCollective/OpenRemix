@@ -45,7 +45,8 @@ int main(int argc, char **argv) {
   const auto lightning =
       reinterpret_cast<PFN_remixapi_TriggerSkyLightningEXT>(symbol("remixapi_TriggerSkyLightningEXT"));
   const auto getState = reinterpret_cast<PFN_remixapi_GetSkyStateEXT>(symbol("remixapi_GetSkyStateEXT"));
-  require(setTime && setPreset && setField && clearWeather && lightning && getState, "Sky exports");
+  const auto setLens = reinterpret_cast<PFN_remixapi_SetSkyLensEXT>(symbol("remixapi_SetSkyLensEXT"));
+  require(setTime && setPreset && setField && clearWeather && lightning && getState && setLens, "Sky exports");
 
   constexpr auto invalid = REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS, early = REMIXAPI_ERROR_CODE_NOT_INITIALIZED;
   remixapi_SkyTimeEXT time{
@@ -68,6 +69,40 @@ int main(int argc, char **argv) {
   require(clearWeather(1) == early && clearWeather(NAN) == invalid, "Clear weather");
   const float position[3] = {0, 100, 0}, bad[3] = {0, NAN, 0};
   require(lightning(position) == early && lightning(nullptr) == early && lightning(bad) == invalid, "Lightning");
+
+  remixapi_SkyLensEXT lens{};
+  lens.structSize = sizeof(lens);
+  lens.version = 1;
+  lens.magnification = 4;
+  lens.eyepieceCenter[2] = .1f;
+  lens.eyepieceRadius = .02f;
+  lens.objectiveCenter[2] = .4f;
+  lens.axis[2] = 2;
+  require(setLens(0, &lens) == early && setLens(3, nullptr) == early, "Lens before startup");
+  require(setLens(REMIXAPI_SKY_LENS_COUNT_EXT, &lens) == invalid, "Lens slot range");
+  const auto rejected = [&](auto &&change) {
+    auto changed = lens;
+    change(changed);
+    return setLens(0, &changed) == invalid;
+  };
+  require(rejected([](auto &l) { l.structSize = 8; }), "Lens struct size");
+  require(rejected([](auto &l) { l.flags = 2; }), "Lens flags");
+  require(rejected([](auto &l) { l.magnification = 0; }) && rejected([](auto &l) { l.magnification = NAN; }),
+          "Lens magnification");
+  require(rejected([](auto &l) { l.eyepieceRadius = 0; }), "Lens eyepiece radius");
+  require(rejected([](auto &l) { l.axis[2] = 0; }), "Lens axis");
+  require(rejected([](auto &l) { l.objectiveCenter[1] = INFINITY; }), "Lens position finite");
+  // A rectangular eyepiece needs a height direction off the axis.
+  require(rejected([](auto &l) { l.apertureAspect = 1.5f; }), "Rectangular lens without up");
+  require(rejected([](auto &l) {
+            l.apertureAspect = 1.5f;
+            l.up[2] = 1;
+          }),
+          "Rectangular lens with up along the axis");
+  lens.apertureAspect = 1.5f;
+  lens.up[1] = 1;
+  lens.flags = REMIXAPI_SKY_LENS_FLAG_CUT_EXT;
+  require(setLens(1, &lens) == early, "Rectangular lens before startup");
 
   remixapi_SkyStateEXT state{};
   require(getState(nullptr) == invalid, "State output");

@@ -38,6 +38,34 @@ typedef struct remixapi_SkyStateEXT {
   char weatherPreset[32]; // the game's weather preset, or empty
 } remixapi_SkyStateEXT;
 
+// A magnifier in front of the camera, such as a telescopic sight: camera rays
+// that meet the eyepiece plane inside the eyepiece leave the objective with
+// the tangent of their angle to the axis divided by the magnification. The
+// sky follows those rays where the frame shows it through the lens: its
+// clouds, sun, moons and stars are magnified. The haze is not, and the
+// renderer does not magnify the scene: this describes a lens whose magnified
+// image the game supplies. Where that image has a surface, the frame's depth
+// there must be the surface's virtual distance (the camera ray's distance to
+// the eyepiece plane plus the distance from the objective to the surface).
+// Positions and lengths are in world space, as the camera's.
+// structSize is sizeof(remixapi_SkyLensEXT); version is 1.
+#define REMIXAPI_SKY_LENS_COUNT_EXT 4u
+// This call's lens is not the one the slot held before, or its image jumped
+// (a zoom step): the sky seen through it starts without history.
+#define REMIXAPI_SKY_LENS_FLAG_CUT_EXT 1u
+typedef struct remixapi_SkyLensEXT {
+  uint32_t structSize;
+  uint32_t version;
+  uint32_t flags;           // REMIXAPI_SKY_LENS_FLAG_*
+  float magnification;      // above 0; 4 is a 4x sight
+  float eyepieceCenter[3];
+  float eyepieceRadius;     // above 0; a rectangular eyepiece's half height
+  float objectiveCenter[3]; // where the magnified rays start
+  float apertureAspect;     // a rectangle's half width over its half height; 0: a circular eyepiece
+  float axis[3];            // the optical axis, pointing out of the objective; any length above 0
+  float up[3];              // a rectangular eyepiece's height direction, not parallel to the axis; unused for a circle
+} remixapi_SkyLensEXT;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -66,6 +94,11 @@ REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_ClearSkyWeatherEXT(float tran
 // where an automatic strike would land. Needs rtx.atmosphere.lightningEnable.
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_TriggerSkyLightningEXT(const float *position);
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetSkyStateEXT(remixapi_SkyStateEXT *state);
+// Places the magnifier lens of a slot (below REMIXAPI_SKY_LENS_COUNT_EXT), or
+// removes it with null. A lens keeps its slot while it exists and stays where
+// it was set: set it again each frame it moves. Not part of the sky's look,
+// so rtx.native.sky.ignoreGameControl does not affect it.
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_SetSkyLensEXT(uint32_t slot, const remixapi_SkyLensEXT *lens);
 #ifdef __cplusplus
 }
 #endif
@@ -79,3 +112,4 @@ typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_SetSkyWeatherFieldEXT)(con
 typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_ClearSkyWeatherEXT)(float transitionSeconds);
 typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_TriggerSkyLightningEXT)(const float *position);
 typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_GetSkyStateEXT)(remixapi_SkyStateEXT *state);
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_SetSkyLensEXT)(uint32_t slot, const remixapi_SkyLensEXT *lens);

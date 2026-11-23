@@ -23,6 +23,11 @@
 
 #include "numos/host/numos_host.slangh"
 
+// The game's magnifier lenses (remixapi_SetSkyLensEXT): this frame's half of NUMOS's table.
+#include "numos/lib/cloud_lens.h"
+[[vk::binding(28)]] ConstantBuffer<CloudLensArgs> cloudLens;
+#include "numos/lib/cloud_lens.slangh"
+
 [[vk::binding(9)]] ConstantBuffer<AtmosphereArgs> atmosphereArgs;
 [[vk::binding(10)]] ConstantBuffer<Camera> camera;
 [[vk::binding(11)]] Texture2D<float4> cloudRender;
@@ -36,6 +41,8 @@
 [[vk::binding(19)]] SamplerState apSampler;
 [[vk::binding(20)]] Texture2D<float> linearViewZ;
 [[vk::binding(21)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> color;
+// The deepest surface of each haze froxel column, for the near field's depth-aware upsample.
+[[vk::binding(27)]] Texture2D<float> apTileDepth;
 
 // gameSky: 0 hidden (NUMOS's sky replaces the miss), 1 under (the game's sky
 // stays behind the clouds and air), 2 over (sky pixels are left alone).
@@ -79,8 +86,19 @@ void main(uint2 pixel : SV_DispatchThreadID)
   vec3 radiance = input.rgb / scale;
   if (miss && push.gameSky == 0u)
   {
+    // Through a lens the sky is the one its magnified ray sees, as the screen clouds'.
+    vec3 skyDirection = ray.worldDirection;
+    uint lens = kCloudLensNone;
+    if (cloudLens.lensMask != 0u)
+    {
+      lens = cloudLensFind(cloudLens.lensMask, 0u, cameraGetWorldPosition(camera), ray.worldDirection);
+    }
+    if (lens != kCloudLensNone)
+    {
+      skyDirection = cloudLensMagnify(cloudLens.lenses[lens], ray.worldDirection);
+    }
     // The cloud composite below covers the disks.
-    radiance = evalSkyRadiance(ray.worldDirection, args, pixel, push.frameIndex, push.zUp != 0u,
+    radiance = evalSkyRadiance(skyDirection, args, pixel, push.frameIndex, push.zUp != 0u,
                                /*isPrimaryRay=*/true, /*applySkyIndirectRadianceScale=*/false,
                                /*skyDisks=*/NUMOS_SKY_DISKS_ALL);
   }
@@ -90,7 +108,7 @@ void main(uint2 pixel : SV_DispatchThreadID)
                            pixel, miss, viewDistance, 0.0f, vec3(1.0f), radiance, alphaBlend,
                            /*alphaBlendSurfaceValid=*/false, 0.0f, foreground, 0.0f, /*performedPSR=*/false,
                            cloudOverPixel);
-  numosApplyAerialPerspective(camera, args, /*hostSkyOverride=*/false, apNearScatter, apFarScatter,
+  numosApplyAerialPerspective(camera, args, /*hostSkyOverride=*/false, apNearScatter, apTileDepth, apFarScatter,
                               apFarTransmittance, apFroxelAux, apLights, apLightClusters, apSampler, pixel, miss,
                               viewDistance, vec3(1.0f), vec3(1.0f), cloudOverPixel, radiance);
   color[pixel] = vec4(max(radiance, vec3(0.0f)) * scale, input.a);
