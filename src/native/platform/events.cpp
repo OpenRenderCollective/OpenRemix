@@ -80,6 +80,12 @@ namespace remix {
     if (!self || !event) {
       return true;
     }
+    // An adopted window's events arrive on its own thread, through its window
+    // procedure, while the host may call PumpEvents on another (its API thread),
+    // where text input waiting for the window's thread never starts: the panel's
+    // fields then never got a character. It starts here instead.
+    if (self->m_textInputPending && self->onWindowThread())
+      self->applyTextInput();
     if (self->menuShortcut(*event)) {
       return false;
     }
