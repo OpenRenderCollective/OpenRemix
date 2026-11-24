@@ -32,6 +32,8 @@
 //   REMIX_BENCH_BLOOD_CUTOUT [0] 1: the drops alpha-tested, not blended
 //   REMIX_BENCH_FREEZE [0] 1: the particles hold still
 //   REMIX_BENCH_UPDATE [0] 1: particle meshes are updated in place (refits)
+//   REMIX_BENCH_SMOKE_LIT [0] 1: the smoke is a raster-only overlay lit by the scene
+//     (REMIXAPI_SPRITE_LIT_EXT), as a host's particles are
 //   REMIX_BENCH_CONFIG_FILE a profile (key = value lines) applied first
 //   REMIX_BENCH_CONFIG "key=value;key=value" applied after it
 //   REMIX_BENCH_SCREENSHOT <file.png> the frame after the measured ones
@@ -472,6 +474,7 @@ int main() {
   distant.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DISTANT_EXT;
   distant.direction = {.3f, .5f, -.8f};
   distant.angularDiameterDegrees = .5f;
+  distant.volumetricRadianceScale = 1; // lights the volume cells (LIT smoke)
   remixapi_LightInfo sunInfo{};
   sunInfo.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
   sunInfo.pNext = &distant;
@@ -485,6 +488,7 @@ int main() {
     sphere.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT;
     sphere.position = {-8.f + 3.2f * float(i), 6.f + 4.f * float(i % 2), 3.5f};
     sphere.radius = .15f;
+    sphere.volumetricRadianceScale = 1;
     remixapi_LightInfo light{};
     light.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
     light.pNext = &sphere;
@@ -522,8 +526,9 @@ int main() {
       velocity = {0, 0, 0};
     }
   };
+  const bool smokeLit = env("REMIX_BENCH_SMOKE_LIT", 0) != 0;
   auto draw = [&](Dynamic &dynamic, Batch &batch, remixapi_MaterialHandle surfaceMaterial, uint64_t id,
-                  bool blended = true) {
+                  bool blended = true, bool lit = false) {
     if (batch.indices.empty())
       return;
     const auto slot = mesh(dynamic.hash, batch, surfaceMaterial, true);
@@ -542,11 +547,16 @@ int main() {
     blend.srcAlphaBlendFactor = 1;
     blend.dstAlphaBlendFactor = 7;
     blend.writeMask = 15;
+    remixapi_InstanceInfoSpriteEXT sprite{};
+    sprite.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_SPRITE_EXT;
+    sprite.flags = REMIXAPI_SPRITE_LIT_EXT;
+    if (lit)
+      blend.pNext = &sprite;
     remixapi_InstanceIdentityEXT identity{};
     identity.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_IDENTITY_EXT;
     identity.pNext = blended ? &blend : nullptr;
     identity.instanceId = id;
-    identity.classification = REMIXAPI_INSTANCE_DYNAMIC_EXT;
+    identity.classification = lit ? REMIXAPI_INSTANCE_RASTER_ONLY_EXT : REMIXAPI_INSTANCE_DYNAMIC_EXT;
     identity.rasterVisible = 1;
     remixapi_InstanceInfo instance{};
     instance.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO;
@@ -711,7 +721,7 @@ int main() {
     draw(dropMesh, dropBatch, dropMaterial, 0x40000001, !cutout);
     draw(trailMesh, trailBatch, trailMaterial, 0x40000002, !cutout);
     draw(faintMesh, faintBatch, dropMaterial, 0x40000003);
-    draw(smokeMesh, smokeBatch, smokeMaterial, 0x40000004);
+    draw(smokeMesh, smokeBatch, smokeMaterial, 0x40000004, true, smokeLit);
     drawStains(frame);
     ok(api.Present(nullptr), "Present");
   };
