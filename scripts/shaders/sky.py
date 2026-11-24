@@ -131,7 +131,7 @@ def write(numos_dir, adapters, adapter_table, night_sky_assets):
     target.parent.mkdir(parents=True, exist_ok=True)
     generate.write_output(target, header)
     generate.write_output(target.with_suffix('.bin'), bytes(blob))
-    generate.write_output(target.with_name('embedded_data.cpp'), generate.embedded_data('generate.py sky', 'sky'))
+    generate.write_output(target.with_name('embedded_data.cpp'), generate.embedded_data('generate.py sky', 'sky', bytes(blob)))
     # The adapters' binding table, in NUMOS's format (numos::PassInfo per Stage).
     generate.write_output(target.with_name('adapter_passes.inc'), adapter_table)
 
