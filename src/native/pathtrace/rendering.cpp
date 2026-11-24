@@ -1302,7 +1302,8 @@ namespace remix {
       const VkBufferCopy copy{.srcOffset = stage(&frame, sizeof(frame)), .size = sizeof(frame)};
       vkCmdCopyBuffer(command, staging.buffer->handle, uniform->handle, 1, &copy);
     } else {
-      hostBuffer(uniform, &frame, sizeof(frame), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+      // (Written by the GPU too: recordVolume swaps the volume fields for LIT sprites' cells.)
+      hostBuffer(uniform, &frame, sizeof(frame), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
     }
     // The frame constants and the moved lights staged since the table's barrier.
     if (deviceLocalScene)
