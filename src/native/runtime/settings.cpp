@@ -329,6 +329,7 @@ namespace remix::config {
         TRACE(bloomRadius, 0, 1);
         TRACE(contrast, 0, 1);
         TRACE(contrastAmount, .5, 2);
+        TRACE(backdrop, 0, 1);
         TRACE(chromaticAberration, 0, 1);
         TRACE(chromaticAberrationAmount, 0, .02);
         TRACE(localLights, 0, 1);
@@ -558,6 +559,9 @@ namespace remix::config {
           result.push_back(scalar(
               "rtx.native.pathtrace.volumetricColor." + std::string(1, "rgb"[i]),
               [i](auto &s) -> auto & { return s.trace.volumetricColor[i]; }, 0, 1));
+          result.push_back(scalar(
+              "rtx.native.pathtrace.backdropColor." + std::string(1, "rgb"[i]),
+              [i](auto &s) -> auto & { return s.trace.backdropColor[i]; }, 0, 1));
         }
         for (size_t i = 0; i < 4; ++i)
           result.push_back(scalar(

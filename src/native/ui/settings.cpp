@@ -1462,6 +1462,15 @@ namespace remix {
       if (options.contrast)
         ui::SliderFloat("Contrast", &options.contrastAmount, .5f, 2.f, "%.2f");
     }
+    if (ui::Panel panel{"Backdrop"}) {
+      ui::Checkbox("Backdrop colour", &options.backdrop);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Where camera rays find nothing and no sky or dome is drawn: this colour as it shows\n"
+                          "on screen, at any exposure, and left out of the exposure meter (a menu's flat\n"
+                          "background). Off: the dark clear colour, exposed like the scene.");
+      if (options.backdrop)
+        ui::ColorEdit3("Colour", options.backdropColor);
+    }
     if (ui::Panel panel{"Chromatic aberration"}) {
       ui::Checkbox("Lens chromatic aberration", &options.chromaticAberration);
       if (ImGui::IsItemHovered())

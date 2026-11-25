@@ -28,6 +28,13 @@ namespace remix {
     // c = (c / .18)^contrastAmount * .18 after exposure.
     bool contrast = false;
     float contrastAmount = 1.15f;
+    // Where camera rays find nothing and no sky or dome is drawn: this display
+    // colour (0..1, as it shows on screen) at any exposure, the meter leaving
+    // those pixels out. A 2D-style screen's flat background (a title screen's
+    // white) that the scene's exposure would otherwise turn grey. Off: the
+    // dark blue clear, exposed like the scene.
+    bool backdrop = false;
+    float backdropColor[3] = {1, 1, 1};
     // Lens chromatic aberration (postfx::Options): the red and blue channels'
     // displacement at the image's left and right edges, a fraction of its width.
     bool chromaticAberration = false;

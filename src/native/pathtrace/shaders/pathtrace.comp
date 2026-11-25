@@ -3949,7 +3949,10 @@ void main() {
   }
 #endif
   // Metering divides radiance by this: a self-illuminated colour counts whole.
-  if(frame.firefly.z!=0)imageStore(meterMaterial,pixel,vec4(primary.t<1e30?primary.color.rgb+primary.self:vec3(1),1));
+  // Alpha 0: a background pixel the meter leaves out (z 2: a backdrop shows
+  // there, rtx.native.pathtrace.backdrop, at whatever exposure).
+  if(frame.firefly.z!=0)imageStore(meterMaterial,pixel,vec4(primary.t<1e30?primary.color.rgb+primary.self:vec3(1),
+                                                            primary.t<1e30||frame.firefly.z<1.5?1:0));
   vec3 local=vec3(0),localSpecular=vec3(0);float localDistance=0;
   vec3 emissive=vec3(0),emissiveSpecular=vec3(0);float emissiveDistance=0;
   vec3 indirect=vec3(0),primaryDirect=vec3(0);
@@ -4324,7 +4327,10 @@ void main() {
       tint*=through;opacityProduct*=hit.sheetIndex!=0u?dot(through,vec3(.2126,.7152,.0722)):1-hit.color.a;
     if(layer+1<sheetCount)primary=cameraHit(sheetOrigin(primary,layerDirection),layerDirection);
   }
-  if(frame.firefly.z!=0)imageStore(meterMaterial,pixel,vec4(transparentMaterial+tint*imageLoad(meterMaterial,pixel).rgb,1));
+  if(frame.firefly.z!=0) {
+    vec4 behind=imageLoad(meterMaterial,pixel);
+    imageStore(meterMaterial,pixel,vec4(transparentMaterial+tint*behind.rgb,behind.a));
+  }
   float depth=1;
   if(frame.target.w!=0) {
     depth=imageLoad(primaryDepth,ivec2((vec2(pixel)+0.5)*vec2(imageSize(primaryDepth))/vec2(frame.target.xy))).x;

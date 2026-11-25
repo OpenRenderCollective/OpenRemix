@@ -38,8 +38,12 @@ void main() {
     vec4 source=texelFetch(sourceImage,ivec2(pixel),0);
     vec3 radiance=source.rgb;
     ivec2 guideSize=textureSize(secondImage,0);
-    vec3 albedo=texelFetch(secondImage,min(ivec2(uv*guideSize),guideSize-1),0).rgb;
+    vec4 guided=texelFetch(secondImage,min(ivec2(uv*guideSize),guideSize-1),0);
+    vec3 albedo=guided.rgb;
     bool sceneRadiance=settings.meterMode!=0u;
+    // The path tracer's material guide marks a background its backdrop shows
+    // at any exposure (pathtrace.comp meterMaterial, alpha 0): not metered.
+    bool backdrop=!sceneRadiance&&guided.a<.5;
     bool materialScene=settings.meterMode==2u;
     vec3 material=vec3(1);
     if(materialScene) {
@@ -47,7 +51,7 @@ void main() {
       material=guide.rgb/max(guide.a,1e-6);
     }
     bool includeBackground=sceneRadiance&&settings.hasBackground!=0u&&background.radiance.w>0;
-    if(finite3(radiance)&&finite3(albedo)&&(!sceneRadiance||((source.a>0||includeBackground)&&!isinf(source.a)))) {
+    if(!backdrop&&finite3(radiance)&&finite3(albedo)&&(!sceneRadiance||((source.a>0||includeBackground)&&!isinf(source.a)))) {
       vec3 light=sceneRadiance ? max(radiance/max(source.a,1e-6)+albedo,vec3(0))
                               : normalizedMeterLight(radiance,albedo);
       if(includeBackground) {

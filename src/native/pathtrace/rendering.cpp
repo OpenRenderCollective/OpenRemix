@@ -5,6 +5,7 @@
 #include "pathtrace/sharc_policy.h"
 #include "scene/emission.h"
 #include <algorithm>
+#include <array>
 #include "upscale/ngx.h"
 #include <chrono>
 #include <cmath>
@@ -17,6 +18,53 @@
 namespace remix {
   using namespace scene;
   using namespace trace::detail;
+
+  namespace {
+    // The exposed radiance that the SDR composite (postfx composite.glsl's
+    // contrast, then pathtrace/shaders/display.glsl) shows as `shown`: its
+    // gamma, the prism tone map and the contrast undone. The tone map nears
+    // 1 only asymptotically, so a channel shows at most .99 (252 of 255).
+    std::array<float, 3> displayedRadiance(const float shown[3], bool prism, float contrast) {
+      std::array<float, 3> linear;
+      for (int k = 0; k < 3; ++k)
+        linear[k] = std::pow(std::clamp(shown[k], 0.f, .99f), 2.2f);
+      if (prism) {
+        // display.glsl: outset * reinhardPiecewiseSmooth(inset * c, 1, .18),
+        // outset being inset's inverse (both column-major there).
+        static constexpr float inset[3][3] = {{.72634649f, .16665483f, .10699868f},
+                                              {.13423698f, .70013888f, .16562414f},
+                                              {.07263955f, .06012051f, .86723994f}};
+        static constexpr float outset[3][3] = {{1.45021560f, -.33533138f, -.11488422f},
+                                               {-.25347057f, 1.51071102f, -.25724045f},
+                                               {-.10389769f, -.07664130f, 1.18053899f}};
+        auto apply = [](const float (&m)[3][3], const std::array<float, 3> &v) {
+          return std::array<float, 3>{m[0][0] * v[0] + m[0][1] * v[1] + m[0][2] * v[2],
+                                      m[1][0] * v[0] + m[1][1] * v[1] + m[1][2] * v[2],
+                                      m[2][0] * v[0] + m[2][1] * v[1] + m[2][2] * v[2]};
+        };
+        constexpr float anchor = .18f, range = 1 - anchor;
+        auto curve = [&](float t) { return anchor + range * t / (1 + t * std::exp(-.01f / (t * t))); };
+        auto tone = apply(inset, linear);
+        for (float &y : tone) {
+          if (y <= anchor)
+            continue;
+          float lo = 0, hi = 1e4f; // t = (x - anchor) / range: the curve rises with it
+          for (int i = 0; i < 60; ++i) {
+            const float mid = .5f * (lo + hi);
+            (curve(mid) < y ? lo : hi) = mid;
+          }
+          y = anchor + range * hi;
+        }
+        linear = apply(outset, tone);
+      }
+      for (float &c : linear) {
+        c = std::max(c, 0.f);
+        if (contrast > 0) // composite.glsl: c = (c / .18)^contrast * .18
+          c = .18f * std::pow(c / .18f, 1 / contrast);
+      }
+      return linear;
+    }
+  } // namespace
 
   void PathTracer::Gpu::prepare(VkCommandBuffer command, RasterRenderer &resources,
                                 const TraceOptions &requestedOptions, scene::TraceFrame &prepared) {
@@ -1284,12 +1332,24 @@ namespace remix {
     if (const auto *seed = std::getenv("REMIX_PATH_SAMPLE_SEED"))
       frame.config[2] += uint32_t(std::strtoul(seed, nullptr, 10));
     frame.config[3] = uint32_t(stats.accumulationCount);
-    frame.firefly[2] = postProcessing->materialGuide() ? 1.f : 0.f;
+    // rtx.native.pathtrace.backdrop: only where nothing else is behind the
+    // scene (no dome, no NUMOS sky).
+    const bool backdrop = options.backdrop && !(options.sky && (resources.dome().enabled || skyApplied));
+    // The meter guide; 2: background pixels (alpha 0 in it) left out.
+    frame.firefly[2] = postProcessing->materialGuide() ? (backdrop ? 2.f : 1.f) : 0.f;
     // The radiance that displays as middle grey (0.18) at the current exposure,
     // the automatic part from the meter's latest readback. Set after the scene
     // signature: exposure drifts while the meter adapts.
     const float exposure = options.exposure * (options.autoExposure ? postProcessing->statistics().exposure : 1.f);
     frame.firefly[3] = .18f / std::max(exposure, 1e-12f);
+    // The backdrop's radiance: what displays as its colour at this exposure.
+    std::array<float, 3> backdropRadiance{};
+    if (backdrop) {
+      backdropRadiance = displayedRadiance(options.backdropColor, options.prism,
+                                           options.contrast ? options.contrastAmount : 0.f);
+      for (float &c : backdropRadiance)
+        c /= std::max(exposure, 1e-12f);
+    }
     if (options.relativeClamps) {
       frame.firefly[0] *= frame.firefly[3];
       frame.firefly[1] *= frame.firefly[3];
@@ -1385,6 +1445,8 @@ namespace remix {
     clear[0].color.float32[1] = .035f;
     clear[0].color.float32[2] = .055f;
     clear[0].color.float32[3] = 1;
+    if (backdrop)
+      std::copy_n(backdropRadiance.data(), 3, clear[0].color.float32);
     // With a dome, the rasterized sky layer (3D skybox) is drawn over it:
     // alpha -1 marks pixels no sky geometry covered (any draw writes >= 0).
     if (options.sky && (resources.dome().enabled || skyApplied))
