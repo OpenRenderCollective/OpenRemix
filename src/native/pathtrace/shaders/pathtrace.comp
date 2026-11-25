@@ -221,6 +221,7 @@ struct Hit { float t; vec3 p; vec3 n; vec4 color; bool blended; bool blendedDraw
 // An additively blended layer (scene.glsl additiveHit): zero coverage, its
 // emission added whole and everything behind it passed. A coverage layer
 // never has zero coverage (visibleAlpha; the G-buffer keeps at least 1/255).
+// (An additive hit is zeroed whatever its coverage: additiveHit.)
 bool additiveLayer(Hit hit) { return hit.blended&&!hit.tinted&&hit.sheetIndex==0u&&hit.color.a==0; }
 #include "sheet.glsl"
 // Reflectance at normal incidence: a dielectric's 4%, a metal's colour (its

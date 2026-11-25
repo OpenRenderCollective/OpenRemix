@@ -334,15 +334,13 @@ namespace remix::trace::detail {
     return 0;
   }
   // Additive blending (TraceSurface state.x bits 14-15; scene.glsl
-  // additiveSurface): a blended layer added over what is behind it, the
-  // destination factor ONE and the source ONE or (bit 15) SRC_ALPHA. It is
-  // traced as light, not matter: it passes every ray and emits its colour.
+  // additiveSurface; Draw::additive): a blended layer added over what is
+  // behind it, the destination factor ONE and the source ONE or (bit 15)
+  // SRC_ALPHA. It is traced as light, not matter: it passes every ray and
+  // emits its colour.
   inline uint32_t additiveBits(const scene::Draw &draw) {
-    constexpr uint32_t one = 1, srcAlpha = 6;
-    const auto &b = draw.blend;
-    if (!draw.blendedCoverage() || draw.decal || b.op != 0 || b.dst != one || (b.src != one && b.src != srcAlpha))
-      return 0;
-    return 1u << 14 | uint32_t(b.src == srcAlpha) << 15;
+    const uint32_t additive = draw.additive();
+    return additive ? 1u << 14 | uint32_t(additive == 2) << 15 : 0u;
   }
 } // namespace remix::trace::detail
 

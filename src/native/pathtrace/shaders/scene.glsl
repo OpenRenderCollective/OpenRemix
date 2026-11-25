@@ -688,9 +688,10 @@ bool coverageBlended(Surface s) { return (s.state.w&34u)==2u; }
 bool blendedAtAlpha(Surface s,float a) { return (s.state.w&2u)!=0&&a<1-.5/255; }
 // Additive blending (frame_tables.h state.x bit 14: destination factor ONE,
 // source ONE or, bit 15, SRC_ALPHA; a host's glows, sparks and boost trails):
-// the surface is light added over what is behind it, not matter. Where its
-// coverage shows it (visibleAlpha, as any blended layer) it transmits
-// everything and emits its colour, times its coverage with SRC_ALPHA: a
+// the surface is light added over what is behind it, not matter. Wherever it
+// is drawn (with SRC_ALPHA: where its coverage shows it, as any blended layer;
+// visibleAlpha) it transmits everything and emits its colour, times its
+// coverage with SRC_ALPHA: a
 // blended hit of zero coverage, which no coverage layer is, and which the
 // composition adds whole (pathtrace.comp additiveLayer). Shadow rays pass it.
 bool additiveSurface(Surface s) { return (s.state.x&16384u)!=0u; }
@@ -708,7 +709,9 @@ bool alphaPass(Surface s, float a) {
 // Zero-coverage texels do not represent an interaction. A tinted sheet still
 // transmits its color at zero opacity and must remain in the layer traversal.
 bool visibleAlpha(Surface s,float a) {
-  return alphaPass(s,a)&&(!coverageBlended(s)||a>0);
+  // An additive layer with source factor ONE shows at any coverage: alpha
+  // takes no part in its blend (additiveSurface, state.x bit 15 clear).
+  return alphaPass(s,a)&&(!coverageBlended(s)||a>0||(s.state.x&49152u)==16384u);
 }
 // Whether a surface shows its thin film: it has one, and films are on
 // (frame.pathConfig.w bit 9 clear; iridescence.glsl).
