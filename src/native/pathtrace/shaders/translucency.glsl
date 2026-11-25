@@ -3,7 +3,8 @@
 // filtered; layered pixels keep the bounded front-to-back reference path.
 void frontGuides(Hit hit,ivec2 pixel) {
   if(temporal.translucency.x==0)return;
-  bool valid=hit.t<1e30&&hit.blended;
+  // An additive layer is only light: the guides stay the surface's behind it.
+  bool valid=hit.t<1e30&&hit.blended&&!additiveLayer(hit);
   // A sheet seen through ray portals: its virtual image's guides, as the
   // opaque surfaces' there; none move while a pair passed moved.
   vec3 position=hit.p,previousPosition=hit.previousPosition,normal=hit.n;

@@ -333,6 +333,17 @@ namespace remix::trace::detail {
       return 1;
     return 0;
   }
+  // Additive blending (TraceSurface state.x bits 14-15; scene.glsl
+  // additiveSurface): a blended layer added over what is behind it, the
+  // destination factor ONE and the source ONE or (bit 15) SRC_ALPHA. It is
+  // traced as light, not matter: it passes every ray and emits its colour.
+  inline uint32_t additiveBits(const scene::Draw &draw) {
+    constexpr uint32_t one = 1, srcAlpha = 6;
+    const auto &b = draw.blend;
+    if (!draw.blendedCoverage() || draw.decal || b.op != 0 || b.dst != one || (b.src != one && b.src != srcAlpha))
+      return 0;
+    return 1u << 14 | uint32_t(b.src == srcAlpha) << 15;
+  }
 } // namespace remix::trace::detail
 
 namespace remix::trace {
@@ -1152,7 +1163,7 @@ namespace remix::trace {
         const auto alphaArg = [&](uint32_t arg) { return material.gradient && arg == 1 ? 0u : arg; };
         value.state[0] = (b.colorOp & 3u) | (b.colorOp & 4u) << 10 | (b.alphaOpTexture & 4u) << 11 | b.color1 << 2 |
                          b.color2 << 4 | (b.alphaOpTexture & 3u) << 6 | alphaArg(b.alpha1) << 8 |
-                         alphaArg(b.alpha2) << 10;
+                         alphaArg(b.alpha2) << 10 | detail::additiveBits(surface);
         value.state[1] = surface.ignoreAlpha ? 7 : surface.alphaOverride ? surface.compare : material.compare;
         const float reference = surface.alphaOverride ? surface.reference : material.reference;
         std::memcpy(&value.state[2], &reference, 4);

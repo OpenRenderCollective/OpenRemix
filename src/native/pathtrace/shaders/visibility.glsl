@@ -62,6 +62,7 @@ void queryVisibility(accelerationStructureEXT scene,vec3 origin,vec3 direction,i
     Surface s=surfaces[rayQueryGetIntersectionInstanceCustomIndexEXT(query,false)+rayQueryGetIntersectionGeometryIndexEXT(query,false)];
     s.indices=s.traceIndices;
     if(enableDecals&&decalSurface(s))continue; // Paint does not cast a separate sheet shadow.
+    if(additiveSurface(s))continue; // Added light casts no shadow.
     if((s.state.w&4)==0&&!rayQueryGetIntersectionFrontFaceEXT(query,false)){profileRay(12);continue;}
     profileAlpha(s,8);
     if(!acceptCandidate(s,rayQueryGetIntersectionPrimitiveIndexEXT(query,false),rayQueryGetIntersectionBarycentricsEXT(query,false))){profileRay(11);continue;}
@@ -118,6 +119,7 @@ bool firstBlocker(accelerationStructureEXT scene,vec3 origin,vec3 direction,floa
     Surface s=surfaces[index];
     s.indices=s.traceIndices;
     if(enableDecals&&decalSurface(s))continue; // Paint does not cast a separate sheet shadow.
+    if(additiveSurface(s))continue; // Added light casts no shadow.
     if((s.state.w&4)==0&&!rayQueryGetIntersectionFrontFaceEXT(query,false)){profileRay(profile+4);continue;}
     profileAlpha(s,profile);
     uint primitive=rayQueryGetIntersectionPrimitiveIndexEXT(query,false);

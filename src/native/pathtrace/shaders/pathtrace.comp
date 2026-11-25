@@ -218,6 +218,10 @@ bool acceptCandidate(Surface s,uint triangle,vec2 bary) {
 // color: what the surface reflects. self: the part of its colour that emits
 // instead (remixapi_MaterialInfoSelfIlluminationEXT), set with the emission.
 struct Hit { float t; vec3 p; vec3 n; vec4 color; bool blended; bool blendedDraw; bool decal; uint decalMode; bool tinted; bool cacheable; vec3 previousPosition; vec3 previousNormal; bool historyValid; vec3 emission; float identity; vec3 ng; vec3 wo; vec2 rm; bool pbr; vec3 self; vec2 thick; uint sheetIndex; vec3 sheetDepth; vec4 film; float lift; vec3 horizon; vec4 metal; vec4 sss; int surface; };
+// An additively blended layer (scene.glsl additiveHit): zero coverage, its
+// emission added whole and everything behind it passed. A coverage layer
+// never has zero coverage (visibleAlpha; the G-buffer keeps at least 1/255).
+bool additiveLayer(Hit hit) { return hit.blended&&!hit.tinted&&hit.sheetIndex==0u&&hit.color.a==0; }
 #include "sheet.glsl"
 // Reflectance at normal incidence: a dielectric's 4%, a metal's colour (its
 // albedo, or the material's metal colour, remixapi_MaterialMetalColorEXT:
@@ -534,6 +538,7 @@ void surfaceHit(Intersection x,vec3 direction,inout Hit hit,bool motion) {
     surfaceSubsurface(s,uv,hit);
     if(hit.film.x>0&&(s.state.w&32)==0)hit.color.rgb*=filmTint(hit.film,hitF0(hit),dot(hit.n,hit.wo));
   }
+  additiveHit(s,hit.color,hit.emission,hit.self);
   hit.decal=enableDecals&&decalSurface(s);hit.decalMode=(s.state.w>>7)&3u;hit.blendedDraw=(s.state.w&2)!=0;hit.blended=blendedAtAlpha(s,hit.color.a);hit.cacheable=(s.state.w&16)!=0;
   hit.tinted=(s.state.w&32)!=0;
   // A translucent body: refractive index, measurement distance (frame_tables.h materialFields).
@@ -1723,6 +1728,17 @@ void pathSteps(Hit primary,inout PathState s,uint maxBounces,uint untilBounce,
         continue;
       }
       s.throughput/=max(reflected,1e-20);s.emissiveWeight/=max(reflected,1e-20);
+    } else if(additiveLayer(hit)) {
+      // Light added over what is behind: its emission whole (it is no light
+      // source the path's light sampling could have found), the path on unchanged.
+      if(++s.layers>=32){profilePath(9u);break;}
+      pathDebugRecord(3,hit.p,0,vec4(s.throughput,0),vec4(hit.emission,0),vec4(0));
+      s.result+=s.throughput*hit.emission;
+      s.origin=offsetRay(hit.p,-hit.ng);leavingNormal=vec3(0);
+#if WAVEFRONT_PASS==3
+      s.going=true;break;
+#endif
+      continue;
     } else if(hit.blended&&random()>=hit.color.a) {
       if(++s.layers>=32){profilePath(9u);break;}
       // A translucent body: its depth absorption over the segment, per pass taken.
@@ -3580,7 +3596,8 @@ void main() {
   uint passed;
   if(front)hit=primarySurface(pixel,origin,direction,false,passed);
   hit.wo=-direction;
-  bool lit=inBounds&&front&&hit.blended;
+  // An additive layer reflects nothing: only its emission is composed.
+  bool lit=inBounds&&front&&hit.blended&&!additiveLayer(hit);
   // The water patch (waterPrepare/waterShare, barriers every invocation
   // reaches) supplies non-PBR sheets' GI from two traced lanes of four.
   bool patched=false,patchTrace=false;
@@ -4240,6 +4257,13 @@ void main() {
   // immediately, keeping only the current sheet live across continuation rays.
   for(uint layer=0;layer<sheetCount;++layer) {
     Hit hit=primary;hit.wo=-direction;
+    // An additive layer adds its emission whole and passes everything
+    // behind it: nothing to light, no transmittance.
+    if(additiveLayer(hit)) {
+      transparent+=tint*hit.emission;
+      if(layer+1<sheetCount)primary=cameraHit(sheetOrigin(primary,layerDirection),layerDirection);
+      continue;
+    }
     vec3 surfaceSpecular=vec3(0);
 #ifdef SINGLE_SHEET_PASS
       float surfaceDistance=0;vec3 surfaceLight;
@@ -4412,7 +4436,8 @@ void main() {
 #ifdef SINGLE_SHEET_PASS
   // Emission and transmission remain unfiltered; NRD supplies the two surface
   // lighting lobes during composition. Raw world output retains full radiance.
-  if(temporal.translucency.x!=0&&sheetCount==1)foreground=fogLight+fogTransmittance*primary.color.a*primary.emission;
+  if(temporal.translucency.x!=0&&sheetCount==1)
+    foreground=fogLight+fogTransmittance*(additiveLayer(primary)?1.:primary.color.a)*primary.emission;
 #endif
   if(temporal.hitDistance.w!=0) {
     imageStore(composed,pixel,vec4(safeRadiance(foreground+tint*imageLoad(composed,pixel).rgb),1));

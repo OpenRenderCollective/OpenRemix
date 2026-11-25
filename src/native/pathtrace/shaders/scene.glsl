@@ -686,6 +686,19 @@ bool coverageBlended(Surface s) { return (s.state.w&34u)==2u; }
 // from three 255s sums its barycentrics to just under one, which made every
 // pixel of a sprite drawn at full alpha (ULTRAKILL's blood drops) a sheet.
 bool blendedAtAlpha(Surface s,float a) { return (s.state.w&2u)!=0&&a<1-.5/255; }
+// Additive blending (frame_tables.h state.x bit 14: destination factor ONE,
+// source ONE or, bit 15, SRC_ALPHA; a host's glows, sparks and boost trails):
+// the surface is light added over what is behind it, not matter. Where its
+// coverage shows it (visibleAlpha, as any blended layer) it transmits
+// everything and emits its colour, times its coverage with SRC_ALPHA: a
+// blended hit of zero coverage, which no coverage layer is, and which the
+// composition adds whole (pathtrace.comp additiveLayer). Shadow rays pass it.
+bool additiveSurface(Surface s) { return (s.state.x&16384u)!=0u; }
+void additiveHit(Surface s,inout vec4 color,inout vec3 emission,inout vec3 self) {
+  if(!additiveSurface(s))return;
+  emission+=(color.rgb+self)*((s.state.x&32768u)!=0u?color.a:1.);
+  color=vec4(0);self=vec3(0);
+}
 bool alphaPass(Surface s, float a) {
   float ref=uintBitsToFloat(s.state.z); uint op=s.state.y;
   return op==7 || (op==1&&a<ref) || (op==2&&a==ref) || (op==3&&a<=ref) ||
