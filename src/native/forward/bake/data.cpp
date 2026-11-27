@@ -10,7 +10,7 @@
 #include <unordered_map>
 
 namespace remix::forward::bake {
-  Inputs pack(const scene::BakeScene &scene, double seconds, MaterialUse use) {
+  Inputs pack(const scene::BakeScene &scene, double seconds, MaterialUse use, bool geometry) {
     if (!scene.ready)
       throw std::invalid_argument("Baking needs a complete static scene");
     Inputs result;
@@ -83,6 +83,7 @@ namespace remix::forward::bake {
               std::bit_cast<uint32_t>(sheet.thicknessRatio);
         }
       }
+      if (!geometry) continue;
       std::vector<Matrix> boneNormals;
       if (surface.bonesPerVertex) {
         if (!draw.bones)

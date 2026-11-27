@@ -11,7 +11,7 @@ layout(early_fragment_tests) in;
 // camera backface rejection. No discard can invalidate its early depth writes.
 layout(early_fragment_tests) in;
 #endif
-#if defined(LIVE_GI) || defined(WATER_RAY)
+#if (defined(LIVE_GI) && !defined(SPLIT_CASCADES)) || defined(WATER_RAY) || defined(RAY_LOCAL_SHADOWS)
 #extension GL_EXT_ray_query : require
 #endif
 #include "bindings.glsl"
@@ -67,6 +67,9 @@ layout(location = 2) out vec4 outReflectance;
 #include "receiver.glsl"
 #include "local-light-composition.glsl"
 #include "receiver-lighting.glsl"
+#ifdef RAY_LOCAL_SHADOWS
+#include "ray-local-shadows.glsl"
+#endif
 #include "local-lighting.glsl"
 #include "sun-lighting.glsl"
 // Match LightingView in forward/options.h. Specialization removes diagnostic

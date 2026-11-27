@@ -43,6 +43,14 @@ namespace remix::forward {
     // Completed opaque hierarchy and guides, readable by late graphics passes.
     // Borrowed through this fenced frame; empty when screen tracing is disabled.
     ScreenInputs screenInputs() const;
+    // This frame's resolved full-resolution normal guide and nearest depth, in
+    // GENERAL layout and readable by compute after record. Null views when the
+    // plan resolves no guides.
+    struct Guides {
+      VkImageView normals = VK_NULL_HANDLE, depth = VK_NULL_HANDLE;
+      VkExtent2D extent{};
+    };
+    Guides guides() const;
     uint64_t targetBytes() const;
     uint64_t bufferBytes() const;
 

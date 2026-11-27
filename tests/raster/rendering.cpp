@@ -866,6 +866,55 @@ namespace {
         require(image[at + 1] < 3, "Restoring GI range restores current occlusion");
         if (reflections)
           source2Transition(target, options, [&] { return render(); }, at);
+        if (!composed) {
+          // Radiance cascades build from a completed frame and are read by the
+          // next one, so a change settles after the build that follows it.
+          options.splitCascades = true;
+          options.cascadeRayStride = 1;
+          options.cascadeAccumulation = false; // each build stands alone
+          target.enableForward(options, true);
+          auto settled = [&](int source = 0) {
+            render(source);
+            render(source);
+            return render(source);
+          };
+          image = settled();
+          std::printf("Radiance cascades %ux, reflections %u: RGB %u %u %u (%s)\n", samples, unsigned(reflections),
+                      unsigned(image[at]), unsigned(image[at + 1]), unsigned(image[at + 2]),
+                      target.forward->statistics().rayGI.status);
+          require(target.forward->statistics().rayGI.active && !target.forward->bakeController()->volume() &&
+                      image[at] < 3 && image[at + 1] > 150 && image[at + 2] < 3,
+                  "Radiance cascades light the receiver from the live environment, not ambient or baked fields");
+          image = settled(1);
+          std::printf("Radiance cascades occluded: RGB %u %u %u\n", unsigned(image[at]), unsigned(image[at + 1]),
+                      unsigned(image[at + 2]));
+          // Unlike the cosine-stratified fragment rays, uniform directions include
+          // grazing rays that leave the 10 m range before the occluder and take the environment.
+          require(image[at] < 3 && image[at + 1] < 30 && image[at + 2] < 3,
+                  "An offscreen occluder between the receiver and the environment darkens the cascades");
+          image = settled(2);
+          std::printf("Radiance cascades emissive: RGB %u %u %u\n", unsigned(image[at]), unsigned(image[at + 1]),
+                      unsigned(image[at + 2]));
+          require(image[at] < 3 && image[at + 1] < 30 && image[at + 2] > 150,
+                  "An offscreen emissive actor lights the receiver through the cascades");
+          image = settled();
+          require(image[at] < 3 && image[at + 1] > 150 && image[at + 2] < 3,
+                  "Removing the actor leaves no stale cascade lighting");
+          // Accumulation blends each probe with its history over 16 builds and
+          // varies the rays; it settles on the same answers.
+          options.cascadeAccumulation = true;
+          options.cascadeRayStride = 2;
+          target.forward->updateLighting(options);
+          for (int i = 0; i < 48; ++i) image = render();
+          require(image[at] < 3 && image[at + 1] > 150 && image[at + 2] < 3,
+                  "Accumulated cascades converge on the live environment");
+          for (int i = 0; i < 48; ++i) image = render(1);
+          std::printf("Radiance cascades accumulated, occluded: RGB %u %u %u (%s)\n", unsigned(image[at]),
+                      unsigned(image[at + 1]), unsigned(image[at + 2]), target.forward->statistics().rayGI.status);
+          require(image[at] < 3 && image[at + 1] < 30 && image[at + 2] < 3,
+                  "Accumulated cascades follow a change of occlusion");
+          options.splitCascades = false;
+        }
         options.rtGI = false;
         target.enableForward(options);
         image = ready();
@@ -3789,6 +3838,7 @@ namespace {
   }
 #include "styled_indirect.h"
 #include "local_shadow_plane.h"
+#include "ray_local_shadows.h"
 #include "sun_depth_lifecycle.h"
 #include "auto_exposure.h"
 #include "hdr_black_levels.h"
@@ -5940,6 +5990,7 @@ int main(int argc, char **argv) try {
               "Splitting the same authored power across seven overlapping emitters preserves grouped energy");
   }
   else if (argc>2 && std::strcmp(argv[2],"local-shadow-plane")==0) localShadowPlaneTests();
+  else if (argc>2 && std::strcmp(argv[2],"ray-local-shadows")==0) rayLocalShadowTests();
   else if (argc>2 && std::strcmp(argv[2],"auto-exposure")==0) autoExposureTests();
   else if (argc>2 && std::strcmp(argv[2],"color-textures")==0) colorTextureTests();
   else if (argc>2 && std::strcmp(argv[2],"hdr-black-levels")==0) hdrBlackLevelTests();

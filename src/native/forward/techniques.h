@@ -3,7 +3,7 @@
 
 namespace remix::forward::techniques {
   enum class Direct { Analytic, AttributedBake, AggregateBake };
-  enum class Diffuse { SurfaceAndProbes, RayQueries, Disabled, RayIncoming };
+  enum class Diffuse { SurfaceAndProbes, RayQueries, Disabled, RayIncoming, SplitCascades };
   enum class Reflections { Disabled, Cubemaps, RayQueries, RayQueriesAndCubemaps };
 
   // Requested techniques, independent of sampling, atlas sizes and display.
@@ -15,6 +15,8 @@ namespace remix::forward::techniques {
     Reflections reflections = Reflections::Cubemaps;
     bool screenReflections = false;
     bool sunShadows = true, localShadows = true;
+    bool rayLocalShadows = false; // ray-traced visibility for lights beyond the shadow-map budget
+    bool raySunShadows = false;   // ray-traced sun visibility in place of its cascades
     bool operator==(const Selection &) const = default;
   };
 
@@ -22,7 +24,8 @@ namespace remix::forward::techniques {
     Selection result;
     result.direct = !options.baking.directDiffuse ? Direct::Analytic
         : options.bakedLighting ? Direct::AggregateBake : Direct::AttributedBake;
-    result.diffuse = options.rtGI ? options.bakedDirectWithLiveGI ? Diffuse::RayIncoming : Diffuse::RayQueries
+    result.diffuse = options.splitCascades ? Diffuse::SplitCascades
+        : options.rtGI ? options.bakedDirectWithLiveGI ? Diffuse::RayIncoming : Diffuse::RayQueries
         : options.baking.enabled ? Diffuse::SurfaceAndProbes : Diffuse::Disabled;
     result.reflections = options.baking.reflectionProbes
         ? options.rtReflections ? Reflections::RayQueriesAndCubemaps : Reflections::Cubemaps
@@ -30,6 +33,8 @@ namespace remix::forward::techniques {
     result.screenReflections = options.ssr;
     result.sunShadows = options.shadows;
     result.localShadows = options.localShadows;
+    result.rayLocalShadows = options.rtLocalShadows;
+    result.raySunShadows = options.rtSunShadows;
     return result;
   }
 
@@ -41,6 +46,7 @@ namespace remix::forward::techniques {
   inline void selectDiffuse(Options &options, Diffuse diffuse) {
     options.rtGI = diffuse == Diffuse::RayQueries || diffuse == Diffuse::RayIncoming;
     options.bakedDirectWithLiveGI = diffuse == Diffuse::RayIncoming;
+    options.splitCascades = diffuse == Diffuse::SplitCascades;
     options.baking.enabled = diffuse != Diffuse::Disabled;
   }
 
@@ -62,5 +68,7 @@ namespace remix::forward::techniques {
     options.ssr = selection.screenReflections;
     options.shadows = selection.sunShadows;
     options.localShadows = selection.localShadows;
+    options.rtLocalShadows = selection.rayLocalShadows;
+    options.rtSunShadows = selection.raySunShadows;
   }
 }

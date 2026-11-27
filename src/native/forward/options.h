@@ -43,6 +43,23 @@ namespace remix::forward {
     bool rtReflections = false;
     bool rtGI = false;
     bool bakedDirectWithLiveGI = false; // explicit incoming-only composition; legacy rtGI replaces the whole field
+    // Split Radiance Cascades diffuse: sparse world-space probes fed by one traced ray per sampled pixel.
+    // Takes precedence over rtGI; needs ray queries in compute only.
+    bool splitCascades = false;
+    float cascadeSpacing = .05f;   // metres between the finest probes, nearest the camera
+    uint32_t cascadeRayStride = 2; // one ray per stride x stride pixels
+    // Finest probe cells per level of detail: a probe spans about 1 / (2 * cells) of a 90 degree view.
+    // The build lowers it while its probe pools overflow.
+    uint32_t cascadeLodCells = 32;
+    bool cascadeAccumulation = true; // blend each probe with its previous builds
+    // Trace a shadow ray for local lights that have no shadow map, instead of
+    // leaving them unshadowed. Needs the cascades' ray scene and fragment ray queries.
+    bool rtLocalShadows = false;
+    uint32_t rtShadowLights = 8; // rays per shaded pixel; lights beyond it stay unshadowed
+    // Trace the sun's shadow instead of sampling its cascades, on the same receivers.
+    bool rtSunShadows = false;
+    // The receivers that carry the ray scene; which shadows they trace can then change live.
+    bool rayShadowReceivers() const { return rtLocalShadows || rtSunShadows; }
     bool selectedBakedLights = false; // experimental: aggregate lights use selected mixed-shadow slots
     bool bakedLighting = false; // runtime profiles default on; low-level callers retain explicit control
     uint32_t bakedHighlightLights = 16; // highlight budget independent of the mixed-shadow budget
@@ -95,6 +112,7 @@ namespace remix::forward {
              bicubicLightmaps == other.bicubicLightmaps &&
              autoExposure == other.autoExposure &&
              water == other.water && rtGI == other.rtGI && rtReflections == other.rtReflections &&
+             splitCascades == other.splitCascades && rayShadowReceivers() == other.rayShadowReceivers() &&
              (!rtGI || lightingPlan(true).bakedReceivers == other.lightingPlan(true).bakedReceivers) &&
              localShadowLights == other.localShadowLights &&
              localShadowResolution == other.localShadowResolution && samples == other.samples &&

@@ -70,7 +70,8 @@ void main() {
   if (index >= batch.count)
     return;
   Result hit = results[index];
-  if (hit.statistics.z < .5 || hit.statistics.y > .5)
+  // The scene can trace further than this range for another consumer of its batches.
+  if (hit.statistics.z < .5 || hit.statistics.y > .5 || hit.irradiance[0].w > frame.trace.x)
     return;
   vec3 value = hit.irradiance[0].rgb;
   if (any(isnan(value)) || any(isinf(value)))

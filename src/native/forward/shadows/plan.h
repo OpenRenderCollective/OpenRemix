@@ -6,7 +6,10 @@
 #include <utility>
 
 namespace remix::forward::shadows {
-  constexpr uint32_t maximumLights = 8, faces = 6;
+  // Each slot adds six matrices, a position and six coverage rectangles to the
+  // frame uniform block (bindings.h), which stays within the 16384 bytes every
+  // Vulkan device guarantees. Mirrored by the array sizes in shaders/bindings.glsl.
+  constexpr uint32_t maximumLights = 24, faces = 6;
   struct View {
     uint64_t id = 0;
     Vec3 position{};

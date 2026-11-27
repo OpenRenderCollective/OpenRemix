@@ -6,13 +6,13 @@ layout(set = 0, binding = 0, std140) uniform Frame {
   vec4 cameraPosition, sunDirection, sunRadiance, ambientExposure;
   vec4 depth, splits;
   uvec4 grid, target;
-  mat4 localShadows[48];
-  vec4 localPositions[8];
+  mat4 localShadows[144]; // shadows::maximumLights * faces
+  vec4 localPositions[24];
   vec4 localSettings;
   vec4 styleScales[32];
   uvec4 occlusion;
   uvec4 clusterInfo;
-  vec4 movingShadowCoverage[48];
+  vec4 movingShadowCoverage[144];
   vec4 movingSunCoverage[4];
 } frame;
 struct Material {

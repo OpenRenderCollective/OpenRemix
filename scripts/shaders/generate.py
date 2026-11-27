@@ -48,6 +48,9 @@ BACKENDS = {
     'water': ('forward::water', 'vulkan1.1', ('snapshot', 'snapshotSingle', 'vert', 'frag', 'overlayVert', 'overlayFrag', 'compositeFrag', 'compositeSingle')),
     'live_gi': ('forward::ray::gi', 'vulkan1.2', ('frag', 'guides', 'viewModel', 'viewModelEarly', 'composedFrag', 'composedGuides', 'composedViewModel', 'composedViewModelEarly')),
     'live_ray': ('forward::ray', 'vulkan1.2', ('launch', 'merge')),
+    # Split Radiance Cascades: the compute build passes and the world fragment variants that read the probes.
+    'cascades': ('forward::ray::cascades', 'vulkan1.2', ('insert', 'launch', 'deposit', 'summary', 'link', 'merge', 'irradiance', 'frag', 'guides', 'viewModel', 'viewModelEarly',
+                                                               'rayFrag', 'rayGuides', 'rayViewModel', 'rayViewModelEarly')),
     'bake': ('forward::bake', 'vulkan1.2', ('atlas', 'transport', 'parallel', 'radianceParallel', 'visibility', 'aggregate', 'aggregateParallel', 'receiverDirect', 'receiverDirectParallel', 'depth')),
     'forward_test': ('forward::test', 'vulkan1.2', ('comp', 'probes', 'water', 'coarseTransfer')),
     'forward': ('forward', 'vulkan1.1', ('vert', 'lightmapVert', 'frag', 'prepassedFrag', 'inlineFrag', 'inlinePrepassedFrag', 'viewModelFrag', 'viewModelEarlyFrag', 'cluster', 'clusterCovered', 'shadowVert', 'shadowFrag', 'opaqueDepthFrag', 'localShadowVert', 'localShadowFrag', 'depthBatchVert', 'depthBatchFrag', 'compositeVert', 'compositeFrag', 'compositeSingle', 'ssrFrag', 'prepassedSsrFrag', 'ssrResolve', 'ssrResolveSingle', 'ssrReduce', 'ssrTrace', 'ssrFilter', 'ssrFilterSingle', 'opaqueCull', 'opaqueTiles', 'opaqueTilesSingle')),
@@ -66,6 +69,7 @@ CUBE_VARIANTS = {
     'water': ('frag',),
     'water_ray': BACKENDS['water_ray'][2],
     'live_gi': ('viewModel', 'viewModelEarly', 'composedViewModel', 'composedViewModelEarly'),
+    'cascades': ('viewModel', 'viewModelEarly', 'rayViewModel', 'rayViewModelEarly'),
 }
 for backend, variants in CUBE_VARIANTS.items():
     namespace, target, stages = BACKENDS[backend]
@@ -104,6 +108,8 @@ def shader_directory(backend):
         return ROOT / 'src/native/forward/ray/gi_shaders'
     if backend == 'live_ray':
         return ROOT / 'src/native/forward/ray/shaders'
+    if backend == 'cascades':
+        return ROOT / 'src/native/forward/ray/cascade_shaders'
     if backend == 'bake':
         return ROOT / 'src/native/forward/bake/shaders'
     if backend == 'forward_test':
@@ -229,6 +235,20 @@ def defines_for(backend, stage, stages):
         if stage in ('viewModel', 'viewModelEarly'): defines += ['-DVIEWMODEL_PASS=1']
         if stage == 'viewModelEarly': defines += ['-DEARLY_OPAQUE=1']
         if composed: defines += ['-DOPENREMIX_BAKED_DIRECT_LIVE_INDIRECT=1']
+    if backend == 'cascades':
+        # The ray variants also trace local lights without a shadow map (set 3: the ray scene).
+        shadows = stage.startswith('ray')
+        if shadows:
+            stage = stage[3].lower() + stage[4:]
+        if stage in ('frag', 'guides', 'viewModel', 'viewModelEarly'):
+            source = ROOT / 'src/native/forward/shaders/forward.frag'
+            defines = ['-DLIVE_GI=1', '-DSPLIT_CASCADES=1'] + (['-DREFLECTION_GUIDES=1'] if stage == 'guides' else [])
+            if shadows: defines += ['-DRAY_LOCAL_SHADOWS=1', '-DRAY_SCENE_SET=3']
+            if stage in ('viewModel', 'viewModelEarly'): defines += ['-DVIEWMODEL_PASS=1']
+            if stage == 'viewModelEarly': defines += ['-DEARLY_OPAQUE=1']
+        else:
+            source = directory / 'cascades.comp'
+            defines = ['-DCASCADE_' + stage.upper() + '=1']
     if backend == 'live_ray':
         source = directory / 'screen.comp'
         defines = ['-DRAY_LAUNCH=1'] if stage == 'launch' else []

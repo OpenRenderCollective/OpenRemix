@@ -4,6 +4,7 @@
 #include "forward/ray/capture.h"
 #include "platform/gpu_frames.h"
 #include "raster/renderer.h"
+#include <algorithm>
 #include <cstdio>
 #include <unordered_set>
 
@@ -26,6 +27,9 @@ namespace remix::forward::ray {
     };
     std::array<Frame, gpuFrameCount> frames;
     std::shared_ptr<World> current;
+    // The last capture, without its packed inputs: its signature and key, and
+    // its source, which keeps the surfaces the signature names alive.
+    Capture captured;
     uint64_t failedKey = 0;
     bool failed = false;
   };
@@ -68,11 +72,27 @@ namespace remix::forward::ray {
     g.statistics.active = false;
     g.statistics.rays = 0;
     g.statistics.sceneBuilds = 0;
-    const float distance = g.reflectionBatches ? options.rtReflectionDistance : options.rtGIDistance;
+    // One range per submission. A ray that ends at the range limit reads as a
+    // miss and takes the environment, which is wrong for the cascades: in a room
+    // larger than the range, every long ray would bring the sky indoors. They
+    // trace to the far end of any scene instead, and reflection batches reject
+    // hits beyond their own range.
+    constexpr float cascadeRange = 10000; // metres, the largest configurable range
+    const bool reflections = g.reflectionBatches && options.rtReflections;
+    float distance = reflections ? options.rtReflectionDistance : options.rtGIDistance;
+    if (options.splitCascades) distance = std::max(distance, cascadeRange);
     std::vector<scene::SphereLight> lightScratch;
     const auto lightsView = resources.sphereLightView(lightScratch);
+    // Geometry is only packed again when something it depends on changed since
+    // the capture the current world was built from.
+    const bool reusable = g.current && g.captured.source && g.captured.key == g.current->key &&
+                          g.current->resolution == options.rtTextureResolution;
     auto snapshot = capture(resources.bakeScene().get(), resources.draws(), lightsView,
-                            resources.light(), resources.dome(), options.sceneScale, seconds);
+                            resources.light(), resources.dome(), options.sceneScale, seconds,
+                            reusable ? &g.captured : nullptr);
+    g.captured.source = snapshot.source;
+    g.captured.key = snapshot.key;
+    g.captured.signature = snapshot.signature;
     const auto sun = snapshot.source->sun;
     const auto dome = snapshot.source->dome;
     auto lights = std::move(snapshot.inputs.lights);
@@ -90,7 +110,10 @@ namespace remix::forward::ray {
         bake::Options transport;
         transport.cpuReadback = false;
         transport.deviceLocalBatches = true;
-        transport.batchPoints = g.reflectionBatches ? 16384u : 1u;
+        // Each batch is three dispatches with barriers between them. Small batches leave the GPU
+        // mostly idle: a 1440p frame was hundreds of them. 131072 rays is the largest batch
+        // the ray budget allows at eight bounces.
+        transport.batchPoints = g.reflectionBatches ? 131072u : 1u;
         transport.textureResolution = options.rtTextureResolution;
         transport.distance = distance;
         next->transport.initialize(g.physical, g.device, std::move(snapshot.source),

@@ -28,7 +28,13 @@ SunLightSample sampleSunLight(vec4 coordinate, vec4 bounds, float unitIrradiance
   float frontCosine = max(receiverCosine, 0);
   float diffuse = direct ? (receiverCosine + frame.sunRadiance.w > 0 ? unitIrradiance : 0)
                          : frontCosine * visibility;
-  vec3 scale = frame.sunRadiance.rgb * sunShadowVisibility(p, depth, !baked, receiverNormal);
+  float shadow = sunShadowVisibility(p, depth, !baked, receiverNormal);
+#ifdef RAY_LOCAL_SHADOWS
+  // Baked sun visibility already covers the static scene; the cascades then
+  // only add moving casters and stay as they are.
+  if (!baked) shadow = raySunShadow(p, receiverNormal, l, shadow);
+#endif
+  vec3 scale = frame.sunRadiance.rgb * shadow;
   return SunLightSample(l, scale, diffuse, visibility);
 }
 // Passes without baked sunlight coverage retain their analytic/CSM policy.

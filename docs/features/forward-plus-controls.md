@@ -29,8 +29,15 @@ requests for other supported combinations instead of deleting or renaming them.
 `debugView` is a diagnostic view selector; the remaining canonical keys request
 techniques, quality, display or scheduling policy subject to their validators.
 
-The displayed Source 2/Custom preset is derived from these requests. Do not add
+The displayed Source 2/Dynamic/Custom preset is derived from these requests. Do not add
 another persisted preset selector that can disagree with them.
+
+`splitCascades` requests the Split Radiance Cascades diffuse source and takes
+precedence over `rtGI`. `cascadeSpacing` (metres between the finest probes) and
+`cascadeRayStride` (one ray per stride x stride pixels) are its quality controls;
+`cascadeLodCells` sets probe density and `cascadeAccumulation` the temporal blend.
+It shares `rtGIBounces` with ray-query GI; its rays are not range limited. See the
+[architecture](../architecture/forward-lighting.md#split-radiance-cascades).
 
 ## Environment evaluation
 

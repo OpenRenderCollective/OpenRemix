@@ -49,8 +49,9 @@ namespace remix::forward {
     Vec4 remap[2]{};
     std::array<uint32_t, 4> state{}, maps{};
   };
-  static_assert(sizeof(FrameData) == 5168);
-  static_assert(offsetof(FrameData, movingSunCoverage) == 5104);
+  static_assert(sizeof(FrameData) == 13104);
+  static_assert(sizeof(FrameData) <= 16384); // the uniform buffer range every device supports
+  static_assert(offsetof(FrameData, movingSunCoverage) == 13040);
   static_assert(sizeof(LightData) == 144);
   static_assert(offsetof(LightData, responseWeights) == 112);
   static_assert(offsetof(LightData, clusterBounds) == 128);

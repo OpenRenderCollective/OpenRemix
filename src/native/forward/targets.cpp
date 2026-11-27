@@ -272,11 +272,15 @@ namespace remix::forward {
                                                 .pushConstantRangeCount = 1,
                                                 .pPushConstantRanges = &push};
     check(pipeline::createPipelineLayout(device, &layoutInfo, nullptr, &layout));
-    if (techniquePlan.rayDiffuse()) {
-      giSceneLayout = bake::Transport::createSceneLayout(device);
-      const VkDescriptorSetLayout giSets[] = {sceneLayout, materialLayout, giSceneLayout};
+    if (techniquePlan.liveDiffuse()) {
+      // Set 2 of the live-diffuse receivers: the ray scene, or the cascades' probes.
+      giSceneLayout = techniquePlan.cascadeDiffuse() ? ray::Cascades::createQueryLayout(device)
+                                                     : bake::Transport::createSceneLayout(device);
+      // Ray-traced local shadows add the ray scene after the cascades' probes.
+      if (techniquePlan.rayShadows) rayShadowLayout = bake::Transport::createSceneLayout(device);
+      const VkDescriptorSetLayout giSets[] = {sceneLayout, materialLayout, giSceneLayout, rayShadowLayout};
       auto info = layoutInfo;
-      info.setLayoutCount = 3;
+      info.setLayoutCount = techniquePlan.rayShadows ? 4 : 3;
       info.pSetLayouts = giSets;
       check(pipeline::createPipelineLayout(device, &info, nullptr, &giLayout));
     }

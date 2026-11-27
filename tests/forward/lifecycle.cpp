@@ -219,6 +219,22 @@ int main(int argc, char **argv) {
     checked(api.Present(nullptr));
   }
   checked(api.SetConfigVariable("rtx.native.forward.rtGI", "0"));
+  if (traceSupported) {
+    // Radiance cascades replace the receiver pipelines and add their probe
+    // storage and resolved guides. Render past the first build, so receivers
+    // read a published one, then retire the provider.
+    checked(api.SetConfigVariable("rtx.native.forward.splitCascades", "1"));
+    const auto cascadeBytes = waitTargets([&](auto bytes) { return bytes > opaqueBytes; });
+    for (const char *stride : {"2", "1", "4"}) {
+      checked(api.SetConfigVariable("rtx.native.forward.cascadeRayStride", stride));
+      for (int i = 0; i < 4; ++i) {
+        checked(scene.draw(api, 0, 96, 96));
+        checked(api.Present(nullptr));
+      }
+    }
+    checked(api.SetConfigVariable("rtx.native.forward.splitCascades", "0"));
+    waitTargets([&](auto bytes) { return bytes < cascadeBytes; });
+  }
   // Let each request start preparing before replacing it. Obsolete workers must
   // retain their resources until completion without activating an old target.
   checked(api.SetConfigVariable("rtx.native.forward.ssr", "1"));
