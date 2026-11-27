@@ -4,6 +4,7 @@
 #include "upscale/shaders/embedded.h"
 #endif
 #include <algorithm>
+#include <iterator>
 #include <cstring>
 #include <stdexcept>
 
@@ -51,6 +52,17 @@ namespace remix {
         return VK_FORMAT_R8G8B8A8_UNORM;
       default:
         return format;
+      }
+    }
+    // An 8-bit format's sRGB sibling (UNDEFINED: none).
+    VkFormat srgbSibling(VkFormat format) {
+      switch (format) {
+      case VK_FORMAT_B8G8R8A8_UNORM:
+        return VK_FORMAT_B8G8R8A8_SRGB;
+      case VK_FORMAT_R8G8B8A8_UNORM:
+        return VK_FORMAT_R8G8B8A8_SRGB;
+      default:
+        return VK_FORMAT_UNDEFINED;
       }
     }
     bool fits(const int32_t rect[4], VkExtent2D extent) {
@@ -202,6 +214,7 @@ namespace remix {
       pass.info = info;
       pass.always = i < flagCount && (flags[i] & REMIXAPI_HOST_PASS_ALWAYS_EXT);
       pass.sceneDepthTerms = i < flagCount && (flags[i] & REMIXAPI_HOST_PASS_SCENE_DEPTH_TERMS_EXT);
+      pass.srgbWrite = i < flagCount && (flags[i] & REMIXAPI_HOST_PASS_SRGB_WRITE_EXT);
       // The terms take the place of the last two floats the host pushes.
       if (pass.sceneDepthTerms && (info.kind != REMIXAPI_HOST_PASS_DRAW_EXT || info.pushConstantBytes < 8))
         return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
@@ -272,7 +285,23 @@ namespace remix {
       }
       passes.push_back(std::move(pass));
     }
+    // REMIXAPI_HOST_PASS_KEPT_EXT: what the list before this one wrote into
+    // host targets, had no frame replayed it (it holds what the one before it
+    // kept in turn). Up to a count: a host that submits for long without a
+    // frame (loading) keeps its earliest passes, a target's first contents.
+    if (!m_pendingRecorded) {
+      constexpr size_t kKept = 4096;
+      std::vector<Pass> kept;
+      for (auto &old : m_pending)
+        if (old.info.target && old.info.target != REMIXAPI_HOST_TARGET_FRAME_DEPTH_EXT && kept.size() < kKept)
+          kept.push_back(std::move(old));
+      if (!kept.empty()) {
+        kept.insert(kept.end(), std::make_move_iterator(passes.begin()), std::make_move_iterator(passes.end()));
+        passes = std::move(kept);
+      }
+    }
     m_pending = std::move(passes);
+    m_pendingRecorded = false;
     // The frame's counts: what record() runs of this submission (nothing, when
     // it is empty or the frame skips the passes).
     m_stats.passes = m_stats.draws = m_stats.copies = m_stats.clears = m_stats.skipped = 0;
@@ -318,7 +347,8 @@ namespace remix {
 #if defined(REMIX_METAL)
     statistics.passFlags = REMIXAPI_HOST_PASS_ALWAYS_EXT;
 #else
-    statistics.passFlags = REMIXAPI_HOST_PASS_ALWAYS_EXT | REMIXAPI_HOST_PASS_SCENE_DEPTH_TERMS_EXT;
+    statistics.passFlags = REMIXAPI_HOST_PASS_ALWAYS_EXT | REMIXAPI_HOST_PASS_SCENE_DEPTH_TERMS_EXT |
+                           REMIXAPI_HOST_PASS_SRGB_WRITE_EXT | REMIXAPI_HOST_PASS_KEPT_EXT;
 #endif
     return statistics;
   }
@@ -339,7 +369,9 @@ namespace remix {
       t.depth = depth;
       const bool volume = depth > 1;
       t.initialized = false;
+      t.srgbFormat = volume ? VK_FORMAT_UNDEFINED : srgbSibling(format);
       const VkImageCreateInfo image{.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+                                    .flags = t.srgbFormat ? VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT : VkImageCreateFlags(0),
                                     .imageType = volume ? VK_IMAGE_TYPE_3D : VK_IMAGE_TYPE_2D,
                                     .format = format,
                                     .extent = {extent.width, extent.height, depth},
@@ -376,6 +408,13 @@ namespace remix {
       else if (channels == REMIXAPI_HOST_CHANNELS_NO_ALPHA_EXT)
         sampledView.components = {same, same, same, one};
       check(vkCreateImageView(m_device, &sampledView, nullptr, &t.sampled));
+      if (t.srgbFormat) {
+        VkImageViewCreateInfo srgbView = view;
+        srgbView.format = t.srgbFormat;
+        check(vkCreateImageView(m_device, &srgbView, nullptr, &t.srgbView));
+        sampledView.format = t.srgbFormat;
+        check(vkCreateImageView(m_device, &sampledView, nullptr, &t.srgbSampled));
+      }
       if (volume) {
         // Sampled only: no render pass or framebuffer. Its use counts from now,
         // or the end of this frame's record would take it as stale and destroy
@@ -418,6 +457,18 @@ namespace remix {
                                                 .height = extent.height,
                                                 .layers = 1};
       check(vkCreateFramebuffer(m_device, &framebuffer, nullptr, &t.framebuffer));
+      if (t.srgbFormat) {
+        // The same pass and framebuffer over the image's sRGB view.
+        VkAttachmentDescription srgbAttachment = attachment;
+        srgbAttachment.format = t.srgbFormat;
+        VkRenderPassCreateInfo srgbPass = pass;
+        srgbPass.pAttachments = &srgbAttachment;
+        check(pipeline::createRenderPass(m_device, &srgbPass, nullptr, &t.srgbPass));
+        VkFramebufferCreateInfo srgbFramebuffer = framebuffer;
+        srgbFramebuffer.renderPass = t.srgbPass;
+        srgbFramebuffer.pAttachments = &t.srgbView;
+        check(vkCreateFramebuffer(m_device, &srgbFramebuffer, nullptr, &t.srgbFramebuffer));
+      }
     }
     t.lastFrame = m_frame;
     return t;
@@ -434,6 +485,10 @@ namespace remix {
           vkDestroyFramebuffer(m_device, frame->second.depthFramebuffer, nullptr);
         frame->second.depthFramebuffer = VK_NULL_HANDLE;
         frame->second.depthPass = VK_NULL_HANDLE;
+        if (frame->second.srgbDepthFramebuffer)
+          vkDestroyFramebuffer(m_device, frame->second.srgbDepthFramebuffer, nullptr);
+        frame->second.srgbDepthFramebuffer = VK_NULL_HANDLE;
+        frame->second.srgbDepthPass = VK_NULL_HANDLE;
       }
     }
     if (!t.image) {
@@ -567,6 +622,18 @@ namespace remix {
                                               .height = frame.extent.height,
                                               .layers = 1};
     check(vkCreateFramebuffer(m_device, &framebuffer, nullptr, &frame.depthFramebuffer));
+    if (frame.srgbFormat) {
+      VkAttachmentDescription srgbAttachments[] = {attachments[0], attachments[1]};
+      srgbAttachments[0].format = frame.srgbFormat;
+      VkRenderPassCreateInfo srgbPass = pass;
+      srgbPass.pAttachments = srgbAttachments;
+      check(pipeline::createRenderPass(m_device, &srgbPass, nullptr, &frame.srgbDepthPass));
+      const VkImageView srgbViews[] = {frame.srgbView, depth.view};
+      VkFramebufferCreateInfo srgbFramebuffer = framebuffer;
+      srgbFramebuffer.renderPass = frame.srgbDepthPass;
+      srgbFramebuffer.pAttachments = srgbViews;
+      check(vkCreateFramebuffer(m_device, &srgbFramebuffer, nullptr, &frame.srgbDepthFramebuffer));
+    }
   }
 
   void HostPasses::retireTarget(Target &t) {
@@ -579,6 +646,14 @@ namespace remix {
       vkDestroyFramebuffer(m_device, t.framebuffer, nullptr);
     if (t.depthFramebuffer)
       vkDestroyFramebuffer(m_device, t.depthFramebuffer, nullptr);
+    if (t.srgbFramebuffer)
+      vkDestroyFramebuffer(m_device, t.srgbFramebuffer, nullptr);
+    if (t.srgbDepthFramebuffer)
+      vkDestroyFramebuffer(m_device, t.srgbDepthFramebuffer, nullptr);
+    if (t.srgbView)
+      vkDestroyImageView(m_device, t.srgbView, nullptr);
+    if (t.srgbSampled)
+      vkDestroyImageView(m_device, t.srgbSampled, nullptr);
     if (t.view)
       vkDestroyImageView(m_device, t.view, nullptr);
     if (t.sampled)
@@ -911,6 +986,7 @@ namespace remix {
       // submissions drew none of the passes, and the effect flickered). The
       // host submits every frame, an empty list when it has no passes.
       passes = m_pending;
+      m_pendingRecorded = true;
       uploads = std::move(m_uploads);
       m_uploads.clear();
       m_stats.passes = uint32_t(passes.size());
@@ -1071,8 +1147,10 @@ namespace remix {
         skip(m_stats.skippedTarget); // a volume: sampled only
         continue;
       }
-      VkRenderPass renderPass = t.pass;
-      VkFramebuffer framebuffer = t.framebuffer;
+      // REMIXAPI_HOST_PASS_SRGB_WRITE_EXT, where the target has an sRGB sibling.
+      const bool srgbWrite = pass.srgbWrite && !depthOnly && t.srgbPass;
+      VkRenderPass renderPass = srgbWrite ? t.srgbPass : t.pass;
+      VkFramebuffer framebuffer = srgbWrite ? t.srgbFramebuffer : t.framebuffer;
       if (!i.target && i.depth) {
         // A depth-tested draw on the frame: against the host's frame depth.
         auto depth = m_targets.find(REMIXAPI_HOST_TARGET_FRAME_DEPTH_EXT);
@@ -1082,8 +1160,8 @@ namespace remix {
         }
         depth->second.lastFrame = m_frame;
         attachDepth(t, depth->second);
-        renderPass = t.depthPass;
-        framebuffer = t.depthFramebuffer;
+        renderPass = srgbWrite ? t.srgbDepthPass : t.depthPass;
+        framebuffer = srgbWrite ? t.srgbDepthFramebuffer : t.depthFramebuffer;
       }
       const auto &l = layout(*vertex, *fragment);
       const VkPipeline p = pipeline(pass, *vertex, *fragment, l, renderPass, depthOnly);
@@ -1155,10 +1233,15 @@ namespace remix {
           // texture (SAMPLED_IMAGE) no filtering; a D3D9 sampler (SAMPLER) both.
           const bool image = binding.type != REMIXAPI_HOST_BINDING_SAMPLER_STATE_EXT;
           const bool filtering = binding.type != REMIXAPI_HOST_BINDING_SAMPLED_IMAGE_EXT;
+          // REMIXAPI_HOST_SAMPLER_SRGB_EXT: the image's sRGB view, where it has one.
+          const bool decode = (found->linear & REMIXAPI_HOST_SAMPLER_SRGB_EXT) != 0;
+          auto viewOf = [&](const Target &image) {
+            return decode && image.srgbSampled ? image.srgbSampled : image.sampled;
+          };
           VkImageView sampled = VK_NULL_HANDLE;
           VkImageLayout sampledLayout = VK_IMAGE_LAYOUT_GENERAL;
           if (image) {
-            sampled = frame.sampled;
+            sampled = viewOf(frame);
             if (found->target == REMIXAPI_HOST_TARGET_SCENE_DEPTH_EXT) {
               // The renderer's copy of the frame's depth, in its own layout.
               if (!sceneDepth.imageView) {
@@ -1176,7 +1259,7 @@ namespace remix {
                 incomplete = &m_stats.skippedTarget;
                 break;
               }
-              sampled = it->second.sampled;
+              sampled = viewOf(it->second);
             } else if (found->target >= REMIXAPI_HOST_TARGET_RESERVED_EXT) {
               // The runtime's own images, when the frame has them.
               const VkImageView own = found->target == REMIXAPI_HOST_TARGET_VIEW_DEPTH_EXT ? view.depth
@@ -1196,7 +1279,7 @@ namespace remix {
                 incomplete = &m_stats.skippedTarget;
                 break;
               }
-              sampled = it->second.sampled;
+              sampled = viewOf(it->second);
               it->second.lastFrame = m_frame;
             } else if (!i.target) {
               // Sampling the frame while drawing it: through a copy of it.
@@ -1209,14 +1292,14 @@ namespace remix {
               const int32_t whole[4] = {};
               blit(command, frame.image, extent, whole, scratch.image, extent, whole, false);
               between();
-              sampled = scratch.sampled;
+              sampled = viewOf(scratch);
             }
           }
           const VkSamplerAddressMode modes[] = {VK_SAMPLER_ADDRESS_MODE_REPEAT, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
                                                 VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT};
           const VkSamplerCreateInfo samplerInfo{.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-                                                .magFilter = found->linear ? VK_FILTER_LINEAR : VK_FILTER_NEAREST,
-                                                .minFilter = found->linear ? VK_FILTER_LINEAR : VK_FILTER_NEAREST,
+                                                .magFilter = (found->linear & 1) ? VK_FILTER_LINEAR : VK_FILTER_NEAREST,
+                                                .minFilter = (found->linear & 1) ? VK_FILTER_LINEAR : VK_FILTER_NEAREST,
                                                 .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
                                                 .addressModeU = modes[found->addressU],
                                                 .addressModeV = modes[found->addressV],

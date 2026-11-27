@@ -1120,7 +1120,7 @@ typedef struct remixapi_HostPassBufferEXT { // a uniform buffer binding's conten
 typedef struct remixapi_HostPassSamplerEXT { // a combined image sampler binding
   uint32_t binding;
   remixapi_HostTargetHandleEXT target; // the host target sampled, 0 the frame
-  uint32_t linear;                     // filter: 1 linear, 0 nearest
+  uint32_t linear;                     // filter: 1 linear, 0 nearest; | REMIXAPI_HOST_SAMPLER_SRGB_EXT
   uint32_t addressU, addressV;         // 0 repeat, 1 clamp to edge, 2 mirror
 } remixapi_HostPassSamplerEXT;
 typedef struct remixapi_HostPassVertexBindingEXT {
@@ -1211,6 +1211,30 @@ typedef struct remixapi_HostPassListEXT {
 // scene depth. A runtime older than the flag leaves the bytes as submitted: a
 // host that submits zeros there can tell.
 #define REMIXAPI_HOST_PASS_SCENE_DEPTH_TERMS_EXT 2u
+// D3D9's sRGB states. REMIXAPI_HOST_PASS_SRGB_WRITE_EXT (a draw pass,
+// D3DRS_SRGBWRITEENABLE): the colour the pass writes is linear and stored
+// sRGB-encoded, and what it blends with is decoded first.
+// REMIXAPI_HOST_SAMPLER_SRGB_EXT (a bit of a sampler's `linear`,
+// D3DSAMP_SRGBTEXTURE): the image is decoded from sRGB where the pass samples
+// it. Both apply to 8-bit targets (R8G8B8A8, B8G8R8A8: the frame when it is
+// one, host targets, uploads) and are ignored on others, as D3D9 ignores them
+// on float formats. Without them a pass reads and writes the bytes as they
+// are: right only where a shader decodes what it reads and encodes what it
+// writes, and nothing is blended. A runtime older than these takes the
+// sampler's bit for linear filtering: a host sets them only where the
+// statistics' passFlags name REMIXAPI_HOST_PASS_SRGB_WRITE_EXT.
+#define REMIXAPI_HOST_PASS_SRGB_WRITE_EXT 4u
+#define REMIXAPI_HOST_SAMPLER_SRGB_EXT 2u
+// In the statistics' passFlags only (no pass takes it): a list the runtime
+// never replayed before the host's next one arrived (presentation runs at its
+// own pace; a frame that skips the passes, as while loading) is not lost
+// where it wrote host targets. Its passes into host targets run before the
+// next list's, in order, so what a host draws into a target once (a mask
+// baked at startup) or advances a step at a time (a simulation) is as the
+// host left it. Its passes on the frame and the frame's depth are dropped:
+// the next list has its own. A runtime without it replays the latest list
+// alone, and a host cannot tell an unreplayed list from one not replayed yet.
+#define REMIXAPI_HOST_PASS_KEPT_EXT 8u
 #define REMIXAPI_STRUCT_TYPE_HOST_PASS_LIST_FLAGS_EXT ((remixapi_StructType)0x7fff1032)
 typedef struct remixapi_HostPassListFlagsEXT {
   remixapi_StructType sType;

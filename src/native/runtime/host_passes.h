@@ -111,6 +111,8 @@ namespace remix {
       // REMIXAPI_HOST_PASS_SCENE_DEPTH_TERMS_EXT: record writes the frame's
       // scene depth terms over the last 8 bytes of its push constants.
       bool sceneDepthTerms = false;
+      // REMIXAPI_HOST_PASS_SRGB_WRITE_EXT: drawn through the target's sRGB views.
+      bool srgbWrite = false;
       // A pass of the runtime's own, added in record around a run of the
       // host's depth-tested draws on the frame (edge smoothing): kEdge*.
       uint8_t edge = 0;
@@ -136,6 +138,14 @@ namespace remix {
       // The frame only: with the frame depth attached (draws that test depth).
       VkRenderPass depthPass = VK_NULL_HANDLE;
       VkFramebuffer depthFramebuffer = VK_NULL_HANDLE;
+      // An 8-bit target's sRGB sibling format (UNDEFINED: it has none) and the
+      // same views, passes and framebuffers in it: what a pass with
+      // REMIXAPI_HOST_PASS_SRGB_WRITE_EXT draws through and a sampler with
+      // REMIXAPI_HOST_SAMPLER_SRGB_EXT reads.
+      VkFormat srgbFormat = VK_FORMAT_UNDEFINED;
+      VkImageView srgbView = VK_NULL_HANDLE, srgbSampled = VK_NULL_HANDLE;
+      VkRenderPass srgbPass = VK_NULL_HANDLE, srgbDepthPass = VK_NULL_HANDLE;
+      VkFramebuffer srgbFramebuffer = VK_NULL_HANDLE, srgbDepthFramebuffer = VK_NULL_HANDLE;
       VkFormat format{};
       VkExtent2D extent{};
       uint32_t channels = 0;    // REMIXAPI_HOST_CHANNELS_*
@@ -199,6 +209,9 @@ namespace remix {
     std::map<remixapi_HostShaderHandleEXT, std::shared_ptr<Shader>>
         m_shaders; // a shader outlives its handle while a frame uses it
     std::vector<Pass> m_pending;
+    // m_pending was replayed at least once (record). False: the next
+    // submission keeps its passes into host targets (REMIXAPI_HOST_PASS_KEPT_EXT).
+    bool m_pendingRecorded = true;
     std::vector<Upload> m_uploads;
     uint64_t m_frame = 0;
     std::atomic<bool> m_enabled{false}, m_asked{false}, m_edgeSmoothing{true};
