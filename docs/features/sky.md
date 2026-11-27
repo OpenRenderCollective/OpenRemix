@@ -75,6 +75,7 @@ lightning, never saved, applied over the profile unless it sets
 | Function | |
 |---|---|
 | `remixapi_SetSkyTimeEXT` | Time of day, day of year and the clock's day length; null hands time back. |
+| `remixapi_SetSkyLightsEXT` | The game's own sun and moon directions, in place of the time of day's sun and Earth's Moon; null hands them back. |
 | `remixapi_SetSkyWeatherPresetEXT` | Eases to a NUMOS weather preset (Clear, Fair, PartlyCloudy, Cloudy, Overcast, Haze, Fog, Storm, Drizzle, Altostratus) and sets the precipitation intensity. |
 | `remixapi_SetSkyWeatherFieldEXT` | One NUMOS weather field (cloud coverage, type, density, base, wind, fog, lightning rate…) over the preset. |
 | `remixapi_ClearSkyWeatherEXT` | Eases back to the profile's weather. |

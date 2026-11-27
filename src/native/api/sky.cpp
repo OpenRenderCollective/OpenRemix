@@ -62,6 +62,28 @@ REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_SetSkyTimeEXT(const remixapi_
   });
 }
 
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_SetSkyLightsEXT(const remixapi_SkyLightsEXT *lights) {
+  const auto direction = [](const float *v) {
+    return finite(v[0]) && finite(v[1]) && finite(v[2]) && v[0] * v[0] + v[1] * v[1] + v[2] * v[2] > 1e-12f;
+  };
+  if (lights && (lights->structSize != sizeof(*lights) || !finite(lights->moonPhase) ||
+                 ((lights->flags & REMIXAPI_SKY_LIGHTS_SUN_EXT) && !direction(lights->sunDirection)) ||
+                 ((lights->flags & REMIXAPI_SKY_LIGHTS_MOON_EXT) && !direction(lights->moonDirection))))
+    return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
+  return withControl([&](remix::config::SkyControl &control) {
+    ++control.lightsGeneration;
+    control.sun = lights && (lights->flags & REMIXAPI_SKY_LIGHTS_SUN_EXT);
+    control.moon = lights && (lights->flags & REMIXAPI_SKY_LIGHTS_MOON_EXT);
+    if (control.sun)
+      std::copy_n(lights->sunDirection, 3, control.sunDirection);
+    if (control.moon) {
+      std::copy_n(lights->moonDirection, 3, control.moonDirection);
+      control.moonPhase = lights->moonPhase < 0 ? -1.f : lights->moonPhase - std::floor(lights->moonPhase);
+    }
+    return REMIXAPI_ERROR_CODE_SUCCESS;
+  });
+}
+
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_SetSkyWeatherPresetEXT(const char *preset, float transitionSeconds,
                                                                           float precipitation) {
   if (!finite(transitionSeconds) || !finite(precipitation))

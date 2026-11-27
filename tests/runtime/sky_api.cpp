@@ -38,6 +38,7 @@ int main(int argc, char **argv) {
   const auto symbol = [&](const char *name) { return dlsym(library, name); };
 #endif
   const auto setTime = reinterpret_cast<PFN_remixapi_SetSkyTimeEXT>(symbol("remixapi_SetSkyTimeEXT"));
+  const auto setLights = reinterpret_cast<PFN_remixapi_SetSkyLightsEXT>(symbol("remixapi_SetSkyLightsEXT"));
   const auto setPreset =
       reinterpret_cast<PFN_remixapi_SetSkyWeatherPresetEXT>(symbol("remixapi_SetSkyWeatherPresetEXT"));
   const auto setField = reinterpret_cast<PFN_remixapi_SetSkyWeatherFieldEXT>(symbol("remixapi_SetSkyWeatherFieldEXT"));
@@ -46,7 +47,7 @@ int main(int argc, char **argv) {
       reinterpret_cast<PFN_remixapi_TriggerSkyLightningEXT>(symbol("remixapi_TriggerSkyLightningEXT"));
   const auto getState = reinterpret_cast<PFN_remixapi_GetSkyStateEXT>(symbol("remixapi_GetSkyStateEXT"));
   const auto setLens = reinterpret_cast<PFN_remixapi_SetSkyLensEXT>(symbol("remixapi_SetSkyLensEXT"));
-  require(setTime && setPreset && setField && clearWeather && lightning && getState && setLens, "Sky exports");
+  require(setTime && setLights && setPreset && setField && clearWeather && lightning && getState && setLens, "Sky exports");
 
   constexpr auto invalid = REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS, early = REMIXAPI_ERROR_CODE_NOT_INITIALIZED;
   remixapi_SkyTimeEXT time{
@@ -60,6 +61,23 @@ int main(int argc, char **argv) {
   time.dayOfYear = 0;
   time.timeOfDayHours = NAN;
   require(setTime(&time) == invalid, "Time of day finite");
+
+  remixapi_SkyLightsEXT lights{.structSize = sizeof(lights),
+                                .version = 1,
+                                .flags = REMIXAPI_SKY_LIGHTS_SUN_EXT | REMIXAPI_SKY_LIGHTS_MOON_EXT,
+                                .sunDirection = {0, 1, 1},
+                                .moonDirection = {0, -1, 0},
+                                .moonPhase = -1};
+  require(setLights(&lights) == early && setLights(nullptr) == early, "Lights before startup");
+  lights.structSize = 4;
+  require(setLights(&lights) == invalid, "Lights struct size");
+  lights.structSize = sizeof(lights);
+  lights.sunDirection[0] = lights.sunDirection[1] = lights.sunDirection[2] = 0;
+  require(setLights(&lights) == invalid, "Sun direction length");
+  lights.flags = REMIXAPI_SKY_LIGHTS_MOON_EXT;
+  require(setLights(&lights) == early, "Sun direction unset");
+  lights.moonDirection[1] = NAN;
+  require(setLights(&lights) == invalid, "Moon direction finite");
 
   require(setPreset("storm", 5, -1) == early && setPreset(nullptr, 0, 0) == early, "Preset before startup");
   require(setPreset("Storm", INFINITY, 0) == invalid, "Preset transition finite");

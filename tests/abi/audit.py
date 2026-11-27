@@ -47,7 +47,7 @@ required_exports += ['remixapi_GetReconstructionDiagnosticsEXT', 'remixapi_Insta
              'remixapi_GetLocalLightSetStatisticsEXT', 'remixapi_GetCameraCullingStatisticsEXT',
              'remixapi_GetShadowStatisticsEXT', 'remixapi_GetSharcStatisticsEXT',
              'remixapi_GetDenoisingCapabilitiesEXT', 'remixapi_GetDenoisingStatisticsEXT',
-             'remixapi_SetSkyTimeEXT', 'remixapi_SetSkyWeatherPresetEXT', 'remixapi_SetSkyWeatherFieldEXT',
+             'remixapi_SetSkyTimeEXT', 'remixapi_SetSkyLightsEXT', 'remixapi_SetSkyWeatherPresetEXT', 'remixapi_SetSkyWeatherFieldEXT',
              'remixapi_ClearSkyWeatherEXT', 'remixapi_TriggerSkyLightningEXT', 'remixapi_GetSkyStateEXT',
              'remixapi_SetSkyLensEXT']
 required_exports += ['remixapi_AddSceneInstancesEXT', 'remixapi_SetSceneInstanceEXT', 'remixapi_ChangeSceneInstancesEXT',

@@ -41,6 +41,15 @@ namespace remix::config {
     int32_t dayOfYear = 0;
     float dayLengthMinutes = 0;
 
+    // The game's sun and moon (world space, toward them), each in place of
+    // the time of day's when set; the moon's phase 0 to 1, or negative: from
+    // the sun.
+    uint64_t lightsGeneration = 0;
+    bool sun = false, moon = false;
+    float sunDirection[3] = {0, 0, 1};
+    float moonDirection[3] = {0, 0, 1};
+    float moonPhase = -1;
+
     // A lightning strike, at a position (render space) or placed as an
     // automatic one.
     uint64_t lightningGeneration = 0;

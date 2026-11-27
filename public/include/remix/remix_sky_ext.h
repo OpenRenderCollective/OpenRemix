@@ -19,6 +19,24 @@ typedef struct remixapi_SkyTimeEXT {
   float dayLengthMinutes;
 } remixapi_SkyTimeEXT;
 
+// Where the game's own sun and moon are, for a game whose day does not
+// follow Earth's (a night that runs faster, a sun on its own path). The sun
+// direction replaces the time of day's sun (the clock still sets the
+// stars); the moon direction replaces Earth's Moon with one moon there.
+// Directions are world space (as the lights'), toward the body; a moonPhase
+// of 0 to 1 (0 new, 0.5 full) sets its phase, negative takes it from the
+// sun. structSize is sizeof(remixapi_SkyLightsEXT); version is 1.
+#define REMIXAPI_SKY_LIGHTS_SUN_EXT 0x1u
+#define REMIXAPI_SKY_LIGHTS_MOON_EXT 0x2u
+typedef struct remixapi_SkyLightsEXT {
+  uint32_t structSize;
+  uint32_t version;
+  uint32_t flags; // REMIXAPI_SKY_LIGHTS_*_EXT: which directions are set
+  float sunDirection[3];
+  float moonDirection[3];
+  float moonPhase;
+} remixapi_SkyLightsEXT;
+
 // What the sky did last frame. structSize is the caller's capacity (at least
 // 8); only the known prefix is written, and the returned structSize is this
 // implementation's. version is 1.
@@ -71,6 +89,8 @@ extern "C" {
 #endif
 // The game's time of day; null hands time back to the profile.
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_SetSkyTimeEXT(const remixapi_SkyTimeEXT *time);
+// The game's sun and moon; null hands them back to the time of day.
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_SetSkyLightsEXT(const remixapi_SkyLightsEXT *lights);
 // Eases the weather to a NUMOS preset over transitionSeconds (0 jumps). The
 // presets: Clear, Fair, PartlyCloudy, Cloudy, Overcast, Haze, Fog, Storm,
 // Drizzle, Altostratus (case-insensitive). Null or empty starts from the
@@ -104,6 +124,7 @@ REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_SetSkyLensEXT(uint32_t slot, 
 #endif
 
 typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_SetSkyTimeEXT)(const remixapi_SkyTimeEXT *time);
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_SetSkyLightsEXT)(const remixapi_SkyLightsEXT *lights);
 typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_SetSkyWeatherPresetEXT)(const char *preset,
                                                                               float transitionSeconds,
                                                                               float precipitation);
