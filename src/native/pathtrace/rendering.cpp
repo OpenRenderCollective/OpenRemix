@@ -981,6 +981,8 @@ namespace remix {
       frame.pathConfig[3] |= 0x4000u; // a profile's far side off (subsurface.glsl)
     if (resources.cameraMediumFog())
       frame.pathConfig[3] |= 0x8000u; // the camera's medium is a fog body (pathtrace.comp cameraMedium)
+    if (options.playerModelShadows)
+      frame.pathConfig[3] |= 0x10000u; // reflection-only instances cast shadows (scene.glsl shadowMask)
     append(&frame, sizeof(frame));
     append(&options.localFireflyFilter, sizeof(options.localFireflyFilter));
     append(&options.translucencyDenoiser, sizeof(options.translucencyDenoiser));

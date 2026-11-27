@@ -72,6 +72,8 @@ if get_option('gpu_tests')
     args : [meson.current_build_dir() / 'local-shadow-readback', 'local-shadows'], timeout : 180)
     test('Forward+ unbaked point-light planar self-shadow regression', raster_test,
       args : [meson.current_build_dir() / 'local-shadow-plane-readback', 'local-shadow-plane'], timeout : 60)
+    test('Forward+ ray-traced shadows for local lights without a shadow map', raster_test,
+      args : [meson.current_build_dir() / 'ray-local-shadow-readback', 'ray-local-shadows'], timeout : 120)
   test('Forward+ separable baked direct diffuse and mixed shadows', raster_test,
     args : [meson.current_build_dir() / 'baked-direct-readback', 'baked-direct'], timeout : 180)
   test('Forward+ aggregate diffuse publication, mixed corrections and cache', raster_test,

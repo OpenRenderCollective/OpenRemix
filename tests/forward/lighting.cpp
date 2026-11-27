@@ -182,6 +182,86 @@ int main() {
     presets::applySource2(custom);
     require(custom.baking.reflectionProbes == bake::Config{}.reflectionProbes && presets::isSource2(custom),
             "Selecting Source 2 enables disabled cubemaps with a valid default budget");
+    {
+      auto dynamic = quality;
+      presets::applyDynamic(dynamic);
+      const auto selected = techniques::requested(dynamic);
+      require(presets::isDynamic(dynamic) && !presets::isSource2(dynamic) && !presets::isDynamic(quality) &&
+                  selected.direct == techniques::Direct::Analytic &&
+                  selected.diffuse == techniques::Diffuse::SplitCascades &&
+                  selected.reflections == techniques::Reflections::RayQueries && selected.screenReflections &&
+                  selected.sunShadows && selected.localShadows,
+              "Dynamic selects analytic direct, radiance cascades, ray reflections over screen traces and shadows");
+      require(dynamic.samples == quality.samples && dynamic.baking.samples == quality.baking.samples &&
+                  dynamic.exposure == quality.exposure &&
+                  dynamic.baking.lightmapTexels == quality.baking.lightmapTexels,
+              "Selecting Dynamic preserves quality and display preferences");
+      // The cascades trace in compute: fragment ray queries are not required.
+      const techniques::Capabilities rays{.rayQueries = true};
+      const auto live = techniques::resolveResources(dynamic, rays);
+      require(!live.receiverLighting.baking.enabled && !live.bakedDiffuse() && !live.bakedAttribution() &&
+                  !live.captureConfig.enabled && live.cascadeDiffuse() && live.liveDiffuse() &&
+                  !live.rayDiffuse() && live.rayScene && live.rayReflections && live.screenReflections &&
+                  live.reflectionResolve && !live.inlineReflections,
+              "Dynamic resolves without a bake or captures when ray queries are available");
+      auto cascadesOnly = dynamic;
+      cascadesOnly.ssr = cascadesOnly.rtReflections = false;
+      const auto guides = techniques::resolveResources(cascadesOnly, rays);
+      require(guides.cascadeDiffuse() && guides.reflectionResolve && guides.rayScene && !guides.rayReflections,
+              "Cascades keep the resolved guides and the ray scene without any reflection technique");
+      cascadesOnly.bakedDirectWithLiveGI = cascadesOnly.bakedLighting = cascadesOnly.baking.directDiffuse = true;
+      require(!techniques::resolveResources(cascadesOnly, rays).receiverLighting.bakedReceivers,
+              "Cascades own the whole diffuse field; a stale composition request is ignored");
+      const auto unsupported = techniques::resolveResources(dynamic, techniques::Capabilities{});
+      require(!unsupported.liveDiffuse() && !unsupported.rayScene && unsupported.bakedDiffuse(),
+              "Without ray queries the cascade request falls back to the baked field");
+      auto changed = dynamic;
+      changed.splitCascades = false;
+      require(!dynamic.sameTargets(changed), "Selecting cascades replaces the receiver pipelines");
+      changed = dynamic;
+      changed.cascadeRayStride = 1;
+      changed.cascadeSpacing = .1f;
+      require(dynamic.sameTargets(changed), "Cascade quality edits reuse targets");
+      // Ray-traced local shadows ride on the cascade receivers and need fragment ray queries.
+      require(techniques::requested(dynamic).rayLocalShadows && !live.rayShadows,
+              "Dynamic requests ray-traced local shadows; compute-only ray queries cannot provide them");
+      const techniques::Capabilities fragmentRays{.rayQueries = true, .fragmentGI = true};
+      require(techniques::resolveResources(dynamic, fragmentRays).rayShadows,
+              "Fragment ray queries enable ray-traced local shadows with the cascades");
+      // The live shadow switches choose what the receivers trace; they do not replace them.
+      changed = dynamic;
+      changed.localShadows = changed.shadows = false;
+      require(techniques::resolveResources(changed, fragmentRays).rayShadows && dynamic.sameTargets(changed),
+              "Live shadow switches keep the ray-shadow receivers");
+      require(techniques::requested(dynamic).raySunShadows, "Dynamic requests ray-traced sun shadows");
+      changed = dynamic;
+      changed.splitCascades = false;
+      changed.rtGI = true;
+      require(!techniques::resolveResources(changed, fragmentRays).rayShadows,
+              "Other diffuse sources do not carry the ray-shadow receivers");
+      changed = dynamic;
+      changed.rtLocalShadows = false;
+      require(dynamic.sameTargets(changed) && !presets::isDynamic(changed) &&
+                  techniques::resolveResources(changed, fragmentRays).rayShadows,
+              "One ray-traced shadow source keeps the receivers the other needs");
+      changed.rtSunShadows = false;
+      require(!dynamic.sameTargets(changed) && !techniques::resolveResources(changed, fragmentRays).rayShadows,
+              "Without any ray-traced shadow the ordinary cascade receivers return");
+      changed = dynamic;
+      changed.rtShadowLights = 3;
+      require(dynamic.sameTargets(changed) && presets::isDynamic(changed), "The shadow ray budget is a quality edit");
+      config::Settings profile, restored;
+      profile.forward = dynamic;
+      config::UnknownSettings unknown;
+      std::vector<std::string> warnings;
+      std::string error;
+      require(config::parse(config::serialize(profile), restored, unknown, warnings, error) &&
+                  restored.forward == dynamic && presets::isDynamic(restored.forward),
+              "Saved component settings restore Dynamic identity without a preset key");
+      presets::applySource2(dynamic);
+      require(presets::isSource2(dynamic) && !presets::isDynamic(dynamic),
+              "Source 2 and Dynamic are distinct technique selections");
+    }
     for (bool rayGi : {false, true}) {
       config::Settings profile, restored;
       profile.forward = quality;
@@ -945,7 +1025,7 @@ int main() {
           "A 4K page request respects a smaller budget without increasing memory");
   require(
       config::set(settings, "rtx.native.forward.localShadowResolution", "96") == config::SetResult::Invalid &&
-          config::set(settings, "rtx.native.forward.localShadowLights", "9") == config::SetResult::Invalid &&
+          config::set(settings, "rtx.native.forward.localShadowLights", "25") == config::SetResult::Invalid &&
           config::set(settings, "rtx.native.forward.localShadowBias", "nan") == config::SetResult::Invalid,
       "Local shadow quality rejects invalid dimensions and budgets");
   require(

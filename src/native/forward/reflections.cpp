@@ -53,6 +53,7 @@ namespace remix::forward {
     VkExtent2D extent{}, traceExtent{};
     uint32_t levels = 1, samples = 1, scale = 1;
     bool screenSpace = false, tracedRadiance = false;
+    uint32_t guideReferenceDomain = 1;
     bool dummyImagesInitialized = false;
     uint64_t imageBytes = 0, allocationBytes = 0;
     VkDescriptorSetLayout setLayout = VK_NULL_HANDLE;
@@ -113,7 +114,9 @@ namespace remix::forward {
     g.hdr = inputs.hdrImage;
     if (ImageDump::enabled(physical))
       g.dump = std::make_unique<ImageDump>(physical, device);
-    g.tracedRadiance = g.screenSpace || plan.rayReflections || bool(g.dump);
+    // The radiance cascades read the resolved guides without tracing reflections.
+    g.tracedRadiance = g.screenSpace || plan.rayReflections || plan.cascadeDiffuse() || bool(g.dump);
+    g.guideReferenceDomain = plan.cascadeDiffuse() ? 2 : 1;
     g.createImages(physical);
     g.createLayouts();
     g.createPipelines(physical);
@@ -204,10 +207,13 @@ namespace remix::forward {
     if (levels > 1) reduce = compute(ssrReduceShader, sizeof(ssrReduceShader));
     if (tracedRadiance) trace = compute(ssrTraceShader, sizeof(ssrTraceShader));
     // Specialise out reconstruction when the target has no trace provider.
-    const VkBool32 filterSettings[] = {scale == 1, tracedRadiance};
-    const VkSpecializationMapEntry filterEntries[] = {
-        {0, 0, sizeof(VkBool32)}, {1, sizeof(VkBool32), sizeof(VkBool32)}};
-    const VkSpecializationInfo filterSpecialization{2, filterEntries, sizeof(filterSettings), filterSettings};
+    // Matches lighting-reference.glsl: the cascades write live incident lighting
+    // into the guide, every other diffuse source the static reference.
+    const uint32_t filterSettings[] = {scale == 1, tracedRadiance, guideReferenceDomain};
+    const VkSpecializationMapEntry filterEntries[] = {{0, 0, sizeof(uint32_t)},
+                                                      {1, sizeof(uint32_t), sizeof(uint32_t)},
+                                                      {2, 2 * sizeof(uint32_t), sizeof(uint32_t)}};
+    const VkSpecializationInfo filterSpecialization{3, filterEntries, sizeof(filterSettings), filterSettings};
     auto filterPipeline = [&](const auto &stacked, const auto &cube) {
       return probes::nativeCubeStorage(physical)
           ? compute(cube, sizeof(cube), &filterSpecialization)
@@ -459,6 +465,11 @@ namespace remix::forward {
     return {{g.sampler, g.depth->view, VK_IMAGE_LAYOUT_GENERAL},
             {g.sampler, g.normals->view, VK_IMAGE_LAYOUT_GENERAL},
             {g.colorSampler, g.color->view, VK_IMAGE_LAYOUT_GENERAL}};
+  }
+  Reflections::Guides Reflections::guides() const {
+    const auto &g = *m_gpu;
+    if (!g.tracedRadiance) return {};
+    return {g.normals->view, g.depthViews[0], g.extent};
   }
   void Reflections::selectFrame(uint32_t slot) {
     if (m_gpu->dump)

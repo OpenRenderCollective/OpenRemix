@@ -70,6 +70,8 @@ namespace remix::forward {
                               &frame.viewModelScene, 0, nullptr);
       if (gi)
         vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, drawLayout, 2, 1, &frame.rayInputs.diffuse, 0, nullptr);
+      if (gi && frame.rayInputs.shadows)
+        vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, drawLayout, 3, 1, &frame.rayInputs.shadows, 0, nullptr);
       for (const auto &draw : frame.viewModelCommands) {
         if (!draw.cameraVisible) continue;
         const auto pipeline = earlyPipeline && draw.unconditionalCoverage ? earlyPipeline : colorPipeline;

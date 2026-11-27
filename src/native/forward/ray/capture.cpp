@@ -23,7 +23,7 @@ namespace remix::forward::ray {
   } // namespace
   Capture capture(const scene::BakeScene *authored, std::span<const scene::Draw> current,
                   std::span<const scene::SphereLight> lights, const scene::DistantLight &sun,
-                  const scene::DomeLight &dome, float sceneScale, double seconds) {
+                  const scene::DomeLight &dome, float sceneScale, double seconds, const Capture *previous) {
     Capture result;
     result.source = std::make_shared<scene::BakeScene>();
     auto &source = *result.source;
@@ -60,7 +60,6 @@ namespace remix::forward::ray {
     }
     for (const auto &[id, draw] : retained)
       source.draws.push_back(draw);
-    result.inputs = bake::pack(source, seconds, bake::MaterialUse::LiveRays);
     uint64_t hash = 1469598103934665603ull;
     auto add = [&](const auto &value) { hash = scene::fastHash(&value, sizeof(value), hash); };
     auto array = [&](const auto &values) {
@@ -68,19 +67,51 @@ namespace remix::forward::ray {
       if (!values.empty())
         hash = scene::fastHash(values.data(), values.size() * sizeof(values[0]), hash);
     };
+    auto textures = [&](const bake::Inputs &inputs) {
+      // Analytic light values and environment transforms stream per frame; only
+      // sampled texture membership/revisions belong to acceleration/atlas reuse.
+      for (const auto &texture : inputs.textures) {
+        add(reinterpret_cast<uintptr_t>(texture.image.get()));
+        if (texture.image->updates) {
+          std::lock_guard lock(texture.image->updates->lock);
+          add(texture.image->updates->revision);
+        }
+      }
+    };
+    // Transforming and hashing every vertex of a map costs milliseconds a frame.
+    // Surfaces are immutable once created, so their identity, the transforms
+    // and poses applied to them and the packed material records determine the
+    // packed geometry. Compare those first.
+    result.inputs = bake::pack(source, seconds, bake::MaterialUse::LiveRays, false);
+    array(result.inputs.materials);
+    add(result.inputs.domeLayer);
+    add(sceneScale);
+    textures(result.inputs);
+    for (size_t index = 0; index < source.draws.size(); ++index) {
+      const auto &draw = source.draws[index];
+      add(reinterpret_cast<uintptr_t>(draw.surface.get()));
+      add(draw.surface->vertices.size());
+      add(draw.surface->indices.size());
+      add(draw.model);
+      add(draw.firstIndex);
+      add(draw.indexCount);
+      add(draw.vertexOffset);
+      add(source.receiverOnly(index));
+      if (draw.bones) array(*draw.bones);
+      else add(size_t(0));
+    }
+    result.signature = hash;
+    if (previous && previous->signature == result.signature) {
+      result.key = previous->key;
+      return result;
+    }
+    result.inputs = bake::pack(source, seconds, bake::MaterialUse::LiveRays);
+    hash = 1469598103934665603ull;
     array(result.inputs.vertices);
     array(result.inputs.triangles);
     array(result.inputs.materials);
     add(sceneScale);
-    // Analytic light values and environment transforms stream per frame; only
-    // sampled texture membership/revisions belong to acceleration/atlas reuse.
-    for (const auto &texture : result.inputs.textures) {
-      add(reinterpret_cast<uintptr_t>(texture.image.get()));
-      if (texture.image->updates) {
-        std::lock_guard lock(texture.image->updates->lock);
-        add(texture.image->updates->revision);
-      }
-    }
+    textures(result.inputs);
     result.key = hash;
     return result;
   }

@@ -89,7 +89,7 @@ namespace remix::forward {
     std::unique_ptr<postfx::Renderer> postProcessing;
     VkDescriptorSetLayout postLayout = VK_NULL_HANDLE;
     ray::Provider rayLighting;
-    VkDescriptorSetLayout giSceneLayout = VK_NULL_HANDLE;
+    VkDescriptorSetLayout giSceneLayout = VK_NULL_HANDLE, rayShadowLayout = VK_NULL_HANDLE;
     VkPipelineLayout giLayout = VK_NULL_HANDLE;
     VkPipeline giOpaquePipeline = VK_NULL_HANDLE, giLightmapPipeline = VK_NULL_HANDLE;
     VkPipeline terrainPipeline = VK_NULL_HANDLE, terrainLightmapPipeline = VK_NULL_HANDLE,

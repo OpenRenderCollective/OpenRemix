@@ -41,5 +41,12 @@ vec3 sampleEnvironmentReflection(ReflectionReceiver receiver) {
                     receiver.normal, referenceLuma, radiance))
 #endif
     return radiance;
-  return environmentReflection(receiver.position, receiver.normal, receiver.direction, receiver.roughness);
+  radiance = environmentReflection(receiver.position, receiver.normal, receiver.direction, receiver.roughness);
+  // The sky fallback knows nothing about walls. A receiver whose live incident
+  // lighting is known cannot reflect more sky than the light that reaches it:
+  // a dark interior reflects a dark sky. Unknown lighting leaves it unchanged.
+  float incident = lightingReferenceLuminance(receiver.reference, LiveIncidentLightingReference);
+  float skyLuma = dot(radiance, vec3(.2126, .7152, .0722));
+  if (incident >= 0 && skyLuma > 1e-6) radiance *= min(incident / skyLuma, 1);
+  return radiance;
 }

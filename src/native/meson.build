@@ -115,7 +115,8 @@ elif system == 'linux'
   shell_rpath = '$ORIGIN'
 endif
 remix = shared_library('remix',
-  # runtime/hdr_output.cpp embeds the upscaler's HDR10 present stage.
+  # runtime/hdr_output.cpp embeds the upscaler's HDR10 present stage,
+  # runtime/host_passes.cpp its edge smoothing stages.
   api_sources + runtime_sources + ui_sources + [upscale_shaders],
   name_prefix : system == 'windows' ? '' : 'lib',
   # No precompiled header: the tests link this target's objects (tests/meson.build), and

@@ -11,6 +11,10 @@ vec3 receiverBakedCoverage(ShadingReceiver receiver, vec3 normal) {
 // Composition depends on the incoming query, not the provider's ray capability.
 #include "diffuse-composed.glsl"
 #include "receiver-baked.glsl"
+#elif defined(SPLIT_CASCADES)
+// A live source for every other purpose (LIVE_GI), reading probes instead of tracing.
+#include "diffuse-cascades.glsl"
+#include "receiver-live.glsl"
 #elif defined(LIVE_GI)
 #include "diffuse-ray.glsl"
 #include "receiver-live.glsl"

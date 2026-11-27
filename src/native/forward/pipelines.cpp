@@ -5,6 +5,7 @@
 #include "forward/gpu.h"
 #include "forward/bake/storage_options.h"
 #include "forward/probe_batch/endpoint_cells.h"
+#include "forward/ray/cascade_shaders/embedded.h"
 #include "forward/ray/gi_shaders/embedded.h"
 #include "forward/shaders/embedded.h"
 #include "forward/water/shaders/embedded.h"
@@ -57,7 +58,20 @@ namespace remix::forward {
     const auto depthFragment = modules.add(opaqueDepthFragShader, sizeof(opaqueDepthFragShader));
     VkShaderModule giTerrainFragment = VK_NULL_HANDLE;
     VkShaderModule giViewModelFragment = VK_NULL_HANDLE, giViewModelEarlyFragment = VK_NULL_HANDLE;
-    if (techniquePlan.rayDiffuse()) {
+    if (techniquePlan.cascadeDiffuse()) {
+      namespace cascade = ray::cascades;
+      const bool shadows = techniquePlan.rayShadows;
+      giViewModelFragment = shadows ? reflectionModule(cascade::rayViewModelShader, cascade::rayViewModelCubeShader)
+                                    : reflectionModule(cascade::viewModelShader, cascade::viewModelCubeShader);
+      giViewModelEarlyFragment =
+          shadows ? reflectionModule(cascade::rayViewModelEarlyShader, cascade::rayViewModelEarlyCubeShader)
+                  : reflectionModule(cascade::viewModelEarlyShader, cascade::viewModelEarlyCubeShader);
+      giTerrainFragment = shadows ? modules.add(cascade::rayFragShader, sizeof(cascade::rayFragShader))
+                                  : modules.add(cascade::fragShader, sizeof(cascade::fragShader));
+      giFragment = !techniquePlan.reflectionResolve ? giTerrainFragment
+                   : shadows ? modules.add(cascade::rayGuidesShader, sizeof(cascade::rayGuidesShader))
+                             : modules.add(cascade::guidesShader, sizeof(cascade::guidesShader));
+    } else if (techniquePlan.rayDiffuse()) {
       const bool composed = techniquePlan.composesBakedDirect();
       giViewModelFragment = composed
           ? reflectionModule(ray::gi::composedViewModelShader, ray::gi::composedViewModelCubeShader)
@@ -155,7 +169,7 @@ namespace remix::forward {
           .vertexBindingDescriptionCount = 2, .pVertexBindingDescriptions = batchBindings,
           .vertexAttributeDescriptionCount = 2, .pVertexAttributeDescriptions = batchAttributes};
       const bool viewModel = mode == Pass::ViewModel;
-      const bool chartHighlights = mixed::chartHighlightsEnabled() && !techniquePlan.rayDiffuse() &&
+      const bool chartHighlights = mixed::chartHighlightsEnabled() && !techniquePlan.liveDiffuse() &&
           !depthOnly && vs == lightmapVertex && coverage != Coverage::Unmapped;
       // Ordinary vertices have no chart coordinates. Lightmap vertex ranges
       // can specialize either coverage without changing their buffer stride.
@@ -268,7 +282,7 @@ namespace remix::forward {
         giViewModelEarlyPipeline = graphics(vertex, giViewModelEarlyFragment, viewModelTarget->pass(), Pass::ViewModel);
     }
     lightmapPipeline = graphics(lightmapVertex, fragment, worldPass, Pass::Opaque, Coverage::Mapped);
-    if (!techniquePlan.rayDiffuse() && bake::directionalFieldsRequested() &&
+    if (!techniquePlan.liveDiffuse() && bake::directionalFieldsRequested() &&
         !std::getenv("REMIX_DEBUG_DISABLE_INDEXED_WORLD_PIPELINE"))
       indexedLightmapPipeline = graphics(lightmapVertex, fragment, worldPass, Pass::Opaque, Coverage::Mapped, true);
     if (indexedLightmapPipeline && largeOpaqueTarget() &&
@@ -287,7 +301,7 @@ namespace remix::forward {
     terrainPipeline = graphics(vertex, terrainFragment, worldPass, Pass::Terrain);
     terrainLightmapPipeline = graphics(lightmapVertex, terrainFragment, worldPass, Pass::Terrain, Coverage::Mapped);
     terrainPartialLightmapPipeline = graphics(lightmapVertex, terrainFragment, worldPass, Pass::Terrain);
-    if (techniquePlan.rayDiffuse()) {
+    if (techniquePlan.liveDiffuse()) {
       giOpaquePipeline = graphics(vertex, giFragment, worldPass);
       giLightmapPipeline = graphics(lightmapVertex, giFragment, worldPass);
       giTerrainPipeline = graphics(vertex, giTerrainFragment, worldPass, Pass::Terrain);

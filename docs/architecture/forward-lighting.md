@@ -194,7 +194,70 @@ preference. The default profile enables it, but manual-density configurations ma
 disable it because model charts require budget fitting. Technique selection must
 not silently change that quality policy or enable an unsupported combination.
 
-Candidate future providers include DDGI, radiance cascades, distance-field or
+**Dynamic** (`presets::applyDynamic`) is the second preset and bakes nothing: analytic
+direct lighting with shadow maps, Split Radiance Cascades diffuse and ray reflections
+over screen traces. It is derived from the same component keys as Source 2. Its diffuse
+and reflections need ray queries; the resolved plan applies the per-technique fallbacks
+without them, which returns the diffuse request to the baked field. Local shadows
+remain bounded by `shadows::maximumLights`, which this preset exposes because no light
+is baked. It is not a default and has no scene or performance qualification yet.
+
+### Split Radiance Cascades
+
+`Diffuse::SplitCascades` (`ray/cascades.h`, `ray/cascade_shaders/`) implements Freeman,
+Sannikov and Pitt-Francis, "Split Radiance Cascades: Real-Time Global Illumination via
+Sparse Radiance Probes". It is a live diffuse source like ray-query GI and reuses that
+receiver boundary: world and viewmodel shaders compile `diffuse-cascades.glsl` through
+`receiver-lighting.glsl`, and the draw loops bind its probes as set 2 where the
+ray-query variant binds the ray scene. It traces in compute, so it needs ray queries
+but not fragment ray queries.
+
+One build per frame, recorded after every pass that reads the previous one:
+
+1. **Insert.** Each sampled pixel of the resolved depth and normal guides inserts its
+   nearest probe of all four cascades into one spatial hash. Probe spacing doubles
+   per cascade and per level of detail; the level follows the Chebyshev distance to
+   the camera so probes keep their size on screen, and adjacent levels overlap and blend.
+2. **Launch and trace.** One ray per sampled pixel goes through the live scene's
+   transport batches (`bake::Transport::recordDeviceRadiance`), which returns radiance
+   and hit distance. Directions follow the R2 sequence along the Morton order of the
+   ray grid, an approximation of the paper's per-probe prefix sums.
+3. **Deposit (ray splitting).** A ray is occluded in the cascade whose interval holds
+   its hit and passes through every cascade below; cascades above are untouched.
+   The last interval has no far end and takes the environment on a miss.
+4. **Merge.** From the farthest cascade down, each direction adds the transmitted part
+   of the cascade above, interpolated over the existing neighbours (sparse trilinear).
+5. **Irradiance.** Cascade 0 is convolved into a 6x6 octahedral tile per probe, which
+   receivers sample with sparse trilinear weights.
+
+Departures from the paper, and current limits:
+
+- Receivers read the build of the previous frame, because the build needs the frame's
+  completed guides. A receiver no probe covers yet (a disocclusion, the frame after a
+  cut) keeps the flat ambient term for that frame.
+- Every build traces from empty bins. Temporal accumulation blends each probe's
+  irradiance tile with the same probe of the previous build (up to 16 builds), found
+  by key in the previous table, and shifts the ray pattern each build. A cell that
+  changes level of detail starts again. There is no multibounce cache; further
+  bounces come from the transport's path bounces instead.
+- A direction no ray reached takes the cascade above unchanged. The paper relies on
+  its sampling to fill every used direction.
+- Water keeps its ordinary path and does not read the cascades. Viewmodels read them
+  where world probes happen to surround the model, and ambient otherwise.
+- Reflection batches and cascade batches share the transport's per-submission
+  constants: with hardware reflections enabled the cascades use the reflection bounce
+  count. Cascade rays are not range limited (a ray cut short reads as a miss and
+  would bring the environment into any room larger than the range), so the shared
+  scene traces to 10 km and reflection batches reject hits beyond their own range.
+- Probe pools are fixed (32768, 8192, 2048 and 1024 probes for cascades 0 to 3),
+  shared by every level of detail, and use roughly 135 MiB with the two irradiance
+  atlases. Probes beyond a pool are dropped for that build, which darkens whole cells,
+  so the build reads its probe counts back and lowers the probe density until they
+  fit. The status line reports each pool's use.
+- Pixel tests cover a lit, an occluded and an emissive case in a small fixture. Scene
+  quality, noise without accumulation, and frame cost in a real map are unqualified.
+
+Candidate future providers include DDGI, distance-field or
 volume-based reflections and virtual shadow maps. They are design targets, not
 implemented options or promises of interchangeable quality. Their directional,
 visibility, temporal and specular limits must be measured before presets use them.

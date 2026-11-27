@@ -1651,7 +1651,25 @@ namespace remix {
             raster.captureSceneDepth(buffer);
           sceneDepth = raster.sceneDepth();
         }
-        m_hostPasses.record(buffer, m_frameIndex, target, targetFormat, m_swapchainExtent, layout, view, sceneDepth);
+        // The terms of that depth (REMIXAPI_HOST_PASS_SCENE_DEPTH_TERMS_EXT):
+        // the frame's world camera, as the soft overlays take them (a
+        // perspective projection's clip z is affine in clip w, z = a w + b:
+        // the depth buffer holds a + b / w). Not the host's own projection
+        // while a view model is traced (NativeResources::applyViewModel).
+        float depthTerms[2] = {};
+        bool haveDepthTerms = false;
+        {
+          const auto &p = raster.camera(REMIXAPI_CAMERA_TYPE_WORLD);
+          const float zRow[3] = {p[2], p[6], p[10]}, wRow[3] = {p[3], p[7], p[11]};
+          const float ww = wRow[0] * wRow[0] + wRow[1] * wRow[1] + wRow[2] * wRow[2];
+          if (ww > 1e-20f) {
+            depthTerms[0] = (zRow[0] * wRow[0] + zRow[1] * wRow[1] + zRow[2] * wRow[2]) / ww;
+            depthTerms[1] = p[14] - depthTerms[0] * p[15];
+            haveDepthTerms = std::isfinite(depthTerms[0]) && std::isfinite(depthTerms[1]) && depthTerms[1] != 0;
+          }
+        }
+        m_hostPasses.record(buffer, m_frameIndex, target, targetFormat, m_swapchainExtent, layout, view, sceneDepth,
+                            haveDepthTerms ? depthTerms : nullptr);
         pass.renderPass = m_resumePass;
         vkCmdBeginRenderPass(buffer, &pass, VK_SUBPASS_CONTENTS_INLINE);
       };

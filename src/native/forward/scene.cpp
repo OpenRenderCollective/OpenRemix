@@ -492,7 +492,7 @@ namespace remix::forward {
     // Append the fallback tail without reordering either group of lights.
     const uint32_t runtimeLights = uint32_t(lights.size());
     lights.insert(lights.end(), bakedLights.begin(), bakedLights.end());
-    const bool chartHighlightSupport = mixed::chartHighlightsEnabled() && !techniquePlan.rayDiffuse();
+    const bool chartHighlightSupport = mixed::chartHighlightsEnabled() && !techniquePlan.liveDiffuse();
     mixed::ChartHighlightWork::Table chartHighlights;
     if (chartHighlightSupport) {
       auto field = publishedBake && bakedReceivers ? publishedBake->chartHighlights : nullptr;

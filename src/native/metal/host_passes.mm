@@ -505,6 +505,12 @@ fragment float4 copyFragment(Out in [[stage_in]], texture2d<float> image [[textu
         skip(m_stats.skippedShaders);
         continue;
       }
+      // REMIXAPI_HOST_PASS_SCENE_DEPTH_TERMS_EXT: no scene depth is handed to
+      // this backend's passes, so there are no terms to give.
+      if (pass.sceneDepthTerms) {
+        skip(m_stats.skippedViewDepth);
+        continue;
+      }
       const bool depthOnly = i.target == REMIXAPI_HOST_TARGET_FRAME_DEPTH_EXT;
       auto &t = depthOnly ? frameDepth() : ensure(i.target, i);
       if (!t.texture || t.depth > 1) {

@@ -48,7 +48,10 @@ namespace remix::forward::bake {
     uint32_t domeLayer = 0;
   };
   enum class MaterialUse { StaticBake, LiveRays };
-  Inputs pack(const scene::BakeScene &scene, double seconds = 0, MaterialUse use = MaterialUse::StaticBake);
+  // Without geometry, only materials, textures and lights are packed: enough to
+  // tell whether a scene changed without transforming its vertices.
+  Inputs pack(const scene::BakeScene &scene, double seconds = 0, MaterialUse use = MaterialUse::StaticBake,
+              bool geometry = true);
   struct Point {
     Vec4 position{}, normal{};
   }; // normal optionally supplies a surface bias direction

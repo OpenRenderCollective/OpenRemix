@@ -1,0 +1,406 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+// Split Radiance Cascades build passes. One frame: insert the probes next to the
+// visible surfaces, launch a ray from each sampled pixel, split every traced ray
+// into the cascades' intervals, then merge the cascades from the farthest down
+// and convolve cascade 0 into irradiance. The world reads the result next frame.
+#if defined(CASCADE_INSERT) || defined(CASCADE_IRRADIANCE)
+layout(local_size_x = 8, local_size_y = 8) in;
+#else
+layout(local_size_x = 64) in;
+#endif
+#define CASCADE_SET 0
+#define CASCADE_TABLE_ACCESS
+#include "common.glsl"
+#include "../../shaders/reflection_math.glsl"
+layout(push_constant) uniform Batch {
+  uint begin, count, level, reserved;
+}
+batch;
+layout(set = 0, binding = 2) uniform sampler2D guideNormals;
+layout(set = 0, binding = 3) uniform sampler2D guideDepth;
+layout(set = 0, binding = 4, std430) buffer CascadeCounters {
+  uint cascadeCounters[4];
+};
+// xyz: the probe's unwrapped cell. Keys only hold wrapped coordinates.
+layout(set = 0, binding = 5, std430) buffer CascadeCells {
+  ivec4 cascadeCells[];
+};
+// rgb: fixed-point radiance sums; a: rays deposited (high half) and rays that passed (low half).
+layout(set = 0, binding = 6, std430) buffer CascadeBins {
+  uvec4 cascadeBins[];
+};
+// Eight probes of the next cascade around each probe, for sparse trilinear merging.
+layout(set = 0, binding = 7, std430) buffer CascadeLinks {
+  uint cascadeLinks[];
+};
+// Merged radiance as two packed half pairs; alpha marks a direction with data.
+// Cascade 0 keeps every direction; higher cascades are stored already averaged
+// into the directions of the cascade below, which is all merging reads.
+layout(set = 0, binding = 8, std430) buffer CascadeCones {
+  uvec2 cascadeCones[];
+};
+layout(set = 0, binding = 9, rgba16f) uniform writeonly image2D cascadeAtlas;
+struct Point {
+  vec4 position, normal;
+};
+struct Result {
+  vec4 irradiance[9];
+  vec4 moments[6];
+  vec4 statistics;
+};
+layout(set = 0, binding = 10, std430) buffer Points {
+  Point points[];
+};
+layout(set = 0, binding = 11, std430) readonly buffer Results {
+  Result results[];
+};
+// The previous build, for temporal accumulation: its irradiance tiles, its
+// table (same layout as cascadeTable) and how many builds each probe has blended.
+layout(set = 0, binding = 12) uniform sampler2D cascadeHistory;
+layout(set = 0, binding = 13, std430) readonly buffer CascadeHistoryTable {
+  uint cascadeHistoryTable[];
+};
+layout(set = 0, binding = 14, std430) writeonly buffer CascadeAges {
+  uint cascadeAges[];
+};
+layout(set = 0, binding = 15, std430) readonly buffer CascadeHistoryAges {
+  uint cascadeHistoryAges[];
+};
+// Per probe, over the directions its rays reached: the mean radiance of the
+// rays that ended in its interval (rgb) and the fraction that passed (a), or a
+// negative fraction for a probe no ray reached.
+layout(set = 0, binding = 16, std430) buffer CascadeSummaries {
+  uvec2 cascadeSummaries[];
+};
+
+uint cascadeLive(uint cascade) { return min(cascadeCounters[cascade], cascadeCapacity(cascade)); }
+uint cascadeConeIndex(uint cascade, uint probe, uint direction) {
+  if (cascade == 0u) return probe * CascadeBaseDirections + direction;
+  uint base = CascadeBaseProbes * CascadeBaseDirections;
+  for (uint i = 1u; i < cascade; ++i) base += cascadeCapacity(i) * cascadeDirections(i - 1u);
+  return base + probe * cascadeDirections(cascade - 1u) + direction;
+}
+vec4 cascadeCone(uint index) {
+  uvec2 packed = cascadeCones[index];
+  return vec4(unpackHalf2x16(packed.x), unpackHalf2x16(packed.y));
+}
+void storeCascadeCone(uint index, vec4 value) {
+  value.rgb = clamp(value.rgb, vec3(0), vec3(65000));
+  cascadeCones[index] = uvec2(packHalf2x16(value.rg), packHalf2x16(value.ba));
+}
+
+bool cascadePixelSurface(ivec2 pixel, out vec3 position, out vec3 normal) {
+  float depth = texelFetch(guideDepth, pixel, 0).r;
+  vec4 guide = texelFetch(guideNormals, pixel, 0);
+  position = vec3(0);
+  normal = vec3(0);
+  if (depth >= 1 || !reflectionGuideValid(guide)) return false;
+  vec2 uv = (vec2(pixel) + .5) / vec2(cascadeFrame.target.xy);
+  vec4 world = reflectionTransform(cascadeFrame.inverseCamera, vec4(uv * 2 - 1, depth, 1));
+  position = world.xyz / world.w;
+  normal = reflectionGuideNormal(guide);
+  return true;
+}
+// One sampled pixel per cell of the ray grid; which one moves from build to build.
+bool cascadeSurface(uvec2 cell, out vec3 position, out vec3 normal) {
+  return cascadePixelSurface(min(ivec2(cell * cascadeFrame.config.x + cascadeFrame.sequence.yz),
+                                 ivec2(cascadeFrame.target.xy) - 1), position, normal);
+}
+// A position rebuilt from depth is only as exact as the depth buffer, which is
+// far coarser than a fixed offset in the distance. Rays start clear of the
+// surface by a fraction of the probe spacing there, or they begin behind it.
+float cascadeRayBias(vec3 position) {
+  float blend;
+  return max(cascadeFrame.ranges.z, .05 * cascadeSpacing(cascadeLod(position, blend), 0u));
+}
+uvec2 cascadeRayCell(uint ray) { return uvec2(ray % cascadeFrame.target.z, ray / cascadeFrame.target.z); }
+uint cascadeMorton(uvec2 cell) {
+  uvec2 bits = cell & 0xffffu;
+  bits = (bits | (bits << 8u)) & 0x00ff00ffu;
+  bits = (bits | (bits << 4u)) & 0x0f0f0f0fu;
+  bits = (bits | (bits << 2u)) & 0x33333333u;
+  bits = (bits | (bits << 1u)) & 0x55555555u;
+  return bits.x | (bits.y << 1u);
+}
+// The R2 sequence along the Morton order of the ray grid. A screen tile of any
+// power-of-two size is a contiguous run of the sequence, so the rays reaching a
+// probe cover its directions evenly at every cascade, standing in for the
+// paper's per-probe prefix sums. The sequence offset shifts the whole pattern
+// each build, so accumulated builds converge. Directions into the surface are flipped.
+vec3 cascadeRayDirection(uvec2 cell, vec3 normal) {
+  uint index = cascadeMorton(cell) + cascadeFrame.sequence.x;
+  vec2 uv = fract(vec2(.5) + vec2(index * 3242174889u, index * 2447445414u) * (1.0 / 4294967296.0));
+  vec3 direction = cascadeDirection(uv);
+  return dot(direction, normal) < 0 ? -direction : direction;
+}
+
+#ifdef CASCADE_INSERT
+void insertProbe(ivec3 cell, uint lod, uint cascade) {
+  uint key = cascadeKey(cell, lod, cascade);
+  uint slot = cascadeSlot(key);
+  for (uint step = 0u; step < CascadeProbeSteps; ++step) {
+    uint stored = cascadeTable[slot];
+    if (stored == key) return;
+    if (stored == 0u) {
+      stored = atomicCompSwap(cascadeTable[slot], 0u, key);
+      if (stored == key) return;
+      if (stored == 0u) {
+        // This invocation owns the slot. Later passes read its probe index.
+        uint probe = atomicAdd(cascadeCounters[cascade], 1u);
+        bool resident = probe < cascadeCapacity(cascade);
+        probe += cascadeProbeBase(cascade);
+        cascadeTable[CascadeTableSize + slot] = resident ? probe : CascadeInvalid;
+        if (resident) cascadeCells[probe] = ivec4(cell, int(lod));
+        return;
+      }
+    }
+    slot = (slot + 1u) & (CascadeTableSize - 1u);
+  }
+}
+// Every pixel inserts, not only those that launch a ray: a probe then exists in
+// every build that sees its cell, which keeps its history and its neighbours.
+void main() {
+  ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+  if (any(greaterThanEqual(pixel, ivec2(cascadeFrame.target.xy)))) return;
+  vec3 position, normal;
+  if (!cascadePixelSurface(pixel, position, normal)) return;
+  float blend;
+  uint lod = cascadeLod(position, blend);
+  for (uint level = lod; level <= lod + (blend > 0 ? 1u : 0u); ++level)
+    for (uint cascade = 0u; cascade < CascadeCount; ++cascade)
+      insertProbe(cascadeCell(cascadeAnchor(position, normal, level, cascade), level, cascade), level, cascade);
+}
+#endif
+
+#ifdef CASCADE_LAUNCH
+void main() {
+  uint index = gl_GlobalInvocationID.x;
+  if (index >= cascadeFrame.config.y) return;
+  points[index] = Point(vec4(0), vec4(0, 0, 0, -1));
+  if (index >= batch.count) return;
+  uvec2 cell = cascadeRayCell(batch.begin + index);
+  vec3 position, normal;
+  if (!cascadeSurface(cell, position, normal)) return;
+  points[index] = Point(vec4(fma(normal, vec3(cascadeRayBias(position)), position), 1),
+                         vec4(cascadeRayDirection(cell, normal), 0));
+}
+#endif
+
+#ifdef CASCADE_DEPOSIT
+void main() {
+  uint index = gl_GlobalInvocationID.x;
+  if (index >= batch.count) return;
+  Result hit = results[index];
+  if (hit.statistics.z < .5) return;
+  vec3 radiance = hit.irradiance[0].rgb;
+  if (any(isnan(radiance)) || any(isinf(radiance))) return;
+  uvec2 cell = cascadeRayCell(batch.begin + index);
+  vec3 position, normal;
+  if (!cascadeSurface(cell, position, normal)) return;
+  vec3 direction = cascadeRayDirection(cell, normal);
+  bool miss = hit.statistics.y > .5;
+  float distance = hit.irradiance[0].w;
+  // A back face right at the origin means the ray still began behind its own
+  // surface: it says nothing about the light arriving there. Back faces
+  // further away are real occluders.
+  if (!miss && hit.statistics.x > .5 && distance < 4 * cascadeRayBias(position)) return;
+  // Dithered rounding keeps the sums unbiased below one fixed-point step.
+  uint seed = cascadeMorton(cell) * 747796405u + 2891336453u;
+  float dither = float((seed >> 9u) ^ seed) * (1.0 / 4294967296.0);
+  uvec3 fixedRadiance = uvec3(min(max(radiance, vec3(0)) * cascadeFrame.ranges.w + dither, vec3(1048575)));
+  float blend;
+  uint lod = cascadeLod(position, blend);
+  for (uint level = lod; level <= lod + (blend > 0 ? 1u : 0u); ++level) {
+    // The ray is occluded in the cascade whose interval holds its hit and
+    // passes through every cascade below. The last interval has no far end
+    // and receives the environment on a miss. Cascades above stay untouched.
+    uint occluded = CascadeCount - 1u;
+    if (!miss) {
+      float end = ldexp(cascadeFrame.ranges.y, int(level));
+      for (occluded = 0u; occluded < CascadeCount - 1u && distance > end; ++occluded) end *= 4;
+    }
+    for (uint cascade = 0u; cascade <= occluded; ++cascade) {
+      uint probe = cascadeFind(cascadeKey(
+          cascadeCell(cascadeAnchor(position, normal, level, cascade), level, cascade), level, cascade));
+      if (probe == CascadeInvalid) continue;
+      uint bin = cascadeBinBase(cascade) + (probe - cascadeProbeBase(cascade)) * cascadeDirections(cascade) +
+                 cascadeDirectionIndex(direction, cascade);
+      if (cascade < occluded) {
+        atomicAdd(cascadeBins[bin].a, 0x10001u);
+        continue;
+      }
+      atomicAdd(cascadeBins[bin].r, fixedRadiance.r);
+      atomicAdd(cascadeBins[bin].g, fixedRadiance.g);
+      atomicAdd(cascadeBins[bin].b, fixedRadiance.b);
+      atomicAdd(cascadeBins[bin].a, 0x10000u);
+    }
+  }
+}
+#endif
+
+#ifdef CASCADE_SUMMARY
+void main() {
+  uint probe = gl_GlobalInvocationID.x;
+  uint cascade = 0u;
+  while (cascade < CascadeCount - 1u && probe >= cascadeProbeBase(cascade + 1u)) ++cascade;
+  uint local = probe - cascadeProbeBase(cascade);
+  if (local >= cascadeLive(cascade)) return;
+  uint first = cascadeBinBase(cascade) + local * cascadeDirections(cascade);
+  vec3 radiance = vec3(0);
+  uint rays = 0u, passed = 0u;
+  for (uint direction = 0u; direction < cascadeDirections(cascade); ++direction) {
+    uvec4 bin = cascadeBins[first + direction];
+    radiance += vec3(bin.rgb);
+    rays += bin.a >> 16u;
+    passed += bin.a & 0xffffu;
+  }
+  vec4 summary = vec4(0, 0, 0, -1);
+  if (rays != 0u)
+    summary = vec4(min(radiance / (cascadeFrame.ranges.w * float(max(rays - passed, 1u))), vec3(65000)),
+                   float(passed) / float(rays));
+  cascadeSummaries[probe] = uvec2(packHalf2x16(summary.rg), packHalf2x16(summary.ba));
+}
+#endif
+
+#if defined(CASCADE_LINK) || defined(CASCADE_MERGE)
+// The cascade above has twice the spacing and probes at its own cell centres:
+// a probe lies a quarter or three quarters of the way between two of them.
+ivec3 cascadeParentBase(ivec3 cell) { return (cell - 1) >> 1; }
+vec3 cascadeParentFraction(ivec3 cell) { return mix(vec3(.75), vec3(.25), bvec3(cell & 1)); }
+#endif
+
+#ifdef CASCADE_LINK
+void main() {
+  uint probe = gl_GlobalInvocationID.x;
+  uint cascade = 0u;
+  while (cascade < CascadeCount - 1u && probe >= cascadeProbeBase(cascade + 1u)) ++cascade;
+  if (cascade >= CascadeCount - 1u || probe - cascadeProbeBase(cascade) >= cascadeLive(cascade)) return;
+  ivec4 cell = cascadeCells[probe];
+  ivec3 base = cascadeParentBase(cell.xyz);
+  for (int corner = 0; corner < 8; ++corner) {
+    ivec3 offset = ivec3(corner & 1, (corner >> 1) & 1, corner >> 2);
+    cascadeLinks[probe * 8u + uint(corner)] = cascadeFind(cascadeKey(base + offset, uint(cell.w), cascade + 1u));
+  }
+}
+#endif
+
+#ifdef CASCADE_MERGE
+// Radiance of one of this cascade's directions with everything beyond its
+// interval merged in; alpha zero when nothing is known about the direction.
+// A direction no ray reached is assumed to behave like the directions of this
+// probe that rays did reach: it ends in this interval as often as they did,
+// with their mean radiance, and lets the cascade above through as often as
+// they passed. Letting the cascade above through unchanged would bring the
+// sky into every enclosed space that is sparsely sampled.
+vec4 mergedCone(uint cascade, uint probe, uint local, uint direction, vec3 fraction) {
+  uvec4 bin = cascadeBins[cascadeBinBase(cascade) + local * cascadeDirections(cascade) + direction];
+  uint rays = bin.a >> 16u, passed = bin.a & 0xffffu;
+  bool top = cascade == CascadeCount - 1u;
+  uvec2 packedSummary = cascadeSummaries[probe];
+  vec4 summary = vec4(unpackHalf2x16(packedSummary.x), unpackHalf2x16(packedSummary.y));
+  // A probe no ray reached has nothing to go by and passes the cascade above through.
+  float assumedPassing = summary.a < 0 ? 1 : summary.a;
+  if (rays == 0u && top) return summary.a < 0 ? vec4(0) : vec4(summary.rgb, 1);
+  vec3 radiance = rays == 0u ? vec3(0) : vec3(bin.rgb) / (cascadeFrame.ranges.w * float(rays));
+  if (rays != 0u && (passed == 0u || top)) return vec4(radiance, 1);
+  vec4 beyond = vec4(0);
+  for (int corner = 0; corner < 8; ++corner) {
+    uint parent = cascadeLinks[probe * 8u + uint(corner)];
+    if (parent == CascadeInvalid) continue;
+    vec3 axis = mix(1 - fraction, fraction, vec3(corner & 1, (corner >> 1) & 1, corner >> 2));
+    vec4 cone = cascadeCone(cascadeConeIndex(cascade + 1u, parent - cascadeProbeBase(cascade + 1u), direction));
+    float weight = axis.x * axis.y * axis.z * cone.a;
+    beyond += vec4(cone.rgb * weight, weight);
+  }
+  if (rays == 0u) {
+    vec3 ended = summary.rgb * (1 - assumedPassing);
+    if (beyond.a > 0) return vec4(ended + assumedPassing * beyond.rgb / beyond.a, 1);
+    return assumedPassing < 1 ? vec4(summary.rgb, 1) : vec4(0);
+  }
+  float transmittance = float(passed) / float(rays);
+  if (beyond.a > 0) return vec4(radiance + transmittance * beyond.rgb / beyond.a, 1);
+  // Nothing is known beyond this interval: keep the rays that ended in it.
+  return passed < rays ? vec4(radiance / (1 - transmittance), 1) : vec4(0);
+}
+void main() {
+  uint cascade = batch.level;
+  uint entries = cascade == 0u ? CascadeBaseDirections : cascadeDirections(cascade - 1u);
+  uint local = gl_GlobalInvocationID.x / entries, entry = gl_GlobalInvocationID.x % entries;
+  if (local >= cascadeLive(cascade)) return;
+  uint probe = cascadeProbeBase(cascade) + local;
+  vec3 fraction = cascadeParentFraction(cascadeCells[probe].xyz);
+  if (cascade == 0u) {
+    storeCascadeCone(cascadeConeIndex(0u, local, entry), mergedCone(0u, probe, local, entry, fraction));
+    return;
+  }
+  // Average the four directions that share this direction of the cascade below.
+  uint parentColumns = 2u * cascadeDirectionRows(cascade - 1u), columns = 2u * cascadeDirectionRows(cascade);
+  uvec2 parent = uvec2(entry % parentColumns, entry / parentColumns);
+  vec4 sum = vec4(0);
+  for (uint child = 0u; child < 4u; ++child) {
+    uvec2 cell = parent * 2u + uvec2(child & 1u, child >> 1u);
+    vec4 cone = mergedCone(cascade, probe, local, cell.y * columns + cell.x, fraction);
+    sum += vec4(cone.rgb * cone.a, cone.a);
+  }
+  storeCascadeCone(cascadeConeIndex(cascade, local, entry),
+                   sum.a > 0 ? vec4(sum.rgb / sum.a, 1) : vec4(0));
+}
+#endif
+
+#ifdef CASCADE_IRRADIANCE
+const uint CascadeHistoryBuilds = 15u;
+uint cascadeHistoryProbe(uint key) {
+  uint slot = cascadeSlot(key);
+  for (uint step = 0u; step < CascadeProbeSteps; ++step) {
+    uint stored = cascadeHistoryTable[slot];
+    if (stored == key) return cascadeHistoryTable[CascadeTableSize + slot];
+    if (stored == 0u) return CascadeInvalid;
+    slot = (slot + 1u) & (CascadeTableSize - 1u);
+  }
+  return CascadeInvalid;
+}
+void main() {
+  uint local = batch.begin + gl_WorkGroupID.x;
+  if (local >= cascadeLive(0u)) return;
+  // Border texels mirror the interior across the octahedral map's edges.
+  const int interior = int(CascadeTile) - 2;
+  ivec2 texel = ivec2(gl_LocalInvocationID.xy) - 1;
+  bvec2 outside = bvec2(texel.x < 0 || texel.x >= interior, texel.y < 0 || texel.y >= interior);
+  ivec2 source = clamp(texel, ivec2(0), ivec2(interior - 1));
+  if (outside.x) source.y = interior - 1 - source.y;
+  if (outside.y) source.x = interior - 1 - source.x;
+  vec3 normal = cascadeOctDecode((vec2(source) + .5) / float(interior) * 2 - 1);
+  // Lambertian response over the cascade 0 directions, renormalized over the
+  // directions that received rays. Alpha keeps the covered part of the hemisphere.
+  uint rows = cascadeDirectionRows(0u);
+  vec4 sum = vec4(0);
+  float hemisphere = 0;
+  for (uint direction = 0u; direction < CascadeBaseDirections; ++direction) {
+    vec2 uv = (vec2(direction % (2u * rows), direction / (2u * rows)) + .5) / vec2(2u * rows, rows);
+    float cosine = max(dot(normal, cascadeDirection(uv)), 0);
+    vec4 cone = cascadeCone(cascadeConeIndex(0u, local, direction));
+    sum += vec4(cone.rgb, 1) * (cosine * cone.a);
+    hemisphere += cosine;
+  }
+  vec4 value = sum.a > 0 ? vec4(sum.rgb / sum.a, sum.a / max(hemisphere, 1e-6)) : vec4(0);
+  // Blend with the same probe of the previous build. Probes are keyed by world
+  // cell and level of detail, so camera motion needs no reprojection; a cell
+  // that changes level starts again.
+  uint age = 0u;
+  if (cascadeFrame.sequence.w != 0u) {
+    ivec4 cell = cascadeCells[local];
+    uint previous = cascadeHistoryProbe(cascadeKey(cell.xyz, uint(cell.w), 0u));
+    if (previous != CascadeInvalid && previous < CascadeBaseProbes) {
+      ivec2 source = ivec2(previous % CascadeTileRow, previous / CascadeTileRow) * int(CascadeTile);
+      vec4 history = texelFetch(cascadeHistory, source + ivec2(gl_LocalInvocationID.xy), 0);
+      age = min(cascadeHistoryAges[previous] + 1u, CascadeHistoryBuilds);
+      if (history.a > 0 && !any(isnan(history)) && !any(isinf(history)))
+        value = value.a > 0 ? mix(history, value, 1.0 / float(age + 1u)) : history;
+    }
+  }
+  if (gl_LocalInvocationIndex == 0u) cascadeAges[local] = age;
+  ivec2 tile = ivec2(local % CascadeTileRow, local / CascadeTileRow) * int(CascadeTile);
+  imageStore(cascadeAtlas, tile + ivec2(gl_LocalInvocationID.xy), value);
+}
+#endif

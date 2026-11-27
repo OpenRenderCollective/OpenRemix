@@ -142,6 +142,9 @@ void main() {
 #ifdef SSR_FILTER
 layout(constant_id = 0) const bool NativeReflectionResolution = false;
 layout(constant_id = 1) const bool TracedRadiance = true;
+// The lighting reference domain the world pass wrote into the guide.
+layout(constant_id = 2) const uint GuideReferenceDomain = 1u;
+#define REFLECTION_GUIDE_DOMAIN GuideReferenceDomain
 #include "reflection-lighting.glsl"
 #include "reflection-transport.glsl"
 #include "standard-reflection-response.glsl"

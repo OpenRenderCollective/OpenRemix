@@ -4,6 +4,7 @@ subdir('probe_batch/shaders')
 subdir('styled_lighting/shaders')
 subdir('ray/shaders')
 subdir('ray/gi_shaders')
+subdir('ray/cascade_shaders')
 subdir('water/shaders')
 subdir('water/ray_shaders')
 
@@ -21,7 +22,7 @@ lightmap_denoise_library = static_library('remix_lightmap_denoise', 'lightmap/de
   cpp_args : oidn_args, gnu_symbol_visibility : 'hidden', pic : true)
 
 forward_library = static_library('remix_forward',
-  forward_shaders, bake_shaders, probe_batch_shaders, live_ray_shaders, live_gi_shaders, water_shaders, water_ray_shaders,
+  forward_shaders, bake_shaders, probe_batch_shaders, live_ray_shaders, live_gi_shaders, cascade_shaders, water_shaders, water_ray_shaders,
   'probe_batch/batch.cpp',
   styled_lighting_shaders, 'styled_lighting/composition.cpp',
   'bake/reference_capture.cpp',
@@ -45,7 +46,7 @@ forward_library = static_library('remix_forward',
   'fragment_statistics.cpp', 'lighting.cpp', 'resources.cpp', 'renderer.cpp', 'renderer_local_reflections.cpp', 'probes/capture_providers.cpp', 'targets.cpp', 'pipelines.cpp', 'scene.cpp', 'shadows/sun_cache.cpp', 'shadows/sun_maps.cpp', 'geometry_uploads.cpp', 'depth_batch/batch.cpp', 'depth_batch/scene.cpp', 'rendering.cpp', 'opaque_visibility.cpp', 'exposure.cpp', 'sky.cpp', 'image_dump.cpp',
   'viewmodel/target.cpp', 'viewmodel/lighting.cpp', 'viewmodel/scene.cpp', 'viewmodel/rendering.cpp',
   'reflections.cpp', 'ray/capture.cpp', 'ray/live_scene.cpp', 'ray/reflections.cpp',
-  'ray_scene.cpp', 'ray/provider.cpp',
+  'ray_scene.cpp', 'ray/provider.cpp', 'ray/cascades.cpp',
   'material.cpp', 'bake/data.cpp', 'bake/light_sampling.cpp', 'bake/policy.cpp', 'bake/probe_visibility.cpp', 'bake/probe_visibility_gpu.cpp', 'bake/probe_visibility_plan.cpp', 'bake/cache.cpp', 'probes/cache_codec.cpp', 'bake/local_reflection_cache.cpp', 'bake/transport.cpp', 'bake/indexed_visibility.cpp', 'bake/pipelines.cpp', 'bake/atlas.cpp',
   'bake/cache_persistence.cpp', 'water/snapshot.cpp', 'water/data.cpp', 'water/pass.cpp',
   'shadows/plan.cpp', 'shadows/moving_cache.cpp', 'shadows/maps.cpp', 'mixed/data.cpp', 'mixed/refine.cpp', 'mixed/direct_work.cpp', 'mixed/ownership.cpp', 'mixed/directional_links.cpp', 'mixed/unified_masks.cpp', 'mixed/publication.cpp', 'mixed/overflow.cpp', 'mixed/masks.cpp', 'mixed/mask_codec.cpp', 'mixed/mask_palette.cpp', 'mixed/occlusion.cpp', 'mixed/map.cpp', 'lightmap/layout.cpp', 'lightmap/receiver_footprint.cpp', 'lightmap/receiver_sampler.cpp', 'bake/sun_antialiasing.cpp', 'lightmap/packing.cpp', 'lightmap/fit.cpp', 'lightmap/parameterization.cpp', 'lightmap/curved.cpp', 'lightmap/harmonic.cpp', 'lightmap/fan.cpp', 'lightmap/seams.cpp', 'lightmap/curved_seams.cpp', 'lightmap/seam_mesh.cpp', 'lightmap/surface_walk.cpp', 'lightmap/coverage.cpp', 'lightmap/interior_donors.cpp', 'lightmap/data.cpp', 'lightmap/geometry.cpp', 'lightmap/receiver_triangles.cpp', 'lightmap/decal.cpp', 'bake/grid.cpp', 'bake/grid_sampling.cpp', 'bake/grid_directory.cpp', 'bake/sparse_grid.cpp', 'bake/adaptive_grid.cpp', 'bake/receiver_support.cpp', 'bake/refinement_builder.cpp', 'bake/controller.cpp', 'bake/reflection_schedule.cpp', 'bake/reflection_refresh.cpp', 'bake/controller_refinement.cpp', 'bake/controller_receiver_diagnostics.cpp', 'bake/controller_guard_diagnostics.cpp', 'bake/controller_local_reflections.cpp',

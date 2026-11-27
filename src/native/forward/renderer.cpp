@@ -127,7 +127,7 @@ namespace remix::forward {
     for (auto handle : {layout, compositeLayout, giLayout, coveredClusterLayout})
       if (handle)
         pipeline::destroyPipelineLayout(device, handle, nullptr);
-    for (auto handle : {sceneLayout, materialLayout, compositeSetLayout, giSceneLayout, postLayout})
+    for (auto handle : {sceneLayout, materialLayout, compositeSetLayout, giSceneLayout, rayShadowLayout, postLayout})
       if (handle)
         pipeline::destroyDescriptorSetLayout(device, handle, nullptr);
     if (worldFramebuffer)
@@ -338,6 +338,14 @@ namespace remix::forward {
     m_gpu->recordWater(command);
     m_gpu->recordViewModels(command);
     m_gpu->recordExposure(command, resources, seconds);
+    // Every reader of the previous build has been recorded. Diagnostic views
+    // without guides keep that build.
+    if (m_gpu->reflections && m_gpu->techniquePlan.cascadeDiffuse()) {
+      const auto guides = m_gpu->reflections->guides();
+      if (guides.normals)
+        m_gpu->rayLighting.recordCascades(command, {guides.normals, guides.depth, guides.extent},
+                                          frame.data, m_gpu->options);
+    }
     step(cpu.waterExposure);
     m_gpu->publishStatistics();
     step(cpu.publication);

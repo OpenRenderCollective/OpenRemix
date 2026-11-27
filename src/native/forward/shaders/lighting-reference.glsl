@@ -5,6 +5,10 @@
 // that two references contain the same lighting. Zero means unavailable.
 const uint NoLightingReference = 0u;
 const uint Source2StaticLightingReference = 1u;
+// Incident lighting gathered live at the receiver (the radiance cascades). It
+// includes the sky's own contribution, so it bounds how much sky can reach the
+// receiver; it says nothing about a frozen capture's lighting.
+const uint LiveIncidentLightingReference = 2u;
 struct LightingReference {
   float luminance;
   uint domain;

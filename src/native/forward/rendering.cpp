@@ -91,6 +91,9 @@ namespace remix::forward {
     if (gi)
       vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, drawLayout, 2, 1, &frame.rayInputs.diffuse, 0,
                               nullptr);
+    if (gi && frame.rayInputs.shadows)
+      vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, drawLayout, 3, 1, &frame.rayInputs.shadows, 0,
+                              nullptr);
     // State persists between consecutive draws. Keep this cache local to the
     // pass so other cameras/passes cannot leave stale bindings behind.
     VkPipeline boundPipeline = VK_NULL_HANDLE;

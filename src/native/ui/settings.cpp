@@ -77,6 +77,13 @@ namespace remix {
                         "on the path-traced frame with the game's own shaders, before the HUD. Off: the\n"
                         "game's shader passes are not replayed and the frame is composed without them.\n"
                         "Applies from the next frame.");
+#if !defined(REMIX_METAL)
+    ui::Checkbox("Smooth game shader edges", &settings.hostPassEdges);
+    if (ImGui::IsItemHovered())
+      ImGui::SetTooltip("Anti-aliases the outline of what the game's depth-tested shader passes drew\n"
+                        "(an addon's water or distortion where it meets the scene). They are tested\n"
+                        "against one depth sample per pixel, so the outline is otherwise a staircase.");
+#endif
     if (!replayed)
       ImGui::TextWrapped("Not available with this backend yet: the game's shader passes are not replayed.");
   }
@@ -399,21 +406,30 @@ namespace remix {
       auto &forward = settings.forward;
       const bool source2Preset = remix::forward::presets::isSource2(forward);
       const char *source2Name = remix::forward::presets::source2Name.data();
+      const bool dynamicPreset = remix::forward::presets::isDynamic(forward);
+      const char *dynamicName = remix::forward::presets::dynamicName.data();
       ui::field("Lighting preset", [&](const char *label) {
-        if (!ImGui::BeginCombo(label, source2Preset ? source2Name : "Custom")) return false;
+        if (!ImGui::BeginCombo(label, source2Preset ? source2Name : dynamicPreset ? dynamicName : "Custom"))
+          return false;
         bool changed = false;
         if (ImGui::Selectable(source2Name, source2Preset)) {
           remix::forward::presets::applySource2(forward);
           changed = true;
         }
+        if (ImGui::Selectable(dynamicName, dynamicPreset)) {
+          remix::forward::presets::applyDynamic(forward);
+          changed = true;
+        }
         ImGui::BeginDisabled();
-        ImGui::Selectable("Custom (individual techniques)", !source2Preset);
+        ImGui::Selectable("Custom (individual techniques)", !source2Preset && !dynamicPreset);
         ImGui::EndDisabled();
         ImGui::EndCombo();
         return changed;
       });
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Source 2 selects baked surface/probe lighting, mixed shadows and cubemap + SSR reflections.\n"
+                          "Dynamic bakes nothing: analytic lights with ray-traced sun and local shadows, split radiance cascades and\n"
+                          "ray reflections over screen traces. It needs ray queries for its diffuse and reflections.\n"
                           "Quality settings stay unchanged. Individual technique changes display Custom.\n"
                           "If cubemaps were disabled with a zero probe budget, the default budget is restored.");
       int lightingView = int(forward.debugView);
@@ -443,10 +459,31 @@ namespace remix {
                           "Costs additional lighting samples; does not rebake or remove capture noise.");
       if (ui::Combo("MSAA", &samples, "Off\0 2x\0 4x\0")) forward.samples = 1u << samples;
       ui::Checkbox("Sun shadows", &forward.shadows);
+      ui::Checkbox("Ray-traced sun shadows", &forward.rtSunShadows);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Traces one ray toward the sun per shaded pixel instead of sampling the shadow cascades,\n"
+                          "which leak at thin walls. Casters within the shadow distance count. Hard-edged.\n"
+                          "Needs split radiance cascades and hardware ray queries.");
       ui::Checkbox("Local light shadows", &forward.localShadows);
       int shadowLights = int(forward.localShadowLights);
-      if (ui::SliderInt("Shadowed local lights", &shadowLights, 0, 8))
+      if (ui::SliderInt("Shadowed local lights", &shadowLights, 0, 24))
         forward.localShadowLights = uint32_t(shadowLights);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Lights beyond this budget still light the scene, without shadows: they shine through walls.\n"
+                          "Baked lighting hides that; with live lighting (the Dynamic preset) raise the budget until\n"
+                          "the unshadowed fallback count below is zero. Each light keeps twelve depth faces of the\n"
+                          "local shadow face size: about 13 MiB at 512, 3 MiB at 256.");
+      ui::Checkbox("Ray-traced shadows for unmapped lights", &forward.rtLocalShadows);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Lights beyond the shadow-map budget trace one shadow ray per shaded pixel instead of\n"
+                          "shining through walls. Needs split radiance cascades and hardware ray queries.\n"
+                          "Shadow maps still give the nearest lights their filtered shadows.");
+      if (forward.rtLocalShadows) {
+        int rays = int(forward.rtShadowLights);
+        if (ui::SliderInt("Shadow rays per pixel", &rays, 1, 64)) forward.rtShadowLights = uint32_t(rays);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("Unmapped lights traced at each pixel; any beyond this stay unshadowed.");
+      }
       int shadowResolution = 0;
       while ((64u << shadowResolution) < forward.localShadowResolution) ++shadowResolution;
       if (ui::Combo("Local shadow face size", &shadowResolution, "64\0 128\0 256\0 512\0 1024\0"))
@@ -481,14 +518,40 @@ namespace remix {
       auto selectedTechniques = remix::forward::techniques::requested(forward);
       int diffuseTechnique = int(selectedTechniques.diffuse);
       if (ui::Combo("Diffuse lighting", &diffuseTechnique,
-                    "Surface lightmaps + volume probes\0Live ray-query GI\0Disabled\0Live incoming + baked direct\0"))
+                    "Surface lightmaps + volume probes\0Live ray-query GI\0Disabled\0Live incoming + baked direct\0"
+                    "Split radiance cascades\0"))
         remix::forward::techniques::selectDiffuse(forward,
             remix::forward::techniques::Diffuse(diffuseTechnique));
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Selects diffuse transport independently of material shading.\n"
                           "Live incoming retains the selected baked direct technique; full live GI replaces the baked field.\n"
-                          "Cubemap captures use an independent owner when live incoming is active.");
-      if (forward.rtGI) {
+                          "Cubemap captures use an independent owner when live incoming is active.\n"
+                          "Split radiance cascades light the scene from sparse world-space probes, traced in compute:\n"
+                          "one ray per sampled pixel, read by the next frame, with no baked field.");
+      if (forward.splitCascades) {
+        if (!statistics.rayGI.available)
+          ImGui::TextWrapped("Hardware ray queries unavailable; using baked indirect lighting.");
+        else if (statistics.rayGI.status[0]) ImGui::TextWrapped("%s", statistics.rayGI.status);
+        int stride = int(forward.cascadeRayStride);
+        if (ui::SliderInt("Cascade ray stride (pixels)", &stride, 1, 8)) forward.cascadeRayStride = uint32_t(stride);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("One ray per stride x stride pixels. 1 traces a ray for every pixel.");
+        ui::DragFloat("Cascade probe spacing (m)", &forward.cascadeSpacing, .005f, .005f, 1);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("Spacing of the finest probes, nearest the camera. It doubles with each\n"
+                            "doubling of distance so probes keep their size on screen.");
+        int density = int(forward.cascadeLodCells);
+        if (ui::SliderInt("Cascade probe density", &density, 12, 96)) forward.cascadeLodCells = uint32_t(density);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("Probes across half the view at any distance: higher is finer and needs more probes.\n"
+                            "The status line shows each cascade's probes against its pool; the build lowers the\n"
+                            "density by itself while a pool overflows.");
+        ui::Checkbox("Cascade temporal accumulation", &forward.cascadeAccumulation);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("Blends each probe with its previous builds and varies the rays every frame.\n"
+                            "Lighting changes take about a quarter of a second to settle.");
+        ImGui::TextDisabled("Cascade rays are not range limited; with hardware reflections they use its bounce count.");
+      } else if (forward.rtGI) {
         if (!statistics.rayGI.available)
           ImGui::TextWrapped("Fragment ray queries unavailable; using baked indirect lighting.");
         else ImGui::TextWrapped("%s", statistics.rayGI.status);
@@ -798,6 +861,7 @@ namespace remix {
       ui::SliderFloat("Local light strength", &options.localIntensity, 0.f, 4.f);
       ui::SliderFloat("Light reach (0 = unlimited)", &options.localRange, 0.f, 64.f, "%.1f");
       ui::Checkbox("Soft sphere lights", &options.softSphereLights);
+      ui::Checkbox("Player model shadows", &options.playerModelShadows);
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Sphere lights fall off as a game's point lights do, 1 / (d^2 + r^2): the same far\n"
                           "away, but no flat, hard-edged disc where a light's sphere sinks into a wall.");

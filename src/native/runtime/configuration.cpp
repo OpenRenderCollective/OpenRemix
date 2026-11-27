@@ -180,6 +180,7 @@ namespace remix {
   void RemixNativeRuntime::prepareSettings() {
     const auto &settings = m_profiles.current();
     m_hostPasses.setEnabled(settings.hostPasses);
+    m_hostPasses.setEdgeSmoothing(settings.hostPassEdges);
     const auto ngxCapabilities = m_ngx->capabilities();
     const bool needsNgx = settings.trace.upscaler != upscale::Mode::Off &&
                           settings.trace.upscaler != upscale::Mode::Fsr31 &&

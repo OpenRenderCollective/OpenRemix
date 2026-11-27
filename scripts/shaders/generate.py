@@ -78,12 +78,15 @@ BACKENDS = {
     'water': ('forward::water', 'vulkan1.1', ('snapshot', 'snapshotSingle', 'vert', 'frag', 'overlayVert', 'overlayFrag', 'compositeFrag', 'compositeSingle')),
     'live_gi': ('forward::ray::gi', 'vulkan1.2', ('frag', 'guides', 'viewModel', 'viewModelEarly', 'composedFrag', 'composedGuides', 'composedViewModel', 'composedViewModelEarly')),
     'live_ray': ('forward::ray', 'vulkan1.2', ('launch', 'merge')),
+    # Split Radiance Cascades: the compute build passes and the world fragment variants that read the probes.
+    'cascades': ('forward::ray::cascades', 'vulkan1.2', ('insert', 'launch', 'deposit', 'summary', 'link', 'merge', 'irradiance', 'frag', 'guides', 'viewModel', 'viewModelEarly',
+                                                               'rayFrag', 'rayGuides', 'rayViewModel', 'rayViewModelEarly')),
     'bake': ('forward::bake', 'vulkan1.2', ('atlas', 'transport', 'parallel', 'radianceParallel', 'visibility', 'aggregate', 'aggregateParallel', 'receiverDirect', 'receiverDirectParallel', 'depth')),
     'forward_test': ('forward::test', 'vulkan1.2', ('comp', 'probes', 'water', 'coarseTransfer')),
     'forward': ('forward', 'vulkan1.1', ('vert', 'lightmapVert', 'frag', 'prepassedFrag', 'inlineFrag', 'inlinePrepassedFrag', 'viewModelFrag', 'viewModelEarlyFrag', 'cluster', 'clusterCovered', 'shadowVert', 'shadowFrag', 'opaqueDepthFrag', 'localShadowVert', 'localShadowFrag', 'depthBatchVert', 'depthBatchFrag', 'compositeVert', 'compositeFrag', 'compositeSingle', 'ssrFrag', 'prepassedSsrFrag', 'ssrResolve', 'ssrResolveSingle', 'ssrReduce', 'ssrTrace', 'ssrFilter', 'ssrFilterSingle', 'opaqueCull', 'opaqueTiles', 'opaqueTilesSingle')),
     # Shared with the raster fallback, which supports Vulkan 1.1 devices.
     'postfx': ('postfx', 'vulkan1.1', ('meter', 'resolve', 'down', 'up')),
-    'upscale': ('upscale', 'vulkan1.2', ('comp', 'vert', 'frag', 'hdr10', 'hdrUi')),
+    'upscale': ('upscale', 'vulkan1.2', ('comp', 'vert', 'frag', 'hdr10', 'hdrUi', 'hostEdgeMask', 'hostEdge')),
     'raster': ('raster', 'vulkan1.1', ('vert', 'frag', 'haloMask', 'haloVert', 'haloBlur', 'haloComposite', 'maskWithin', 'maskOverlay', 'spriteVert', 'spriteFrag', 'skyComposite', 'infectedVert', 'infectedFrag')),
     'pathtrace': ('trace', 'vulkan1.2', ('vert', 'frag', 'comp', 'temporal', 'transparency', 'temporalTransparency', 'frontGuides', 'psr', 'regirPresample', 'volumeUpdate', 'orcaSparse', 'sharcOrcaSparse', 'singleTransparency', 'singleTemporalTransparency', 'sharcSingleTransparency', 'sharcSingleTemporalTransparency', 'confidence', 'gbufferVert', 'gbufferFrag', 'depthFrag', 'portalFrag', 'sharcUpdate', 'sharcResolve', 'sharcQuery', 'sharcTransparency', 'sharcTemporal', 'sharcTemporalTransparency', 'sharcConfidence', 'sigmaTemporal', 'sharcSigmaTemporal', 'localTemporal', 'localSigmaTemporal', 'sharcLocalTemporal', 'sharcLocalSigmaTemporal', 'splitLocalTemporal', 'splitLocalSigmaTemporal', 'sharcSplitLocalTemporal', 'sharcSplitLocalSigmaTemporal', 'splitLocalDirect', 'splitRestirInitial', 'splitRestirSpatial', 'indirectTemporal', 'sharcIndirectTemporal', 'vertexAssemble', 'vertexSkin', 'vertexWound', 'sparseCompact', 'sparseArgs', 'sheetTiles', 'plainComposition', 'plainCompositionTemporal', 'indirect', 'sharcIndirect', 'sheetLighting', 'sheetLightingTemporal', 'sharcSheetLighting', 'sharcSheetLightingTemporal', 'wavefrontStartTemporal', 'wavefrontTraceTemporal', 'wavefrontShadeTemporal', 'wavefrontFinishTemporal', 'sharcWavefrontStartTemporal', 'sharcWavefrontTraceTemporal', 'sharcWavefrontShadeTemporal', 'sharcWavefrontFinishTemporal', 'wavefrontTailTemporal', 'sharcWavefrontTailTemporal', 'wavefrontArgs', 'wavefrontShadowTemporal', 'sharcWavefrontShadowTemporal', 'wavefrontShadeDeferTemporal', 'sharcWavefrontShadeDeferTemporal', 'wavefrontSkyTemporal', 'sharcWavefrontSkyTemporal', 'wavefrontShadePlainTemporal', 'sharcWavefrontShadePlainTemporal', 'wavefrontShadeDeferPlainTemporal', 'sharcWavefrontShadeDeferPlainTemporal', 'wavefrontLightsTemporal', 'wavefrontPeelTemporal')),
     'denoise': ('denoise', 'vulkan1.2', ('comp', 'sigma', 'local', 'localSigma', 'splitLocal', 'splitLocalSigma')),
@@ -96,6 +99,7 @@ CUBE_VARIANTS = {
     'water': ('frag',),
     'water_ray': BACKENDS['water_ray'][2],
     'live_gi': ('viewModel', 'viewModelEarly', 'composedViewModel', 'composedViewModelEarly'),
+    'cascades': ('viewModel', 'viewModelEarly', 'rayViewModel', 'rayViewModelEarly'),
 }
 for backend, variants in CUBE_VARIANTS.items():
     namespace, target, stages = BACKENDS[backend]
@@ -134,6 +138,8 @@ def shader_directory(backend):
         return ROOT / 'src/native/forward/ray/gi_shaders'
     if backend == 'live_ray':
         return ROOT / 'src/native/forward/ray/shaders'
+    if backend == 'cascades':
+        return ROOT / 'src/native/forward/ray/cascade_shaders'
     if backend == 'bake':
         return ROOT / 'src/native/forward/bake/shaders'
     if backend == 'forward_test':
@@ -259,6 +265,20 @@ def defines_for(backend, stage, stages):
         if stage in ('viewModel', 'viewModelEarly'): defines += ['-DVIEWMODEL_PASS=1']
         if stage == 'viewModelEarly': defines += ['-DEARLY_OPAQUE=1']
         if composed: defines += ['-DOPENREMIX_BAKED_DIRECT_LIVE_INDIRECT=1']
+    if backend == 'cascades':
+        # The ray variants also trace local lights without a shadow map (set 3: the ray scene).
+        shadows = stage.startswith('ray')
+        if shadows:
+            stage = stage[3].lower() + stage[4:]
+        if stage in ('frag', 'guides', 'viewModel', 'viewModelEarly'):
+            source = ROOT / 'src/native/forward/shaders/forward.frag'
+            defines = ['-DLIVE_GI=1', '-DSPLIT_CASCADES=1'] + (['-DREFLECTION_GUIDES=1'] if stage == 'guides' else [])
+            if shadows: defines += ['-DRAY_LOCAL_SHADOWS=1', '-DRAY_SCENE_SET=3']
+            if stage in ('viewModel', 'viewModelEarly'): defines += ['-DVIEWMODEL_PASS=1']
+            if stage == 'viewModelEarly': defines += ['-DEARLY_OPAQUE=1']
+        else:
+            source = directory / 'cascades.comp'
+            defines = ['-DCASCADE_' + stage.upper() + '=1']
     if backend == 'live_ray':
         source = directory / 'screen.comp'
         defines = ['-DRAY_LAUNCH=1'] if stage == 'launch' else []
@@ -339,6 +359,9 @@ def defines_for(backend, stage, stages):
     if backend == 'upscale' and stage in ('hdr10', 'hdrUi'):
         # HDR10 presentation and its UI brightness (runtime/hdr_output.cpp).
         source = directory / {'hdr10': 'hdr10.frag', 'hdrUi': 'hdr_ui.frag'}[stage]
+    if backend == 'upscale' and stage in ('hostEdgeMask', 'hostEdge'):
+        # Host pass edge smoothing (runtime/host_passes.cpp), with the fullscreen triangle.
+        source = directory / {'hostEdgeMask': 'host_edge_mask.frag', 'hostEdge': 'host_edge.frag'}[stage]
     if backend == 'raster' and stage == 'skyComposite':
         # The NUMOS sky's fullscreen composite (raster/sky.cpp).
         source = directory / 'sky.frag'

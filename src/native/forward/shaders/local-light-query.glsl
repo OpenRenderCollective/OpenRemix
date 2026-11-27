@@ -80,6 +80,11 @@
   uint shadowLayers = (baked ? 0u : StaticLocalShadowLayer) |
                       (movingShadow ? MovingLocalShadowLayer : 0u);
   float moving = localShadowVisibility(light, p, receiverNormal, shadowLayers, true);
+#ifdef RAY_LOCAL_SHADOWS
+  // A light without a map slot is tested against the live ray scene instead.
+  // Baked visibility already covers the static scene for its own lights.
+  if (!baked) moving = rayLocalShadow(light, p, receiverNormal, l, distance, moving);
+#endif
   if (moving <= 0 && !aggregateDiffuse)
     LOCAL_LIGHT_MISS(6u);
   float solidAngle;

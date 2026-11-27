@@ -172,7 +172,7 @@ namespace remix::config {
         result.push_back(scalar("rtx.native.forward.opaqueOcclusionCulling", FIELD(forward.opaqueOcclusionCulling), 0, 1));
         result.push_back(scalar("rtx.native.forward.staticDepthBatch", FIELD(forward.staticDepthBatch), 0, 1));
         result.push_back(scalar("rtx.native.forward.bicubicLightmaps", FIELD(forward.bicubicLightmaps), 0, 1));
-        result.push_back(scalar("rtx.native.forward.localShadowLights", FIELD(forward.localShadowLights), 0, 8));
+        result.push_back(scalar("rtx.native.forward.localShadowLights", FIELD(forward.localShadowLights), 0, 24));
         result.push_back(scalar("rtx.native.forward.localShadowDistance", FIELD(forward.localShadowDistance), .1, 10000));
         result.push_back(scalar("rtx.native.forward.localShadowBias", FIELD(forward.localShadowBias), 0, .1));
           result.push_back(scalar("rtx.native.forward.localShadowFade", FIELD(forward.localShadowFade), 0, 10));
@@ -191,6 +191,14 @@ namespace remix::config {
         result.push_back(scalar("rtx.native.forward.rtReflections", FIELD(forward.rtReflections), 0, 1));
         result.push_back(scalar("rtx.native.forward.rtGI", FIELD(forward.rtGI), 0, 1));
         result.push_back(scalar("rtx.native.forward.bakedDirectWithLiveGI", FIELD(forward.bakedDirectWithLiveGI), 0, 1));
+        result.push_back(scalar("rtx.native.forward.splitCascades", FIELD(forward.splitCascades), 0, 1));
+        result.push_back(scalar("rtx.native.forward.cascadeSpacing", FIELD(forward.cascadeSpacing), .005, 1));
+        result.push_back(scalar("rtx.native.forward.cascadeRayStride", FIELD(forward.cascadeRayStride), 1, 8));
+        result.push_back(scalar("rtx.native.forward.cascadeLodCells", FIELD(forward.cascadeLodCells), 12, 96));
+        result.push_back(scalar("rtx.native.forward.cascadeAccumulation", FIELD(forward.cascadeAccumulation), 0, 1));
+        result.push_back(scalar("rtx.native.forward.rtLocalShadows", FIELD(forward.rtLocalShadows), 0, 1));
+        result.push_back(scalar("rtx.native.forward.rtShadowLights", FIELD(forward.rtShadowLights), 1, 64));
+        result.push_back(scalar("rtx.native.forward.rtSunShadows", FIELD(forward.rtSunShadows), 0, 1));
         result.push_back(scalar("rtx.native.forward.rtGISamples", FIELD(forward.rtGISamples), 1, 64));
         result.push_back(scalar("rtx.native.forward.rtGIBounces", FIELD(forward.rtGIBounces), 1, 8));
         result.push_back(scalar("rtx.native.forward.rtGIDistance", FIELD(forward.rtGIDistance), .1, 10000));
@@ -499,6 +507,7 @@ namespace remix::config {
         TRACE(relativeClamps, 0, 1);
         TRACE(localIntensity, 0, 100);
         TRACE(softSphereLights, 0, 1);
+        TRACE(playerModelShadows, 0, 1);
         result.push_back(scalar("rtx.native.pathtrace.localRange", FIELD(trace.localRange), 0, 1024, .01));
         result.push_back(
             scalar("rtx.native.pathtrace.sunAngularDiameter", FIELD(trace.sunAngularDiameter), 0, 10, 0, true));
@@ -573,6 +582,7 @@ namespace remix::config {
         result.push_back(scalar("rtx.native.vramStatistics", FIELD(vramStatistics), 0, 1));
         result.push_back(scalar("rtx.native.meshes.refreshInPlace", FIELD(refreshGeometry), 0, 1));
         result.push_back(scalar("rtx.native.hostPasses", FIELD(hostPasses), 0, 1));
+        result.push_back(scalar("rtx.native.hostPassEdges", FIELD(hostPassEdges), 0, 1));
         result.push_back(scalar("rtx.native.scene.persistentStatic", FIELD(persistentStatic), 0, 1));
         result.push_back(
             scalar("rtx.native.scene.persistentStaticValidation", FIELD(persistentStaticValidation), 0, 1));
