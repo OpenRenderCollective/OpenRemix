@@ -1272,6 +1272,52 @@ REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetHostPassStatisticsEXT(remi
 typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_SetConfigDefaultEXT)(const char *key, const char *value);
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_SetConfigDefaultEXT(const char *key, const char *value);
 
+// A light shaft drawn as a volume of glowing air (the meshes games fake god
+// rays with: an additive cone or box over a window or under a lamp). Its shape
+// is a tapered box or cone from a near cap to a far one along `axis`: the
+// near cap is centred on `origin`, spanning +-`halfU` and +-`halfV` (half
+// extents perpendicular to the axis and to each other); the far cap, at
+// origin + axis, is the near one scaled by farScale (u, v). An elliptical
+// shaft (REMIXAPI_VOLUME_SHAFT_ELLIPSE_EXT) is the cone inscribed in that box
+// and tapers uniformly: its far scale is the mean of the two.
+// The air glows `radiance` per world unit seen through it at the near cap,
+// fading linearly to farFade times that at the far one, and thinning as the
+// shaft widens (by its near half extents' sum over their sum there), so a
+// path across it glows alike all along it, as a game's sheet does; `softness` (0 to 1)
+// is the part of its half width over which it fades to nothing at the sides.
+// It is seen in front of the first surface along each camera ray (a wall cuts
+// it softly, by the shorter path through it) and lights nothing. Shadowed
+// (REMIXAPI_VOLUME_SHAFT_SHADOWED_EXT), what stands in it casts a shadow down
+// its length: the glow at a point shows only where nothing opaque lies within
+// the 65% of the way toward the near cap nearest the point, along the shaft's
+// own lines (from the point to the place on the near cap at the same part of
+// its width; for a tapered shaft, toward the point its sides meet). The rest,
+// by the cap, is the window, lamp or roof the shaft comes in through.
+#define REMIXAPI_STRUCT_TYPE_VOLUME_SHAFT_EXT ((remixapi_StructType)0x7fff107C)
+#define REMIXAPI_VOLUME_SHAFT_BOX_EXT 0u
+#define REMIXAPI_VOLUME_SHAFT_ELLIPSE_EXT 1u
+#define REMIXAPI_VOLUME_SHAFT_SHADOWED_EXT 1u
+typedef struct remixapi_VolumeShaftEXT {
+  remixapi_StructType sType;
+  const void *pNext;
+  remixapi_Float3D origin;
+  remixapi_Float3D axis;
+  remixapi_Float3D halfU, halfV;
+  float farScaleU, farScaleV;
+  remixapi_Float3D radiance;
+  float farFade;
+  float softness;
+  uint32_t shape;
+  uint32_t flags; // REMIXAPI_VOLUME_SHAFT_SHADOWED_EXT
+} remixapi_VolumeShaftEXT;
+// The frame's light shafts, replacing any set earlier this frame (count 0: none);
+// they last until the next Present. The traced view draws up to 32, the
+// nearest of those in view.
+typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_DrawVolumeShaftsEXT)(const remixapi_VolumeShaftEXT *shafts,
+                                                                           uint32_t count);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_DrawVolumeShaftsEXT(const remixapi_VolumeShaftEXT *shafts,
+                                                                       uint32_t count);
+
 typedef enum remixapi_InputEventType {
   REMIXAPI_INPUT_RESET = 1, // Release all held input (focus/capture change or queue overflow).
   REMIXAPI_INPUT_KEY = 2,

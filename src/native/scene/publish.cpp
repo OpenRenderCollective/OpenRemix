@@ -25,6 +25,7 @@ namespace remix {
     frame.m_uiDraws.swap(m_uiDraws);
     frame.m_halos = std::move(m_halos);
     frame.m_haloDraws = m_haloDraws;
+    frame.m_volumeShafts = m_volumeShafts;
     frame.m_masks = std::move(m_masks);
     frame.m_maskDraws = m_maskDraws;
     frame.m_cutGroups = m_cutGroups;

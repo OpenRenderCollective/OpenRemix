@@ -854,6 +854,18 @@ namespace remix {
       append(frame.rayPortalConfig, sizeof(frame.rayPortalConfig));
       append(frame.rayPortalPlanes, sizeof(frame.rayPortalPlanes));
     }
+    {
+      // remixapi_DrawVolumeShaftsEXT: the nearest volumeShaftSlots shafts
+      // (none culled by direction: one behind the eye can still reach past it).
+      const auto &shafts = resources.volumeShafts();
+      const float noDirection[3] = {};
+      const auto chosen = trace::selectVolumeShafts(shafts, frame.eye, noDirection);
+      for (uint32_t slot = 0; slot < chosen.size(); ++slot)
+        trace::packVolumeShaft(shafts[chosen[slot]], frame.volumeShafts[slot]);
+      frame.volumeShaftConfig[0] = uint32_t(chosen.size());
+      append(frame.volumeShafts, sizeof(float) * 20 * chosen.size());
+      append(frame.volumeShaftConfig, sizeof(frame.volumeShaftConfig));
+    }
     frame.upAxis = float(std::min(options.volumetricUpAxis, 2u));
     static const auto animationStart = std::chrono::steady_clock::now();
     if (flags.usesAnimationTime && !options.accumulate) {

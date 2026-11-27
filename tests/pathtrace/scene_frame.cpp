@@ -23,6 +23,12 @@
 //   REMIX_BENCH_OVERLAY [1] full-screen DrawScreenOverlay every frame; 2 also
 //     redraws a compass strip each frame (a changing HUD), 0 none
 //   REMIX_BENCH_STABLE_IDS [1] InstanceIdentityEXT on per-frame draws
+//   REMIX_BENCH_SHAFTS [0] light shafts (remixapi_DrawVolumeShaftsEXT) drawn
+//     every frame: slanted tapered boxes from 8 units up to the floor, ahead of
+//     the camera; REMIX_BENCH_SHAFT_GLOW [0.15] their radiance per world unit;
+//     REMIX_BENCH_SHAFT_SHADOWS [0] 1: shadowed (REMIXAPI_VOLUME_SHAFT_SHADOWED_EXT),
+//     each with a fireball sphere standing in it to cast the shadow
+//   REMIX_BENCH_SCREENSHOT <file.png> the frame after the measured ones
 //   REMIX_BENCH_CONFIG "key=value;key=value" extra SetConfigVariable calls
 //   REMIX_BENCH_DIGEST <file> write an address-free digest of every measured
 //     frame's GPU inputs (output-identity checks between builds); the scene
@@ -197,6 +203,29 @@ int main() {
   const uint32_t emissiveCount = env("REMIX_BENCH_EMISSIVE", 300);
   const uint32_t movingLights = std::min(lightCount, env("REMIX_BENCH_MOVING_LIGHTS", 0));
   const uint32_t fireballCount = env("REMIX_BENCH_FIREBALLS", 0);
+  const uint32_t shaftCount = env("REMIX_BENCH_SHAFTS", 0);
+  const bool shaftShadows = env("REMIX_BENCH_SHAFT_SHADOWS", 0) != 0;
+  const char *shaftGlowText = std::getenv("REMIX_BENCH_SHAFT_GLOW");
+  const float shaftGlow = shaftGlowText && *shaftGlowText ? float(std::atof(shaftGlowText)) : .15f;
+  std::vector<remixapi_VolumeShaftEXT> shafts;
+  {
+    Random place{777};
+    for (uint32_t i = 0; i < shaftCount; ++i) {
+      remixapi_VolumeShaftEXT s{};
+      s.sType = REMIXAPI_STRUCT_TYPE_VOLUME_SHAFT_EXT;
+      s.origin = {12 * place.unit() - 6, 2 + 28 * place.unit(), 8};
+      s.axis = {1.5f * place.unit() - .75f, 1.5f * place.unit() - .75f, -8};
+      s.halfU = {.4f + .4f * place.unit(), 0, 0};
+      s.halfV = {0, .4f + .4f * place.unit(), 0};
+      s.farScaleU = s.farScaleV = 1.6f;
+      s.radiance = {shaftGlow, shaftGlow * .85f, shaftGlow * .6f};
+      s.farFade = .3f;
+      s.softness = .5f;
+      s.shape = i % 3 == 2 ? REMIXAPI_VOLUME_SHAFT_ELLIPSE_EXT : REMIXAPI_VOLUME_SHAFT_BOX_EXT;
+      s.flags = shaftShadows ? REMIXAPI_VOLUME_SHAFT_SHADOWED_EXT : 0;
+      shafts.push_back(s);
+    }
+  }
   const uint32_t overlayMode = env("REMIX_BENCH_OVERLAY", 1);
   const bool overlay = overlayMode != 0, stableIds = env("REMIX_BENCH_STABLE_IDS", 1) != 0;
   const char *digestPath = std::getenv("REMIX_BENCH_DIGEST");
@@ -460,7 +489,7 @@ int main() {
 
   // Fireballs: a UV sphere (16 rings of 24 segments) with a textured emissive material.
   remixapi_MeshHandle fireball = nullptr;
-  if (fireballCount) {
+  if (fireballCount || (shaftShadows && shaftCount)) {
     for (size_t p = 0; p < rgba.size(); p += 4) {
       rgba[p] = 255;
       rgba[p + 1] = uint8_t(96 + random.next() % 128);
@@ -613,6 +642,19 @@ int main() {
       ok(api.DrawInstance(&instance), "DrawInstance (fireball)");
     }
     ok(remixapi_DrawSceneInstancesEXT(nullptr), "DrawSceneInstancesEXT");
+    if (!shafts.empty())
+      ok(remixapi_DrawVolumeShaftsEXT(shafts.data(), uint32_t(shafts.size())), "DrawVolumeShaftsEXT");
+    // A sphere 40% of the way down each shadowed shaft: its shadow runs down to the floor.
+    for (uint32_t k = 0; shaftShadows && fireball && k < shafts.size(); ++k) {
+      const auto &shaftInfo = shafts[k];
+      remixapi_InstanceInfo blocker{};
+      blocker.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO;
+      blocker.mesh = fireball;
+      blocker.transform =
+          translation(shaftInfo.origin.x + shaftInfo.axis.x * .4f, shaftInfo.origin.y + shaftInfo.axis.y * .4f,
+                      shaftInfo.origin.z + shaftInfo.axis.z * .4f, 0, .35f);
+      ok(api.DrawInstance(&blocker), "DrawInstance (shaft blocker)");
+    }
     auto skinned = [&](remixapi_MeshHandle mesh, uint64_t id, uint32_t actor, const remixapi_Transform &transform,
                        uint32_t category) {
       pose(frame, actor, boneCount, bones);
@@ -799,6 +841,11 @@ int main() {
               double(conversions) / n, double(uploadBytes) / n / (1024 * 1024), double(rasterBytes) / n / (1024 * 1024),
               (unsigned long long)surfaceCount, (unsigned long long)primaryCount, (unsigned long long)rasterCount,
               (unsigned long long)textureCount, (unsigned long long)skinnedCount);
+  if (const char *shot = std::getenv("REMIX_BENCH_SCREENSHOT")) {
+    const auto target = std::filesystem::absolute(shot).string();
+    ok(remix::test::requestScreenshot(api, target.c_str(), [&] { submit(frame++); }), "screenshot");
+    std::printf("screenshot %s\n", target.c_str());
+  }
   ok(api.Shutdown(), "Shutdown");
   return 0;
 }
