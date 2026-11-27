@@ -37,6 +37,7 @@ namespace remix::forward::bake {
     lightmap::Options surfaceAtlasOptions(const Config &config, const VkPhysicalDeviceLimits &limits) {
       lightmap::Options atlas;
       atlas.padding = 0;
+      atlas.receiverInsetMetres = 2 * Options{}.bias;
       atlas.pageSize = config.lightmapPageSizeForBudget();
       atlas.luxelMetres = config.lightmapLuxelSize;
       atlas.fillBudget = config.lightmapFitBudget;
