@@ -102,6 +102,14 @@ namespace remix {
     // into a wall. A game whose lights are points given a size (Unity's
     // 1 / (1 + 25 d^2 / range^2) is this with r = range / 5) wants it.
     bool softSphereLights = false;
+    // playerModelShadows: the player's own body (THIRD_PERSON_PLAYER_MODEL /
+    // _BODY instances, Draw::reflectionOnly) also casts shadows: shadow and
+    // light-visibility rays include it (dxvk-remix's
+    // rtx.playerModel.enablePrimaryShadows). The camera still does not see it,
+    // nor do the rays of a view model's path (the hand is inside the body). A
+    // light the player carries is inside it too: the host gives that light a
+    // shadow clearance (remixapi_LightInfoShadowClearanceEXT).
+    bool playerModelShadows = false;
     float localDirectClamp = 0, indirectClamp = 0;
     // The two clamps in multiples of middle grey at the current exposure
     // (the radiance that displays as 0.18): one setting works across games'

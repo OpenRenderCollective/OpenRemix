@@ -498,6 +498,7 @@ namespace remix::config {
         TRACE(relativeClamps, 0, 1);
         TRACE(localIntensity, 0, 100);
         TRACE(softSphereLights, 0, 1);
+        TRACE(playerModelShadows, 0, 1);
         result.push_back(scalar("rtx.native.pathtrace.localRange", FIELD(trace.localRange), 0, 1024, .01));
         result.push_back(
             scalar("rtx.native.pathtrace.sunAngularDiameter", FIELD(trace.sunAngularDiameter), 0, 10, 0, true));

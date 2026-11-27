@@ -143,7 +143,8 @@ layout(set=0,binding=3,std140) uniform Frame {
 // Instance mask bit of view models (pathtrace/tlas_policy.h).
 const uint viewModelInstanceMask=64u;
 // Instance mask bit of reflection-only instances (the player's own body):
-// bounce rays see them, camera, shadow and light-visibility rays do not.
+// bounce rays see them, camera rays do not, shadow and light-visibility rays
+// only with rtx.native.pathtrace.playerModelShadows (pathConfig.w bit 16).
 const uint reflectionOnlyInstanceMask=16u;
 // Set when the camera's primary surface is a view model: the rays of its path
 // see view models too (they shadow themselves); every other ray passes them.
@@ -158,7 +159,9 @@ uint bounceMask(){return secondaryMask()|(viewModelPath?0u:reflectionOnlyInstanc
 // surfaces): instances of decals alone are left out of their traversal, so a
 // ray leaving a painted wall does not visit every quad of paint above it.
 const uint decalInstanceMask=32u;
-uint shadowMask(){return secondaryMask()&~decalInstanceMask;}
+// With playerModelShadows the player's own body shadows the scene, not the
+// view model it holds (the hand is inside that body).
+uint shadowMask(){return (secondaryMask()&~decalInstanceMask)|((frame.pathConfig.w&0x10000u)!=0u&&!viewModelPath?reflectionOnlyInstanceMask:0u);}
 layout(set=0,binding=6) uniform sampler2D textures[4096];
 // remixapi_InstanceInfoMaskEXT CUT: the camera does not see a surface where
 // its mask group's coverage is set (state.w bits 16-21: the group). Coverage
