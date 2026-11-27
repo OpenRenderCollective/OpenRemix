@@ -30,27 +30,41 @@ vec3 styledProbeIrradiance(uint index, float sh[9]);
 #include "coarse-transfer.glsl"
 #include "grid-stencil.glsl"
 #include "irradiance-basis.glsl"
+// Limit the contrast between the original and adjusted probe weights.
+float indirectProbeGain(uint corner) {
+  return 1 / max(localStencilFacingWeights[corner], .0625);
+}
 bool bakedIrradiance(vec3 position, vec3 normal, out vec3 result) {
   if (!localProbeStencil(position, normal))
     return false;
+  // Keep the same probes, visibility and coarse/fine shares as local lights.
+  // Remove the facing lobe only within each group when shading indirect SH.
+  // Geometry transfer already modifies the weights, so use them as published.
+  bool removeFacing = (floatBitsToUint(bakeSettings.w) & 0x40000000u) == 0u;
   float sh[9];
   irradianceBasis(normal, sh);
   result = vec3(0);
   float total = 0;
-  for (uint corner = 0u; corner < localStencilCount; ++corner) {
-    uint index = localStencilIndices[corner];
-    float weight = localStencilWeights[corner];
-    if (weight <= 0)
-      continue;
-    for (uint j = 0; j < 9u; ++j)
-      result += weight * bakeProbeCoefficient(index, j).rgb * sh[j];
+  for (uint first = 0u; first < localStencilCount; first += 8u) {
+    vec3 groupLight = vec3(0);
+    float original = 0, adjusted = 0;
+    for (uint corner = first; corner < first + 8u; ++corner) {
+      float weight = localStencilWeights[corner];
+      if (weight <= 0) continue;
+      original += weight;
+      if (removeFacing) weight *= indirectProbeGain(corner);
+      adjusted += weight;
+      uint index = localStencilIndices[corner];
+      for (uint j = 0u; j < 9u; ++j)
+        groupLight += weight * bakeProbeCoefficient(index, j).rgb * sh[j];
 #ifdef STYLED_BAKE
-    result += weight * styledProbeIrradiance(index, sh);
+      groupLight += weight * styledProbeIrradiance(index, sh);
 #endif
-    total += weight;
+    }
+    if (adjusted > 0) result += groupLight * (original / adjusted);
+    total += original;
   }
-  if (total < 1e-4)
-    return false;
+  if (total < 1e-4) return false;
   result = max(result / total, vec3(0));
   return true;
 }

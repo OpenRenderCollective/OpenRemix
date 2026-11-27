@@ -278,6 +278,26 @@ void refinementTests() {
               dense.header.originSpacing == plain.header.originSpacing,
           "Unpartitioned hosts retain their existing complete placement policy");
   {
+    bake::Grid sectors;
+    sectors.header.originSpacing = {0, 0, 0, 1};
+    sectors.header.dimensions = {2, 2, 2, 8};
+    sectors.header.settings[1] = .01f;
+    sectors.probes.resize(8);
+    auto &probe = sectors.probes.front();
+    probe.statistics[3] = 1;
+    for (auto &moment : probe.moments) moment = {2, 4, 0, 1};
+    probe.moments[2] = {.1f, .01f, 0, 1};
+    const auto x = bake::probeStencil(sectors, {.501f, .499f, .1f}, {0, 0, 1});
+    const auto y = bake::probeStencil(sectors, {.499f, .501f, .1f}, {0, 0, 1});
+    require(x.weights[0] > .005f && std::abs(x.weights[0] - y.weights[0]) < .001f,
+            "Axial visibility stays continuous across the boundary between open and blocked sectors");
+    // A wall that blocks both participating directions must still reject the probe.
+    probe.moments[0] = probe.moments[2];
+    const auto behindWall = bake::probeStencil(sectors, {.501f, .499f, .1f}, {0, 0, 1});
+    require(behindWall.weights[0] < x.weights[0] * .01f,
+            "Blending adjacent sectors preserves occlusion when both see the wall");
+  }
+  {
     auto covered = grid;
     for (auto &probe : covered.probes) {
       probe.statistics[3] = 1;
