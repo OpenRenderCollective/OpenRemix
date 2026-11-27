@@ -264,9 +264,11 @@ namespace remix {
 
   remixapi_ErrorCode HostPasses::updateTarget(remixapi_HostTargetHandleEXT target, uint32_t width, uint32_t height,
                                               uint32_t format, const void *pixels, uint64_t bytes, uint32_t depth) {
+    // Half floats: a host's signed or HDR lookup (film grain's noise, a colour LUT).
+    const uint64_t texel = format == formatRgba16f ? 8 : 4;
     if (!target || target >= REMIXAPI_HOST_TARGET_RESERVED_EXT || !width || !height || !depth || width > 16384 ||
-        height > 16384 || depth > 2048 || bytes != uint64_t(width) * height * depth * 4 ||
-        (format != formatRgba8 && format != formatBgra8))
+        height > 16384 || depth > 2048 || bytes != uint64_t(width) * height * depth * texel ||
+        (format != formatRgba8 && format != formatBgra8 && format != formatRgba16f))
       return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
     // Kept while the setting is off too: passes flagged
     // REMIXAPI_HOST_PASS_ALWAYS_EXT sample them (a host keeps its other work

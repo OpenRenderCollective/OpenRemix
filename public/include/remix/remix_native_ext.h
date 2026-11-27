@@ -1212,7 +1212,8 @@ typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_SubmitHostPassesEXT)(const
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_SubmitHostPassesEXT(const remixapi_HostPassListEXT *list);
 
 // A host target's contents from the host's memory: a texture an effect
-// samples (RGBA or BGRA, 8 bits a channel, tightly packed), uploaded before
+// samples (RGBA or BGRA, 8 bits a channel, or RGBA half floats,
+// VK_FORMAT_R16G16B16A16_SFLOAT; tightly packed), uploaded before
 // the next frame's passes. The target takes the size and format given.
 typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_UpdateHostTargetEXT)(remixapi_HostTargetHandleEXT target,
                                                                            uint32_t width, uint32_t height,

@@ -367,11 +367,12 @@ fragment float4 copyFragment(Out in [[stage_in]], texture2d<float> image [[textu
       if (!t.texture)
         continue;
       const size_t offset = m.stage(staging, upload.pixels.data(), upload.pixels.size(), 16);
+      const size_t texel = upload.format == formatRgba16f ? 8 : 4;
       id<MTLBlitCommandEncoder> blit = metal::blitEncoder(command, @"Host target upload");
       [blit copyFromBuffer:staging
                  sourceOffset:offset
-            sourceBytesPerRow:size_t(upload.width) * 4
-          sourceBytesPerImage:size_t(upload.width) * upload.height * 4
+            sourceBytesPerRow:size_t(upload.width) * texel
+          sourceBytesPerImage:size_t(upload.width) * upload.height * texel
                    sourceSize:MTLSizeMake(upload.width, upload.height, upload.depth)
                     toTexture:t.texture
              destinationSlice:0

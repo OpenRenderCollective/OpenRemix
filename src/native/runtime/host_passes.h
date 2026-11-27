@@ -72,6 +72,7 @@ namespace remix {
   private:
     // The target formats a host uploads (VkFormat values, as the API takes them).
     static constexpr uint32_t formatRgba8 = 37, formatBgra8 = 44; // VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_B8G8R8A8_UNORM
+    static constexpr uint32_t formatRgba16f = 97;                 // VK_FORMAT_R16G16B16A16_SFLOAT
     struct Shader {
       bool vertex = false; // else a fragment shader
       std::vector<remixapi_HostShaderBindingEXT> bindings;
@@ -103,7 +104,7 @@ namespace remix {
     // A target's contents from the host, uploaded before the frame's passes.
     struct Upload {
       remixapi_HostTargetHandleEXT target;
-      uint32_t format; // formatRgba8 or formatBgra8
+      uint32_t format; // formatRgba8, formatBgra8 or formatRgba16f
       uint32_t width, height, depth;
       std::vector<uint8_t> pixels;
     };
