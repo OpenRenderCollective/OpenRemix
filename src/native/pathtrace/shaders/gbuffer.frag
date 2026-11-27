@@ -127,6 +127,11 @@ void main() {
   vec3 emission,self;
   vec4 albedo=materialSurface(s,uv,color,true,emission,self);
   if(!visibleAlpha(s,albedo.a))discard;
+  // An additive layer: zero coverage and its emission (scene.glsl additiveHit).
+  // A coverage layer keeps at least one step of the 8-bit albedo's alpha, so
+  // that zero read back means additive alone (pathtrace.comp additiveLayer).
+  additiveHit(s,albedo,emission,self);
+  if(blendedAtAlpha(s,albedo.a)&&!additiveSurface(s)&&(s.state.w&32u)==0u)albedo.a=max(albedo.a,1./255);
   vec3 n=normalize(normal);
   if(dot(n,direction)>0)n=-n;
   outPosition=vec4(position,1-worldDepth());

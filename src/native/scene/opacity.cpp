@@ -206,6 +206,10 @@ namespace remix::scene {
     // NaNs cannot be keys in an ordered map.
     if (!finite)
       return false;
+    // An additive layer with source factor ONE shows wherever it is drawn
+    // (alpha takes no part in its blend): no texel of it can be left out.
+    if (draw.additive() == 1)
+      return false;
     // Double-sided coverage does not depend on oneSidedOpaque: those entries
     // stay shared between both settings.
     const bool scrolling = draw.texcoordMoves();

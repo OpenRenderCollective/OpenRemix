@@ -213,6 +213,7 @@ bool localOccluder(accelerationStructureEXT scene,vec3 origin,vec3 direction,ino
     Surface s=surfaces[rayQueryGetIntersectionInstanceCustomIndexEXT(query,false)+rayQueryGetIntersectionGeometryIndexEXT(query,false)];
     s.indices=s.traceIndices;
     if(enableDecals&&decalSurface(s))continue; // Paint does not cast a separate sheet shadow.
+    if(additiveSurface(s))continue; // Added light casts no shadow.
     if((s.state.w&4)==0&&!rayQueryGetIntersectionFrontFaceEXT(query,false)){profileRay(20);continue;}
     profileAlpha(s,16);
     if(!acceptCandidate(s,rayQueryGetIntersectionPrimitiveIndexEXT(query,false),rayQueryGetIntersectionBarycentricsEXT(query,false))){profileRay(19);continue;}

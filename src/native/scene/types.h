@@ -546,6 +546,16 @@ namespace remix {
         return blend.enabled && !wound && !ignoreAlpha && material && !material->translucent &&
                !material->transmission && !material->blendModulation && !material->gradient && !material->portalRim;
       }
+      // Additive blending (pathtrace/frame_tables.h additiveBits): a blended
+      // layer whose destination factor is ONE, added over what is behind it.
+      // 1: source ONE (alpha takes no part in the blend: the whole surface
+      // adds its colour), 2: SRC_ALPHA (its colour by its coverage); 0: none.
+      uint32_t additive() const {
+        constexpr uint32_t one = 1, srcAlpha = 6;
+        if (!blendedCoverage() || decal || blend.op != 0 || blend.dst != one)
+          return 0;
+        return blend.src == one ? 1 : blend.src == srcAlpha ? 2 : 0;
+      }
     };
     // The UV transform (scale, offset) a draw's maps are read through at
     // `seconds`: the instance's texcoord transform, scrolled, and then the
