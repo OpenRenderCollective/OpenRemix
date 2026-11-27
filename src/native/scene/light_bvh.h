@@ -52,7 +52,8 @@ namespace remix::scene {
   // groups of one are leaves of their own. A build
   // keeps the slots of lights that were present within kRetain updates, so
   // lights that leave the host's view for a while (out of its culling) return
-  // to their slots instead of to the dynamic part.
+  // to their slots instead of to the dynamic part; a rebuild of the dynamic
+  // part keeps those absent under kRebuildRetain updates.
   // REMIX_SCENE_TIMINGS=1: time scene preparation's steps (LightChurn::phases,
   // FrameCosts) for the timings dump; off, those clocks are not read.
   inline bool sceneTimings() {
@@ -65,7 +66,7 @@ namespace remix::scene {
 
   // Dynamic part rebuilds of all trees since this was last read
   // (diagnostics): lights that appeared (and their surfaces) and slots of
-  // lights gone kRetain updates that were dropped.
+  // lights gone that were dropped.
   struct LightChurn {
     uint64_t rebuilds = 0, added = 0, removed = 0, addedSurfaces = 0;
     uint32_t unlit = 0; // the last update's unlit dynamic slots
@@ -165,8 +166,11 @@ namespace remix::scene {
     // rest, and between builds.
     static constexpr uint64_t kSettle = 60, kBuildInterval = 120;
     // Updates an absent light keeps its static slot through builds, and its
-    // dynamic one.
+    // dynamic one while the dynamic part's lights stay the same.
     static constexpr uint64_t kRetain = 1800;
+    // Updates an absent light keeps its dynamic slot through a rebuild of
+    // the dynamic part (one another light's arrival forces).
+    static constexpr uint64_t kRebuildRetain = 8;
 
   private:
     std::vector<MovedLight> m_moved;
