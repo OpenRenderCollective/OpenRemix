@@ -1,6 +1,7 @@
 #include "runtime/host_passes.h"
 #if !defined(REMIX_METAL)
 #include "runtime/pipelines.h"
+#include "upscale/shaders/embedded.h"
 #endif
 #include <algorithm>
 #include <cstring>
@@ -28,6 +29,18 @@ namespace remix {
         throw result;
     }
     constexpr VkDeviceSize kSlotMinimum = 256 * 1024;
+    // The module's own targets, past the handles the API reserves: the copy a
+    // pass samples the frame through while drawing it, and edge smoothing's
+    // (the frame before a run of draws, the mask of what the run changed, the
+    // smoothed frame).
+    constexpr remixapi_HostTargetHandleEXT kScratch = ~0ull, kEdgeBefore = ~1ull, kEdgeMask = ~2ull,
+                                           kEdgeSmoothed = ~3ull, kOwnTargets = ~15ull;
+    // Pass::edge: edge smoothing's passes, in the order they run. Each needs
+    // the one before it to have run (a pipeline still compiling skips its
+    // pass: the frame is then left as the host's draws made it).
+    enum : uint8_t { kEdgeCopy = 1, kEdgeMaskDraw, kEdgeResolve, kEdgeCopyBack };
+    // Runs smoothed in a frame: each costs two copies and two fullscreen passes.
+    constexpr uint32_t kMaxEdgeRuns = 4;
     // The frame's copy keeps the swapchain's channel order, raw (UNORM): the
     // host's shaders read and write its bytes as D3D9 does without sRGB states.
     VkFormat unorm(VkFormat format) {
@@ -77,6 +90,10 @@ namespace remix {
     // Pipelines, layouts, samplers and modules belong to the pipeline service.
     m_pipelines.clear();
     m_layouts.clear();
+    m_edgeVertex.reset();
+    m_edgeMask.reset();
+    m_edgeResolve.reset();
+    m_edgeFailed = false;
     std::lock_guard lock(m_mutex);
     m_shaders.clear();
     m_pending.clear();
@@ -184,6 +201,10 @@ namespace remix {
       Pass pass;
       pass.info = info;
       pass.always = i < flagCount && (flags[i] & REMIXAPI_HOST_PASS_ALWAYS_EXT);
+      pass.sceneDepthTerms = i < flagCount && (flags[i] & REMIXAPI_HOST_PASS_SCENE_DEPTH_TERMS_EXT);
+      // The terms take the place of the last two floats the host pushes.
+      if (pass.sceneDepthTerms && (info.kind != REMIXAPI_HOST_PASS_DRAW_EXT || info.pushConstantBytes < 8))
+        return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
       if (!enabled && !pass.always) {
         ++dropped;
         continue;
@@ -290,7 +311,14 @@ namespace remix {
 
   remixapi_HostPassStatisticsEXT HostPasses::statistics() const {
     std::lock_guard lock(m_mutex);
-    return m_stats;
+    auto statistics = m_stats;
+    // The scene depth and its terms are handed to the Vulkan passes only.
+#if defined(REMIX_METAL)
+    statistics.passFlags = REMIXAPI_HOST_PASS_ALWAYS_EXT;
+#else
+    statistics.passFlags = REMIXAPI_HOST_PASS_ALWAYS_EXT | REMIXAPI_HOST_PASS_SCENE_DEPTH_TERMS_EXT;
+#endif
+    return statistics;
   }
 
 #if !defined(REMIX_METAL)
@@ -768,6 +796,98 @@ namespace remix {
                    linear ? VK_FILTER_LINEAR : VK_FILTER_NEAREST);
   }
 
+  void HostPasses::addEdgePasses(std::vector<Pass> &passes, VkExtent2D extent) {
+    // The runs: the host's depth-tested draws on the frame, up to a pass that
+    // writes the frame otherwise (a screen-space effect: its changes are not
+    // boundaries to smooth, and every pixel it touched would count as one).
+    // Passes on other targets between them stay in the run.
+    struct Run {
+      size_t first, last;
+    };
+    std::vector<Run> runs;
+    bool open = false;
+    for (size_t p = 0; p < passes.size(); ++p) {
+      const auto &i = passes[p].info;
+      if (i.target)
+        continue;
+      if (i.kind == REMIXAPI_HOST_PASS_DRAW_EXT && i.depth) {
+        if (open)
+          runs.back().last = p;
+        else if (runs.size() < kMaxEdgeRuns) {
+          runs.push_back({p, p});
+          open = true;
+        }
+      } else {
+        open = false;
+      }
+    }
+    if (runs.empty())
+      return;
+    if (!m_edgeVertex && !m_edgeFailed) {
+      auto make = [&](const uint32_t *code, size_t bytes, bool vertex, uint32_t samplers) {
+        auto shader = std::make_shared<Shader>();
+        shader->vertex = vertex;
+        shader->code.assign(code, code + bytes / 4);
+        for (uint32_t b = 0; b < samplers; ++b)
+          shader->bindings.push_back({b, REMIXAPI_HOST_BINDING_SAMPLER_EXT});
+        if (!createModule(*shader))
+          m_edgeFailed = true;
+        return shader;
+      };
+      auto vertex = make(upscale::vertShader, sizeof(upscale::vertShader), true, 0);
+      auto mask = make(upscale::hostEdgeMaskShader, sizeof(upscale::hostEdgeMaskShader), false, 2);
+      auto resolve = make(upscale::hostEdgeShader, sizeof(upscale::hostEdgeShader), false, 3);
+      if (!m_edgeFailed) {
+        m_edgeVertex = std::move(vertex);
+        m_edgeMask = std::move(mask);
+        m_edgeResolve = std::move(resolve);
+      }
+    }
+    if (!m_edgeVertex)
+      return;
+    auto copy = [&](uint8_t edge, remixapi_HostTargetHandleEXT source, remixapi_HostTargetHandleEXT target) {
+      Pass pass;
+      pass.edge = edge;
+      pass.info.kind = REMIXAPI_HOST_PASS_COPY_EXT;
+      pass.info.source = source;
+      pass.info.target = target;
+      pass.info.targetWidth = extent.width; // the frame's size and (targetFormat 0) format
+      pass.info.targetHeight = extent.height;
+      return pass;
+    };
+    auto draw = [&](uint8_t edge, remixapi_HostTargetHandleEXT target, VkFormat format,
+                    std::initializer_list<remixapi_HostPassSamplerEXT> samplers) {
+      Pass pass;
+      pass.edge = edge;
+      pass.info.kind = REMIXAPI_HOST_PASS_DRAW_EXT;
+      pass.info.target = target;
+      pass.info.targetWidth = extent.width;
+      pass.info.targetHeight = extent.height;
+      pass.info.targetFormat = uint32_t(format);
+      pass.info.colorWriteMask = 0xf;
+      pass.samplers = samplers;
+      pass.indices = {0, 1, 2}; // the fullscreen triangle, from the vertex index
+      return pass;
+    };
+    std::vector<Pass> result;
+    result.reserve(passes.size() + runs.size() * 4);
+    size_t run = 0;
+    for (size_t p = 0; p < passes.size(); ++p) {
+      if (run < runs.size() && p == runs[run].first)
+        result.push_back(copy(kEdgeCopy, 0, kEdgeBefore));
+      result.push_back(std::move(passes[p]));
+      if (run < runs.size() && p == runs[run].last) {
+        result.push_back(
+            draw(kEdgeMaskDraw, kEdgeMask, VK_FORMAT_R8_UNORM, {{0, kEdgeBefore, 0, 1, 1}, {1, 0, 0, 1, 1}}));
+        result.push_back(draw(kEdgeResolve, kEdgeSmoothed, VK_FORMAT_UNDEFINED,
+                              {{0, kEdgeMask, 1, 1, 1}, {1, kEdgeBefore, 0, 1, 1}, {2, 0, 0, 1, 1}}));
+        result.push_back(copy(kEdgeCopyBack, kEdgeSmoothed, 0));
+        ++run;
+      }
+    }
+    passes = std::move(result);
+  }
+
   bool HostPasses::wantsSceneDepth() {
     std::lock_guard lock(m_mutex);
     for (const auto &pass : m_pending)
@@ -779,7 +899,7 @@ namespace remix {
 
   void HostPasses::record(VkCommandBuffer command, uint32_t slotIndex, VkImage image, VkFormat format,
                           VkExtent2D extent, VkImageLayout imageLayout, const ViewImages &view,
-                          VkDescriptorImageInfo sceneDepth) {
+                          VkDescriptorImageInfo sceneDepth, const float *sceneDepthTerms) {
     std::vector<Pass> passes;
     std::vector<Upload> uploads;
     {
@@ -795,6 +915,8 @@ namespace remix {
     }
     if (passes.empty() && uploads.empty())
       return;
+    if (m_edgeSmoothing)
+      addEdgePasses(passes, extent);
     ++m_frame;
     constexpr VkAccessFlags all = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
     constexpr VkPipelineStageFlags everything = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
@@ -850,10 +972,19 @@ namespace remix {
           .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER, .srcAccessMask = all, .dstAccessMask = all};
       vkCmdPipelineBarrier(command, everything, everything, 0, 1, &memory, 0, nullptr, 0, nullptr);
     };
+    // The runtime's own passes (edge smoothing) stay out of the host's counts.
+    const Pass *current = nullptr;
     auto skip = [&](uint32_t &reason) {
+      if (current->edge)
+        return;
       ++m_stats.skipped;
       ++reason;
     };
+    auto count = [&](uint32_t &kind) {
+      if (!current->edge)
+        ++kind;
+    };
+    uint8_t edgeStage = 0; // the last of a run's edge passes that ran
     auto ensure = [&](remixapi_HostTargetHandleEXT handle, const remixapi_HostPassEXT &info) -> Target & {
       if (!handle)
         return frame;
@@ -867,6 +998,13 @@ namespace remix {
     };
     for (const auto &pass : passes) {
       const auto &i = pass.info;
+      current = &pass;
+      if (pass.edge) {
+        if (pass.edge == kEdgeCopy)
+          edgeStage = 0;
+        if (pass.edge != edgeStage + 1)
+          continue;
+      }
       between();
       if (i.kind == REMIXAPI_HOST_PASS_CLEAR_EXT && i.target == REMIXAPI_HOST_TARGET_FRAME_DEPTH_EXT) {
         auto &t = frameDepth(command, extent);
@@ -897,12 +1035,17 @@ namespace remix {
         blit(command, source->second.image, source->second.extent, i.sourceRect, t.image, t.extent, i.targetRect,
              i.linear != 0);
         frameWritten |= !i.target;
-        ++m_stats.copies;
+        count(m_stats.copies);
+        if (pass.edge)
+          edgeStage = pass.edge;
         continue;
       }
       // A draw.
       std::shared_ptr<Shader> vertex, fragment;
-      {
+      if (pass.edge) {
+        vertex = m_edgeVertex;
+        fragment = pass.edge == kEdgeMaskDraw ? m_edgeMask : m_edgeResolve;
+      } else {
         std::lock_guard lock(m_mutex);
         auto v = m_shaders.find(i.vertexShader), f = m_shaders.find(i.fragmentShader);
         if (v != m_shaders.end() && f != m_shaders.end()) {
@@ -913,6 +1056,11 @@ namespace remix {
       if (!vertex || !fragment || vertex->stage != VK_SHADER_STAGE_VERTEX_BIT ||
           fragment->stage != VK_SHADER_STAGE_FRAGMENT_BIT) {
         skip(m_stats.skippedShaders);
+        continue;
+      }
+      // A pass that converts the scene's depth, on a frame without its terms.
+      if (pass.sceneDepthTerms && !sceneDepthTerms) {
+        skip(m_stats.skippedViewDepth);
         continue;
       }
       const bool depthOnly = i.target == REMIXAPI_HOST_TARGET_FRAME_DEPTH_EXT;
@@ -1018,6 +1166,15 @@ namespace remix {
               }
               sampled = sceneDepth.imageView;
               sampledLayout = sceneDepth.imageLayout;
+            } else if (found->target >= kOwnTargets) {
+              // Edge smoothing's: this module's, as the host's below.
+              auto it = m_targets.find(found->target);
+              if (it == m_targets.end() || !it->second.initialized) {
+                complete = false;
+                incomplete = &m_stats.skippedTarget;
+                break;
+              }
+              sampled = it->second.sampled;
             } else if (found->target >= REMIXAPI_HOST_TARGET_RESERVED_EXT) {
               // The runtime's own images, when the frame has them.
               const VkImageView own = found->target == REMIXAPI_HOST_TARGET_VIEW_DEPTH_EXT ? view.depth
@@ -1041,7 +1198,7 @@ namespace remix {
               it->second.lastFrame = m_frame;
             } else if (!i.target) {
               // Sampling the frame while drawing it: through a copy of it.
-              auto &scratch = target(~0ull, frameFormat, extent, 0);
+              auto &scratch = target(kScratch, frameFormat, extent, 0);
               if (!scratch.initialized) {
                 barrier(command, scratch.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, 0, all, everything,
                         everything);
@@ -1101,6 +1258,10 @@ namespace remix {
       if (l.pushBytes) {
         uint8_t block[128] = {};
         std::memcpy(block, push, std::min<uint32_t>(i.pushConstantBytes, l.pushBytes));
+        // REMIXAPI_HOST_PASS_SCENE_DEPTH_TERMS_EXT: this frame's, over the
+        // pass's last two floats.
+        if (pass.sceneDepthTerms && i.pushConstantBytes >= 8 && i.pushConstantBytes <= l.pushBytes)
+          std::memcpy(block + i.pushConstantBytes - 8, sceneDepthTerms, 8);
         vkCmdPushConstants(command, l.pipeline, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                            l.pushBytes, block);
       }
@@ -1110,7 +1271,9 @@ namespace remix {
       vkCmdDrawIndexed(command, uint32_t(pass.indices.size()), 1, 0, 0, 0);
       vkCmdEndRenderPass(command);
       frameWritten |= !i.target;
-      ++m_stats.draws;
+      count(m_stats.draws);
+      if (pass.edge)
+        edgeStage = pass.edge;
     }
     between();
     // The frame back, if a pass wrote it; the swapchain image to its layout.

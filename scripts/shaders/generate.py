@@ -53,7 +53,7 @@ BACKENDS = {
     'forward': ('forward', 'vulkan1.1', ('vert', 'lightmapVert', 'frag', 'prepassedFrag', 'inlineFrag', 'inlinePrepassedFrag', 'viewModelFrag', 'viewModelEarlyFrag', 'cluster', 'clusterCovered', 'shadowVert', 'shadowFrag', 'opaqueDepthFrag', 'localShadowVert', 'localShadowFrag', 'depthBatchVert', 'depthBatchFrag', 'compositeVert', 'compositeFrag', 'compositeSingle', 'ssrFrag', 'prepassedSsrFrag', 'ssrResolve', 'ssrResolveSingle', 'ssrReduce', 'ssrTrace', 'ssrFilter', 'ssrFilterSingle', 'opaqueCull', 'opaqueTiles', 'opaqueTilesSingle')),
     # Shared with the raster fallback, which supports Vulkan 1.1 devices.
     'postfx': ('postfx', 'vulkan1.1', ('meter', 'resolve', 'down', 'up')),
-    'upscale': ('upscale', 'vulkan1.2', ('comp', 'vert', 'frag', 'hdr10', 'hdrUi')),
+    'upscale': ('upscale', 'vulkan1.2', ('comp', 'vert', 'frag', 'hdr10', 'hdrUi', 'hostEdgeMask', 'hostEdge')),
     'raster': ('raster', 'vulkan1.1', ('vert', 'frag', 'haloMask', 'haloVert', 'haloBlur', 'haloComposite', 'maskWithin', 'maskOverlay', 'spriteVert', 'spriteFrag', 'skyComposite', 'infectedVert', 'infectedFrag')),
     'pathtrace': ('trace', 'vulkan1.2', ('vert', 'frag', 'comp', 'temporal', 'transparency', 'temporalTransparency', 'frontGuides', 'psr', 'regirPresample', 'volumeUpdate', 'orcaSparse', 'sharcOrcaSparse', 'singleTransparency', 'singleTemporalTransparency', 'sharcSingleTransparency', 'sharcSingleTemporalTransparency', 'confidence', 'gbufferVert', 'gbufferFrag', 'depthFrag', 'portalFrag', 'sharcUpdate', 'sharcResolve', 'sharcQuery', 'sharcTransparency', 'sharcTemporal', 'sharcTemporalTransparency', 'sharcConfidence', 'sigmaTemporal', 'sharcSigmaTemporal', 'localTemporal', 'localSigmaTemporal', 'sharcLocalTemporal', 'sharcLocalSigmaTemporal', 'splitLocalTemporal', 'splitLocalSigmaTemporal', 'sharcSplitLocalTemporal', 'sharcSplitLocalSigmaTemporal', 'splitLocalDirect', 'splitRestirInitial', 'splitRestirSpatial', 'indirectTemporal', 'sharcIndirectTemporal', 'vertexAssemble', 'vertexSkin', 'vertexWound', 'sparseCompact', 'sparseArgs', 'sheetTiles', 'plainComposition', 'plainCompositionTemporal', 'indirect', 'sharcIndirect', 'sheetLighting', 'sheetLightingTemporal', 'sharcSheetLighting', 'sharcSheetLightingTemporal', 'wavefrontStartTemporal', 'wavefrontTraceTemporal', 'wavefrontShadeTemporal', 'wavefrontFinishTemporal', 'sharcWavefrontStartTemporal', 'sharcWavefrontTraceTemporal', 'sharcWavefrontShadeTemporal', 'sharcWavefrontFinishTemporal', 'wavefrontTailTemporal', 'sharcWavefrontTailTemporal', 'wavefrontArgs', 'wavefrontShadowTemporal', 'sharcWavefrontShadowTemporal', 'wavefrontShadeDeferTemporal', 'sharcWavefrontShadeDeferTemporal', 'wavefrontSkyTemporal', 'sharcWavefrontSkyTemporal', 'wavefrontShadePlainTemporal', 'sharcWavefrontShadePlainTemporal', 'wavefrontShadeDeferPlainTemporal', 'sharcWavefrontShadeDeferPlainTemporal', 'wavefrontLightsTemporal', 'wavefrontPeelTemporal')),
     'denoise': ('denoise', 'vulkan1.2', ('comp', 'sigma', 'local', 'localSigma', 'splitLocal', 'splitLocalSigma')),
@@ -309,6 +309,9 @@ def defines_for(backend, stage, stages):
     if backend == 'upscale' and stage in ('hdr10', 'hdrUi'):
         # HDR10 presentation and its UI brightness (runtime/hdr_output.cpp).
         source = directory / {'hdr10': 'hdr10.frag', 'hdrUi': 'hdr_ui.frag'}[stage]
+    if backend == 'upscale' and stage in ('hostEdgeMask', 'hostEdge'):
+        # Host pass edge smoothing (runtime/host_passes.cpp), with the fullscreen triangle.
+        source = directory / {'hostEdgeMask': 'host_edge_mask.frag', 'hostEdge': 'host_edge.frag'}[stage]
     if backend == 'raster' and stage == 'skyComposite':
         # The NUMOS sky's fullscreen composite (raster/sky.cpp).
         source = directory / 'sky.frag'

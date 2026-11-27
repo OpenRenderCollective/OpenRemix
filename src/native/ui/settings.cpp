@@ -77,6 +77,15 @@ namespace remix {
                         "on the path-traced frame with the game's own shaders, before the HUD. Off: the\n"
                         "game's shader passes are not replayed and the frame is composed without them.\n"
                         "Applies from the next frame.");
+#if !defined(REMIX_METAL)
+    ui::Checkbox("Smooth game shader edges", &settings.hostPassEdges);
+    if (ImGui::IsItemHovered())
+      ImGui::SetTooltip("Anti-aliases the outline of what the game's depth-tested shader passes drew
+"
+                        "(an addon's water or distortion where it meets the scene). They are tested
+"
+                        "against one depth sample per pixel, so the outline is otherwise a staircase.");
+#endif
     if (!replayed)
       ImGui::TextWrapped("Not available with this backend yet: the game's shader passes are not replayed.");
   }

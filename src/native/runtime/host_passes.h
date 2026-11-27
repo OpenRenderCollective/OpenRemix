@@ -49,6 +49,10 @@ namespace remix {
       return m_enabled;
     }
     bool asked() const { return m_asked; }
+    // The user's setting (rtx.native.hostPassEdges): the boundaries of what
+    // the host's depth-tested draws changed on the frame are anti-aliased
+    // (Vulkan only).
+    void setEdgeSmoothing(bool enabled) { m_edgeSmoothing = enabled; }
     // Executes the submitted passes between the frame's render passes: the
     // swapchain `image` is in `layout` before and after. `view`: the frame's
     // REMIXAPI_HOST_TARGET_VIEW_*_EXT images (GENERAL layout); passes sampling
@@ -61,8 +65,12 @@ namespace remix {
     struct ViewImages {
       VkImageView depth = VK_NULL_HANDLE, opaqueDepth = VK_NULL_HANDLE, transmittance = VK_NULL_HANDLE;
     };
+    // `sceneDepthTerms`: the two floats (a, b) of `sceneDepth`'s projection,
+    // view depth = b / (d - a), for the passes that ask for them
+    // (REMIXAPI_HOST_PASS_SCENE_DEPTH_TERMS_EXT); null on a frame without.
     void record(VkCommandBuffer command, uint32_t slot, VkImage image, VkFormat format, VkExtent2D extent,
-                VkImageLayout imageLayout, const ViewImages &view, VkDescriptorImageInfo sceneDepth = {});
+                VkImageLayout imageLayout, const ViewImages &view, VkDescriptorImageInfo sceneDepth = {},
+                const float *sceneDepthTerms = nullptr);
     // A pending pass samples REMIXAPI_HOST_TARGET_SCENE_DEPTH_EXT: the frame
     // captures the scene's depth for record's `sceneDepth` (its view and layout).
     bool wantsSceneDepth();
@@ -99,6 +107,12 @@ namespace remix {
       std::vector<uint8_t> data; // buffers', push constants' and vertices' bytes, in that order
       std::vector<uint32_t> indices;
       bool always = false; // REMIXAPI_HOST_PASS_ALWAYS_EXT: replayed while the setting is off
+      // REMIXAPI_HOST_PASS_SCENE_DEPTH_TERMS_EXT: record writes the frame's
+      // scene depth terms over the last 8 bytes of its push constants.
+      bool sceneDepthTerms = false;
+      // A pass of the runtime's own, added in record around a run of the
+      // host's depth-tested draws on the frame (edge smoothing): kEdge*.
+      uint8_t edge = 0;
     };
     // A target's contents from the host, uploaded before the frame's passes.
     struct Upload {
@@ -154,6 +168,10 @@ namespace remix {
     const Layout &layout(const Shader &vertex, const Shader &fragment);
     VkPipeline pipeline(const Pass &pass, const Shader &vertex, const Shader &fragment, const Layout &layout,
                         VkRenderPass renderPass, bool depthOnly);
+    // Edge smoothing: the runtime's passes around each run of the host's
+    // depth-tested draws on the frame (a copy of the frame before, then the
+    // mask of what changed, the smoothed frame and its copy back).
+    void addEdgePasses(std::vector<Pass> &passes, VkExtent2D extent);
     VkDeviceSize stage(Slot &slot, const void *data, VkDeviceSize bytes, VkDeviceSize alignment);
     void reserve(Slot &slot, VkDeviceSize bytes);
     uint32_t memoryType(uint32_t bits, VkMemoryPropertyFlags flags) const;
@@ -170,6 +188,10 @@ namespace remix {
     std::map<std::string, VkPipeline> m_pipelines;
     Slot m_slots[gpuFrameCount];
     std::vector<std::pair<uint64_t, Target>> m_retired; // the frame each was replaced in
+    // Edge smoothing's stages (the upscaler's fullscreen triangle, the mask
+    // and the resolve), made on first use; m_edgeFailed if they could not be.
+    std::shared_ptr<Shader> m_edgeVertex, m_edgeMask, m_edgeResolve;
+    bool m_edgeFailed = false;
 #endif
     bool ready() const; // initialized, until destroy()
     uint64_t m_nextShader = 1;
@@ -178,7 +200,7 @@ namespace remix {
     std::vector<Pass> m_pending;
     std::vector<Upload> m_uploads;
     uint64_t m_frame = 0;
-    std::atomic<bool> m_enabled{false}, m_asked{false};
+    std::atomic<bool> m_enabled{false}, m_asked{false}, m_edgeSmoothing{true};
     mutable std::mutex m_mutex; // m_pending, m_uploads, m_shaders, m_stats (API thread vs render thread)
     remixapi_HostPassStatisticsEXT m_stats{.structSize = sizeof(remixapi_HostPassStatisticsEXT)};
   };

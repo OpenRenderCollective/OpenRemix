@@ -307,6 +307,13 @@ int main(int argc, char **argv) {
   ok(statistics(&stats));
   require(stats.passes == 1 && stats.clears == 1 && stats.always == 1 && stats.dropped == 3,
           "Host passes off: the always pass ran");
+  // REMIXAPI_HOST_PASS_SCENE_DEPTH_TERMS_EXT belongs on a draw that pushes at
+  // least the two floats the runtime writes: on the clear, the list is refused.
+  require(stats.passFlags & REMIXAPI_HOST_PASS_ALWAYS_EXT, "The statistics name the pass flags acted on");
+  const uint32_t clearTerms[1] = {REMIXAPI_HOST_PASS_ALWAYS_EXT | REMIXAPI_HOST_PASS_SCENE_DEPTH_TERMS_EXT};
+  listFlags.flags = clearTerms;
+  require(submit(&list) == REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS, "Scene depth terms on a clear are refused");
+  listFlags.flags = clearAlways;
   list.pNext = nullptr;
   ok(api.SetConfigVariable("rtx.native.hostPasses", "1"));
   ok(passesEnabled(&hostPassesOn));

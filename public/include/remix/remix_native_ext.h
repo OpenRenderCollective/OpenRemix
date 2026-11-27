@@ -1198,6 +1198,19 @@ typedef struct remixapi_HostPassListEXT {
 // a submission keeps only these passes (the rest are dropped, as without the
 // flag) and target updates are kept for them.
 #define REMIXAPI_HOST_PASS_ALWAYS_EXT 1u
+// REMIXAPI_HOST_PASS_SCENE_DEPTH_TERMS_EXT (a draw pass with at least 8 bytes
+// of push constants): the runtime writes over the last 8 bytes of the pass's
+// push constants the two floats (a, b) that take a value d of
+// REMIXAPI_HOST_TARGET_SCENE_DEPTH_EXT to the view depth, b / (d - a) (scene
+// units along the camera's axis), for the frame the pass is replayed on. That
+// depth buffer is in the projection the frame was drawn with, which is not
+// always the one the host set up: while a view model is path-traced the world
+// camera's near plane moves in to the view model's, so a host converting with
+// its own projection has the scene several times farther than it is. A pass
+// with the flag is skipped (as one sampling the target) on a frame without
+// scene depth. A runtime older than the flag leaves the bytes as submitted: a
+// host that submits zeros there can tell.
+#define REMIXAPI_HOST_PASS_SCENE_DEPTH_TERMS_EXT 2u
 #define REMIXAPI_STRUCT_TYPE_HOST_PASS_LIST_FLAGS_EXT ((remixapi_StructType)0x7fff1032)
 typedef struct remixapi_HostPassListFlagsEXT {
   remixapi_StructType sType;
@@ -1260,6 +1273,10 @@ typedef struct remixapi_HostPassStatisticsEXT {
   // REMIXAPI_HOST_PASS_ALWAYS_EXT (counted in `passes` too when replayed),
   // and passes dropped because the setting is off.
   uint32_t always, dropped;
+  // The REMIXAPI_HOST_PASS_* flags this runtime's backend acts on (a host
+  // checks it, and that structSize came back covering it, before relying on
+  // REMIXAPI_HOST_PASS_SCENE_DEPTH_TERMS_EXT).
+  uint32_t passFlags;
 } remixapi_HostPassStatisticsEXT;
 typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_GetHostPassStatisticsEXT)(remixapi_HostPassStatisticsEXT *out);
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetHostPassStatisticsEXT(remixapi_HostPassStatisticsEXT *out);

@@ -112,6 +112,11 @@ namespace remix::config {
     // (remixapi_SubmitHostPassesEXT): off, submissions are dropped and the
     // frame is composed as without them. Experimental, so off by default.
     bool hostPasses = false;
+    // The boundaries of the host's depth-tested draws on the frame (an
+    // addon's water against the scene) anti-aliased after they are replayed:
+    // they are tested against one depth sample per pixel, the frame under
+    // them is not.
+    bool hostPassEdges = true;
     SkySettings sky;
     ParticleSettings particles;
     // Hidden textures

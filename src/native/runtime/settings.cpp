@@ -569,6 +569,7 @@ namespace remix::config {
         result.push_back(scalar("rtx.native.vramStatistics", FIELD(vramStatistics), 0, 1));
         result.push_back(scalar("rtx.native.meshes.refreshInPlace", FIELD(refreshGeometry), 0, 1));
         result.push_back(scalar("rtx.native.hostPasses", FIELD(hostPasses), 0, 1));
+        result.push_back(scalar("rtx.native.hostPassEdges", FIELD(hostPassEdges), 0, 1));
         result.push_back(scalar("rtx.native.scene.persistentStatic", FIELD(persistentStatic), 0, 1));
         result.push_back(
             scalar("rtx.native.scene.persistentStaticValidation", FIELD(persistentStaticValidation), 0, 1));
