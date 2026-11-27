@@ -797,7 +797,8 @@ Hit secondaryHit(vec3 origin,vec3 direction) {
     hit=closest(origin,direction,1e30,false);
   traceMask=cameraMask;return hit;
 }
-#ifdef TEMPORAL
+// (Also in the volume update pass: its cells' sun and sky rays pass portals.)
+#if defined(TEMPORAL) || defined(VOLUME_UPDATE_PASS)
 // Ray portals (remixapi_MaterialInfoPortalEXT; Surface.state.w bits 22-25:
 // the index + 1; scene/portals.h): a camera ray meeting the front of a portal
 // whose pair is open goes on from its partner (index ^ 1). frame.rayPortals,
@@ -811,6 +812,8 @@ vec3 portalVector(uint index,vec3 v) {
   return vec3(dot(frame.rayPortals[index*4u].xyz,v),dot(frame.rayPortals[index*4u+1u].xyz,v),
     dot(frame.rayPortals[index*4u+2u].xyz,v));
 }
+#endif
+#ifdef TEMPORAL
 // A pixel on a screen (remixapi_MaterialInfoScreenCameraEXT) whose camera the
 // PSR pass traced, or on a ray portal it looked through: its primary surface
 // is what the camera sees, viewed from it. The record shares psrMirror with
@@ -989,8 +992,9 @@ vec3 offsetRay(vec3 p,vec3 n) {
 // Continues a ray meeting `surface` at p from the partner of the ray portal
 // the surface opens (remixapi_MaterialInfoPortalEXT); false where the ray ends
 // there: no portal, its back, its pair not open, or `limit` portals passed.
-// (TEMPORAL only, where the portal maps are; other variants pass none.)
-#ifdef TEMPORAL
+// (TEMPORAL and the volume update pass, where the portal maps are; other
+// variants pass none.)
+#if defined(TEMPORAL) || defined(VOLUME_UPDATE_PASS)
 bool portalTeleport(uint surface,vec3 p,inout vec3 origin,inout vec3 direction,inout uint portals,inout uint chain,uint limit) {
   uint code=(surfaces[surface].state.w>>22)&15u;
   if(code==0u||portals>=min(limit,8u))return false;
@@ -1153,7 +1157,7 @@ vec3 diffuseDirection(vec3 n) {
 // rays pay for the nearest-surface query. A portal that turns directions would
 // show the sun elsewhere; its own material blocks.
 bool sunThroughPortal(inout vec3 origin,vec3 direction) {
-#ifdef TEMPORAL
+#if defined(TEMPORAL) || defined(VOLUME_UPDATE_PASS)
   uint saved=traceMask;traceMask=shadowMask();
   Intersection x=nearest(origin,direction,1e30,0);
   traceMask=saved;

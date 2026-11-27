@@ -902,6 +902,16 @@ namespace remix {
       // `cells` holds the maps. The emissive clusters are those of the light
       // tree at glowClustersInstance / Generation.
       uint32_t glowThreads = 0;
+      // LIT sprite overlays under raster fog: their cells, lit by the same
+      // pass in a second dispatch (spriteThreads, 0: none) that sees the
+      // frame's volume fields as `spriteFields` (raster fog's own, `fogFields`,
+      // put back after it). recordVolume swaps them in the frame's buffer.
+      std::unique_ptr<Buffer> spriteCells;
+      VkDeviceSize spriteBytes = 0;
+      bool spriteValid = false;
+      uint32_t spriteThreads = 0;
+      uint8_t spriteFields[128] = {}, fogFields[128] = {};
+      float spriteScales[4] = {}, fogScales[4] = {};
       trace::RasterGlowHeader glowHeader;
       std::vector<std::pair<float, uint32_t>> glowScratch;
       std::vector<trace::RasterGlowCluster> glowClusters;

@@ -1,6 +1,8 @@
 #include "pathtrace/gpu.h"
 #include "pathtrace/volume_policy.h"
 
+#include <cstring>
+
 namespace remix {
   using namespace trace::detail;
 
@@ -17,6 +19,7 @@ namespace remix {
     std::fill_n(frame.volumeFrame, 4, 0u);
     v.active = false;
     v.glowThreads = 0;
+    v.spriteThreads = 0;
     // The update pass, compiled in the background: false until it is ready.
     auto pipeline = [&] {
       if (!v.update && !v.pipelineFailed) {
@@ -32,20 +35,21 @@ namespace remix {
       }
       return v.update != VK_NULL_HANDLE;
     };
-    // (Re)allocates `cells` to `bytes`; false if that failed.
-    auto allocate = [&](VkDeviceSize bytes) {
+    // (Re)allocates `cells` (requested `size`, holding valid cells `valid`)
+    // to `bytes`; false if that failed.
+    auto allocateIn = [&](std::unique_ptr<Buffer> &cells, VkDeviceSize &size, bool &valid, VkDeviceSize bytes) {
       try {
         // (Not the buffer's own size: that is rounded up, and one cell past a
         // round size the cells were allocated and emptied anew every frame.)
-        if (!v.cells || v.bytes != bytes) {
+        if (!cells || size != bytes) {
           auto next = buffer(bytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
-          if (v.cells)
-            retiredBuffers.push_back(std::move(v.cells));
-          v.cells = std::move(next);
-          v.bytes = bytes;
-          v.valid = false;
+          if (cells)
+            retiredBuffers.push_back(std::move(cells));
+          cells = std::move(next);
+          size = bytes;
+          valid = false;
           // Every cell starts without samples.
-          vkCmdFillBuffer(command, v.cells->handle, 0, VK_WHOLE_SIZE, 0);
+          vkCmdFillBuffer(command, cells->handle, 0, VK_WHOLE_SIZE, 0);
           barrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
                   VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
         }
@@ -53,10 +57,77 @@ namespace remix {
       } catch (VkResult error) {
         if (error == VK_ERROR_DEVICE_LOST)
           throw;
-        v.cells.reset();
-        v.valid = false;
+        cells.reset();
+        valid = false;
         return false;
       }
+    };
+    auto allocate = [&](VkDeviceSize bytes) { return allocateIn(v.cells, v.bytes, v.valid, bytes); };
+    // The cells' sizes: for overlays alone few, large and seldom relit (a
+    // sixth of a megabyte, some thousands of samples a frame): a puff of
+    // smoke needs the light of the place it is in, not the medium's detail.
+    auto cellsPerSide = [&](bool overlaysOnly) { return overlaysOnly ? 32u : trace::volumeCells(options); };
+    auto cellLevels = [&](bool overlaysOnly) { return overlaysOnly ? 4u : trace::volumeLevels(options); };
+    auto cellMetersOf = [&](bool overlaysOnly) {
+      return std::clamp(overlaysOnly ? std::max(options.volumetricCellSize, .5f) : options.volumetricCellSize, .02f,
+                        16.f);
+    };
+    // Lights a set of cells, held in `cells`, which `target`'s volume fields
+    // then describe (marched: the medium's; else for LIT sprite overlays
+    // alone); the overlays read them. False if they could not be allocated.
+    auto lightCells = [&](Frame &target, std::unique_ptr<Buffer> &cellBuffer, VkDeviceSize &size, bool &valid,
+                          bool marched, const auto &medium) {
+      const bool overlaysOnly = !marched;
+      const uint32_t cells = cellsPerSide(overlaysOnly), levels = cellLevels(overlaysOnly);
+      const float cellMeters = cellMetersOf(overlaysOnly);
+      const float reachMeters = std::max(options.volumetricMaxDistance, cellMeters);
+      const float cellUnits = cellMeters / options.sceneScale;
+      // Every level's cells and the one for the medium beyond them, twice:
+      // what they hold, and the environment's share of it (volume.glsl).
+      const VkDeviceSize bytes = (VkDeviceSize(cells) * cells * cells * levels + 1) * 2 * 16;
+      if (!allocateIn(cellBuffer, size, valid, bytes))
+        return false;
+      // A buffer just allocated is empty (allocateIn clears `valid`).
+      const bool reset = !valid || v.cellsPerSide != cells || v.levels != levels || v.cellUnits != cellUnits;
+      v.cellsPerSide = cells;
+      v.levels = levels;
+      v.cellUnits = cellUnits;
+      target.volumeGrid = cellBuffer->address;
+      // Bit 0: a medium is marched; bit 1: the cells are lit for overlays alone.
+      // Bit 2: the cells take reflected light (volumetricIndirect).
+      target.volumeConfig[0] = (marched ? 1 : 2) | (options.volumetricIndirect ? 4 : 0);
+      overlay.volumeCells = cellBuffer->handle;
+      std::copy_n(frame.eye, 3, overlay.volumeEye);
+      overlay.volumeCellUnits = cellUnits;
+      overlay.volumeCellsPerSide = cells;
+      overlay.volumeLevels = levels;
+      target.volumeConfig[1] = cells;
+      target.volumeConfig[2] = levels;
+      target.volumeConfig[3] = overlaysOnly ? 16u : std::clamp(options.volumetricUpdateInterval, 1u, 64u);
+      target.volumeFrame[0] = v.counter++;
+      target.volumeFrame[1] = overlaysOnly ? 8u : std::clamp(options.volumetricHistory, 1u, 256u);
+      target.volumeFrame[2] = std::clamp(options.volumetricSteps, 1u, 64u);
+      target.volumeFrame[3] = reset;
+      target.volumeParams[0] = cellUnits;
+      target.volumeParams[1] = reachMeters / options.sceneScale;
+      target.volumeParams[2] = std::max(options.volumetricScattering, 0.f);
+      target.volumeParams[3] = options.volumetricBaseHeight / options.sceneScale;
+      const float scales[4] = {options.volumetricSunScale, options.volumetricLightScale,
+                               options.volumetricEmissiveScale, options.volumetricSkyScale};
+      for (unsigned i = 0; i < 4; ++i)
+        target.volumeLightScales[i] = std::max(scales[i], 0.f);
+      std::copy_n(medium.albedo, 3, target.volumeMedium);
+      target.volumeMedium[3] = medium.extinction;
+      std::fill_n(target.volumeHeight, 4, 0.f);
+      target.volumeHeight[std::min(options.volumetricUpAxis, 2u)] = 1;
+      target.volumeHeight[3] =
+          options.volumetricHeightFalloff > 0 ? options.sceneScale / options.volumetricHeightFalloff : 0;
+      std::copy_n(frame.eye, 3, target.volumeEye);
+      std::copy_n(reset ? frame.eye : v.eye, 3, target.volumePrevious);
+      target.volumeEye[3] = target.volumePrevious[3] = 0;
+      std::copy_n(frame.eye, 3, v.eye);
+      valid = true;
+      return true;
     };
     // Raster fog: constants (volume_policy.h rasterFog), and for its glow a
     // shadow cube per light, traced anew by the update pass every frame.
@@ -121,6 +192,36 @@ namespace remix {
         }
       }
       v.inactiveReason = trace::g_volumeState.active ? "raster fog" : trace::g_volumeState.reason;
+      // LIT sprite overlays take their light from cells, which raster fog
+      // does not keep (its buffer holds its glow's maps and the frame's
+      // volume fields its constants): theirs are lit apart, by a second
+      // dispatch that sees their fields (recordVolume). Not with a debug view
+      // or accumulation, as the medium's cells.
+      const bool fogFields = frame.volumeConfig[0] == 0 && frame.volumeConfig[1] == 1;
+      if (litOverlays && !options.accumulate && !frame.splitLocal[3] && frame.sun[3] == 0 && !options.sharcDebug &&
+          !options.debugView && pipeline()) {
+        const auto medium = trace::volumeMedium(options, trace::gameFog());
+        if (!fogFields) {
+          // Raster fog draws nothing this frame (no fog): the cells as without it.
+          if (lightCells(frame, v.spriteCells, v.spriteBytes, v.spriteValid, false, medium)) {
+            v.active = true;
+            v.spriteThreads = 0;
+          }
+        } else {
+          Frame sprites = frame;
+          if (lightCells(sprites, v.spriteCells, v.spriteBytes, v.spriteValid, false, medium)) {
+            constexpr size_t first = offsetof(Frame, volumeGrid);
+            static_assert(offsetof(Frame, volumePrevious) + sizeof(Frame::volumePrevious) - first ==
+                          sizeof(Volume::spriteFields));
+            std::memcpy(v.spriteFields, reinterpret_cast<const uint8_t *>(&sprites) + first, sizeof v.spriteFields);
+            std::memcpy(v.fogFields, reinterpret_cast<const uint8_t *>(&frame) + first, sizeof v.fogFields);
+            std::copy_n(sprites.volumeLightScales, 4, v.spriteScales);
+            std::copy_n(frame.volumeLightScales, 4, v.fogScales);
+            v.spriteThreads = v.cellsPerSide * v.cellsPerSide * v.cellsPerSide * v.levels + 1;
+            v.active = true;
+          }
+        }
+      }
       return;
     }
     const auto medium = trace::volumeMedium(options, trace::gameFog());
@@ -134,16 +235,9 @@ namespace remix {
                            ? "a debug view is on"
                        : v.pipelineFailed ? "its pass failed to compile"
                                           : nullptr;
-    // For overlays alone the cells are few, large and seldom relit (a sixth
-    // of a megabyte, some thousands of samples a frame): a puff of smoke
-    // needs the light of the place it is in, not the medium's detail.
     const bool overlaysOnly = !marched;
-    const uint32_t cells = overlaysOnly ? 32u : trace::volumeCells(options),
-                   levels = overlaysOnly ? 4u : trace::volumeLevels(options);
-    const float cellMeters = std::clamp(overlaysOnly ? std::max(options.volumetricCellSize, .5f)
-                                                     : options.volumetricCellSize,
-                                        .02f, 16.f);
-    const float reachMeters = std::max(options.volumetricMaxDistance, cellMeters);
+    const uint32_t cells = cellsPerSide(overlaysOnly), levels = cellLevels(overlaysOnly);
+    const float reachMeters = std::max(options.volumetricMaxDistance, cellMetersOf(overlaysOnly));
     trace::g_volumeState = {options.volumetrics,
                             false,
                             v.inactiveReason ? v.inactiveReason : "",
@@ -160,56 +254,12 @@ namespace remix {
           v.pipelineFailed ? "its pass failed to compile" : "its pass is compiling";
       return;
     }
-    const float cellUnits = cellMeters / options.sceneScale;
-    // Every level's cells and the one for the medium beyond them, twice: what
-    // they hold, and the environment's share of it (volume.glsl).
-    const VkDeviceSize bytes = (VkDeviceSize(cells) * cells * cells * levels + 1) * 2 * 16;
-    if (!allocate(bytes)) {
+    if (!lightCells(frame, v.cells, v.bytes, v.valid, marched, medium)) {
       trace::g_volumeState.reason = v.inactiveReason = "its cells could not be allocated";
       return;
     }
-    // A buffer just allocated is empty (allocate clears `valid`).
-    const bool reset = !v.valid || v.cellsPerSide != cells || v.levels != levels || v.cellUnits != cellUnits;
-    v.cellsPerSide = cells;
-    v.levels = levels;
-    v.cellUnits = cellUnits;
     v.active = true;
     trace::g_volumeState.active = true;
-    frame.volumeGrid = v.cells->address;
-    // Bit 0: a medium is marched; bit 1: the cells are lit for overlays alone.
-    // Bit 2: the cells take reflected light (volumetricIndirect).
-    frame.volumeConfig[0] = (marched ? 1 : 2) | (options.volumetricIndirect ? 4 : 0);
-    overlay.volumeCells = v.cells->handle;
-    std::copy_n(frame.eye, 3, overlay.volumeEye);
-    overlay.volumeCellUnits = cellUnits;
-    overlay.volumeCellsPerSide = cells;
-    overlay.volumeLevels = levels;
-    frame.volumeConfig[1] = cells;
-    frame.volumeConfig[2] = levels;
-    frame.volumeConfig[3] = overlaysOnly ? 16u : std::clamp(options.volumetricUpdateInterval, 1u, 64u);
-    frame.volumeFrame[0] = v.counter++;
-    frame.volumeFrame[1] = overlaysOnly ? 8u : std::clamp(options.volumetricHistory, 1u, 256u);
-    frame.volumeFrame[2] = std::clamp(options.volumetricSteps, 1u, 64u);
-    frame.volumeFrame[3] = reset;
-    frame.volumeParams[0] = cellUnits;
-    frame.volumeParams[1] = reachMeters / options.sceneScale;
-    frame.volumeParams[2] = std::max(options.volumetricScattering, 0.f);
-    frame.volumeParams[3] = options.volumetricBaseHeight / options.sceneScale;
-    const float scales[4] = {options.volumetricSunScale, options.volumetricLightScale, options.volumetricEmissiveScale,
-                             options.volumetricSkyScale};
-    for (unsigned i = 0; i < 4; ++i)
-      frame.volumeLightScales[i] = std::max(scales[i], 0.f);
-    std::copy_n(medium.albedo, 3, frame.volumeMedium);
-    frame.volumeMedium[3] = medium.extinction;
-    std::fill_n(frame.volumeHeight, 4, 0.f);
-    frame.volumeHeight[std::min(options.volumetricUpAxis, 2u)] = 1;
-    frame.volumeHeight[3] =
-        options.volumetricHeightFalloff > 0 ? options.sceneScale / options.volumetricHeightFalloff : 0;
-    std::copy_n(frame.eye, 3, frame.volumeEye);
-    std::copy_n(reset ? frame.eye : v.eye, 3, frame.volumePrevious);
-    frame.volumeEye[3] = frame.volumePrevious[3] = 0;
-    std::copy_n(frame.eye, 3, v.eye);
-    v.valid = true;
   }
 
   // After the light pools are presampled (the cells draw their local light
@@ -226,12 +276,32 @@ namespace remix {
             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
     vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &set, 0, nullptr);
     bindTrace(command, v.update, layout, defaultFeatures);
-    // One thread a cell and one for the medium beyond them; or one a texel of
-    // every map of raster fog's glow (trace::rasterGlowFrame).
-    const uint32_t count =
-        v.glowThreads ? v.glowThreads : v.cellsPerSide * v.cellsPerSide * v.cellsPerSide * v.levels + 1;
-    const uint32_t groups = (count + 63) / 64;
-    vkCmdDispatch(command, std::min(groups, 32768u), (groups + 32767) / 32768, 1);
+    auto dispatch = [&](uint32_t count) {
+      const uint32_t groups = (count + 63) / 64;
+      vkCmdDispatch(command, std::min(groups, 32768u), (groups + 32767) / 32768, 1);
+    };
+    // One a texel of every map of raster fog's glow (trace::rasterGlowFrame);
+    // else one thread a cell and one for the medium beyond them.
+    if (v.glowThreads)
+      dispatch(v.glowThreads);
+    else if (!v.spriteThreads)
+      dispatch(v.cellsPerSide * v.cellsPerSide * v.cellsPerSide * v.levels + 1);
+    if (v.spriteThreads) {
+      // The sprites' cells under raster fog: the frame's volume fields are
+      // theirs for this dispatch, raster fog's again after it.
+      constexpr VkDeviceSize fields = offsetof(Frame, volumeGrid), scales = offsetof(Frame, volumeLightScales);
+      auto swap = [&](const uint8_t *block, const float *lightScales) {
+        barrier(command, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_ACCESS_UNIFORM_READ_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                VK_ACCESS_TRANSFER_WRITE_BIT);
+        vkCmdUpdateBuffer(command, uniform->handle, fields, sizeof v.spriteFields, block);
+        vkCmdUpdateBuffer(command, uniform->handle, scales, sizeof v.spriteScales, lightScales);
+        barrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+                VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_ACCESS_UNIFORM_READ_BIT);
+      };
+      swap(v.spriteFields, v.spriteScales);
+      dispatch(v.spriteThreads);
+      swap(v.fogFields, v.fogScales);
+    }
     // (The vertex stage: LIT sprite overlays read the cells.)
     barrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
