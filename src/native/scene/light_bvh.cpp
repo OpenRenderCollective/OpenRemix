@@ -442,9 +442,12 @@ namespace remix::scene {
         extraIndex.push_back(uint32_t(in));
       // Dynamic lights are matched to the held ones by key; absent ones keep
       // their slot, unlit, for kRetain updates (props leaving and entering
-      // the view must not rebuild the dynamic part each time). Slots gone
-      // longer are dropped only with a rebuild that happens anyway, or once
-      // they are a quarter of the part.
+      // the view must not rebuild the dynamic part each time). A slot only
+      // saves a rebuild while no other light comes: a rebuild that happens
+      // anyway drops slots gone kRebuildRetain updates (emitters of a mesh
+      // made anew each frame, particles, never return to theirs: kept, they
+      // would grow the part by a frame's emitters every update), and slots
+      // gone kRetain updates force one once they are a quarter of the part.
       const size_t capacity = std::max<size_t>(extraIndex.size(), m_dynamicReal);
       source.reserve(capacity);
       extraStamps.reserve(capacity);
@@ -469,10 +472,11 @@ namespace remix::scene {
           addedGroup = light->group;
           ++i;
         } else {
-          if (m_update - m_dynamicSeen[d] >= kRetain) {
-            ++staleDynamic;
+          const uint64_t absent = m_update - m_dynamicSeen[d];
+          if (absent >= kRebuildRetain)
             staleSlots.push_back(uint32_t(source.size()));
-          }
+          if (absent >= kRetain)
+            ++staleDynamic;
           source.push_back(kHeld | uint32_t(d));
           extraStamps.push_back(m_stamps[m_staticCount + d]);
           extraSeen.push_back(m_dynamicSeen[d]);

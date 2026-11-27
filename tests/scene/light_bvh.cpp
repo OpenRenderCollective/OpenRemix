@@ -708,6 +708,15 @@ int main() {
     bvh.update(join({{lamp}, a, c, d}));
     require(bvh.unlitDynamicSlots == 0 && bvh.dynamicLights == 60 && bvh.active == 61,
             "A rebuild kept the slots of a prop gone for good");
+    // Emitters of meshes made anew every update (particles: new identities
+    // each time) never return to their slots: a rebuild, which their arrival
+    // forces anyway, drops the slots gone kRebuildRetain updates, so the
+    // dynamic part holds a few updates' emitters, not kRetain updates' worth.
+    for (uint64_t step = 0; step < 300; ++step) {
+      bvh.update(join({{lamp}, a, prop(100 + step, 40)}));
+      require(bvh.unlitDynamicSlots <= 20 * LightBvh::kRebuildRetain && bvh.dynamicLights == 40,
+              "Slots of emitters made anew every update piled up");
+    }
     std::puts("Dynamic slots: props out of view keep them, gone ones go with a rebuild passed");
   }
   {
