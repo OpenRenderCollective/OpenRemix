@@ -52,8 +52,8 @@ namespace remix::scene {
     // A triangle's emission; `cached`: through Material::emissionCache. The
     // caller holds the locks of the material's dynamic textures.
     // `textureCoverage`: each sample weighed by the albedo texture's alpha.
-    std::array<float, 3> emission(const Draw &draw, uint32_t triangle, const float *transform,
-                                  bool textureCoverage, bool cached = true);
+    std::array<float, 3> emission(const Draw &draw, uint32_t triangle, const float *transform, bool textureCoverage,
+                                  bool cached = true);
   } // namespace
 
   // A blended draw shows its emission times its coverage (the texture stage's
@@ -144,7 +144,7 @@ namespace remix::scene {
     if (dynamic.any) {
       // What this cost bounds how soon the material's estimates are remade.
       const auto spent = std::chrono::steady_clock::now() - now;
-      m.emissionKeepSeconds = std::max(m.emissionKeepSeconds, 100 * std::chrono::duration<double>(spent).count());
+      m.emissionKeepSeconds = std::max(m.emissionKeepSeconds, 50 * std::chrono::duration<double>(spent).count());
       if (refresh) {
         textureCounters.emissionRefreshes.fetch_add(1, std::memory_order_relaxed);
         textureCounters.emissionRefreshTicks.fetch_add(
@@ -330,8 +330,8 @@ namespace remix::scene {
     return emission(draw, triangle, transform, emissionCoverage(draw).texture, !dynamic.any);
   }
   namespace {
-    std::array<float, 3> emission(const Draw &draw, uint32_t triangle, const float *transform,
-                                  bool textureCoverage, bool cached) {
+    std::array<float, 3> emission(const Draw &draw, uint32_t triangle, const float *transform, bool textureCoverage,
+                                  bool cached) {
       const auto &m = *draw.material;
       if (m.emission[0] == 0 && m.emission[1] == 0 && m.emission[2] == 0)
         return {};
@@ -500,7 +500,15 @@ namespace remix::scene {
       };
       // 16x16 stratified area samples, only on cache misses. Black texels count in
       // the average so small masks keep their coverage and do not gain energy.
-      for (const auto &w : emissionSamples) {
+      // A dynamic texture's estimate, which is made again as its picture
+      // changes, takes an 8x8 subset of them.
+      const bool coarse = (m.emissionTexture && m.emissionTexture->dynamic) ||
+                          ((m.selfIllumination || textureCoverage) && m.texture && m.texture->dynamic);
+      const float weight = coarse ? 1.f / 64 : 1.f / 256;
+      for (size_t sample = 0; sample < emissionSamples.size(); ++sample) {
+        if (coarse && !((sample & 1) && (sample >> 4 & 1)))
+          continue;
+        const auto &w = emissionSamples[sample];
         float u = 0, v = 0;
         for (unsigned i = 0; i < 3; ++i) {
           u += uv[i][0] * w[i];
@@ -525,7 +533,7 @@ namespace remix::scene {
         }
         const float coverage = textureCoverage && albedo ? texel(albedo)[3] : 1;
         for (unsigned c = 0; c < 3; ++c)
-          result[c] += value[c] * coverage * m.emission[c] / 256;
+          result[c] += value[c] * coverage * m.emission[c] * weight;
       }
       if (!cached)
         return result;

@@ -25,7 +25,7 @@ namespace remix::scene {
   // Emissive estimates that read a dynamic texture
   // (remixapi_TextureInfoDynamicEXT) follow its pixels at a low rate: once they
   // changed, a material's estimates are made again when they are this old, or
-  // older when making them was expensive (under 1% of the time between two).
+  // older when making them was expensive (under 2% of the time between two).
   // Until then every surface of the material keeps the previous image's values.
   inline constexpr double dynamicEmissionSeconds = REMIXAPI_DYNAMIC_TEXTURE_EMISSION_SECONDS_EXT;
   class SurfaceEmissionCache {

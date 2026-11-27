@@ -433,12 +433,15 @@ typedef struct remixapi_TextureInfoGenerateMipsEXT {
 // of them. What the runtime derives from a texture's contents on the CPU is
 // defined for a dynamic one as follows:
 //   - Emissive light estimates (the triangle lights of emissive and
-//     self-illuminated materials that sample it) follow the pixels at a low
-//     rate: once the pixels changed, a material's estimates are made again
-//     when they are REMIXAPI_DYNAMIC_TEXTURE_EMISSION_SECONDS_EXT old (older
-//     when they are expensive: making them takes under 1% of the time between
-//     two). Until then the lights keep the previous image's power, also on
-//     meshes the host creates anew every frame. What the camera and rays see
+//     self-illuminated materials that sample it) follow the pixels at a
+//     bounded rate: once the pixels changed, a material's estimates are made
+//     again when they are REMIXAPI_DYNAMIC_TEXTURE_EMISSION_SECONDS_EXT old
+//     (a video's frame; older when they are expensive: making them takes
+//     under 2% of the time between two), each from a quarter of the samples
+//     a static texture's estimate takes. Until then the lights keep the
+//     previous image's power, also on meshes the host creates anew every
+//     frame. (At a quarter of a second, the first value, the light a screen
+//     threw followed its picture in steps four times a second.) What the camera and rays see
 //     of the surface itself is the current image, every frame. An instance
 //     of the persistent static set (retained instances) keeps the estimate
 //     made when it joined the set.
@@ -456,7 +459,7 @@ typedef struct remixapi_TextureInfoGenerateMipsEXT {
 // one level. CreateTexture under the hash of an existing texture makes a new
 // texture, as it always does: materials created before keep the old one.
 #define REMIXAPI_STRUCT_TYPE_TEXTURE_DYNAMIC_EXT ((remixapi_StructType)0x7fff1016)
-#define REMIXAPI_DYNAMIC_TEXTURE_EMISSION_SECONDS_EXT 0.25
+#define REMIXAPI_DYNAMIC_TEXTURE_EMISSION_SECONDS_EXT (1.0 / 30)
 typedef struct remixapi_TextureInfoDynamicEXT {
   remixapi_StructType sType;
   const void *pNext;
