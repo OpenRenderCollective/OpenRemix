@@ -1141,6 +1141,18 @@ namespace remix {
         if (ImGui::IsItemHovered())
           ImGui::SetTooltip("No sun or sky glow over the sky, as the game's fog leaves it clear; the lights'\n"
                             "halos still show against it.");
+        ui::Checkbox("Samples move every frame", &options.volumetricRasterTemporal);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("The glow's samples shift along each camera ray every frame, so the upscaler's\n"
+                            "history averages them: a few samples look like many. Off: a fixed fine pattern\n"
+                            "that never trails.");
+        int glowBudget = int(options.volumetricRasterBudget);
+        if (ui::SliderInt("Sample budget (0 = all)", &glowBudget, 0, 256))
+          options.volumetricRasterBudget = uint32_t(glowBudget);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("The lights' samples each pixel takes in all, shared out by how much light each\n"
+                            "sends along it; the samples below are then each light's most. Dim lights take\n"
+                            "one sample now and then, weighted to match. 0: every light takes all of its own.");
         int glowLights = int(options.volumetricRasterLights), glowSize = int(options.volumetricRasterShadowSize),
             glowSteps = int(options.volumetricRasterSteps);
         if (ui::SliderInt("Primary lights", &glowLights, 0, 64))
