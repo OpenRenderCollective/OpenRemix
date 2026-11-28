@@ -410,15 +410,27 @@ namespace remix {
                  point(radius * std::cos(b), radius * std::sin(b)), z);
       }
     } else if (type == REMIXAPI_STRUCT_TYPE_LIGHT_INFO_CYLINDER_EXT) {
-      // USD cylinders are centered along local X; lateral surface only.
-      for (unsigned i = 0; i < 64; ++i) {
-        float a = 2 * pi * i / 64, b = 2 * pi * (i + 1) / 64;
-        auto ra = add(scale(y, radius * std::cos(a)), scale(z, radius * std::sin(a))),
-             rb = add(scale(y, radius * std::cos(b)), scale(z, radius * std::sin(b)));
-        auto aa = add(position, add(ra, scale(x, -span / 2))), ab = add(position, add(ra, scale(x, span / 2))),
-             ba = add(position, add(rb, scale(x, -span / 2))), bb = add(position, add(rb, scale(x, span / 2)));
-        triangle(aa, ab, bb, ra);
-        triangle(aa, bb, ba, rb);
+      // USD cylinders are centered along local X; lateral surface only. Facets
+      // around it and rings along it: a facet as long as the cylinder (64 of
+      // them, once) is a needle whose bounds span the whole light, so the light
+      // tree rarely chose it near one end and a long thin light (a laser) lit
+      // its surroundings in rare bright spikes. Rings keep each facet within
+      // 16 radii of length; 12 facets are round enough for light.
+      constexpr unsigned sides = 12, maxRings = 48;
+      const unsigned rings = radius > 0 && span > 16 * radius
+                                 ? unsigned(std::min<float>(std::ceil(span / (16 * radius)), float(maxRings)))
+                                 : 1u;
+      for (unsigned r = 0; r < rings; ++r) {
+        float u0 = span * (float(r) / rings - .5f), u1 = span * (float(r + 1) / rings - .5f);
+        for (unsigned i = 0; i < sides; ++i) {
+          float a = 2 * pi * i / sides, b = 2 * pi * (i + 1) / sides;
+          auto ra = add(scale(y, radius * std::cos(a)), scale(z, radius * std::sin(a))),
+               rb = add(scale(y, radius * std::cos(b)), scale(z, radius * std::sin(b)));
+          auto aa = add(position, add(ra, scale(x, u0))), ab = add(position, add(ra, scale(x, u1))),
+               ba = add(position, add(rb, scale(x, u0))), bb = add(position, add(rb, scale(x, u1)));
+          triangle(aa, ab, bb, ra);
+          triangle(aa, bb, ba, rb);
+        }
       }
     } else if (type == REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DOME_EXT) {
       definition.dome.enabled = true;
