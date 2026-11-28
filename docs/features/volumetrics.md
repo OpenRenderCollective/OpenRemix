@@ -32,6 +32,8 @@ nothing until there is a medium.
 | `volumetricRasterSkySize` | 128 | Raster fog: texels a side of each of the sky's five maps (16-1024). |
 | `volumetricRasterGlowLights`, `volumetricRasterGlowEmissive`, `volumetricRasterGlowSun`, `volumetricRasterGlowSky` | 1 | Raster fog: whether the game's lights, emissive surfaces, the sun and the sky glow. |
 | `volumetricRasterClearSky` | 0 | Raster fog: no sun or sky glow over the sky, as the game's fog leaves it clear (lights' halos still show). |
+| `volumetricRasterTemporal` | 1 | Raster fog: the glow's samples move along camera rays every frame, so the upscaler's history averages them; 0 keeps a fixed per-pixel pattern. |
+| `volumetricRasterBudget` | 32 | Raster fog: the lights' samples a camera ray takes in all, shared out by each light's unshadowed contribution along it (at most its own samples); dim lights are sampled at random and weighted (0-1024; 0: every light takes all of its own). |
 
 The game's fog is what `remixapi_SetFogState` last gave: exponential fog's
 density is the extinction; squared-exponential and linear fog get the

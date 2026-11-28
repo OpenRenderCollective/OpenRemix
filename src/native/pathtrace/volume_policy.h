@@ -249,9 +249,10 @@ namespace remix::trace {
     // length, how much they face one way (1 a flat panel, 0 all ways).
     float normalCoherence[4] = {};
     // A sphere light's emitter; where the cube's rays start; the radius that
-    // softens 1 / d^2 to 1 / (d^2 + r^2).
+    // softens 1 / d^2 to 1 / (d^2 + r^2); its power as rasterGlowLights
+    // scores it, for the sample budget's shares (rasterFogGlow).
     uint32_t emitter = 0;
-    float minimum = 0, radius = 0, unused = 0;
+    float minimum = 0, radius = 0, power = 0;
   };
   static_assert(sizeof(RasterGlowLight) == 64);
   // An orthographic shadow map: square, centreExtent.w to each side of its
@@ -279,9 +280,11 @@ namespace remix::trace {
     uint32_t sharp = 0, softSize = 0, softSteps = 0, skySize = 0;
     // How far camera rays take samples of the sun and the sky (world units);
     // 1: the sky is left clear of the sun's and the sky's glow
-    // (volumetricRasterClearSky).
+    // (volumetricRasterClearSky); 1: the samples move every frame
+    // (volumetricRasterTemporal); the lights' samples a camera ray shares out
+    // (volumetricRasterBudget; 0: each light takes all of its own).
     float march = 0;
-    uint32_t clearSky = 0, unused[2] = {};
+    uint32_t clearSky = 0, temporal = 0, budget = 0;
   };
   // volume.glsl's offsets (in vec4s): the sun's map 512, the sky's 516, their
   // radiance 536, the counts 541; 543 in all.
@@ -388,6 +391,12 @@ namespace remix::trace {
       return 0;
     const float maxReach = std::max(options.volumetricMaxDistance, 1.f) / options.sceneScale;
     const float clusterReach = options.localRange > 0 ? std::min(maxReach, options.localRange) : maxReach;
+    const float lightScale = rasterGlowScale(options, 1), emissiveScale = rasterGlowScale(options, 2);
+    auto spherePower = [&](const scene::LightEmitter &e) {
+      const float radius = std::max(e.positionRadius[3], 1e-3f);
+      return (.2126f * e.radiance[0] + .7152f * e.radiance[1] + .0722f * e.radiance[2]) * radius * radius *
+             3.14159265f * e.corners[1][3] * lightScale;
+    };
     auto consider = [&](const float centre[3], float reach, float power, float radius, uint32_t index) {
       float distance2 = 0, ahead = 0;
       for (int c = 0; c < 3; ++c) {
@@ -407,19 +416,16 @@ namespace remix::trace {
         reach = std::min(reach, options.localRange);
       return reach;
     };
-    if (const float lightScale = rasterGlowScale(options, 1); lightScale > 0)
+    if (lightScale > 0)
       for (uint32_t i = 0; i < emitters.size(); ++i) {
         const auto &e = emitters[i];
         if (e.radiance[3] != 0 || e.corners[1][3] <= 0)
           continue;
-        const float radius = std::max(e.positionRadius[3], 1e-3f);
-        const float power = (.2126f * e.radiance[0] + .7152f * e.radiance[1] + .0722f * e.radiance[2]) * radius *
-                            radius * 3.14159265f * e.corners[1][3] * lightScale;
-        if (power > 0)
-          consider(e.positionRadius, sphereReach(e), power, radius, i);
+        if (const float power = spherePower(e); power > 0)
+          consider(e.positionRadius, sphereReach(e), power, std::max(e.positionRadius[3], 1e-3f), i);
       }
     const uint32_t clusterFlag = 0x80000000u;
-    if (const float emissiveScale = rasterGlowScale(options, 2); emissiveScale > 0)
+    if (emissiveScale > 0)
       for (uint32_t i = 0; i < clusters.size(); ++i) {
         const auto &c = clusters[i];
         consider(c.centre, clusterReach, c.power * emissiveScale,
@@ -449,6 +455,7 @@ namespace remix::trace {
         o.normalCoherence[3] = c.coherence;
         o.minimum = .01f * cell;
         o.radius = std::max(std::sqrt(c.area / 3.14159265f) * .5f, .01f * cell);
+        o.power = c.power * emissiveScale;
       } else {
         const auto &e = emitters[index];
         std::copy_n(e.positionRadius, 3, o.originReach);
@@ -457,6 +464,7 @@ namespace remix::trace {
         o.radius = std::max(e.positionRadius[3], 1e-3f);
         // From the sphere's surface: a lamp's own bulb does not hide it.
         o.minimum = std::max(o.radius, 1e-4f * o.originReach[3]);
+        o.power = spherePower(e);
       }
     }
     return count;
@@ -585,6 +593,8 @@ namespace remix::trace {
     header.skySize = sky ? skySize : 0;
     header.march = march;
     header.clearSky = options.volumetricRasterClearSky;
+    header.temporal = options.volumetricRasterTemporal;
+    header.budget = std::min(options.volumetricRasterBudget, 1024u);
     out.lights = count;
     out.size = size;
     out.sunSize = sun ? sunSize : 0;

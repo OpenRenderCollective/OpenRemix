@@ -129,6 +129,10 @@ float rasterGlowMarch() { return VolumeCells(frame.volumeGrid).data[rasterCounts
 // The sky is left clear of the sun's and the sky's glow
 // (TraceOptions::volumetricRasterClearSky).
 bool rasterGlowClearSky() { return floatBitsToUint(VolumeCells(frame.volumeGrid).data[rasterCountsSlot+1u].y)!=0u; }
+// The samples move every frame (TraceOptions::volumetricRasterTemporal).
+bool rasterGlowTemporal() { return floatBitsToUint(VolumeCells(frame.volumeGrid).data[rasterCountsSlot+1u].z)!=0u; }
+// The lights' samples a camera ray shares out (TraceOptions::volumetricRasterBudget; 0: none).
+uint rasterGlowBudget() { return floatBitsToUint(VolumeCells(frame.volumeGrid).data[rasterCountsSlot+1u].w); }
 // The first float of light `slot`'s cube, and its size; for slot
 // volumeConfig.z, where the cubes end.
 uint rasterCube(uint slot,out uint size) {

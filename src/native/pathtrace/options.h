@@ -266,6 +266,16 @@ namespace remix {
     // sky's glow too, as of the fog colour (a light's halo still shows).
     bool volumetricRasterGlowLights = true, volumetricRasterGlowEmissive = true;
     bool volumetricRasterGlowSun = true, volumetricRasterGlowSky = true, volumetricRasterClearSky = false;
+    // The glow's samples move along camera rays every frame, so the upscaler's
+    // history averages them (a few samples read as many); off, each pixel keeps
+    // the same offsets, a fixed pattern that never trails.
+    bool volumetricRasterTemporal = true;
+    // The lights' samples a camera ray takes in all, shared out by how much
+    // each light sends along it unshadowed (at most a light's own
+    // volumetricRasterSteps or volumetricRasterSoftSteps); a light whose
+    // share is under one sample is taken at random that often, weighted to
+    // match. 0: every light the ray crosses takes all of its own.
+    uint32_t volumetricRasterBudget = 32;
     // Each source's share of the scattered light, on top of a light's own
     // volumetricRadianceScale: the sun, lights (sphere, rect, disk, cylinder),
     // emissive surfaces, the sky.

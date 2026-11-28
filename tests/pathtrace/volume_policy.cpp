@@ -1,6 +1,8 @@
 #include "pathtrace/volume_policy.h"
 #include <cstdio>
 #include <cstdlib>
+#include <memory>
+#include <vector>
 
 namespace {
   void require(bool value, const char *message) {
@@ -76,5 +78,33 @@ int main() {
   require(defaults.volumetricUpdateInterval == volumeResponses[3].interval &&
               defaults.volumetricHistory == volumeResponses[3].history,
           "Default response is the Immediate preset");
+  // Raster fog's glow: a sphere light's slot carries its power for the
+  // sample budget's shares, and the header the budget and the moving jitter.
+  {
+    TraceOptions glowOptions;
+    glowOptions.volumetrics = glowOptions.volumetricRaster = true;
+    glowOptions.volumetricRasterGlowSun = glowOptions.volumetricRasterGlowSky = false;
+    glowOptions.volumetricLightScale = 2;
+    glowOptions.volumetricRasterBudget = 24;
+    std::vector<scene::LightEmitter> emitters(1);
+    auto &e = emitters[0];
+    e.positionRadius[0] = 3;
+    e.positionRadius[3] = .5f;
+    e.radiance[0] = e.radiance[1] = e.radiance[2] = 4;
+    e.corners[1][3] = 1;
+    const float eye[3] = {}, forward[3] = {1, 0, 0}, sun[3] = {0, 0, -1}, sunRadiance[4] = {};
+    std::vector<std::pair<float, uint32_t>> scored;
+    auto header = std::make_unique<RasterGlowHeader>();
+    RasterGlowFrame glow;
+    require(rasterGlowFrame(glowOptions, emitters, {}, true, eye, forward, sun, sunRadiance, 10, scored, *header, glow) &&
+                glow.lights == 1,
+            "One sphere light glows");
+    require(approximately(header->lights[0].power, 4 * .25f * 3.14159265f * 2), "A glow slot carries its power");
+    require(header->budget == 24 && header->temporal == 1, "The header carries the budget and the moving jitter");
+    glowOptions.volumetricRasterBudget = 5000;
+    glowOptions.volumetricRasterTemporal = false;
+    rasterGlowFrame(glowOptions, emitters, {}, true, eye, forward, sun, sunRadiance, 10, scored, *header, glow);
+    require(header->budget == 1024 && header->temporal == 0, "The budget is capped; the jitter can hold still");
+  }
   return 0;
 }

@@ -3380,42 +3380,77 @@ vec3 rasterOpenGlow(vec3 origin,vec3 direction,float far,float forward,float jit
 // at the light (equiangular: they gather where the light is brightest, and
 // each carries an equal share of the 1 / d^2 integral); the lights past the
 // first `sharp` (coarser cubes) take softSteps. Then the sun's and the sky's
-// (rasterOpenGlow). `jitter` offsets the samples per pixel, the same every
-// frame. Tinted by the fog colour as the traced medium is.
+// (rasterOpenGlow). `jitter` offsets the samples per pixel (moving every
+// frame with rasterGlowTemporal), each light's and the sun's and sky's apart.
+// Tinted by the fog colour as the traced medium is.
+// With a sample budget (rasterGlowBudget) a first pass sums what each light
+// sends along the ray unshadowed (power times the closed-form integral of
+// 1 / (d^2 + r^2), (a1 - a0) / h), and each light takes the budget's share
+// of that, at most its own samples: bright, near lights many, dim ones few.
+// A share under one sample is taken with that chance and weighted by its
+// inverse (unbiased; the moving jitter averages it out).
+//
+// Where the camera ray crosses glow slot `slot`'s reach before `far`: the
+// light's centre, the ray's closest approach to it (`along`), its softened
+// distance h and the angles a0, a1 of the crossing as seen from the light.
+// limits: the slot's last vec4 (emitter, minimum, radius, power).
+// 1 / (d^2 + r^2) with r the light's size, not 1 / d^2 held at r: held, the
+// fog within the light's sphere glowed evenly, a solid orb with a hard edge
+// wherever the sphere met a wall or the lamp around it. Softened, the glow
+// peaks at the centre and fades smoothly, with no edge. The ray's distance to
+// the centre takes in r^2 so the samples stay equiangular for it.
+bool rasterGlowCrossing(uint slot,vec3 origin,vec3 direction,float far,out vec3 centre,out float along,
+                        out float h,out float a0,out float a1,out vec4 limits) {
+  vec4 originReach=rasterGlowSlot(slot,0u);
+  centre=originReach.xyz;float reach=originReach.w;
+  along=dot(centre-origin,direction);
+  vec3 offset=centre-origin-direction*along;
+  float h2=dot(offset,offset);
+  h=0;a0=0;a1=0;limits=vec4(0);
+  if(h2>=reach*reach)return false;
+  float chord=sqrt(reach*reach-h2),t0=max(0.,along-chord),t1=min(far,along+chord);
+  if(t1<=t0)return false;
+  limits=rasterGlowSlot(slot,3u);
+  float radius=max(limits.z,1e-4);
+  h=sqrt(h2+radius*radius);
+  a0=atan((t0-along)/h);a1=atan((t1-along)/h);
+  return true;
+}
 vec3 rasterFogGlow(vec3 origin,vec3 direction,float far,float forward,float jitter) {
   if(frame.volumeGrid==0||frame.volumeMedium.w<=0)return vec3(0);
   uvec4 counts=rasterGlowCounts();
-  uint lights=frame.volumeConfig.z;
+  uint lights=frame.volumeConfig.z,budget=rasterGlowBudget();
   LightEmitters emitters=LightEmitters(frame.lightEmitters);
   bool sky=far>=1e30;
   far=min(far,1e6);
   vec3 glow=vec3(0);
+  vec3 centre;float along,h,a0,a1;vec4 limits;
+  float total=0;
+  if(budget!=0u)
+    for(uint slot=0u;slot<lights;++slot)
+      if(rasterGlowCrossing(slot,origin,direction,far,centre,along,h,a0,a1,limits))total+=limits.w*(a1-a0)/h;
+  float perShare=total>0?float(budget)/total:0;
   for(uint slot=0u;slot<lights;++slot) {
-    vec4 originReach=rasterGlowSlot(slot,0u);
-    vec3 centre=originReach.xyz;float reach=originReach.w;
-    float along=dot(centre-origin,direction);
-    vec3 offset=centre-origin-direction*along;
-    float h2=dot(offset,offset);
-    if(h2>=reach*reach)continue;
-    float chord=sqrt(reach*reach-h2),t0=max(0.,along-chord),t1=min(far,along+chord);
-    if(t1<=t0)continue;
-    vec4 intensityKind=rasterGlowSlot(slot,1u),normalCoherence=rasterGlowSlot(slot,2u),limits=rasterGlowSlot(slot,3u);
+    if(!rasterGlowCrossing(slot,origin,direction,far,centre,along,h,a0,a1,limits))continue;
+    uint steps=max(slot<counts.x?frame.volumeFrame.x:counts.z,1u);
+    // Each light's offset apart from the others' (R1 sequence): with a shared
+    // one their sample patterns lined up into a coarse hatch where they meet.
+    float lightJitter=fract(jitter+float(slot)*.61803399),weight=1;
+    if(perShare>0) {
+      float share=perShare*limits.w*(a1-a0)/h;
+      if(share<1) {
+        if(float(hash(floatBitsToUint(jitter)^(slot*0x9e3779b9u))>>8)*(1./16777216.)>=share)continue;
+        steps=1u;weight=1/max(share,1e-6);
+      } else steps=min(steps,uint(ceil(share)));
+    }
+    vec4 intensityKind=rasterGlowSlot(slot,1u),normalCoherence=rasterGlowSlot(slot,2u);
     bool sphere=intensityKind.w==0;
     LightEmitter light;
     if(sphere)light=emitters.data[floatBitsToUint(limits.x)];
-    float radius=max(limits.z,1e-4);
-    uint steps=max(slot<counts.x?frame.volumeFrame.x:counts.z,1u);
-    // 1 / (d^2 + r^2) with r the light's size, not 1 / d^2 held at r: held,
-    // the fog within the light's sphere glowed evenly, a solid orb with a hard
-    // edge wherever the sphere met a wall or the lamp around it. Softened,
-    // the glow peaks at the centre and fades smoothly, with no edge. The
-    // ray's distance to the centre takes in r^2 so the samples stay
-    // equiangular for it.
-    float h=sqrt(h2+radius*radius);
-    float a0=atan((t0-along)/h),a1=atan((t1-along)/h),angle=(a1-a0)/float(steps);
+    float radius=max(limits.z,1e-4),angle=(a1-a0)/float(steps);
     vec3 sum=vec3(0);
     for(uint i=0u;i<steps;++i) {
-      float t=along+h*tan(a0+(float(i)+jitter)*angle);
+      float t=along+h*tan(a0+(float(i)+lightJitter)*angle);
       vec3 toPoint=origin+direction*t-centre;
       float distance2=dot(toPoint,toPoint);
       float falloff=sphere?emitterFalloff(light,distance2):localFalloff(distance2);
@@ -3437,14 +3472,14 @@ vec3 rasterFogGlow(vec3 origin,vec3 direction,float far,float forward,float jitt
       // Each sample's share of the integral of 1 / (d^2 + r^2) is angle / h.
       sum+=intensity*(falloff*lit*(1-rasterFogAmount(t*forward)));
     }
-    glow+=sphere?sum*(angle/h*3.14159265359*radius*radius*light.corners[1].w*frame.volumeLightScales.y)
-                :sum*(angle/h*frame.volumeLightScales.z);
+    glow+=weight*(sphere?sum*(angle/h*3.14159265359*radius*radius*light.corners[1].w*frame.volumeLightScales.y)
+                        :sum*(angle/h*frame.volumeLightScales.z));
   }
   glow*=frame.localScale.x/(4*3.14159265359);
   // Keep the sky clear (volumetricRasterClearSky): of the sun's and the sky's
   // glow, which fill the fog everywhere; a light's own halo still shows
   // against the sky.
-  if(!sky||!rasterGlowClearSky())glow+=rasterOpenGlow(origin,direction,far,forward,jitter);
+  if(!sky||!rasterGlowClearSky())glow+=rasterOpenGlow(origin,direction,far,forward,fract(jitter+.75487767));
   vec3 tint=frame.volumeMedium.rgb;
   float brightest=max(max(tint.r,tint.g),tint.b);
   tint=brightest>0?tint/brightest:vec3(1);
@@ -4503,8 +4538,13 @@ void main() {
       float amount=rasterFogAmount(far*forward);
       fogTransmittance=1-amount;fogLight=frame.volumeMedium.rgb*amount;
     }
-    // Interleaved gradient noise: a fixed fine pattern, nothing to trail.
-    float jitter=fract(52.9829189*fract(dot(vec2(pixel),vec2(.06711056,.00583715))));
+    // Interleaved gradient noise. Moving every frame (rasterGlowTemporal; the
+    // pattern shifted 5.588 pixels a frame over 64 frames, as Jimenez's IGN
+    // does) the upscaler's history averages the samples; held, a fixed fine
+    // pattern with nothing to trail.
+    vec2 noisePixel=vec2(pixel);
+    if(frame.volumeGrid!=0&&rasterGlowTemporal())noisePixel+=5.588238*float(frame.config.z&63u);
+    float jitter=fract(52.9829189*fract(dot(noisePixel,vec2(.06711056,.00583715))));
     fogLight+=rasterFogGlow(origin,direction,far,forward,jitter);
     transparent=fogLight+fogTransmittance*transparent;tint*=fogTransmittance;
   }
