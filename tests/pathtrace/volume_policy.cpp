@@ -96,9 +96,10 @@ int main() {
     std::vector<std::pair<float, uint32_t>> scored;
     auto header = std::make_unique<RasterGlowHeader>();
     RasterGlowFrame glow;
-    require(rasterGlowFrame(glowOptions, emitters, {}, true, eye, forward, sun, sunRadiance, 10, scored, *header, glow) &&
-                glow.lights == 1,
-            "One sphere light glows");
+    require(
+        rasterGlowFrame(glowOptions, emitters, {}, true, eye, forward, sun, sunRadiance, 10, scored, *header, glow) &&
+            glow.lights == 1,
+        "One sphere light glows");
     require(approximately(header->lights[0].power, 4 * .25f * 3.14159265f * 2), "A glow slot carries its power");
     require(header->budget == 24 && header->temporal == 1, "The header carries the budget and the moving jitter");
     glowOptions.volumetricRasterBudget = 5000;
