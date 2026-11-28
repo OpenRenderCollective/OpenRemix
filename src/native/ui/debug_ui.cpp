@@ -33,6 +33,7 @@ namespace remix {
       return;
     }
     ImGui_ImplVulkan_NewFrame();
+    applyUiEvents();
     ImGui_ImplSDL3_NewFrame();
     // A host window usually hides the OS cursor on its thread (games do), so
     // draw ImGui's own while the menu is open and the OS cursor is hidden.

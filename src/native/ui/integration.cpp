@@ -93,12 +93,55 @@ namespace remix {
     m_gui = nullptr;
     m_window.setEventHandler(nullptr, nullptr);
     m_window.setGuiCapture(false, false);
+    std::lock_guard lock(m_uiEventMutex);
+    m_uiEvents.clear();
   }
 
+  // Queued for the UI frame (see m_uiEvents). Handled: what
+  // ImGui_ImplSDL3_ProcessEvent takes in, by type.
   bool RemixNativeRuntime::processEvent(const SDL_Event *event, void *userData) {
     auto &runtime = *static_cast<RemixNativeRuntime *>(userData);
-    UiScope scope(runtime.m_gui);
-    return ImGui_ImplSDL3_ProcessEvent(event);
+    switch (event->type) {
+    case SDL_EVENT_MOUSE_MOTION:
+    case SDL_EVENT_MOUSE_WHEEL:
+    case SDL_EVENT_MOUSE_BUTTON_DOWN:
+    case SDL_EVENT_MOUSE_BUTTON_UP:
+    case SDL_EVENT_TEXT_INPUT:
+    case SDL_EVENT_KEY_DOWN:
+    case SDL_EVENT_KEY_UP:
+    case SDL_EVENT_WINDOW_MOUSE_ENTER:
+    case SDL_EVENT_WINDOW_MOUSE_LEAVE:
+    case SDL_EVENT_WINDOW_FOCUS_GAINED:
+    case SDL_EVENT_WINDOW_FOCUS_LOST:
+    case SDL_EVENT_GAMEPAD_ADDED:
+    case SDL_EVENT_GAMEPAD_REMOVED:
+      break;
+    default:
+      return false;
+    }
+    std::lock_guard lock(runtime.m_uiEventMutex);
+    // A UI not drawn for a while (no frames): its oldest input goes
+    if (runtime.m_uiEvents.size() >= 4096)
+      runtime.m_uiEvents.erase(runtime.m_uiEvents.begin(), runtime.m_uiEvents.begin() + 1024);
+    auto &queued = runtime.m_uiEvents.emplace_back();
+    queued.event = *event;
+    if (event->type == SDL_EVENT_TEXT_INPUT && event->text.text)
+      queued.text = event->text.text;
+    return true;
+  }
+
+  // On the thread building the UI frame, in its context, before its NewFrame
+  void RemixNativeRuntime::applyUiEvents() {
+    {
+      std::lock_guard lock(m_uiEventMutex);
+      m_uiEventsApplying.swap(m_uiEvents);
+    }
+    for (auto &queued : m_uiEventsApplying) {
+      if (queued.event.type == SDL_EVENT_TEXT_INPUT)
+        queued.event.text.text = queued.text.c_str();
+      ImGui_ImplSDL3_ProcessEvent(&queued.event);
+    }
+    m_uiEventsApplying.clear();
   }
 } // namespace remix
 

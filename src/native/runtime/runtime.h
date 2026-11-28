@@ -47,6 +47,8 @@
 #include <remix/remix_c.h>
 #include <remix/remix_editor_ext.h>
 #include <atomic>
+#include <mutex>
+#include <string>
 #include <vector>
 #include <vulkan/vulkan.h>
 
@@ -431,6 +433,8 @@ namespace remix {
     VkResult presentImages(uint32_t realIndex, const GeneratedImages &generated);
     void finishDeferredPresent();
     static bool processEvent(const SDL_Event *event, void *userData);
+    // The UI's input, fed to ImGui where its frame is built (drawUi).
+    void applyUiEvents();
     void updateFreeCamera();
     // Particle emitters (runtime/particles.cpp). publishParticles: Present
     // setup (render thread idle): the registry's frame for the render thread
@@ -730,6 +734,16 @@ namespace remix {
     float m_clearColor[4] = {0.025f, 0.035f, 0.055f, 1.0f};
     char m_input[256] = {};
     ImGuiContext *m_gui = nullptr;
+    // SDL calls an event watch on the thread that raised the event: an adopted
+    // window's thread, or SDL's own (Windows' raw mouse input in relative mode),
+    // while the UI frame is built on another. ImGui is not thread safe, so
+    // events wait here for the frame (a text event's text copied: SDL frees it).
+    struct UiEvent {
+      SDL_Event event;
+      std::string text;
+    };
+    std::mutex m_uiEventMutex;
+    std::vector<UiEvent> m_uiEvents, m_uiEventsApplying;
     bool m_uiFrameBuilt = false; // drawUi(VK_NULL_HANDLE) completed an ImGui frame
     VkPhysicalDeviceProperties m_properties = {};
     VkInstance m_instance = VK_NULL_HANDLE;
